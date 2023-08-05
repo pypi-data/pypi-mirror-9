@@ -1,0 +1,345 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+#
+# Copyright 2014 Cédric Picard
+#
+# LICENSE
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <http://www.gnu.org/licenses/>.
+# END_OF_LICENSE
+#
+"""
+Simple command line browser independant bookmark utility.
+
+Usage: bm [options] [-r] URL TAG...
+       bm [options]  -d  URL
+       bm [options]  -l  [TAG]...
+       bm [options]  -L  TAG...
+       bm [options]  URL
+       bm [options]  -i  SOURCE...
+       bm [options]  -t
+
+Arguments:
+    URL     The url to bookmark
+            If alone, print the tags associated with URL
+            If the url corresponds to an existing file,
+            the absolute path is substituted to URL
+            If URL is '-', then the program looks for a list of URL
+            comming from the standard input.
+    TAG     The tags to use with the url.
+    SOURCE  When uniting, the paths to the source files.
+
+Options:
+    -h, --help          Print this help and exit
+    -r, --remove        Remove TAG from URL
+    -d, --delete        Delete an url from the database
+    -l, --list-every    List the urls with every of TAG
+                        If no tag is given, list all urls
+    -L, --list-any      List the urls with any of TAG
+    -f, --file FILE     Use FILE as the database, can be an url
+                        Default is ~/.bookmarks
+    -t, --tags          List every tag present in the database
+                        with how many times it is used.
+                        Output is sorted from the least to the most used
+    -i, --import        Import bookmarks from sources into the database.
+    -n, --no-path-subs  Disable file path substitution
+    -v, --verbose       Displays the list of tags of eacch url when listing
+    -w, --web           Open the results in a web browser
+    --version           Print current version number
+"""
+VERSION = "1.5.2"
+
+import os
+import tempfile
+from docopt              import docopt
+from msgpack             import dump, load
+from msgpack.exceptions  import UnpackValueError, ExtraData
+from requests.exceptions import ConnectionError
+
+
+def add(database, url, tags):
+    if url in database:
+        for tag in tags:
+            if tag not in database[url]:
+                database[url].append(tag)
+    else:
+        database[url] = list(tags)
+
+
+def remove(database, url, tags):
+    try:
+        for tag in tags:
+            database[url].remove(tag)
+
+        if database[url] == []:
+            database.pop(url)
+    except ValueError:
+        pass
+
+
+def delete(database, url):
+    try:
+        database.pop(url)
+    except KeyError:
+        pass
+
+
+def list_any(database, tags, *, verbose=False):
+    for url in database:
+        if set(tags).intersection(set(database[url]))!=set() or tags==[]:
+            if not verbose:
+                yield url
+            else:
+                yield url, database[url]
+
+
+def list_every(database, tags, *, verbose=False):
+    for url in database:
+        if set(tags).issubset(set(database[url])):
+            if not verbose:
+                yield url
+            else:
+                yield url, database[url]
+
+
+def list_every_tags(database):
+    from collections import Counter
+
+    counter = Counter()
+    for url in database:
+        for tag in database[url]:
+            counter[tag] += 1
+    return [(t, x) for x,t in counter.items()]
+
+
+def _list(database, urls, tags, method, verbose):
+    result = []
+    for url in urls:
+        result += list(method(database, tags, verbose=verbose))
+
+    if not verbose:
+        result.sort()
+
+    else:
+        result.sort(key=lambda x:x[0])
+
+    return result
+
+
+def import_db(database, tags):
+    paths = expand_paths(tags)
+
+
+    for path in paths:
+        db = open_db(path)
+        for url in db:
+            add(database, url, db[url])
+
+
+def dump_db(database, d_file):
+    try:
+        dump(database, open(d_file, 'wb'))
+
+    except FileNotFoundError:
+        print("File not found: " + d_file, file=os.sys.stderr)
+
+    except ConnectionError:
+        print("Connection impossible: " + d_file, file=os.sys.stderr)
+
+
+def expand_paths(paths):
+    for path in paths:
+        if path is not None and os.path.exists(path):
+            yield os.path.abspath(path)
+
+        else:
+            yield path
+
+
+def html_generator(tags, sites):
+    li_html  = '<li><a href="{u}">{u}</a><p>{t}</p></li>'
+    template = """
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="UTF-8" />
+        <title>bookmark</title>
+      </head>
+      <body>
+        <h1>
+          {tags}
+        </h1>
+        <ol>
+          {sites}
+        </ol>
+      </body>
+    </html>
+    """
+    template = template.format(
+        tags  = ', '.join(tags),
+        sites = ('\n'+' '*10).join(li_html.format(u = x.split()[0],
+                                                  t = ','.join(x.split()[2:]))
+                                  for x in sites))
+    return template
+
+
+def web_open(browser, html_src):
+    from subprocess import Popen
+    from time import sleep
+
+    path = "/tmp/bm-tmp.html"
+    try:
+        f = open(path, "w")
+        f.write(html_src)
+    finally:
+        f.close()
+    Popen([browser, "file://" + path])
+
+
+def open_db(path, *, encoding="utf-8"):
+    if "://" in path:
+        import requests
+
+        try:
+            request  = requests.get(path)
+            database = request.content
+            encoding = request.encoding or "utf-8"
+
+            tmp_file = True
+            path = tempfile.mktemp()
+
+            open(path, "wb").write(database)
+
+        except ConnectionError:
+            print("Connection impossible: " + path, file=os.sys.stderr)
+            data = []
+            return data
+
+    else:
+        tmp_file = False
+        encoding = "utf-8"
+
+    try:
+        database = open(path, "rb")
+        data = load(database, encoding=encoding)
+
+    except FileNotFoundError:
+        print("File not found: " + path, file=os.sys.stderr)
+        data = []
+
+    except ExtraData:
+        print("Page not found: " + request.url, file=os.sys.stderr)
+        data = []
+
+    except ConnectionError:
+        print("Connection impossible: " + request.url, file=os.sys.stderr)
+        data = []
+
+    finally:
+        if tmp_file:
+            os.remove(path)
+
+    return data
+
+
+def manage_urls(urls, tags, d_file, database, args):
+    verbose = args["--verbose"]
+
+    if args["--delete"]:
+        for url in urls:
+            delete(database, url)
+        dump_db(database, d_file)
+
+    elif args["--list-any"] or args["--list-every"]:
+        if args["--list-any"]:
+            sites = _list(database, urls, tags, list_any, verbose)
+        else:
+            sites = _list(database, urls, tags, list_every, verbose)
+
+        if verbose:
+            sites = [ x[0] + ' : ' + ' '.join(x[1]) for x in sites ]
+
+        if args["--web"]:
+            web_open(os.environ["BROWSER"], html_generator(tags, sites))
+        else:
+            for each in sites:
+                print(each)
+
+    elif args["--remove"]:
+        for url in urls:
+            remove(database, url, tags)
+        dump_db(database, d_file)
+
+    elif args["--tags"]:
+        result = list_every_tags(database)
+        result.sort()
+        for num, tag in result:
+            print("%s %s" % (tag, num))
+
+    elif args["--import"]:
+        for url in urls:
+            import_db(database, tags)
+        dump_db(database, d_file)
+
+    elif args["TAG"]:
+        for url in urls:
+            add(database, url, tags)
+        dump_db(database, d_file)
+
+    else:
+        for url in urls:
+            for tag in database[url]:
+                print(tag)
+
+
+def main():
+    args = docopt(__doc__, version=VERSION)
+
+    tags = args["TAG"] or args["SOURCE"]
+
+    if args["URL"] == '-':
+        urls = os.sys.stdin.read().splitlines()
+
+    else:
+        urls = [ args["URL"] ]
+
+    d_file = args["--file"] or os.environ["HOME"] + "/.bookmarks"
+
+    try:
+        if not os.path.exists(d_file) and "://" not in d_file:
+            print('The file "' + d_file + '" does not exist: creating it.',
+                    file=os.sys.stderr)
+            dump_db({}, d_file)
+
+        database = open_db(d_file)
+
+    except UnpackValueError:
+        database = {}
+
+    except PermissionError as e:
+        os.sys.exit(e)
+
+    if not args["--no-path-subs"]:
+        urls = expand_paths(urls)
+
+    manage_urls(urls, tags, d_file, database, args)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyError as e:
+        print("No such bookmark:", e, file=os.sys.stderr)
+        os.sys.exit(1)
+    except BrokenPipeError as e:
+        pass
