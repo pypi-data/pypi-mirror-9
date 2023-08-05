@@ -1,0 +1,137 @@
+#!/usr/bin/env python
+#   author:martinmhan@yahoo.com date:  22/04/2014
+#   regexf is a small application to compare user regular expressions against those in a file
+#   Copyright (C) <2014>  <Martin Mohan>
+#
+#   This program is free software; you can redistribute it and/or modify
+#   it under the terms of the GNU General Public License as published by
+#   the Free Software Foundation; either version 3 of the License, or
+#   (at your option) any later version.
+#
+#   This program is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty of
+#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#   GNU General Public License for more details.
+#
+#   You should have received a copy of the GNU General Public License
+#   along with this program; if not, write to the Free Software Foundation,
+#   Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
+
+# bash uses 1,0 for false/true
+FALSE=1
+TRUE=0
+
+import os,sys,re
+import argparse,ConfigParser
+import regexf_version
+import csv
+
+#To put configuration file in dir /etc/opt
+#sys.path.insert(0, '/etc/opt')
+#import regexf_names
+
+verbose=0
+
+def stdout(string_value,v=0):
+#    if verbose>=v:
+    if verbose==v:
+        print (string_value)
+
+## Use v for more verbose error handling
+def handle_exception(e,message="Exception",v=0):
+    """ Handle exception"""
+#    print ("handle_Exception v is %s verbose is %s" %(v,verbose))
+    stdout(message,verbose)
+    if verbose>=2:
+        stdout(message+"\n"+str(e),verbose)
+
+def get_patterns(configFile,mysection='default'):
+    """Get patterns from configFile"""
+    Config = ConfigParser.ConfigParser()
+
+    if not os.path.isfile(configFile):
+        print ("configFile %s missing" %configFile)
+        sys.exit(FALSE)
+
+    try:
+        Config.read(configFile)
+        bigstring=Config.get(mysection,'patterns') # always called patterns
+    except:
+        raise IOError(configFile+"\n["+mysection+"]\n   patterns=")
+        sys.exit(FALSE)
+
+    # Remove empty lines
+    mypatterns = bigstring.split()
+    mypatterns = [line for line in mypatterns if line.strip()]
+    return mypatterns
+
+def info(configFile,section,verbose=0):
+    """Compare regexf names against deviceNames"""
+    stdout("regexf_version "+str(regexf_version.version))
+    stdout(configFile+"\n["+section+"]\n   patterns=")
+#    stdout("%s:%s:patterns=" %(configFile,section))
+    patterns=get_patterns(configFile,mysection=section)
+    for pattern in patterns:
+        stdout("    "+pattern)
+
+def re_match(configFile,section,deviceNames,verbose=0):
+    """Compare regexf names against deviceNames"""
+    patterns=get_patterns(configFile,mysection=section)
+
+    count_no_matchs=0 # Total count of no_matches
+    for deviceName in deviceNames:
+        count_match=0 # Count of matches
+        for pattern in patterns:
+            if verbose>1:
+                print ("%s:re.match(%s,%s)" %(sys.argv[0],pattern,deviceName ))
+#            print("re.match pattern: %s deviceName %s"%(pattern,deviceName))
+            m=re.match(pattern,deviceName)
+            if m:
+                count_match += 1
+                if verbose>0:
+                    print("%s:re.match(%s,%s) match" %(configFile,pattern,deviceName))
+        if count_match ==0: #print no_match found
+                count_no_matchs += 1
+                print("%s:re.match<%s> no_match" %(configFile,deviceName,))
+    if count_no_matchs>0: # return FALSE if any no_match's found
+        sys.exit(FALSE)
+#        return(FALSE)
+
+myversion=str(regexf_version.version)
+#        "Compare patterns to those in a regexf file\n"
+parser = argparse.ArgumentParser(description=\
+        "Compare input patterns to regexf patterns in a regexf.ini file"
+        ,formatter_class=argparse.RawTextHelpFormatter)
+parser.add_argument("patterns",nargs="*",
+        help="regexf pattern (e.g. regexf -v aa/bb/cc vac/myvac1/1)")
+parser.add_argument("-v", "--verbose",action="count",default=0,
+        help="increase output verbosity using -v,-vv")
+#group=parser.add_mutually_exclusive_group()
+parser.add_argument("-i","--info",action="store_true",
+        help="Information on regexf patterns")
+#parser.add_argument("patterns",nargs="*",
+parser.add_argument("-s","--section",default='default',
+        help="Specify section (default='default')")
+parser.add_argument("-f","--file",default='/usr/local/bin/regexf.ini',
+        help="Specify regexf file (default=/usr/local/bin/regexf.ini)\n\
+e.g. regexf -f ~/myregexf.ini vac/bb/cc")
+#parser.add_argument("-f","--file",default='regexf.ini',
+#        help="Specify regexf file (default=regexf.ini)\n\
+#e.g. regexf -f ~/myregexf.ini vac/bb/cc")
+
+args=parser.parse_args()
+configFile=args.file
+
+if len(sys.argv)==1:
+    print ("regexf -h: For usage")
+    sys.exit(FALSE)
+
+configFile=args.file
+if args.info:
+    info(configFile,args.section)
+    sys.exit(TRUE)
+
+if args.verbose>1:
+    print ("%s re.match(%s,file_patterns)" %(args.file,args.patterns))
+re_match(args.file,args.section,args.patterns,args.verbose)
+#re_match(configFile,section,deviceNames,verbose=0):
