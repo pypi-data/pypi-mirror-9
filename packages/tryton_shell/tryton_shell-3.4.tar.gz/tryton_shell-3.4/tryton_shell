@@ -1,0 +1,149 @@
+#!/usr/bin/env python
+""" tryton_shell: A dirty shell for Tryton to quickly interact with it
+
+    usage: tryton_shell.py [-h] --config CONFIG --database DATABASE
+
+    arguments:
+      --config CONFIG      Tryton config file.
+      --database DATABASE  Tryton database.
+
+
+    Currently we just load the config and setup pool for one database. The
+    interactive shell namespace is untouched (almost), so the packages will
+    have to be imported manually.
+
+    Two globals are added to namespace.
+
+        __tryton_database: Name of the tryton database initialized in pool
+        __tryton_admin   : ID of admin user
+
+    @author   Vishesh Yadav, Tarun Bhardwaj
+    @license  FreeBSD Licence
+"""
+
+import argparse
+import distutils.sysconfig
+import readline
+import rlcompleter
+import os
+import sys
+sys.path.append(os.getcwd())
+
+exe = execfile
+env_path = distutils.sysconfig.get_config_var("prefix")
+
+
+class TrytondHelper:
+    """A helper class to use tryton server as module. Wraps in the required
+    instantiation calls."""
+
+    def __init__(self, config_path, db_name):
+        self._db_name = db_name
+        self._context = {}
+        self.init()
+
+    def init(self):
+        """Call it after creating an instance to setup tryton for use"""
+        Pool.start()
+        pool = Pool(self._db_name)
+
+        self._pool = pool
+        _db_name = self._db_name
+        # Instantiate the pool
+        with Transaction().start(_db_name, 0, context=self._context):
+            Cache.clean(_db_name)
+            pool.init()
+        # User 0 is root user. We use it to get the admin id:
+        with Transaction().start(_db_name, 0, context=self._context):
+            user_obj = pool.get('res.user')
+            self._admin, = user_obj.search([('login', '=', 'admin')], limit=1)
+            Cache.resets(_db_name)
+        return self
+
+    def pool(self):
+        return self._pool
+
+    def dbname(self):
+        return self._db_name
+
+    def admin(self):
+        return self._admin.id
+
+    def user(self, username):
+        result = None
+        with Transaction().start(self._db_name, 0, context=self._context):
+            User = self._pool.get('res.user')
+            result = User.search([('login', '=', username)], limit=1)[0].id
+        return result
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-c', '--config', default="/etc/trytond.conf",
+                            help='Tryton config file.')
+    parser.add_argument('-d', '--database', required=True,
+                            help='Tryton database.')
+    args = parser.parse_args()
+    return (args.config, args.database)
+
+
+TRYTOND_CONFIG_PATH, TRYTOND_DATABASE_NAME = parse_args()
+print "Loading CONFIG file: '%s'" % TRYTOND_CONFIG_PATH
+print "Database: '%s'" % TRYTOND_DATABASE_NAME
+
+from trytond.config import config
+config.update_etc(TRYTOND_CONFIG_PATH)
+from trytond.cache import Cache
+from trytond.pool import Pool
+from trytond.transaction import Transaction
+
+import code
+import pprint
+pp = pprint.PrettyPrinter(indent=4)
+readline.parse_and_bind("tab: complete")
+
+
+TRYTOND_HELPER = TrytondHelper(TRYTOND_CONFIG_PATH, TRYTOND_DATABASE_NAME)
+
+
+def change_password(user, password):
+    User = Pool().get('res.user')
+    user, = User.search([('login', '=', user)])
+    user.password = password
+    user.save()
+    User._get_login_cache.clear()
+
+
+def begin_transaction(readonly=True, username=None):
+    if not username:
+        user = TRYTOND_HELPER.admin()
+    else:
+        user = TRYTOND_HELPER.user(username)
+    print "Starting new `%s` transaction for user `%s`" % (
+        'readonly' if readonly else 'readwrite', user
+    )
+    Transaction().start(
+        TRYTOND_DATABASE_NAME, user,
+        readonly=readonly, context={}
+    )
+
+
+def end_transaction(commit=True):
+    if commit:
+        Transaction().cursor.commit()
+    Transaction().stop()
+
+B = begin_transaction
+E = end_transaction
+
+vars = {
+    '__tryton_database': TRYTOND_DATABASE_NAME,
+    '__tryton_admin': TRYTOND_HELPER.admin(),
+}
+
+vars.update(locals())
+vars.update(globals())
+readline.parse_and_bind("tab: complete")
+
+shell = code.InteractiveConsole(vars)
+shell.interact()
