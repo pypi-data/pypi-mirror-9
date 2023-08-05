@@ -1,0 +1,166 @@
+<tool id="annotate_variants" name="Variant Annotation">
+  <description>Predict the effects of SNPs and indels on known genes in the reference genome using SnpEff</description>
+  <version_command>mimodd version -q</version_command>
+  <command>
+  	mimodd annotate
+	
+	"$inputfile"
+	
+	#if $str($annotool.name)=='snpeff':
+	--genome "${annotool.genomeVersion}"
+	    #if $annotool.ori_output:
+	--snpeff-out "$snpeff_file"
+	    #end if
+	    #if $annotool.stats:
+	--stats "$summary_file"
+	    #end if
+	${annotool.snpeff_settings.chr} ${annotool.snpeff_settings.no_us} ${annotool.snpeff_settings.no_ds} ${annotool.snpeff_settings.no_intron} ${annotool.snpeff_settings.no_intergenic} ${annotool.snpeff_settings.no_utr}
+	    #if $annotool.snpeff_settings.min_cov:
+	--minC "${annotool.snpeff_settings.min_cov}"
+	    #end if
+	    #if $annotool.snpeff_settings.min_qual:
+	--minQ "${annotool.snpeff_settings.min_qual}"
+	    #end if
+	    #if $annotool.snpeff_settings.ud:
+	--ud "${annotool.snpeff_settings.ud}"
+	    #end if
+	#end if
+
+	--ofile "$outputfile"
+	#if $str($formatting.oformat) == "text":
+	--oformat text
+	#end if
+	#if $str($formatting.oformat) == "html":
+	  #if $formatting.formatter_file:
+	--link "${formatting.formatter_file}"
+	  #end if
+	  #if $formatting.species
+	--species "${formatting.species}"
+	  #end if
+	#end if
+	
+	#if $str($grouping):
+	--grouping $grouping
+	#end if
+	--verbose
+  </command>
+
+  <inputs>
+    <param name="inputfile" type="data" format="vcf" label="vcf inputfile to be annotated" />
+    <param name="grouping" type="select" label="Group variants by">
+      <option value="">order in the input file</option>
+      <option value="by_sample">sample</option>
+      <option value="by_genes">most affected genes</option>
+    </param>
+    <conditional name="formatting">
+      <param name="oformat" type="select" label="Format of the annotation output file">
+	<option value="html">HTML</option>
+	<option value="text">Tab-separated plain text</option>
+      </param>
+      <when value="html">
+	<param name="formatter_file" type="data" format="txt" optional="true" label="Optional file with hyperlink formatting instructions" />
+	<param name="species" type="text" label="Species" help="Overwrite the species guess from the SnpEff genome, often not necessary" />
+      </when>
+    </conditional>
+    <conditional name="annotool">
+      <param name="name" type="select" label="Use this tool to annotate the input file" help = "Select SnpEff here, if you want to have the vcf input annotated with genomic feature information. Select None if you do not want additional annotation, if you do not have SnpEff installed, or if you have no appropriate SnpEff annotation file for the input.">
+	<option value="snpeff">SnpEff</option>
+	<option value="None">None</option>
+      </param>   
+      <when value="snpeff">
+          <param name="genome_list" type="data" format="tabular" label="genome list" /> 
+          <param name="genomeVersion" type="select" label="Genome">
+      	    <options from_dataset="genome_list">
+              <column name="name" index="0"/>
+              <column name="value" index="1"/>
+            </options>
+          </param>
+          <param name="ori_output" type="boolean" checked="true" label="Keep the original SnpEff output" />
+          <param name="stats" type="boolean" checked="true" label="Produce a summary file of results" />
+          
+	  <conditional name="snpeff_settings">
+            <param name="detail_level" type="select" label="SnpEff-specific parameter settings" help="This section lets you specify the detailed parameter settings for the SnpEff tool.">
+              <option value="default">default settings</option>
+	      <option value="change">change settings</option>
+            </param>   
+            <when value="default">
+	      ## default settings for SnpEff
+	      <param name="chr" type="hidden" value=""/>
+    	      <param name="min_cov" type="hidden" value=""/>
+    	      <param name="min_qual" type="hidden" value=""/>
+	      <param name="no_ds" type="hidden" value=""/>
+    	      <param name="no_us" type="hidden" value=""/>
+	      <param name="no_intron" type="hidden" value=""/>  
+	      <param name="no_intergenic" type="hidden" value=""/>
+	      <param name="no_utr" type="hidden" value=""/>
+	      <param name="ud" type="hidden" value=""/>
+            </when>
+            <when value="change">
+              <param name="chr" type="boolean" truevalue="-chr" falsevalue="" checked="false" label="prepend 'chr' to chromosome names, e.g., 'chr7' instead of '7'" />
+              <param name="min_cov" type="integer" optional="true" label="minimum coverage (default = not used)" help="do not include variants with a coverage lower than this value"/>
+              <param name="min_qual" type="integer" optional="true" label="minimum quality (default = not used)" help="do not include variants with a quality lower than this value"/>
+              <param name="no_ds" type="boolean" label="do not show downstream changes" truevalue="--no-downstream" falsevalue="" checked="false" help="annotation of effects on the downstream region of genes can be suppressed"/>
+              <param name="no_us" type="boolean" label="do not show upstream changes" truevalue="--no-upstream" falsevalue="" checked="false" help="annotation of effects on the upstream region of genes can be suppressed"/>
+              <param name="no_intron" type="boolean" label="do not show intron changes" truevalue="--no-intron" falsevalue="" checked="false" help="annotation of effects on introns of genes can be suppressed"/>
+              <param name="no_intergenic" type="boolean" label="do not show intergenic changes" truevalue="--no-intergenic" falsevalue="" checked="false" help="annotation of effects on intergenic regions can be suppressed"/>    
+              <param name="no_utr" type="boolean" label="do not show UTR changes" truevalue="--no-utr" falsevalue="" checked="false" help="annotation of effects on the untranslated regions of genes can be suppressed"/>
+              <param name="ud" type="integer" optional="true" label="upstream downstream interval length (default = 5000 bases)" help="specify the upstream/downstream interval length, i.e., variants more than INTERVAL nts from the next annotated gene are considered to be intergenic"/>
+            </when>
+	  </conditional>
+      </when>
+    </conditional>    
+  </inputs>
+
+  <outputs>
+    <data name="outputfile" format="html" >
+      <change_format>
+	<when input="formatting.oformat" value="text" format="tabular"/>
+      </change_format>
+    </data>
+    <data name="snpeff_file" format="vcf" >
+      <filter>(annotool['name']=="snpeff" and annotool['ori_output'])</filter>
+    </data>
+    <data name="summary_file" format="html">
+      <filter>(annotool['name']=="snpeff" and annotool['stats'])</filter>
+    </data>
+  </outputs>
+
+  <help>
+.. class:: infomark
+
+   **What it does**
+
+The tool turns a variant list in VCF format into a more readable summary table listing variant sites and effects.
+
+If installed, the variant annotation tool SnpEff can be used transparently to determine the genomic features, e.g., genes or transcripts, affected by the variants.
+
+Use of this feature requires that you have an appropriate SnpEff genome file installed on the host machine. You can use the *List installed SnpEff genomes* tool to generate a list of all available SnpEff genomes.
+This list can then be used (by selecting the dataset as the *genome list*) to populate the *genome* dropdown menu, from which you can select the SnpEff genome file to be used for the annotation.
+
+As output file formats HTML or plain text are supported.
+In HTML mode, variant positions and/or affected genomic features can be turned into hyperlinks to corresponding views in web-based genome browsers and databases.
+
+The behavior of this feature depends on:
+
+1) Recognition of the species that is analyzed
+
+   You can declare the species you are working with using the *Species* text field.
+   If you are not declaring the species explicitly, but are choosing SnpEff for effect annotation, the tool will usually be able to auto-detect the species from the SnpEff genome you are using.
+   If no species gets assigned in either way, no hyperlinks will be generated and the html output will look essentially like plain text.
+   
+2) Available hyperlink formatting rules for this species
+   
+   When the species has been recognized, the tool checks if you have selected an *optional file with hyperlink formatting instructions*.
+   If you did and that file contains an entry matching the recognized species, that entry will be used as a template to construct the hyperlinks.
+   If no matching entry is found in the file, an error will be raised.
+   
+   If you did not supply a hyperlink formatting instruction file, the tool will consult an internal lookup table to see if it finds default rules for the construction of the hyperlinks for the species.
+   If not, no hyperlinks will be generated and the html output will look essentially like plain text.
+   
+   **TIP:**
+   MiModD's internal hyperlink formatting lookup tables are maintained and growing with every new version, but since weblinks are changing frequently as well, it is possible that you will encounter broken hyperlinks for your species of interest. In such a case, you can resort to two things: `tell us about the problem`_ to make sure it gets fixed in the next release and, in the meantime, use a custom file with hyperlink formatting instructions to overwrite the default entry for your species.
+   
+.. _tell us about the problem: mailto:mimodd@googlegroups.com
+  </help>
+</tool>
+	
