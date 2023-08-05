@@ -1,0 +1,247 @@
+.. doctest-skip-all
+
+.. _whatsnew-1.0:
+
+==========================
+What's New in Astropy 1.0?
+==========================
+
+Overview
+--------
+
+
+About Long-term support
+-----------------------
+
+Astropy v1.0 is a long-term support (LTS) release.  This means v1.0 will
+be supported with bug fixes for 2 years from its release, rather than 6
+months like the non-LTS releases. More details about this, including a
+wider rationale for Astropy's version numbering scheme, can be found in
+`Astropy Proposal for Enhancement 2  <https://github.com/astropy/astropy-APEs/blob/master/APE2.rst>`_.
+
+Support for Alt/Az coordinates
+------------------------------
+
+The `~astropy.coordinates` package now supports conversion to/from AltAz
+coordinates.  This means `~astropy.coordinates` can now be used for planning
+observations.  For example::
+
+    >>> from astropy import units as u
+    >>> from astropy.time import Time
+    >>> from astropy.coordinates import SkyCoord, EarthLocation, AltAz
+    >>> greenwich = EarthLocation(lat=51.477*u.deg,lon=0*u.deg)
+    >>> albireo = SkyCoord('19h30m43.2805s +27d57m34.8483s')
+    >>> altaz = albireo.transform_to(AltAz(location=greenwich, obstime=Time('2014-6-21 0:00')))
+    >>> print altaz.alt, altaz.az
+    60d32m28.4576s 133d45m36.4967s
+
+For a more detailed outline of this new functionality, see the
+:ref:`observing-example` and the `~astropy.coordinates.AltAz` documentation.
+
+To enable this functionality, `~astropy.coordinates` now also contains
+the full IAU-sanctioned coordinate transformation stack from ICRS to AltAz.
+To view the full set of coordinate frames now available, see the coordinates
+:ref:`astropy-coordinates-api`.
+
+
+New Galactocentric coordinate frame
+-----------------------------------
+
+Added a new, customizable :class:`~astropy.coordinates.Galactocentric`
+coordinate frame. The other coordinate frames (e.g.,
+:class:`~astropy.coordinates.ICRS`, :class:`~astropy.coordinates.Galactic`)
+are all Heliocentric (or barycentric). The center of this new coordinate frame
+is at the center of the Galaxy, with customizable parameters allowing the user
+to specify the distance to the Galactic center (``galcen_distance``), the
+ICRS position of the Galactic center (``galcen_ra``, ``galcen_dec``), the
+height of the Sun above the Galactic midplane (``z_sun``), and a final roll
+angle that allows for specifying the orientation of the z axis (``roll``)::
+
+    >>> from astropy import units as u
+    >>> from astropy.coordinates import SkyCoord, Galactocentric
+    >>> c = SkyCoord(ra=152.718 * u.degree,
+    ...              dec=-11.214 * u.degree,
+    ...              distance=21.5 * u.kpc)
+    >>> c.transform_to(Galactocentric)
+    <SkyCoord (Galactocentric: galcen_distance=8.3 kpc, galcen_ra=266d24m18.36s, galcen_dec=-28d56m10.23s, z_sun=27.0 pc, roll=0.0 deg): (x, y, z) in kpc
+        (-13.6512648452, -16.6847348677, 12.4862582821)>
+    >>> c.transform_to(Galactocentric(galcen_distance=8*u.kpc, z_sun=15*u.pc))
+    <SkyCoord (Galactocentric: galcen_distance=8.0 kpc, galcen_ra=266d24m18.36s, galcen_dec=-28d56m10.23s, z_sun=15.0 pc, roll=0.0 deg): (x, y, z) in kpc
+        (-13.368458678, -16.6847348677, 12.466872262)>
+
+New :ref:`astropy-visualization` subpackage
+-------------------------------------------
+
+The new :ref:`Data Visualization <astropy-visualization>` package is intended
+to collect functionality that can be helpful when visualizing data. At the
+moment, the main functionality is image normalizing (including both scaling and
+stretching) but this will be expanded in future. Included in the image
+normalization functionality is the ability to compute interval limits on data,
+(such as percentile limits), stretching with non-linear functions (such as
+square root or arcsinh functions), and the ability to use custom stretches in
+`Matplotlib <http://www.matplotlib.org>`_ that are correctly reflected in the
+colorbar:
+
+.. plot::
+   :include-source:
+   :align: center
+
+    import numpy as np
+    import matplotlib.pyplot as plt
+
+    from astropy.visualization import SqrtStretch
+    from astropy.visualization.mpl_normalize import ImageNormalize
+
+    # Generate test image
+    image = np.arange(65536).reshape((256, 256))
+
+    # Create normalizer object
+    norm = ImageNormalize(vmin=0., vmax=65536, stretch=SqrtStretch())
+
+    fig = plt.figure(figsize=(6,3))
+    ax = fig.add_subplot(1,1,1)
+    im = ax.imshow(image, norm=norm, origin='lower', aspect='auto')
+    fig.colorbar(im)
+
+New :ref:`astropy_analytic_functions` subpackage
+------------------------------------------------
+
+This subpackage provides analytic functions that are commonly used in
+astronomy. These already understand `~astropy.units.Quantity`, i.e., they can
+handle units of input and output parameters. For instance, to calculate the
+blackbody flux for 10000K at 6000 Angstrom:
+
+>>> astropy import units as u
+>>> from astropy.analytic_functions import blackbody_lambda, blackbody_nu
+>>> blackbody_lambda(6000 * u.AA, 10000 * u.K)
+<Quantity 15315791.836941158 erg / (Angstrom cm2 s sr)>
+>>> blackbody_nu(6000 * u.AA, 10000 * u.K)
+<Quantity 0.00018391673686797075 erg / (cm2 Hz s sr)
+
+See :ref:`astropy_analytic_functions` for more details.
+
+In future versions of Astropy, the functions in this module might also be
+accessible as `~astropy.modeling.Model` classes.
+
+Fast readers/writers for ASCII files
+------------------------------------
+
+The :mod:`astropy.io.ascii` module now includes a significantly faster Cython/C engine
+for reading and writing ASCII files.  This is available for the following
+formats: ``basic``, ``commented_header``, ``csv``, ``no_header``, ``rdb``, and
+``tab``.  On average the new engine is about 4 to 5 times faster than the
+corresponding pure-Python implementation, and is often comparable to the speed
+of the `pandas <http://pandas.pydata.org/pandas-docs/stable/>`_ ASCII file
+interface (`read_csv
+<http://pandas.pydata.org/pandas-docs/stable/io.html#io-read-csv-table>`_ and
+`to_csv
+<http://pandas.pydata.org/pandas-docs/stable/io.html#io-store-in-csv>`_).  The
+fast reader has parallel processing option that allows harnessing multiple
+cores for input parsing to achieve even greater speed gains.
+
+By default, :func:`~astropy.io.ascii.read` and :func:`~astropy.io.ascii.write`
+will attempt to use the fast C engine when dealing with compatible formats.
+Certain features of the full read / write interface are not available in the
+fast version, in which case the pure-Python version will automatically be used.
+
+For full details including extensive performance testing, see :ref:`fast_ascii_io`.
+
+New features in :ref:`astropy-modeling`
+---------------------------------------
+
+New subclasses of `~astropy.modeling.Model` are now a bit easier to define,
+requiring less boilerplate code in general.  Now all that is necessary to
+define a new model class is an `~astropy.modeling.Model.evaluate` method that
+computes the model.  Optionally one can define :ref:`fittable parameters
+<modeling-parameters>`, a `~astropy.modeling.FittableModel.fit_deriv`, and/or
+an `~astropy.modeling.Model.inverse`.  The new, improved
+`~astropy.modeling.custom_model` decorator reduces to boilerplate needed for
+many models even more.  See :ref:`modeling-new-classes` for more details.
+
+Array broadcasting has also been improved, enabling a broader range of
+possibilities for the values of model parameters and inputs.  Support has also
+been improved for :ref:`modeling-model-sets` (previously referred to as
+parameter sets) which can be thought of like an array of models of the same
+class, each with different sets of parameters, which can be fitted
+simultaneously either to the same data, or to different data sets per model.
+See :ref:`modeling-instantiating` for more details.
+
+It is now possible to create *compound* models by combining existing models
+using the standard arithmetic operators such as ``+`` and ``*``, as well as
+functional composition using the ``|`` operator.  This provides a powerful
+and flexible new way to create more complex models without having to define
+any special classes or functions.  For example::
+
+    >>> from astropy.modeling.models import Gaussian1D
+    >>> gaussian1 = Gaussian1D(1, 0, 0.2)
+    >>> gaussian2 = Gaussian1D(2.5, 0.5, 0.1)
+    >>> sum_of_gaussians = gaussian1 + gaussian2
+
+The resulting model works like any other model, and also works with the
+fitting framework.  See the
+:ref:`introduction to compound models <compound-models-intro>` and full
+:ref:`compound models documentation <compound-models>` for more examples.
+
+Support for 'mixin' columns in :ref:`astropy-table`
+---------------------------------------------------
+
+.. |Quantity| replace:: :class:`~astropy.units.Quantity`
+.. |Time| replace:: :class:`~astropy.time.Time`
+.. |SkyCoord| replace:: :class:`~astropy.coordinates.SkyCoord`
+.. |Table| replace:: :class:`~astropy.table.Table`
+.. |Column| replace:: :class:`~astropy.table.Column`
+.. |QTable| replace:: :class:`~astropy.table.QTable`
+
+Version 1.0 of astropy introduces a new concept of the "Mixin
+Column" in tables which allows integration of appropriate non-|Column| based
+class objects within a |Table| object.  These mixin column objects are not
+converted in any way but are used natively.
+
+The available built-in mixin column classes are |Quantity|, |SkyCoord|, and
+|Time|.  User classes for array-like objects that support the
+:ref:`mixin_protocol` can also be used in tables as mixin columns.
+
+.. Warning::
+
+   While the astropy developers are excited about this new capability and
+   intend to improve it, the interface for using mixin columns is not stable at
+   this point and it is not recommended for use in production code.
+
+As an example we can create a table and add a time column::
+
+  >>> from astropy.table import Table
+  >>> from astropy.time import Time
+  >>> t = Table()
+  >>> t['index'] = [1, 2]
+  >>> t['time'] = Time(['2001-01-02T12:34:56', '2001-02-03T00:01:02'])
+  >>> print(t)
+  index           time
+  ----- -----------------------
+      1 2001-01-02T12:34:56.000
+      2 2001-02-03T00:01:02.000
+
+The important point here is that the ``time`` column is a bona fide |Time| object::
+
+  >>> t['time']
+  <Time object: scale='utc' format='isot' value=['2001-01-02T12:34:56.000' '2001-02-03T00:01:02.000']>
+  >>> t['time'].mjd
+  array([ 51911.52425926,  51943.00071759])
+
+For all the details, including a new |QTable| class, please see :ref:`mixin_columns`.
+
+Deprecation and backward-incompatible changes
+---------------------------------------------
+
+.. Dropped support for Numpy 1.5
+.. Other big API changes
+
+Full change log
+---------------
+
+To see a detailed list of all changes in version 1.0 and prior, please see the
+:ref:`changelog`.
+
+Note on future versions
+-----------------------
+
+
