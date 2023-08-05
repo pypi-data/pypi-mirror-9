@@ -1,0 +1,5 @@
+
+
+
+class ProjectorDoesNotExist(LookupError):
+    pass
