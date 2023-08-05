@@ -1,0 +1,165 @@
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>A bird’s eye view of FireWorks &mdash; FireWorks 0.32 documentation</title>
+    
+    <link rel="stylesheet" href="_static/nature.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '',
+        VERSION:     '0.32',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="top" title="FireWorks 0.32 documentation" href="index.html" />
+    <link rel="next" title="Quickstart and Installation" href="quickstart.html" />
+    <link rel="prev" title="Is FireWorks for me?" href="index.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="quickstart.html" title="Quickstart and Installation"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="index.html" title="Is FireWorks for me?"
+             accesskey="P">previous</a> |</li>
+        <li><a href="index.html">FireWorks 0.32 documentation</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="a-bird-s-eye-view-of-fireworks">
+<h1>A bird&#8217;s eye view of FireWorks<a class="headerlink" href="#a-bird-s-eye-view-of-fireworks" title="Permalink to this headline">¶</a></h1>
+<p>While FireWorks provides many features, its basic operation is simple. You can run FireWorks on a single laptop or at a supercomputing center.</p>
+<div class="section" id="centralized-server-and-worker-model">
+<h2>Centralized Server and Worker Model<a class="headerlink" href="#centralized-server-and-worker-model" title="Permalink to this headline">¶</a></h2>
+<p>There are essentially just two components of a FireWorks installation:</p>
+<ul class="simple">
+<li>A <strong>server</strong> (&#8220;LaunchPad&#8221;) that manages workflows. You can add workflows (a DAG of &#8220;FireWorks&#8221;) to the LaunchPad, query for the state of your workflows, or rerun workflows.</li>
+<li>One or more <strong>workers</strong> (&#8220;FireWorkers&#8221;) that run your jobs. The FireWorkers request workflows from the LaunchPad, execute them, and send back information. The FireWorker can be as simple as the same workstation used to host the LaunchPad, or complicated like a national supercomputing center with a queueing system.</li>
+</ul>
+<p>The basic infrastructure looks like this:</p>
+<img alt="FireWorks Model" class="align-center" src="_images/fw_model.png" style="width: 400px;" />
+<p>The components are largely decoupled, which makes FireWorks easier to use. End users can add new workflows to the LaunchPad without worrying about the details of how and where the workflows will be run (unless they really want to tailor the details of job execution). This keeps the workflow specifications lightweight, tidy, and easy to learn and use (if you&#8217;ve ever seen lengthy XML-based specifications in other workflow software, you&#8217;ll notice the difference in FireWorks right away).</p>
+<p>On the opposite end, administrators can configure worker computers without worrying about where workflows are coming from or what they look like (although you can assign jobs to certain resources if desired). Running on a heterogeneous set of worker computers is simple because essentially the same code is used internally by FireWorks for running on a simple workstation, a large supercomputing center, or packing together many jobs into a single queue submission.</p>
+</div>
+<div class="section" id="workflow-model">
+<span id="wfmodel-label"></span><h2>Workflow Model<a class="headerlink" href="#workflow-model" title="Permalink to this headline">¶</a></h2>
+<p>Workflows in FireWorks are made up of three main components:</p>
+<ul class="simple">
+<li>A <strong>FireTask</strong> is an atomic computing job. It can call a single shell script or execute a single Python function that you define (either within FireWorks, or in an external package). Each FireTask receives input data in the form of a JSON specification. <em>Note: if you want to run non-Python code (e.g., C++ or Java code), you must either call the code as a shell script or write a Python function that executes your code (perhaps using a Python binding to that language for tighter integration).</em></li>
+<li>A <strong>FireWork</strong> contains the JSON <em>spec</em> that includes all the information needed to bootstrap your job. For example, the spec contains an array of FireTasks to execute in sequence. The spec also includes any input parameters to pass to your FireTasks. You can easily perform the same function over different input data by creating FireWorks with identical FireTasks but different input parameters in the spec. You can design your spec however you&#8217;d like, as long as it&#8217;s valid JSON. The JSON format used for FireWork specs is extremely flexible, very easy to learn (Python users familiar with <em>dicts</em> and <em>arrays</em> essentially already know JSON), and immediately makes rich searches over the input data available to end users through MongoDB&#8217;s JSON document search capabilities.</li>
+<li>A <strong>Workflow</strong> is a set of FireWorks with dependencies between them. For example, you might need a parent FireWork to finish and generate some output files before running two child FireWorks.</li>
+</ul>
+<p>Between FireWorks, you can return a <strong>FWAction</strong> that can store data or modify the Workflow depending on the output (e.g., pass data to the next step, cancel the remaining parts of the Workflow, or even add new FireWorks that are defined within the object).</p>
+<img alt="FireWorks Workflow" class="align-center" src="_images/multiple_fw.png" style="width: 400px;" />
+<p>At this point, you may be wondering how to organize a set of computations into FireTasks, FireWorks, and Workflows. For example, to run 3 shell scripts in succession, one might choose a single FireWork with 3 FireTasks or three FireWorks that each have 1 FireTask. Both are viable options with different strengths and possibilities. Over the course of the FireWorks tutorials, we&#8217;ll distinguish these a little more (in particular, in the <a class="reference internal" href="design_tips.html"><em>FW design tips</em></a>).</p>
+</div>
+<div class="section" id="but-wait-there-s-more">
+<h2>But wait - there&#8217;s more!<a class="headerlink" href="#but-wait-there-s-more" title="Permalink to this headline">¶</a></h2>
+<p>While the description above sounds simplistic, sophisticated types of workflow operation are possible with FireWorks. For example, you can:</p>
+<ul class="simple">
+<li>send different categories of FireWorks to different FireWorkers</li>
+<li>get the status of your all your jobs, where they&#8217;re running, and how long they took to run or waited in the queue</li>
+<li>create and modify job priorities</li>
+<li>pack small jobs into larger ones (e.g define 1000 serial workflows and automatically parallelize them over 100 processors).</li>
+<li>automatically prevent duplicating runs, even if different users submit the same thing to the LaunchPad</li>
+<li>handle failures and crashes dynamically, by automatically creating FireWorks that fix crashed jobs in the FWAction object. You might even set up a workflow where a crashed job is automatically rerun at a different FireWorker, and with somewhat different parameters - no human intervention required!</li>
+</ul>
+<p>If this sounds good, we encourage you to get started by following the <a class="reference internal" href="quickstart.html"><em>quickstart</em></a>.</p>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h3><a href="index.html">Table Of Contents</a></h3>
+  <ul>
+<li><a class="reference internal" href="#">A bird&#8217;s eye view of FireWorks</a><ul>
+<li><a class="reference internal" href="#centralized-server-and-worker-model">Centralized Server and Worker Model</a></li>
+<li><a class="reference internal" href="#workflow-model">Workflow Model</a></li>
+<li><a class="reference internal" href="#but-wait-there-s-more">But wait - there&#8217;s more!</a></li>
+</ul>
+</li>
+</ul>
+
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="index.html"
+                        title="previous chapter">Is FireWorks for me?</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="quickstart.html"
+                        title="next chapter">Quickstart and Installation</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="_sources/birdseyeview.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="quickstart.html" title="Quickstart and Installation"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="index.html" title="Is FireWorks for me?"
+             >previous</a> |</li>
+        <li><a href="index.html">FireWorks 0.32 documentation</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2013, Anubhav Jain.
+      Created using <a href="http://sphinx.pocoo.org/">Sphinx</a> 1.1.3.
+    </div>
+  </body>
+</html>
