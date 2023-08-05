@@ -1,0 +1,2 @@
+from .ApplicationInsightsHandler import enable
+from .ApplicationInsightsHandler import ApplicationInsightsHandler
