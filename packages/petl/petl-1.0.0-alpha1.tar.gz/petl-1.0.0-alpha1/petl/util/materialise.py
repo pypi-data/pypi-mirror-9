@@ -1,0 +1,162 @@
+from __future__ import absolute_import, print_function, division
+
+
+import operator
+from itertools import islice
+from petl.compat import izip_longest
+
+
+from petl.util.base import asindices, Table
+
+
+def listoflists(tbl):
+    return [list(row) for row in tbl]
+
+
+Table.listoflists = listoflists
+Table.lol = listoflists
+
+
+def tupleoftuples(tbl):
+    return tuple(tuple(row) for row in tbl)
+
+
+Table.tupleoftuples = tupleoftuples
+Table.tot = tupleoftuples
+
+
+def listoftuples(tbl):
+    return [tuple(row) for row in tbl]
+
+
+Table.listoftuples = listoftuples
+Table.lot = listoftuples
+
+
+def tupleoflists(tbl):
+    return tuple(list(row) for row in tbl)
+
+
+Table.tupleoflists = tupleoflists
+Table.tol = tupleoflists
+
+
+def columns(table, missing=None):
+    """
+    Construct a :class:`dict` mapping field names to lists of values. E.g.::
+
+        >>> import petl as etl
+        >>> table = [['foo', 'bar'], ['a', 1], ['b', 2], ['b', 3]]
+        >>> cols = etl.columns(table)
+        >>> cols['foo']
+        ['a', 'b', 'b']
+        >>> cols['bar']
+        [1, 2, 3]
+
+    See also :func:`petl.util.materialise.facetcolumns`.
+
+    """
+
+    cols = dict()
+    it = iter(table)
+    fields = [str(f) for f in next(it)]
+    for f in fields:
+        cols[f] = list()
+    for row in it:
+        for f, v in izip_longest(fields, row, fillvalue=missing):
+            if f in cols:
+                cols[f].append(v)
+    return cols
+
+
+Table.columns = columns
+
+
+def facetcolumns(table, key, missing=None):
+    """
+    Like :func:`petl.util.materialise.columns` but stratified by values of the
+    given key field. E.g.::
+
+        >>> import petl as etl
+        >>> table = [['foo', 'bar', 'baz'],
+        ...          ['a', 1, True],
+        ...          ['b', 2, True],
+        ...          ['b', 3]]
+        >>> fc = etl.facetcolumns(table, 'foo')
+        >>> fc['a']
+        {'foo': ['a'], 'baz': [True], 'bar': [1]}
+        >>> fc['b']
+        {'foo': ['b', 'b'], 'baz': [True, None], 'bar': [2, 3]}
+
+    """
+
+    fct = dict()
+    it = iter(table)
+    fields = [str(f) for f in next(it)]
+    indices = asindices(fields, key)
+    assert len(indices) > 0, 'no key field selected'
+    getkey = operator.itemgetter(*indices)
+
+    for row in it:
+        kv = getkey(row)
+        if kv not in fct:
+            cols = dict()
+            for f in fields:
+                cols[f] = list()
+            fct[kv] = cols
+        else:
+            cols = fct[kv]
+        for f, v in izip_longest(fields, row, fillvalue=missing):
+            if f in cols:
+                cols[f].append(v)
+
+    return fct
+
+
+Table.facetcolumns = facetcolumns
+
+
+def cache(table, n=10000):
+    """
+    Wrap the table with a cache that caches up to `n` rows as they are initially
+    requested via iteration.
+
+    """
+
+    return CacheView(table, n=n)
+
+
+Table.cache = cache
+
+
+class CacheView(Table):
+
+    def __init__(self, inner, n=10000):
+        self._inner = inner
+        self._n = n
+        self._cache = list()
+        self._cachecomplete = False
+
+    def clearcache(self):
+        self._cache = list()
+        self._cachecomplete = False
+
+    def __iter__(self):
+
+        # serve whatever is in the cache first
+        for row in self._cache:
+            yield row
+
+        if not self._cachecomplete:
+
+            # serve the remainder from the inner iterator
+            it = iter(self._inner)
+            for row in islice(it, len(self._cache), None):
+                # maybe there's more room in the cache?
+                if len(self._cache) < self._n:
+                    self._cache.append(row)
+                yield row
+
+            # does the cache contain a complete copy of the inner table?
+            if len(self._cache) < self._n:
+                object.__setattr__(self, '_cachecomplete', True)
