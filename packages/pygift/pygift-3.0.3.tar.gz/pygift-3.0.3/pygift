@@ -1,0 +1,380 @@
+#!/usr/bin/env python2.7
+import argparse
+import hashlib
+import glob
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import urllib2
+
+from pip.req import InstallRequirement
+
+
+class App(object):
+    safe_reqs = ['pytz']
+
+    def __init__(self):
+        self.project_dir = os.path.abspath(os.getcwd())
+
+        home_dir = os.getenv('HOME')
+        assert home_dir, repr(home_dir)
+        self.stor_dir = os.path.join(home_dir, '.pygift')
+        if not os.path.exists(self.stor_dir):
+            os.makedirs(self.stor_dir)
+
+        self.reqs_txt = os.path.join(self.project_dir, 'requirements.txt')
+        if not os.path.exists(self.reqs_txt):
+            self.fail('requirements.txt not found')
+
+        self.handle_legacy_reqs()
+
+        conf_path = os.path.join(self.project_dir, 'pygift.json')
+        if not os.path.exists(conf_path):
+            self.fail('pygift.json not found, example:\n{}', REGISTRY_EXAMPLE)
+
+        with open(conf_path) as fp:
+            self.conf = json.load(fp)
+
+        self.index_dir = os.path.join(self.stor_dir, 'index')
+        if not os.path.exists(self.index_dir):
+            os.makedirs(self.index_dir)
+
+    def handle_legacy_reqs(self):
+        with open(self.reqs_txt) as fp:
+            original = fp.read()
+        fixed = re.sub(
+            r'([.0-9a-zA-Z_\-]+)==(?:999\.)?git\.([0-9a-f]{40})',
+            r'\1==999.dev0+pygift.\2',
+            original,
+        )
+        fixed = re.sub(
+            r'(--index-url[^\n]+/pygift/\S+)',
+            r'# disabled as legacy: \1',
+            fixed,
+        )
+        assert fixed != original
+        fixed_path = os.path.join(
+            self.stor_dir,
+            'reqs-{}.txt'.format(hashlib.sha1(self.reqs_txt).hexdigest()[:6])
+        )
+        if fixed == original:
+            return
+
+        # self.info('legacy version scheme found in your reqs.txt')
+        # self.info('consider switching to newer one, like in {}', fixed_path)
+        self.reqs_txt = fixed_path
+
+        if os.path.exists(fixed_path):
+            with open(fixed_path) as fp:
+                fixed_current = fp.read()
+            if fixed_current == fixed:
+                return
+        with open(fixed_path, 'w') as fp:
+            fp.write(fixed)
+
+    def parse_reqs(self):
+        with open(self.reqs_txt) as fp:
+            raw = fp.read()
+
+        ignore = re.compile(r'^[-#]')
+        reqs = []
+        for line in raw.strip().splitlines():
+            m = re.match(r'^\s*[^#]+\S#egg=\S+', line)
+            if m is not None:
+                line = m.group(0).strip()
+            else:
+                line = line.split('#', 1)[0].strip()
+            if not len(line) or ignore.match(line):
+                continue
+            reqs.append(InstallRequirement.from_line(line))
+        return reqs
+
+    def test_pip_version(self):
+        try:
+            InstallRequirement.from_line('foo==0.dev0+hash')
+        except ValueError:
+            self.fail('newer global pip required: `pip install -U pip`')
+
+    def handle_venv(self):
+        venv = os.getenv('VIRTUAL_ENV')
+        if not (venv and os.path.exists(venv)):
+            if not self.cli_args.allow_global:
+                self.fail('virtualenv not active, use -g to ignore')
+
+    def run(self):
+        self.handle_args()
+        self.handle_venv()
+        self.test_pip_version()
+        reqs = self.parse_reqs()
+
+        links = []
+        for req in reqs:
+            if not len(req.req.specs) == 1:
+                self.fail('"{}" version isn\'t frozen, please fix', req.req)
+            op, version_spec = req.req.specs[0]
+            assert (
+                op == '==' or (
+                    op == '>='
+                    and req.req.project_name in self.safe_reqs
+                )
+            ), req.req
+
+            assert '_' not in req.req.project_name, req.req.project_name
+
+            if re.match(r'^(\d+[.])*[0-9a-z\-]+$', version_spec):
+                target_wc = os.path.join(
+                    self.index_dir,
+                    '{}-{}[.-]*'.format(
+                        req.req.project_name.replace('-', '[_-]'),
+                        version_spec if op == '==' else '*',
+                    )
+                )
+                if len(glob.glob(target_wc)) > 0:
+                    continue
+                # self.info('nothing found for {}', target_wc)
+                self.info('fetching {}', req.req)
+
+                meta = self.conf.get(req.req.project_name)
+                if meta and meta.get('allow-external'):
+                    extra = [
+                        '--allow-external', req.req.project_name,
+                        '--allow-unverified', req.req.project_name,
+                    ]
+                else:
+                    extra = []
+
+                subprocess.check_call([
+                    'pip', 'install',
+                    '--quiet',
+                    '--no-deps',
+                    '--download', self.index_dir,
+                ] + extra + [
+                    '{}{}{}'.format(req.req.project_name, op, version_spec)
+                ])
+                continue
+
+            m = re.match(r'^999\.dev0\+pygift\.([0-9a-f]{40})$', version_spec)
+            assert m is not None, req.req
+            commit = m.group(1)
+
+            link = self.build_package(req.req.project_name, commit)
+            links.append('-f')
+            links.append('file://{}'.format(link))
+
+        self.info('sources downloaded, installing now')
+        os.execvp('pip', [
+            'pip', 'install',
+            # '-vvv',
+            '--no-index',
+            '--quiet',
+        ] + links + [
+            '-r', self.reqs_txt,
+            '-f', self.index_dir,
+        ])
+
+    def version(self, commit, mode=None):
+        return '999.dev0+pygift.{}'.format(commit)
+
+    def build_package(self, pkg, commit):
+        target = os.path.join(
+            self.index_dir,
+            '{}-{}.tar.gz'.format(pkg, self.version(commit, 'path')),
+        )
+        if os.path.exists(target):
+            return target
+
+        self.info('building {}=={}', pkg, commit)
+
+        archive_url, archive_sub_dir = (
+            self.get_remote_archive_url(pkg, commit)
+            or (None, None)
+        )
+        if archive_url is None:
+            self.fail('add "{}" to your pygift.json', pkg)
+        self.fetch_n_build_archive(
+            archive_url,
+            commit=commit,
+            pkg=pkg,
+            archive_sub_dir=archive_sub_dir,
+            target=target,
+        )
+        return target
+
+    def get_remote_archive_url(self, pkg, commit):
+        meta = self.conf.get(pkg)
+        if meta is None:
+            return None
+
+        tpl = meta.get('url')
+        if tpl is None:
+            return None
+
+        url = tpl.format(commit=commit, pkg=pkg)
+        assert url != tpl, 'package spec without {commit} found'
+        return url, meta.get('sub_dir')
+
+    def fetch_n_build_archive(
+        self, archive_url, commit,
+        pkg, archive_sub_dir, target
+    ):
+        ver = self.version(commit, 'setup')
+        tmp_base = tempfile.mkdtemp()
+        try:
+            self.info('fetching {!r}', archive_url)
+            src = urllib2.urlopen(archive_url, timeout=50)
+
+            attachment_filename = os.path.basename(archive_url)
+            disposition = src.info().getheader('Content-Disposition')
+            if disposition is not None:
+                params = [v.split('=', 1) for v in disposition.split('; ')]
+                attachment_filename = os.path.basename(next(
+                    v for v in params if v[0] == 'filename' and len(v) == 2
+                )[1].strip('"'))
+
+            dst_path = os.path.join(tmp_base, attachment_filename)
+
+            with open(dst_path, 'w') as dst:
+                done = 0
+                chunk = 5*(1024**2)
+                buf = '-'
+                while buf != '':
+                    buf = src.read(chunk)
+                    done += len(buf)
+                    dst.write(buf)
+                    # self.info('done {} mb', round(done/1024./1024., 1))
+            src.close()
+            # self.info('done, unpacking {!r}', dst_path)
+            self.unpack(dst_path, tmp_base)
+            os.unlink(dst_path)
+
+            subdir = list(glob.glob(tmp_base + '/*'))
+            subdir = [d for d in subdir if os.path.isdir(d)]
+            assert len(subdir) == 1, repr(subdir)
+            subdir = subdir[0]
+
+            if archive_sub_dir:
+                subdir = os.path.join(subdir, archive_sub_dir)
+
+            self.info('done, patching')
+            with open(os.path.join(subdir, 'setup.py')) as fp:
+                orig_setup_code = fp.read()
+            orig_setup_code = orig_setup_code.replace("'''", "''' \"'''\" '''")
+            with open(os.path.join(subdir, 'setup.py'), 'w') as fp:
+                fp.write(
+                    SETUP_PY_TPL.format(
+                        version=ver,
+                        orig_setup_code=orig_setup_code,
+                    )
+                )
+            self.info('done, packing back')
+            subprocess.check_call(
+                (
+                    'tar', '-czf',
+                    os.path.join(tmp_base, 'new.tar'),
+                    os.path.basename(subdir)
+                ),
+                cwd=os.path.dirname(subdir),
+            )
+            self.info('done, returning back to user')
+
+            os.rename(os.path.join(tmp_base, 'new.tar'), target)
+            self.info('saved to {}', target)
+        finally:
+            shutil.rmtree(tmp_base)
+
+    def unpack(self, dst_path, tmp_base):
+        if dst_path.endswith('.tar'):
+            cmd = ['tar', '-xf']
+        elif dst_path.endswith(('.tar.gz', '.tgz')):
+            cmd = ['tar', '--gzip', '-xf']
+        elif dst_path.endswith(('.tar.bz2', '.tbz2')):
+            cmd = ['tar', '--bzip2', '-xf']
+        elif dst_path.endswith(('.tar.xz', '.txz')):
+            cmd = ['tar', '--xz', '-xf']
+        elif dst_path.endswith('.zip'):
+            cmd = ['unzip', '-q']
+        else:
+            assert False, 'unsupported archive: {!r}'.format(
+                os.path.basename(dst_path)
+            )
+
+        cmd = cmd + [dst_path]
+        try:
+            output = subprocess.check_output(
+                cmd,
+                cwd=tmp_base,
+                stderr=subprocess.STDOUT
+            )
+            self.info('unpack output: {}', output.rstrip())
+        except subprocess.CalledProcessError as e:
+            self.info('unpack failed {!r} {}', cmd, e.output.rstrip())
+            raise
+
+    def info(self, msg, *args, **kwargs):
+        if len(args) or len(kwargs):
+            msg = msg.format(*args, **kwargs)
+        print(msg)
+
+    def fail(self, msg, *args, **kwargs):
+        if len(args) or len(kwargs):
+            msg = msg.format(*args, **kwargs)
+        if isinstance(msg, unicode):
+            msg = msg.encode('utf-8')
+        sys.stderr.write('!!! ' + msg + '\n')
+        sys.exit(1)
+
+    def handle_args(self):
+        parser = argparse.ArgumentParser()
+        parser.add_argument(
+            '--allow-global', '-g',
+            help='allow install outside of virtualenv',
+            action='store_true',
+        )
+        self.cli_args = parser.parse_args()
+
+
+SETUP_PY_TPL = """
+def versioned_du_setup(**attrs):
+    attrs['version'] = {version!r}
+    return core_du_setup(**attrs)
+
+import distutils.core
+core_du_setup = distutils.core.setup
+distutils.core.setup = versioned_du_setup
+
+
+def versioned_st_setup(**attrs):
+    attrs['version'] = {version!r}
+    return core_st_setup(**attrs)
+
+import setuptools
+core_st_setup = setuptools.setup
+setuptools.setup = versioned_st_setup
+
+
+orig_setup_code = r'''
+{orig_setup_code}
+'''
+exec(compile(orig_setup_code, __file__, 'exec'))
+""".lstrip()
+
+REGISTRY_EXAMPLE = json.dumps({
+    "corpauth": {
+        "sub_dir": "corpauth_python",
+        "url": (
+            "http://gitlab.example.com"
+            "/devteam/{pkg}/repository/archive?format=zip&ref={commit}"
+        )
+    },
+    "funnycats": {
+        "url": "https://github.com/example/{pkg}/archive/{commit}.zip"
+    }
+}, indent=2)
+
+
+if __name__ == '__main__':
+    App().run()
