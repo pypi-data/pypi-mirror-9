@@ -1,0 +1,179 @@
+Metadata-Version: 1.1
+Name: test-service
+Version: 1.2
+Summary: test-service is a Python package that test web service base on linux curl.
+Home-page: https://bitbucket.org/kylinfish/test-service
+Author: kylinfish
+Author-email: kylinfish@126.com
+License: MIT License
+Description: test-service
+        
+        简介:
+        -----
+        
+        pycharm自带个工具，在菜单Tools --> Test RESTful Web Service可以打开，可视化界面的操作，但不利于参数输入后保存以及后续的复用。
+        
+        此工具基于以上缺点，直接借助linux工具，结合实际的个人需求与想法，以拦截请求、保存请求、复用的流程进行，为方便个人所用定制。
+        
+        依赖:
+        -----
+            ::
+        
+                $ sudo yum install curl
+                $ sudo apt-get install curl
+        
+        使用:
+        -----
+        
+            curl_reader.py:
+                读取存放测试脚本的文件, 以命令行的形式执行(指定的行脚本, 指定范围的行脚本).
+                利用 linux curl 构建测试脚本, 减少服务端开发过程中, 在测试上对客户端的依赖.
+        
+            converge.py:
+                从源码文件中生成 消息码/消息文本配置信息.
+        
+            @kylin_debug_request:
+                测试时, 实时输出POST信息到控制台.
+                测试时, 实时输出处理时间到控制台.
+                保存测试时每个view函数的执行时间, 用于后续性能分析及程序持续改进.
+        
+            curl_builder.py:
+                构建生成curl测试请求数据, 以便于后续回归测试, 以curl_reader.py自动化.
+                对之前生成报告文件做去重处理.
+        
+            配置settings.py修改：
+            ::
+        
+                # test-service配置项
+                POST_DATA_PRINT = False  # 是否输入POST数据
+                POST_DATA_SAVED = False  # 是否保存请求痕迹
+                EXEC_TIME_PRINT = False  # 是否输出执行时间
+                SAVE_ROWS_QUEUE = 5     # 最大多少行数保存
+        
+                LOGIN_API = ('/user/login/', '/user/join/',)  # 登陆
+                LOGOUT_API = ('/user/logout/',)  # 注销
+        
+                TIME_REPORT = os.path.join(BASE_DIR, 'report', 'report_time.md')  # 时间保存文件
+                CURL_REPORT = os.path.join(BASE_DIR, 'report', 'report_curl.md')  # 脚本保存文件
+                CONVERGE_LIST = [os.path.join(BASE_DIR, 'demo', 'views.py')]  # 要查找源文件路径
+        
+            django manage.py 命令项如下：
+            ::
+        
+                $ python manage.py converge
+                $ python manage.py distinctcurl
+        
+                $ python manage.py executecurl
+                $ python manage.py executecurl 5
+                $ python manage.py executecurl 5 10
+        
+            @kylin_debug_request 装饰你的views.py函数.
+        
+        curl参数:
+        ---------
+        
+            GET 还是 POST 模式, 要看对面服务器的程序设定, curl 默认 GET 模式.
+            
+            -G GET方式传送数据
+            -d POST方式传送数据    
+           
+            -D cookie.txt 写 cookie 存储 cookie 信息从 response 到文件
+            -b cookie.txt 读 cookie 追加 cookie 信息到 request 请求中
+            
+            -B, --use-ascii     Use ASCII/text transfer
+            -S, --show-error    Show error. With -s, make curl show errors when they occur
+            -s, --silent        Silent mode. Don't output anything
+            
+            -x 访问所使proxy服务器及其端口
+            
+            -o 下载文件, 指定文件名
+            -O 按照服务器上的文件名, 自动存在本地
+            
+            -A 宣称访问所使用的自己的浏览器信息  -A "Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.0)"
+            
+            -e 宣称 referer 地址, 服务器端常用的限制方法, 就是检查 http 访问的 referer, 比如先访问首页, 再访问指定的
+            下载页, 下载页的 referer 地址就是首页地址, 服务器端只要发现对下载页某次访问的 referer 地址不是首页地址, 就
+            可以断定是盗连, 这样就可以骗对方的服务器.
+            
+            FTP 上传文件: 
+            curl -T local_file -u name:passwd ftp://url:port/path/
+            
+            HTTP PUT method 上传文件:
+            curl -T local_file http://url:port/path
+            
+            POST 模式下的文件上的文件上传:
+            ::
+        
+                <form method="POST" enctype="multipar/form-data" action="http://url:port/path">
+                <input type=file name=upload>
+                <input type=submit name=nick value="go">
+                </form>
+            
+            这样的HTTP表单，用curl进行模拟：
+            curl -F upload=@local_file -F nick=go http://http://url:port/path
+        
+        
+        会话状态的方式:
+        ---------------
+        
+            # 一种方式是如上使用 curl -b 来存储附加.
+        
+            # 一种方式是自定义装饰器即时自动登陆, 基于 django/contrib/auth/decorators.py 原文件的改动.
+        
+            settings.py Add the following items:
+            ::
+        
+                AUTO_LOGIN_USER = 'kylin'
+                AUTO_LOGIN_PASSWORD = '123456'
+        
+            create yours decorators code file.
+            ::
+        
+                $ cp [your_paths]/django/contrib/auth/decorators.py [your_project_path]/decorators.py.
+                $ vim [your_project_path]/decorators.py
+        
+            find function user_passes_test -> decorator -> _wrapped_view in decorators.py file.
+        
+            add code:
+            ::
+        
+                auto_login_user = getattr(settings, "AUTO_LOGIN_USER", None)
+                auto_login_password = getattr(settings, "AUTO_LOGIN_PASSWORD", None)
+        
+                if auto_login_user is not None and auto_login_password is not None:
+                    user = authenticate(username=auto_login_user, password=auto_login_password)
+                    login(request, user)
+                    return view_func(request, *args, **kwargs)
+        
+            then usage:
+            ::
+        
+                try:
+                    from yours.decorators import login_required, permission_required
+                except:
+                    from django.contrib.auth.decorators import login_required, permission_required
+        
+        
+        Changelog
+        =========
+        
+        1.2 - 14-Feb-2015
+        -----------------
+        
+        * First release
+        
+        
+Keywords: test-service
+Platform: any
+Classifier: Development Status :: 4 - Beta
+Classifier: Environment :: Console
+Classifier: Environment :: Web Environment
+Classifier: Intended Audience :: Developers
+Classifier: Programming Language :: Python
+Classifier: Programming Language :: Python :: 2
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.4
+Classifier: Topic :: Internet :: WWW/HTTP
+Classifier: Topic :: Utilities
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Classifier: License :: OSI Approved :: MIT License
