@@ -1,0 +1,496 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>malss.malss &mdash; malss 0.4.2 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '0.4.2',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <link rel="top" title="malss 0.4.2 documentation" href="../../index.html" />
+    <link rel="up" title="Module code" href="../index.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../index.html">malss 0.4.2 documentation</a> &raquo;</li>
+          <li><a href="../index.html" accesskey="U">Module code</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <h1>Source code for malss.malss</h1><div class="highlight"><pre>
+<span class="c"># -*- coding: utf-8 -*-</span>
+
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="kn">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">matplotlib.pyplot</span> <span class="kn">as</span> <span class="nn">plt</span>
+<span class="kn">from</span> <span class="nn">jinja2</span> <span class="kn">import</span> <span class="n">Environment</span><span class="p">,</span> <span class="n">FileSystemLoader</span>
+<span class="kn">from</span> <span class="nn">sklearn.cross_validation</span> <span class="kn">import</span> <span class="n">StratifiedKFold</span><span class="p">,</span> <span class="n">KFold</span>
+<span class="kn">from</span> <span class="nn">sklearn.grid_search</span> <span class="kn">import</span> <span class="n">GridSearchCV</span>
+<span class="kn">from</span> <span class="nn">sklearn.learning_curve</span> <span class="kn">import</span> <span class="n">learning_curve</span>
+<span class="kn">from</span> <span class="nn">sklearn.svm</span> <span class="kn">import</span> <span class="n">SVC</span><span class="p">,</span> <span class="n">LinearSVC</span><span class="p">,</span> <span class="n">SVR</span>
+<span class="kn">from</span> <span class="nn">sklearn.metrics</span> <span class="kn">import</span> <span class="n">classification_report</span><span class="p">,</span> <span class="n">f1_score</span>
+<span class="kn">from</span> <span class="nn">sklearn.tree</span> <span class="kn">import</span> <span class="n">DecisionTreeClassifier</span><span class="p">,</span> <span class="n">DecisionTreeRegressor</span>
+<span class="kn">from</span> <span class="nn">sklearn.neighbors</span> <span class="kn">import</span> <span class="n">KNeighborsClassifier</span>
+<span class="kn">from</span> <span class="nn">sklearn.linear_model</span> <span class="kn">import</span> <span class="n">LogisticRegression</span><span class="p">,</span> <span class="n">Ridge</span><span class="p">,</span> <span class="n">SGDRegressor</span><span class="p">,</span>\
+    <span class="n">SGDClassifier</span>
+<span class="kn">from</span> <span class="nn">sklearn.ensemble</span> <span class="kn">import</span> <span class="n">RandomForestClassifier</span><span class="p">,</span> <span class="n">RandomForestRegressor</span>
+
+<span class="kn">from</span> <span class="nn">algorithm</span> <span class="kn">import</span> <span class="n">Algorithm</span>
+<span class="kn">from</span> <span class="nn">data</span> <span class="kn">import</span> <span class="n">Data</span>
+
+
+<div class="viewcode-block" id="MALSS"><a class="viewcode-back" href="../../malss.html#malss.malss.MALSS">[docs]</a><span class="k">class</span> <span class="nc">MALSS</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+<div class="viewcode-block" id="MALSS.__init__"><a class="viewcode-back" href="../../malss.html#malss.malss.MALSS.__init__">[docs]</a>    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">task</span><span class="p">,</span> <span class="n">shuffle</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">standardize</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">scoring</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+                 <span class="n">n_jobs</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">random_state</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">lang</span><span class="o">=</span><span class="s">&#39;en&#39;</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Initialize parameters.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        task : string</span>
+<span class="sd">            Specifies the task of the analysis. It must be one of</span>
+<span class="sd">            &#39;classification&#39;, &#39;regression&#39;.</span>
+<span class="sd">        shuffle : boolean, optional (default=True)</span>
+<span class="sd">            Whether to shuffle the data.</span>
+<span class="sd">        standardize : boolean, optional (default=True)</span>
+<span class="sd">            Whether to sdandardize the data.</span>
+<span class="sd">        scoring : string, callable or None, optional, default: None</span>
+<span class="sd">            A string (see scikit-learn&#39;s model evaluation documentation) or</span>
+<span class="sd">            a scorer callable object / function with</span>
+<span class="sd">            signature scorer(estimator, X, y).</span>
+<span class="sd">        n_jobs : integer, optional (default=1)</span>
+<span class="sd">            The number of jobs to run in parallel. If -1, then the number of</span>
+<span class="sd">            jobs is set to the number of cores.</span>
+<span class="sd">        random_state : int seed, RandomState instance, or None (default=0)</span>
+<span class="sd">            The seed of the pseudo random number generator</span>
+<span class="sd">        lang : string (default=&#39;en&#39;)</span>
+<span class="sd">            Specifies the language in the report. It must be one of</span>
+<span class="sd">            &#39;en&#39; (English), &#39;jp&#39; (Japanese).</span>
+<span class="sd">        verbos : bool, default: True</span>
+<span class="sd">            Enable verbose output.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">shuffle</span> <span class="o">=</span> <span class="n">shuffle</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">standardize</span> <span class="o">=</span> <span class="n">standardize</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">task</span> <span class="o">=</span> <span class="n">task</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">n_jobs</span> <span class="o">=</span> <span class="n">n_jobs</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">random_state</span> <span class="o">=</span> <span class="n">random_state</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">verbose</span> <span class="o">=</span> <span class="n">verbose</span>
+        <span class="k">if</span> <span class="n">lang</span> <span class="o">!=</span> <span class="s">&#39;en&#39;</span> <span class="ow">and</span> <span class="n">lang</span> <span class="o">!=</span> <span class="s">&#39;jp&#39;</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&#39;lang:</span><span class="si">%s</span><span class="s"> is no supported&#39;</span> <span class="o">%</span> <span class="n">lang</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lang</span> <span class="o">=</span> <span class="n">lang</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">minimized_score</span> <span class="o">=</span> <span class="bp">False</span>
+        <span class="k">if</span> <span class="n">task</span> <span class="o">==</span> <span class="s">&#39;classification&#39;</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">scoring</span> <span class="o">=</span> <span class="s">&#39;f1&#39;</span> <span class="k">if</span> <span class="n">scoring</span> <span class="ow">is</span> <span class="bp">None</span> <span class="k">else</span> <span class="n">scoring</span>
+        <span class="k">elif</span> <span class="n">task</span> <span class="o">==</span> <span class="s">&#39;regression&#39;</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">scoring</span> <span class="o">=</span> <span class="s">&#39;mean_squared_error&#39;</span> <span class="k">if</span> <span class="n">scoring</span> <span class="ow">is</span> <span class="bp">None</span> <span class="k">else</span> <span class="n">scoring</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">scoring</span> <span class="o">==</span> <span class="s">&#39;mean_squared_error&#39;</span> <span class="ow">or</span>\
+               <span class="bp">self</span><span class="o">.</span><span class="n">scoring</span> <span class="o">==</span> <span class="s">&#39;mean_absolute_error&#39;</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">minimized_score</span> <span class="o">=</span> <span class="bp">True</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&#39;task:</span><span class="si">%s</span><span class="s"> is not supported&#39;</span> <span class="o">%</span> <span class="n">task</span><span class="p">)</span>
+</div>
+    <span class="k">def</span> <span class="nf">__choose_algorithm</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">algorithms</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">task</span> <span class="o">==</span> <span class="s">&#39;classification&#39;</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">&lt;=</span> <span class="mf">1e+06</span><span class="p">:</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">&lt;=</span> <span class="mf">1e+09</span><span class="p">:</span>
+                    <span class="n">algorithms</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                        <span class="n">Algorithm</span><span class="p">(</span>
+                            <span class="n">SVC</span><span class="p">(</span><span class="n">random_state</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">random_state</span><span class="p">),</span>
+                            <span class="p">[{</span><span class="s">&#39;kernel&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s">&#39;rbf&#39;</span><span class="p">],</span>
+                              <span class="s">&#39;C&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">10</span><span class="p">,</span> <span class="mi">100</span><span class="p">,</span> <span class="mi">1000</span><span class="p">,</span> <span class="mi">10000</span><span class="p">],</span>
+                              <span class="s">&#39;gamma&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mf">1e-4</span><span class="p">,</span> <span class="mf">1e-3</span><span class="p">,</span> <span class="mf">1e-2</span><span class="p">,</span> <span class="mf">1e-1</span><span class="p">]}],</span>
+                            <span class="s">&#39;Support Vector Machine (RBF Kernel)&#39;</span><span class="p">))</span>
+                    <span class="n">algorithms</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                        <span class="n">Algorithm</span><span class="p">(</span>
+                            <span class="n">RandomForestClassifier</span><span class="p">(</span>
+                                <span class="n">random_state</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">random_state</span><span class="p">,</span>
+                                <span class="n">n_jobs</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">n_jobs</span><span class="p">),</span>
+                            <span class="p">[{</span><span class="s">&#39;n_estimators&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">10</span><span class="p">,</span> <span class="mi">50</span><span class="p">,</span> <span class="mi">100</span><span class="p">],</span>
+                              <span class="s">&#39;max_features&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mf">0.2</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.8</span><span class="p">],</span>
+                              <span class="s">&#39;max_depth&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">3</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span> <span class="bp">None</span><span class="p">]}],</span>
+                            <span class="s">&#39;Random Forest&#39;</span><span class="p">))</span>
+                <span class="n">algorithms</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="n">Algorithm</span><span class="p">(</span>
+                        <span class="n">LinearSVC</span><span class="p">(</span><span class="n">random_state</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">random_state</span><span class="p">),</span>
+                        <span class="p">[{</span><span class="s">&#39;C&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mf">0.1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">100</span><span class="p">]}],</span>
+                        <span class="s">&#39;Support Vector Machine (Linear Kernel)&#39;</span><span class="p">))</span>
+                <span class="n">algorithms</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="n">Algorithm</span><span class="p">(</span>
+                        <span class="n">LogisticRegression</span><span class="p">(</span><span class="n">random_state</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">random_state</span><span class="p">),</span>
+                        <span class="p">[{</span><span class="s">&#39;penalty&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s">&#39;l2&#39;</span><span class="p">,</span> <span class="s">&#39;l1&#39;</span><span class="p">],</span>
+                          <span class="s">&#39;C&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mf">0.1</span><span class="p">,</span> <span class="mf">0.3</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">10</span><span class="p">],</span>
+                          <span class="s">&#39;class_weight&#39;</span><span class="p">:</span> <span class="p">[</span><span class="bp">None</span><span class="p">,</span> <span class="s">&#39;auto&#39;</span><span class="p">]}],</span>
+                        <span class="s">&#39;Logistic Regression&#39;</span><span class="p">))</span>
+                <span class="n">algorithms</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="n">Algorithm</span><span class="p">(</span>
+                        <span class="n">DecisionTreeClassifier</span><span class="p">(</span><span class="n">random_state</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">random_state</span><span class="p">),</span>
+                        <span class="p">[{</span><span class="s">&#39;max_depth&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">3</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span> <span class="mi">9</span><span class="p">,</span> <span class="mi">11</span><span class="p">]}],</span>
+                        <span class="s">&#39;Decision Tree&#39;</span><span class="p">))</span>
+                <span class="n">algorithms</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="n">Algorithm</span><span class="p">(</span>
+                        <span class="n">KNeighborsClassifier</span><span class="p">(),</span>
+                        <span class="p">[{</span><span class="s">&#39;n_neighbors&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">2</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">14</span><span class="p">,</span> <span class="mi">18</span><span class="p">]}],</span>
+                        <span class="s">&#39;k-Nearest Neighbors&#39;</span><span class="p">))</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">algorithms</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="n">Algorithm</span><span class="p">(</span>
+                        <span class="n">SGDClassifier</span><span class="p">(</span>
+                            <span class="n">random_state</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">random_state</span><span class="p">,</span>
+                            <span class="n">n_jobs</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">n_jobs</span><span class="p">),</span>
+                        <span class="p">[{</span><span class="s">&#39;loss&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s">&#39;hinge&#39;</span><span class="p">,</span> <span class="s">&#39;log&#39;</span><span class="p">],</span>
+                          <span class="s">&#39;penalty&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s">&#39;l2&#39;</span><span class="p">,</span> <span class="s">&#39;l1&#39;</span><span class="p">],</span>
+                          <span class="s">&#39;alpha&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mf">1e-05</span><span class="p">,</span> <span class="mf">3e-05</span><span class="p">,</span> <span class="mf">1e-04</span><span class="p">,</span> <span class="mf">3e-04</span><span class="p">,</span> <span class="mf">1e-03</span><span class="p">],</span>
+                          <span class="s">&#39;class_weight&#39;</span><span class="p">:</span> <span class="p">[</span><span class="bp">None</span><span class="p">,</span> <span class="s">&#39;auto&#39;</span><span class="p">]}],</span>
+                        <span class="s">&#39;SGD Classifier&#39;</span><span class="p">))</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">task</span> <span class="o">==</span> <span class="s">&#39;regression&#39;</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">&lt;=</span> <span class="mf">1e+06</span><span class="p">:</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">&lt;=</span> <span class="mf">1e+09</span><span class="p">:</span>
+                    <span class="n">algorithms</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                        <span class="n">Algorithm</span><span class="p">(</span>
+                            <span class="n">SVR</span><span class="p">(</span><span class="n">random_state</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">random_state</span><span class="p">),</span>
+                            <span class="p">[{</span><span class="s">&#39;kernel&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s">&#39;rbf&#39;</span><span class="p">],</span>
+                              <span class="s">&#39;C&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">10</span><span class="p">,</span> <span class="mi">100</span><span class="p">,</span> <span class="mi">1000</span><span class="p">,</span> <span class="mi">10000</span><span class="p">],</span>
+                              <span class="s">&#39;gamma&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mf">1e-4</span><span class="p">,</span> <span class="mf">1e-3</span><span class="p">,</span> <span class="mf">1e-2</span><span class="p">,</span> <span class="mf">1e-1</span><span class="p">]}],</span>
+                            <span class="s">&#39;Support Vector Machine (RBF Kernel)&#39;</span><span class="p">))</span>
+                    <span class="n">algorithms</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                        <span class="n">Algorithm</span><span class="p">(</span>
+                            <span class="n">RandomForestRegressor</span><span class="p">(</span>
+                                <span class="n">random_state</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">random_state</span><span class="p">,</span>
+                                <span class="n">n_jobs</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">n_jobs</span><span class="p">),</span>
+                            <span class="p">[{</span><span class="s">&#39;n_estimators&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">10</span><span class="p">,</span> <span class="mi">50</span><span class="p">,</span> <span class="mi">100</span><span class="p">],</span>
+                              <span class="s">&#39;max_features&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mf">0.2</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.8</span><span class="p">],</span>
+                              <span class="s">&#39;max_depth&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">3</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span> <span class="bp">None</span><span class="p">]}],</span>
+                            <span class="s">&#39;Random Forest&#39;</span><span class="p">))</span>
+                <span class="n">algorithms</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="n">Algorithm</span><span class="p">(</span>
+                        <span class="n">Ridge</span><span class="p">(),</span>
+                        <span class="p">[{</span><span class="s">&#39;alpha&#39;</span><span class="p">:</span>
+                            <span class="p">[</span><span class="mf">0.01</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">100</span><span class="p">]}],</span>
+                        <span class="s">&#39;Ridge Regression&#39;</span><span class="p">))</span>
+                <span class="n">algorithms</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="n">Algorithm</span><span class="p">(</span>
+                        <span class="n">DecisionTreeRegressor</span><span class="p">(</span><span class="n">random_state</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">random_state</span><span class="p">),</span>
+                        <span class="p">[{</span><span class="s">&#39;max_depth&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">3</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span> <span class="mi">9</span><span class="p">,</span> <span class="mi">11</span><span class="p">]}],</span>
+                        <span class="s">&#39;Decision Tree&#39;</span><span class="p">))</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">algorithms</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="n">Algorithm</span><span class="p">(</span>
+                        <span class="n">SGDRegressor</span><span class="p">(</span>
+                            <span class="n">random_state</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">random_state</span><span class="p">),</span>
+                        <span class="p">[{</span><span class="s">&#39;penalty&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s">&#39;l2&#39;</span><span class="p">,</span> <span class="s">&#39;l1&#39;</span><span class="p">],</span>
+                          <span class="s">&#39;alpha&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mf">1e-05</span><span class="p">,</span> <span class="mf">3e-05</span><span class="p">,</span> <span class="mf">1e-04</span><span class="p">,</span> <span class="mf">3e-04</span><span class="p">,</span> <span class="mf">1e-03</span><span class="p">]}],</span>
+                        <span class="s">&#39;SGD Regressor&#39;</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">algorithms</span>
+
+<div class="viewcode-block" id="MALSS.add_algorithm"><a class="viewcode-back" href="../../malss.html#malss.malss.MALSS.add_algorithm">[docs]</a>    <span class="k">def</span> <span class="nf">add_algorithm</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">estimator</span><span class="p">,</span> <span class="n">param_grid</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Add arbitrary scikit-learn-compatible algorithm.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        estimator : object type that implements the “fit” and “predict” methods</span>
+<span class="sd">            A object of that type is instantiated for each grid point.</span>
+<span class="sd">        param_grid : dict or list of dictionaries</span>
+<span class="sd">            Dictionary with parameters names (string) as keys and</span>
+<span class="sd">            lists of parameter settings to try as values, or a list of</span>
+<span class="sd">            such dictionaries, in which case the grids spanned by</span>
+<span class="sd">            each dictionary in the list are explored.</span>
+<span class="sd">            This enables searching over any sequence of parameter settings.</span>
+<span class="sd">        name : string</span>
+<span class="sd">            Algorithm name (used for report)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">algorithms</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">Algorithm</span><span class="p">(</span><span class="n">estimator</span><span class="p">,</span> <span class="n">param_grid</span><span class="p">,</span> <span class="n">name</span><span class="p">))</span>
+</div>
+<div class="viewcode-block" id="MALSS.remove_algorithm"><a class="viewcode-back" href="../../malss.html#malss.malss.MALSS.remove_algorithm">[docs]</a>    <span class="k">def</span> <span class="nf">remove_algorithm</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">index</span><span class="o">=-</span><span class="mi">1</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Remove algorithm</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        index : int (default=-1)</span>
+<span class="sd">            Remove an algorithm from list by index.</span>
+<span class="sd">            By default, last algorithm is removed.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">algorithms</span><span class="p">[</span><span class="n">index</span><span class="p">]</span>
+</div>
+<div class="viewcode-block" id="MALSS.get_algorithms"><a class="viewcode-back" href="../../malss.html#malss.malss.MALSS.get_algorithms">[docs]</a>    <span class="k">def</span> <span class="nf">get_algorithms</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Get algorithm names and grid parameters.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        algorithms : list</span>
+<span class="sd">            List of tupples(name, grid_params).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">rtn</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">algorithm</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">algorithms</span><span class="p">:</span>
+            <span class="n">rtn</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">algorithm</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">algorithm</span><span class="o">.</span><span class="n">parameters</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">rtn</span>
+</div>
+<div class="viewcode-block" id="MALSS.fit"><a class="viewcode-back" href="../../malss.html#malss.malss.MALSS.fit">[docs]</a>    <span class="k">def</span> <span class="nf">fit</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">dname</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Tune parameters and search best algorithm</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        X : {numpy.ndarray, pandas.DataFrame}, shape = [n_samples, n_features]</span>
+<span class="sd">            Training vector, where n_samples in the number of samples and</span>
+<span class="sd">            n_features is the number of features.</span>
+<span class="sd">        y : {numpy.ndarray, pandas.Series}, shape = [n_samples]</span>
+<span class="sd">            Target values (class labels in classification, real numbers in</span>
+<span class="sd">            regression)</span>
+<span class="sd">        dname : string (default=None)</span>
+<span class="sd">            If not None, make a analysis report in this directory.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        self : object</span>
+<span class="sd">            Returns self.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">data</span> <span class="o">=</span> <span class="n">Data</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">shuffle</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">standardize</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">random_state</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">fit_transform</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">algorithms</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">__choose_algorithm</span><span class="p">()</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">task</span> <span class="o">==</span> <span class="s">&#39;classification&#39;</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">cv</span> <span class="o">=</span> <span class="n">StratifiedKFold</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">y</span><span class="p">,</span> <span class="n">n_folds</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span>
+                                      <span class="n">shuffle</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">shuffle</span><span class="p">,</span>
+                                      <span class="n">random_state</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">random_state</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">task</span> <span class="o">==</span> <span class="s">&#39;regression&#39;</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">cv</span> <span class="o">=</span> <span class="n">KFold</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">n_folds</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span>
+                            <span class="n">shuffle</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">shuffle</span><span class="p">,</span>
+                            <span class="n">random_state</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">random_state</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">__tune_parameters</span><span class="p">()</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">task</span> <span class="o">==</span> <span class="s">&#39;classification&#39;</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">__report_classification_result</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="n">dname</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">__make_report</span><span class="p">(</span><span class="n">dname</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="bp">self</span>
+</div>
+    <span class="k">def</span> <span class="nf">predict</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">X</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">algorithms</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">best_index</span><span class="p">]</span><span class="o">.</span><span class="n">estimator</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="n">X</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">__search_best_algorithm</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">best_score</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="s">&#39;-Inf&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">best_index</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
+        <span class="n">sign</span> <span class="o">=</span> <span class="mf">1.0</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">minimized_score</span><span class="p">:</span>
+            <span class="n">sign</span> <span class="o">=</span> <span class="o">-</span><span class="mf">1.0</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">best_score</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="s">&#39;Inf&#39;</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">algorithms</span><span class="p">)):</span>
+            <span class="k">if</span> <span class="n">sign</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">algorithms</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">best_score</span> <span class="o">&gt;</span> <span class="n">sign</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">best_score</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">best_score</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">algorithms</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">best_score</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">best_index</span> <span class="o">=</span> <span class="n">i</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">algorithms</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">best_index</span><span class="p">]</span><span class="o">.</span><span class="n">is_best_algorithm</span> <span class="o">=</span> <span class="bp">True</span>
+
+    <span class="k">def</span> <span class="nf">__tune_parameters</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">algorithms</span><span class="p">)):</span>
+            <span class="n">estimator</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">algorithms</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">estimator</span>
+            <span class="n">parameters</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">algorithms</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">parameters</span>
+            <span class="n">sc</span> <span class="o">=</span> <span class="n">f1score</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">scoring</span> <span class="o">==</span> <span class="s">&#39;f1&#39;</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">scoring</span>
+            <span class="n">clf</span> <span class="o">=</span> <span class="n">GridSearchCV</span><span class="p">(</span>
+                <span class="n">estimator</span><span class="p">,</span> <span class="n">parameters</span><span class="p">,</span> <span class="n">cv</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">cv</span><span class="p">,</span> <span class="n">scoring</span><span class="o">=</span><span class="n">sc</span><span class="p">,</span>
+                <span class="n">n_jobs</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">n_jobs</span><span class="p">)</span>
+            <span class="n">clf</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">X</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">y</span><span class="p">)</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">minimized_score</span><span class="p">:</span>
+                <span class="n">clf</span><span class="o">.</span><span class="n">best_score_</span> <span class="o">*=</span> <span class="o">-</span><span class="mf">1.0</span>
+                <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">clf</span><span class="o">.</span><span class="n">grid_scores_</span><span class="p">)):</span>
+                    <span class="n">clf</span><span class="o">.</span><span class="n">grid_scores_</span><span class="p">[</span><span class="n">j</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">clf</span><span class="o">.</span><span class="n">grid_scores_</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="mi">0</span><span class="p">],</span>
+                                           <span class="o">-</span><span class="mf">1.0</span> <span class="o">*</span> <span class="n">clf</span><span class="o">.</span><span class="n">grid_scores_</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="mi">1</span><span class="p">],</span>
+                                           <span class="o">-</span><span class="mf">1.0</span> <span class="o">*</span> <span class="n">clf</span><span class="o">.</span><span class="n">grid_scores_</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="mi">2</span><span class="p">])</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">algorithms</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">estimator</span> <span class="o">=</span> <span class="n">clf</span><span class="o">.</span><span class="n">best_estimator_</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">algorithms</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">best_score</span> <span class="o">=</span> <span class="n">clf</span><span class="o">.</span><span class="n">best_score_</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">algorithms</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">best_params</span> <span class="o">=</span> <span class="n">clf</span><span class="o">.</span><span class="n">best_params_</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">algorithms</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">grid_scores</span> <span class="o">=</span> <span class="n">clf</span><span class="o">.</span><span class="n">grid_scores_</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">__search_best_algorithm</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">__report_classification_result</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">algorithms</span><span class="p">)):</span>
+            <span class="n">est</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">algorithms</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">estimator</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">algorithms</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">classification_report</span> <span class="o">=</span>\
+                <span class="n">classification_report</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">y</span><span class="p">,</span> <span class="n">est</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">X</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">__plot_learning_curve</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dname</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">alg</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">algorithms</span><span class="p">:</span>
+            <span class="n">estimator</span> <span class="o">=</span> <span class="n">alg</span><span class="o">.</span><span class="n">estimator</span>
+            <span class="n">sc</span> <span class="o">=</span> <span class="n">f1score</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">scoring</span> <span class="o">==</span> <span class="s">&#39;f1&#39;</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">scoring</span>
+            <span class="n">train_sizes</span><span class="p">,</span> <span class="n">train_scores</span><span class="p">,</span> <span class="n">test_scores</span> <span class="o">=</span> <span class="n">learning_curve</span><span class="p">(</span>
+                <span class="n">estimator</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">X</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">y</span><span class="p">,</span>
+                <span class="n">cv</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">cv</span><span class="p">,</span>
+                <span class="n">scoring</span><span class="o">=</span><span class="n">sc</span><span class="p">,</span>
+                <span class="n">n_jobs</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">n_jobs</span><span class="p">)</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">minimized_score</span><span class="p">:</span>
+                <span class="n">train_scores</span> <span class="o">*=</span> <span class="o">-</span><span class="mf">1.0</span>
+                <span class="n">test_scores</span> <span class="o">*=</span> <span class="o">-</span><span class="mf">1.0</span>
+            <span class="n">train_scores_mean</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">train_scores</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+            <span class="n">train_scores_std</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">train_scores</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+            <span class="n">test_scores_mean</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">test_scores</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+            <span class="n">test_scores_std</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">test_scores</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+
+            <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">()</span>
+            <span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="n">estimator</span><span class="o">.</span><span class="n">__class__</span><span class="o">.</span><span class="n">__name__</span><span class="p">)</span>
+            <span class="n">plt</span><span class="o">.</span><span class="n">xlabel</span><span class="p">(</span><span class="s">&quot;Training examples&quot;</span><span class="p">)</span>
+            <span class="n">plt</span><span class="o">.</span><span class="n">ylabel</span><span class="p">(</span><span class="s">&quot;Score&quot;</span><span class="p">)</span>
+            <span class="n">plt</span><span class="o">.</span><span class="n">grid</span><span class="p">()</span>
+
+            <span class="n">plt</span><span class="o">.</span><span class="n">fill_between</span><span class="p">(</span><span class="n">train_sizes</span><span class="p">,</span> <span class="n">train_scores_mean</span> <span class="o">-</span> <span class="n">train_scores_std</span><span class="p">,</span>
+                             <span class="n">train_scores_mean</span> <span class="o">+</span> <span class="n">train_scores_std</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span>
+                             <span class="n">color</span><span class="o">=</span><span class="s">&quot;r&quot;</span><span class="p">)</span>
+            <span class="n">plt</span><span class="o">.</span><span class="n">fill_between</span><span class="p">(</span><span class="n">train_sizes</span><span class="p">,</span> <span class="n">test_scores_mean</span> <span class="o">-</span> <span class="n">test_scores_std</span><span class="p">,</span>
+                             <span class="n">test_scores_mean</span> <span class="o">+</span> <span class="n">test_scores_std</span><span class="p">,</span>
+                             <span class="n">alpha</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s">&quot;g&quot;</span><span class="p">)</span>
+            <span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">train_sizes</span><span class="p">,</span> <span class="n">train_scores_mean</span><span class="p">,</span> <span class="s">&#39;o-&#39;</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s">&quot;r&quot;</span><span class="p">,</span>
+                     <span class="n">label</span><span class="o">=</span><span class="s">&quot;Training score&quot;</span><span class="p">)</span>
+            <span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">train_sizes</span><span class="p">,</span> <span class="n">test_scores_mean</span><span class="p">,</span> <span class="s">&#39;o-&#39;</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s">&quot;g&quot;</span><span class="p">,</span>
+                     <span class="n">label</span><span class="o">=</span><span class="s">&quot;Cross-validation score&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">minimized_score</span><span class="p">:</span>
+                <span class="n">plt</span><span class="o">.</span><span class="n">legend</span><span class="p">(</span><span class="n">loc</span><span class="o">=</span><span class="s">&#39;upper right&#39;</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">plt</span><span class="o">.</span><span class="n">legend</span><span class="p">(</span><span class="n">loc</span><span class="o">=</span><span class="s">&quot;lower right&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">dname</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">dname</span><span class="p">):</span>
+                <span class="n">os</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">dname</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">dname</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+                <span class="n">plt</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="s">&#39;</span><span class="si">%s</span><span class="s">/learning_curve_</span><span class="si">%s</span><span class="s">.png&#39;</span> <span class="o">%</span>
+                            <span class="p">(</span><span class="n">dname</span><span class="p">,</span> <span class="n">estimator</span><span class="o">.</span><span class="n">__class__</span><span class="o">.</span><span class="n">__name__</span><span class="p">),</span>
+                            <span class="n">bbox_inches</span><span class="o">=</span><span class="s">&#39;tight&#39;</span><span class="p">,</span> <span class="n">dpi</span><span class="o">=</span><span class="mi">75</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">plt</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="s">&#39;learning_curve_</span><span class="si">%s</span><span class="s">.png&#39;</span> <span class="o">%</span>
+                            <span class="n">estimator</span><span class="o">.</span><span class="n">__class__</span><span class="o">.</span><span class="n">__name__</span><span class="p">,</span>
+                            <span class="n">bbox_inches</span><span class="o">=</span><span class="s">&#39;tight&#39;</span><span class="p">,</span> <span class="n">dpi</span><span class="o">=</span><span class="mi">75</span><span class="p">)</span>
+            <span class="n">plt</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">__make_report</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dname</span><span class="o">=</span><span class="s">&#39;report&#39;</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">dname</span><span class="p">):</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">dname</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">__plot_learning_curve</span><span class="p">(</span><span class="n">dname</span><span class="p">)</span>
+
+        <span class="n">env</span> <span class="o">=</span> <span class="n">Environment</span><span class="p">(</span>
+            <span class="n">loader</span><span class="o">=</span><span class="n">FileSystemLoader</span><span class="p">(</span>
+                <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span>
+                    <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">__file__</span><span class="p">))</span> <span class="o">+</span> <span class="s">&#39;/template&#39;</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s">&#39;utf8&#39;</span><span class="p">))</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">lang</span> <span class="o">==</span> <span class="s">&#39;jp&#39;</span><span class="p">:</span>
+            <span class="n">tmpl</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get_template</span><span class="p">(</span><span class="s">&#39;report_jp.html.tmp&#39;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">tmpl</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get_template</span><span class="p">(</span><span class="s">&#39;report.html.tmp&#39;</span><span class="p">)</span>
+
+        <span class="n">scoring_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">scoring</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">scoring</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="k">else</span>\
+            <span class="bp">self</span><span class="o">.</span><span class="n">scoring</span><span class="o">.</span><span class="n">func_name</span>
+        <span class="n">html</span> <span class="o">=</span> <span class="n">tmpl</span><span class="o">.</span><span class="n">render</span><span class="p">(</span><span class="n">algorithms</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">algorithms</span><span class="p">,</span>
+                           <span class="n">scoring</span><span class="o">=</span><span class="n">scoring_name</span><span class="p">,</span>
+                           <span class="n">task</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">task</span><span class="p">,</span>
+                           <span class="n">data</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="p">,</span>
+                           <span class="n">verbose</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">verbose</span><span class="p">)</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s">&#39;utf-8&#39;</span><span class="p">)</span>
+        <span class="n">fo</span> <span class="o">=</span> <span class="nb">open</span><span class="p">(</span><span class="n">dname</span> <span class="o">+</span> <span class="s">&#39;/report.html&#39;</span><span class="p">,</span> <span class="s">&#39;w&#39;</span><span class="p">)</span>
+        <span class="n">fo</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">html</span><span class="p">)</span>
+        <span class="n">fo</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+
+<div class="viewcode-block" id="MALSS.make_sample_code"><a class="viewcode-back" href="../../malss.html#malss.malss.MALSS.make_sample_code">[docs]</a>    <span class="k">def</span> <span class="nf">make_sample_code</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fname</span><span class="o">=</span><span class="s">&#39;sample_code.py&#39;</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Make a sample code</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        fname : string (default=&quot;sample_code.py&quot;)</span>
+<span class="sd">            A string containing a path to a output file.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">env</span> <span class="o">=</span> <span class="n">Environment</span><span class="p">(</span>
+            <span class="n">loader</span><span class="o">=</span><span class="n">FileSystemLoader</span><span class="p">(</span>
+                <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span>
+                    <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">__file__</span><span class="p">))</span> <span class="o">+</span> <span class="s">&#39;/template&#39;</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s">&#39;utf8&#39;</span><span class="p">))</span>
+        <span class="n">tmpl</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get_template</span><span class="p">(</span><span class="s">&#39;sample_code.py.tmp&#39;</span><span class="p">)</span>
+        <span class="n">encoded</span> <span class="o">=</span> <span class="bp">True</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">del_columns</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">else</span> <span class="bp">False</span>
+        <span class="n">html</span> <span class="o">=</span> <span class="n">tmpl</span><span class="o">.</span><span class="n">render</span><span class="p">(</span><span class="n">algorithm</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">algorithms</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">best_index</span><span class="p">],</span>
+                           <span class="n">encoded</span><span class="o">=</span><span class="n">encoded</span><span class="p">,</span>
+                           <span class="n">standardize</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">standardize</span><span class="p">)</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s">&#39;utf-8&#39;</span><span class="p">)</span>
+        <span class="n">fo</span> <span class="o">=</span> <span class="nb">open</span><span class="p">(</span><span class="n">fname</span><span class="p">,</span> <span class="s">&#39;w&#39;</span><span class="p">)</span>
+        <span class="n">fo</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">html</span><span class="p">)</span>
+        <span class="n">fo</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+
+</div></div>
+<span class="k">def</span> <span class="nf">f1score</span><span class="p">(</span><span class="n">estimator</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">y</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">f1_score</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">estimator</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">X</span><span class="p">),</span> <span class="n">average</span><span class="o">=</span><span class="bp">None</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+
+
+<span class="k">if</span> <span class="n">__name__</span> <span class="o">==</span> <span class="s">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="k">pass</span>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../index.html">malss 0.4.2 documentation</a> &raquo;</li>
+          <li><a href="../index.html" >Module code</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2014-, Ryota KAMOSHIDA.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>
