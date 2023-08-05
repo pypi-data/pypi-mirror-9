@@ -1,0 +1,1 @@
+Search.setIndex({titleterms:{emg:0,tabl:0,ekg:0,olimex:0,welcom:0,document:0,indic:0},titles:["Welcome to olimex-ekg-emg&#8217;s documentation!"],objects:{},filenames:["index"],terms:{page:0,content:0,search:0,index:0,modul:0},envversion:43,objtypes:{},objnames:{}})
