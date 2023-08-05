@@ -1,0 +1,207 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>Lessons learnt while developing ptypes &mdash; ptypes 0.4 documentation</title>
+    
+    <link rel="stylesheet" href="../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../',
+        VERSION:     '0.4',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../_static/jquery.js"></script>
+    <script type="text/javascript" src="../_static/underscore.js"></script>
+    <script type="text/javascript" src="../_static/doctools.js"></script>
+    <link rel="top" title="ptypes 0.4 documentation" href="../index.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../index.html">ptypes 0.4 documentation</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="lessons-learnt-while-developing-ptypes">
+<h1>Lessons learnt while developing <tt class="docutils literal"><span class="pre">ptypes</span></tt><a class="headerlink" href="#lessons-learnt-while-developing-ptypes" title="Permalink to this headline">¶</a></h1>
+<p>This document is intended at developers who want to participate in evolving
+<tt class="docutils literal"><span class="pre">ptypes</span></tt>. It contains lessons learnt the hard way and explains why some of the
+things are like they are.</p>
+<div class="section" id="every-pyx-module-has-to-be-compiled-into-a-dedicated-extension-module">
+<h2>Every .pyx module has to be compiled into a dedicated extension module<a class="headerlink" href="#every-pyx-module-has-to-be-compiled-into-a-dedicated-extension-module" title="Permalink to this headline">¶</a></h2>
+<p>2014-11-04</p>
+<p>That is, in setup.py a separate extension object has to be created for it.
+Although one can compile multiple pyx files into a single extension:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="n">Extension</span><span class="p">(</span><span class="n">modname</span><span class="p">,</span>
+          <span class="p">[</span><span class="s">&quot;ptypes/__init__.pyx&quot;</span><span class="p">,</span>
+           <span class="s">&quot;ptypes/basetypes.pyx&quot;</span><span class="p">,</span>
+           <span class="s">&quot;ptypes/pallocator.pyx&quot;</span><span class="p">,</span>
+           <span class="s">&quot;ptypes/graph.pyx&quot;</span><span class="p">,</span>
+           <span class="s">&quot;ptypes/md5.c&quot;</span><span class="p">,</span>
+           <span class="p">],</span>
+          <span class="n">include_dirs</span><span class="o">=</span><span class="p">[</span><span class="s">&#39;.&#39;</span><span class="p">]</span>
+          <span class="p">)</span>
+</pre></div>
+</div>
+<p>the resulting extension module cannot be imported. The reason is that the module initialization functions are inserted only
+into the c files matching the name of the extension module (i.e. modname). If there is no such c file, we get
+&#8220;ImportError: init function missing&#8221;. Even if there is one such file, the types defined in the other will not
+get registered. Even if we could get setup.py compile it into an importable module,
+the pyximport utility would not be usable with the module (although there is a slight chance we could hack it to work).</p>
+<p>The alternative is rename the pyx files not matching the name of the extension module to *.pxi and include them into the
+matching one. However this would be little benefit over having everything in the same file.
+The lack of modularity would lead to high compilation times, concerns would not be separated,
+testing and extendability not promoted. So we go for one extension mod per pyx.</p>
+<p>This decision may raise concerns about the compiler not being able to optimize as heavily as with the monolithic solution,
+but we will overcome this by inline-ing the functions suspected to be too hot.</p>
+<div class="section" id="references">
+<h3>References:<a class="headerlink" href="#references" title="Permalink to this headline">¶</a></h3>
+<ul class="simple">
+<li><a class="reference external" href="http://stackoverflow.com/questions/8024805/cython-compiled-c-extension-importerror-dynamic-module-does-not-define-init-fu">http://stackoverflow.com/questions/8024805/cython-compiled-c-extension-importerror-dynamic-module-does-not-define-init-fu</a></li>
+<li><a class="reference external" href="http://stackoverflow.com/questions/11698482/project-structure-for-wrapping-many-c-classes-in-cython-to-a-single-shared-obj">http://stackoverflow.com/questions/11698482/project-structure-for-wrapping-many-c-classes-in-cython-to-a-single-shared-obj</a></li>
+<li><a class="reference external" href="http://stackoverflow.com/questions/8772966/how-can-i-merge-multiple-cython-pyx-files-into-a-single-linked-library">http://stackoverflow.com/questions/8772966/how-can-i-merge-multiple-cython-pyx-files-into-a-single-linked-library</a></li>
+<li><a class="reference external" href="http://osdir.com/ml/python-cython-devel/2009-10/msg00339.html">http://osdir.com/ml/python-cython-devel/2009-10/msg00339.html</a></li>
+</ul>
+</div>
+</div>
+<div class="section" id="how-should-persistent-types-be-declared">
+<h2>How should persistent types be declared?<a class="headerlink" href="#how-should-persistent-types-be-declared" title="Permalink to this headline">¶</a></h2>
+<p>2014-11-06</p>
+<p>They will have to be declared in a call-back function: the pallocator knows when to call it and if at all.
+If we leave this decision to the developer, it will be error-prone.</p>
+<p>There are various alternatives for the syntax. For example:</p>
+<div class="highlight-python"><div class="highlight"><pre>   def createTypes(pallocator):
+
+       # register all non-parametric types found in a module
+       pallocator.register(basetypes)
+
+       # register a single non-parametric type under its default name
+       pallocator.register(Int)
+
+       # alternative syntax:
+       Int.typedef(pallocator)
+
+
+       # register a single non-parametric type under another name
+       pallocator.register(Int(&#39;uint&#39;))
+
+       # alternative syntax:
+       Int.typedef(pallocator, &#39;uint&#39;)
+
+       # class syntax:
+       class uint(pallocator, Int): pass
+
+
+       # register a parametric type under a name (here the name is mandatory)
+       pallocator.register(Dict(&#39;floatbyuint&#39;)[uint, float])
+
+       # alternative syntax:
+       Dict.typedef(pallocator, &#39;floatbyuint&#39;, uint, float)
+
+       # class syntax:
+       class floatbyuint(pallocator, Dict[uint, float]):
+        pass
+
+The advantage of the class syntax is that it immediately introduces the name of the type in the local name space.
+</pre></div>
+</div>
+</div>
+<div class="section" id="can-we-avoid-metaclass-in-structure-definitions">
+<h2>Can we avoid __metaclass__ in Structure definitions?<a class="headerlink" href="#can-we-avoid-metaclass-in-structure-definitions" title="Permalink to this headline">¶</a></h2>
+<blockquote>
+<div><p>2014-11-12</p>
+<p>If <tt class="docutils literal"><span class="pre">__metaclass__</span> <span class="pre">=</span> <span class="pre">StructureMeta</span></tt> is placed inside Structure, <tt class="docutils literal"><span class="pre">Structure</span></tt>
+will be made a
+<tt class="docutils literal"><span class="pre">StructureMeta</span></tt> as opposed to using the <tt class="docutils literal"><span class="pre">cdef</span> <span class="pre">class</span> <span class="pre">Structure</span></tt>.
+I also tried to assign <tt class="docutils literal"><span class="pre">Structure.__metaclass__</span> <span class="pre">=</span> <span class="pre">StructureMeta</span></tt>,
+but this raises an exception.
+Tried to define a subclass of <tt class="docutils literal"><span class="pre">Structure</span></tt> with
+<tt class="docutils literal"><span class="pre">__metaclass__</span> <span class="pre">=</span> <span class="pre">StructureMeta</span></tt>. This gave no errors
+(had to patch <tt class="docutils literal"><span class="pre">StructureMeta.__init__</span></tt> so it does not initialize this class )
+but neither had any effect when further deriving from that class in
+<tt class="docutils literal"><span class="pre">populateSchema()</span></tt>.</p>
+</div></blockquote>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h3><a href="../index.html">Table Of Contents</a></h3>
+  <ul>
+<li><a class="reference internal" href="#">Lessons learnt while developing <tt class="docutils literal"><span class="pre">ptypes</span></tt></a><ul>
+<li><a class="reference internal" href="#every-pyx-module-has-to-be-compiled-into-a-dedicated-extension-module">Every .pyx module has to be compiled into a dedicated extension module</a><ul>
+<li><a class="reference internal" href="#references">References:</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#how-should-persistent-types-be-declared">How should persistent types be declared?</a></li>
+<li><a class="reference internal" href="#can-we-avoid-metaclass-in-structure-definitions">Can we avoid __metaclass__ in Structure definitions?</a></li>
+</ul>
+</li>
+</ul>
+
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="../_sources/contributing/lessonsLearnt.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../index.html">ptypes 0.4 documentation</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2015, Amadeus IT Group.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.2.
+    </div>
+  </body>
+</html>

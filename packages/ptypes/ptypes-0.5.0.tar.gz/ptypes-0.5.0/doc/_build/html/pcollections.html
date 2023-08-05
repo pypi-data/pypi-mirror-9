@@ -1,0 +1,313 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>Persistent Collections &mdash; ptypes 0.4 documentation</title>
+    
+    <link rel="stylesheet" href="_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    './',
+        VERSION:     '0.4',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="top" title="ptypes 0.4 documentation" href="index.html" />
+    <link rel="up" title="Ptypes through examples" href="examples.html" />
+    <link rel="next" title="Property Graphs" href="graph.html" />
+    <link rel="prev" title="Getting Started with ptypes" href="storage.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="graph.html" title="Property Graphs"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="storage.html" title="Getting Started with ptypes"
+             accesskey="P">previous</a> |</li>
+        <li><a href="index.html">ptypes 0.4 documentation</a> &raquo;</li>
+          <li><a href="examples.html" accesskey="U">Ptypes through examples</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="persistent-collections">
+<h1>Persistent Collections<a class="headerlink" href="#persistent-collections" title="Permalink to this headline">¶</a></h1>
+<p>The <a class="reference internal" href="reference.html#module-ptypes.pcollections" title="ptypes.pcollections"><tt class="xref py py-mod docutils literal"><span class="pre">pcollections</span></tt></a> module is intended for persistent container
+data types a la the similarly named module of the standard library.
+Currently the only such data type in the module is
+<tt class="xref py py-class docutils literal"><span class="pre">SkipList</span></tt>.
+(There are also a <tt class="xref py py-class docutils literal"><span class="pre">Dict</span></tt> and a
+<tt class="xref py py-class docutils literal"><span class="pre">List</span></tt> data types in the <a class="reference internal" href="reference.html#module-ptypes.storage" title="ptypes.storage"><tt class="xref py py-mod docutils literal"><span class="pre">storage</span></tt></a>
+module.)</p>
+<p>We will play with a file called <tt class="file docutils literal"><span class="pre">testfile.mmap</span></tt>.
+First we make sure there is no such file:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="kn">import</span> <span class="nn">os</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">mmapFileName</span> <span class="o">=</span> <span class="s">&#39;/tmp/testfile.mmap&#39;</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">try</span><span class="p">:</span> <span class="n">os</span><span class="o">.</span><span class="n">unlink</span><span class="p">(</span><span class="n">mmapFileName</span><span class="p">)</span>
+<span class="gp">... </span><span class="k">except</span><span class="p">:</span> <span class="k">pass</span>
+</pre></div>
+</div>
+<p>SkipLists are probabilistic data structures. As this document is also used for test runs,
+and tests are nice if their results are reproducable, we seed the random number
+generator here.
+(You do not do this in a real world scenario.):</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span> <span class="nn">random</span> <span class="kn">import</span> <span class="n">seed</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">seed</span><span class="p">(</span><span class="mi">13</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Now we can start the actual work and create a new storage with a few skip lists.:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span> <span class="nn">ptypes.storage</span> <span class="kn">import</span> <span class="n">Storage</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span> <span class="nn">ptypes.pcollections</span> <span class="kn">import</span> <span class="n">SkipList</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">class</span> <span class="nc">MyStorage</span><span class="p">(</span><span class="n">Storage</span><span class="p">):</span>
+<span class="gp">... </span>    <span class="k">def</span> <span class="nf">populateSchema</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="gp">... </span>        <span class="bp">self</span><span class="o">.</span><span class="n">define</span><span class="p">(</span> <span class="n">SkipList</span><span class="p">(</span><span class="s">&#39;ListOfStrings&#39;</span><span class="p">)[</span><span class="bp">self</span><span class="o">.</span><span class="n">schema</span><span class="o">.</span><span class="n">String</span><span class="p">]</span> <span class="p">)</span>
+<span class="gp">... </span>        <span class="bp">self</span><span class="o">.</span><span class="n">define</span><span class="p">(</span> <span class="n">SkipList</span><span class="p">(</span><span class="s">&#39;ListOfFloats&#39;</span><span class="p">)[</span><span class="bp">self</span><span class="o">.</span><span class="n">schema</span><span class="o">.</span><span class="n">Float</span><span class="p">]</span> <span class="p">)</span>
+<span class="gp">... </span>        <span class="bp">self</span><span class="o">.</span><span class="n">define</span><span class="p">(</span> <span class="n">SkipList</span><span class="p">(</span><span class="s">&#39;ListOfInts&#39;</span><span class="p">)[</span><span class="bp">self</span><span class="o">.</span><span class="n">schema</span><span class="o">.</span><span class="n">Int</span><span class="p">]</span> <span class="p">)</span>
+<span class="gp">... </span>        <span class="k">class</span> <span class="nc">Root</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">schema</span><span class="o">.</span><span class="n">Structure</span><span class="p">):</span>
+<span class="gp">... </span>            <span class="n">sortedStrings</span><span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">schema</span><span class="o">.</span><span class="n">ListOfStrings</span>
+<span class="gp">... </span>            <span class="n">sortedFloats</span><span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">schema</span><span class="o">.</span><span class="n">ListOfFloats</span>
+<span class="gp">... </span>            <span class="n">sortedInts</span><span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">schema</span><span class="o">.</span><span class="n">ListOfInts</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span> <span class="o">=</span> <span class="n">MyStorage</span><span class="p">(</span><span class="n">mmapFileName</span><span class="p">,</span> <span class="n">fileSize</span><span class="o">=</span><span class="mi">16000</span><span class="p">,</span> <span class="n">stringRegistrySize</span><span class="o">=</span><span class="mi">32</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>We have created a new storage with a schema defining some persistent skip lists.
+Let&#8217;s instantiate those lists!:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">sortedStrings</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">schema</span><span class="o">.</span><span class="n">ListOfStrings</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">sortedFloats</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">schema</span><span class="o">.</span><span class="n">ListOfFloats</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">sortedInts</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">schema</span><span class="o">.</span><span class="n">ListOfInts</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>Right now they are empty:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">p</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">sortedStrings</span><span class="p">:</span> <span class="k">print</span> <span class="n">x</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">p</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">sortedFloats</span> <span class="p">:</span> <span class="k">print</span> <span class="n">x</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">p</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">sortedInts</span>   <span class="p">:</span> <span class="k">print</span> <span class="n">x</span>
+</pre></div>
+</div>
+<p>So let&#8217;s populate the lists:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span> <span class="nn">random</span> <span class="kn">import</span> <span class="n">random</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">text</span> <span class="o">=</span> <span class="s">&quot;Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut labore et dolore magna aliquyam erat, sed diam voluptua. At vero eos et accusam et justo duo dolores et ea rebum. Stet clita kasd gubergren, no sea takimata sanctus est Lorem ipsum dolor sit amet. Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut labore et dolore magna aliquyam erat, sed diam voluptua. At vero eos et accusam et justo duo dolores et ea rebum. Stet clita kasd gubergren, no sea takimata sanctus est Lorem ipsum dolor sit amet.&quot;</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">for</span> <span class="n">word</span> <span class="ow">in</span> <span class="n">text</span><span class="o">.</span><span class="n">split</span><span class="p">():</span>
+<span class="gp">... </span>    <span class="n">p</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">sortedStrings</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="n">word</span><span class="p">)</span>
+<span class="gp">... </span>    <span class="n">p</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">sortedInts</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">word</span><span class="p">))</span>
+<span class="gp">... </span>    <span class="n">p</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">sortedFloats</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="n">random</span><span class="p">())</span>
+</pre></div>
+</div>
+<p>We can examine what data we entered into them:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="s">&#39; &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span> <span class="nb">str</span><span class="p">(</span><span class="n">word</span><span class="p">)</span> <span class="k">for</span> <span class="n">word</span> <span class="ow">in</span> <span class="n">p</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">sortedStrings</span><span class="p">)</span>
+<span class="go">&#39;At At Lorem Lorem Lorem Lorem Stet Stet accusam accusam aliquyam aliquyam amet, amet, amet. amet. clita clita consetetur consetetur diam diam diam diam dolor dolor dolor dolor dolore dolore dolores dolores duo duo ea ea eirmod eirmod elitr, elitr, eos eos erat, erat, est est et et et et et et et et gubergren, gubergren, invidunt invidunt ipsum ipsum ipsum ipsum justo justo kasd kasd labore labore magna magna no no nonumy nonumy rebum. rebum. sadipscing sadipscing sanctus sanctus sea sea sed sed sed sed sit sit sit sit takimata takimata tempor tempor ut ut vero vero voluptua. voluptua.&#39;</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="p">[</span><span class="n">x</span><span class="o">.</span><span class="n">contents</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">p</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">sortedInts</span><span class="p">]</span>
+<span class="go">[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 7, 7, 7, 7, 7, 7, 8, 8, 8, 8, 8, 8, 9, 9, 10, 10, 10, 10, 10, 10]</span>
+</pre></div>
+</div>
+<p>The <tt class="docutils literal"><span class="pre">range(from,</span> <span class="pre">to)</span></tt> method can be used to iterate over items of the list falling into a given range.
+Specifying <tt class="docutils literal"><span class="pre">None</span></tt> as <tt class="docutils literal"><span class="pre">from</span></tt> or <tt class="docutils literal"><span class="pre">to</span></tt> is respectively interpreted as starting the
+iteration at the head or finishing the iteration at the tail, regardless of values of the head and tail.</p>
+<p>For examample, let&#8217;s start at the head and iterate till 0.5:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="p">[</span><span class="n">x</span><span class="o">.</span><span class="n">contents</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">p</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">sortedFloats</span><span class="o">.</span><span class="n">range</span><span class="p">(</span><span class="bp">None</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">)]</span>
+<span class="go">[0.014432392962091867, 0.038827493571539695, 0.043208541161602665, 0.06914392433423655, 0.07327577792391804, 0.11226017699105972, 0.11736005057379029, 0.13021302275975688, 0.13078096193971112, 0.1348537611989652, 0.13700750396727945, 0.1417455635817888, 0.14671032194011457, 0.14715991816841778, 0.15975671807789493, 0.1644834338680018, 0.17663374761721184, 0.1857241738737354, 0.19446895049174417, 0.20262663200059494, 0.20305829275692444, 0.21171568976023003, 0.21390753049174072, 0.22516293556211264, 0.22555741047358735, 0.2305586089654681, 0.23544699374851974, 0.23567832921908183, 0.2533117560380147, 0.256707976428696, 0.2590084917154736, 0.2758368539391567, 0.29465675376336253, 0.2953250720566104, 0.31376136582532577, 0.3413338898282574, 0.3593511401342244, 0.3642026252197428, 0.366439909719686, 0.37475624323154333, 0.38968876005844033, 0.395757368872072, 0.4134909043927144, 0.4295776461864138, 0.4298222708601105, 0.4315803283922126, 0.4395906018119786, 0.44339995485526273, 0.45945902363778857, 0.48678549303293817, 0.49085713587721047]</span>
+</pre></div>
+</div>
+<p>Now let&#8217;s start at 0.5 and iterate to the end:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="p">[</span><span class="n">x</span><span class="o">.</span><span class="n">contents</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">p</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">sortedFloats</span><span class="o">.</span><span class="n">range</span><span class="p">(</span><span class="mf">0.5</span><span class="p">,</span> <span class="bp">None</span><span class="p">)]</span>
+<span class="go">[0.5226933014113342, 0.5313147518470183, 0.5433155946072753, 0.5542263583182457, 0.556152990512616, 0.5641385986016807, 0.5808745525911077, 0.5912249836224895, 0.6035000029031871, 0.6054987779269864, 0.6084021478742864, 0.6172404962969068, 0.6390555147357233, 0.6435268044107577, 0.6512317704341258, 0.6768215650986809, 0.6840312745816469, 0.6840819180161107, 0.6852579929645369, 0.6909226510552873, 0.7165110905234495, 0.7188819901966701, 0.7227143160726478, 0.727693576886414, 0.734023602212773, 0.7447501528022076, 0.7484114914175455, 0.7550038512774011, 0.793770550765207, 0.7982586371435578, 0.8031721215739205, 0.8060468380335744, 0.8060952775041057, 0.8097396112110605, 0.8196436434587475, 0.8263653401364824, 0.8376565105032981, 0.8381453785681514, 0.8493361613899302, 0.8499390127809929, 0.8536542179472612, 0.8682415206080506, 0.8712847291984398, 0.8861924242970314, 0.9329778169654616, 0.9493234167956348, 0.9536660422656937, 0.9713032894127117, 0.9856811855948702]</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">del</span> <span class="n">x</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>If we reopen the storage, we still have the same data in it:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="n">p</span> <span class="o">=</span> <span class="n">Storage</span><span class="p">(</span><span class="n">mmapFileName</span><span class="p">,</span> <span class="n">fileSize</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">stringRegistrySize</span><span class="o">=</span><span class="mi">32</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="s">&#39; &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span> <span class="nb">str</span><span class="p">(</span><span class="n">word</span><span class="p">)</span> <span class="k">for</span> <span class="n">word</span> <span class="ow">in</span> <span class="n">p</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">sortedStrings</span><span class="p">)</span>
+<span class="go">&#39;At At Lorem Lorem Lorem Lorem Stet Stet accusam accusam aliquyam aliquyam amet, amet, amet. amet. clita clita consetetur consetetur diam diam diam diam dolor dolor dolor dolor dolore dolore dolores dolores duo duo ea ea eirmod eirmod elitr, elitr, eos eos erat, erat, est est et et et et et et et et gubergren, gubergren, invidunt invidunt ipsum ipsum ipsum ipsum justo justo kasd kasd labore labore magna magna no no nonumy nonumy rebum. rebum. sadipscing sadipscing sanctus sanctus sea sea sed sed sed sed sit sit sit sit takimata takimata tempor tempor ut ut vero vero voluptua. voluptua.&#39;</span>
+</pre></div>
+</div>
+<p>It is possible to retrieve individual values from the list:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">sortedStrings</span><span class="p">[</span><span class="s">&quot;Lorem&quot;</span><span class="p">]</span>                                       
+<span class="go">&lt;persistent String object &#39;Lorem&#39; @offset 0x...L&gt;</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">sortedStrings</span><span class="p">[</span><span class="s">&quot;Balmoral&quot;</span><span class="p">]</span>                                       
+<span class="gt">Traceback (most recent call last):</span>
+<span class="c">...</span>
+<span class="gr">KeyError</span>: <span class="n">&#39;Balmoral&#39;</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="s">&quot;Make _ refer to something else&quot;</span>
+<span class="go">&#39;Make _ refer to something else&#39;</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">os</span><span class="o">.</span><span class="n">unlink</span><span class="p">(</span><span class="n">mmapFileName</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>So far we have only inserted basic persistent types into the lists, for which
+the <a class="reference internal" href="reference.html#module-ptypes.storage" title="ptypes.storage"><tt class="xref py py-mod docutils literal"><span class="pre">storage</span></tt></a> module defines 3-way relational
+operators, i.e. allows interpreting all of the <em>less than</em>, <em>greater than</em> and
+<em>equals</em> relationships. This is not the case for structures: they can only
+be compared for equility.</p>
+<p>Let&#8217;s see what happens if we try to insert structures into a skip list:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="k">class</span> <span class="nc">MyStorage</span><span class="p">(</span><span class="n">Storage</span><span class="p">):</span>
+<span class="gp">... </span>    <span class="k">def</span> <span class="nf">populateSchema</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="gp">... </span>        <span class="k">class</span> <span class="nc">Agent</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">schema</span><span class="o">.</span><span class="n">Structure</span><span class="p">):</span>
+<span class="gp">... </span>            <span class="n">name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">schema</span><span class="o">.</span><span class="n">String</span>
+<span class="gp">... </span>            <span class="n">age</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">schema</span><span class="o">.</span><span class="n">Int</span>
+<span class="gp">... </span>            <span class="n">weight</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">schema</span><span class="o">.</span><span class="n">Float</span>
+<span class="gp">...</span>
+<span class="gp">... </span>        <span class="bp">self</span><span class="o">.</span><span class="n">define</span><span class="p">(</span> <span class="n">SkipList</span><span class="p">(</span><span class="s">&#39;ListOfAgents&#39;</span><span class="p">)[</span><span class="bp">self</span><span class="o">.</span><span class="n">schema</span><span class="o">.</span><span class="n">Agent</span><span class="p">]</span> <span class="p">)</span>
+<span class="gp">... </span>        <span class="k">class</span> <span class="nc">Root</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">schema</span><span class="o">.</span><span class="n">Structure</span><span class="p">):</span>
+<span class="gp">... </span>            <span class="n">sortedAgents</span><span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">schema</span><span class="o">.</span><span class="n">ListOfAgents</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span> <span class="o">=</span> <span class="n">MyStorage</span><span class="p">(</span><span class="n">mmapFileName</span><span class="p">,</span> <span class="n">fileSize</span><span class="o">=</span><span class="mi">16000</span><span class="p">,</span> <span class="n">stringRegistrySize</span><span class="o">=</span><span class="mi">32</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">sortedAgents</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">schema</span><span class="o">.</span><span class="n">ListOfAgents</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">for</span> <span class="n">agentName</span><span class="p">,</span> <span class="n">age</span><span class="p">,</span> <span class="n">weight</span> <span class="ow">in</span> <span class="p">((</span><span class="s">&quot;Felix Leiter&quot;</span><span class="p">,</span> <span class="mi">31</span><span class="p">,</span> <span class="mf">95.3</span><span class="p">),</span> <span class="p">(</span><span class="s">&quot;Miss Moneypenny&quot;</span><span class="p">,</span> <span class="mi">23</span><span class="p">,</span> <span class="mf">65.4</span><span class="p">),</span> <span class="p">(</span><span class="s">&quot;Bill Tanner&quot;</span><span class="p">,</span><span class="mi">57</span><span class="p">,</span> <span class="mf">73.9</span><span class="p">)):</span> 
+<span class="gp">... </span>    <span class="n">agent</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">schema</span><span class="o">.</span><span class="n">Agent</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">agentName</span><span class="p">,</span> <span class="n">age</span><span class="o">=</span><span class="n">age</span><span class="p">,</span> <span class="n">weight</span><span class="o">=</span><span class="n">weight</span> <span class="p">)</span>
+<span class="gp">... </span>    <span class="n">p</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">sortedAgents</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="n">agent</span><span class="p">)</span>
+<span class="gt">Traceback (most recent call last):</span>
+<span class="c">...</span>
+<span class="gr">TypeError</span>: <span class="n">&lt;persistent class &#39;Agent&#39;&gt; does not define a sort order!</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">del</span> <span class="n">agent</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">os</span><span class="o">.</span><span class="n">unlink</span><span class="p">(</span><span class="n">mmapFileName</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The pythonic way to overcome this is to define a comparison function or
+(preferably) a function that extracts from the structure a key having a sort
+order. The definitions of these functions have to be supplied in a string
+containing a Python code snippet. The snippet will be executed in a name space
+when the storage is opened and the persistent type is created.
+If the name space contains the names <tt class="docutils literal"><span class="pre">getKeyFromValue</span></tt> or <tt class="docutils literal"><span class="pre">compare</span></tt> after
+the execution of the snippet, then the objects associated with these names
+will be called to get the keys from the values or to
+perform 3-way comparison of the values inserted into the skip list.
+The snippet becomes part of the type definition of the list and gets saved into the storage.:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="n">sortOrder</span> <span class="o">=</span> <span class="s">&quot;&quot;&quot;</span>
+<span class="gp">... </span><span class="s"># Demonstrate when this snippet is executed (ommit this in real world scenarios)</span>
+<span class="gp">... </span><span class="s">print &quot;Sort order is now being defined.&quot;</span>
+<span class="gp">...</span><span class="s"></span>
+<span class="gp">... </span><span class="s"># This is the essential part. You have to define &#39;getKeyFromValue&#39; and/or &#39;compare&#39;:</span>
+<span class="gp">... </span><span class="s">from operator import attrgetter</span>
+<span class="gp">... </span><span class="s">getKeyFromValue=attrgetter(&#39;age&#39;)</span>
+<span class="gp">...</span><span class="s"></span>
+<span class="gp">... </span><span class="s">def compare(x, y):</span>
+<span class="gp">... </span><span class="s">    # demonstrate when we compare stuff by printing x &amp; y</span>
+<span class="gp">... </span><span class="s">    rv = cmp(x, y)</span>
+<span class="gp">... </span><span class="s">    print &quot;Comparing {0} and {1}: {2}&quot;.format(repr(x), repr(y), rv)</span>
+<span class="gp">... </span><span class="s">    return rv</span>
+<span class="gp">... </span><span class="s">&quot;&quot;&quot;</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">class</span> <span class="nc">MyStorage</span><span class="p">(</span><span class="n">Storage</span><span class="p">):</span>
+<span class="gp">... </span>    <span class="k">def</span> <span class="nf">populateSchema</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="gp">... </span>        <span class="k">class</span> <span class="nc">Agent</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">schema</span><span class="o">.</span><span class="n">Structure</span><span class="p">):</span>
+<span class="gp">... </span>            <span class="n">name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">schema</span><span class="o">.</span><span class="n">String</span>
+<span class="gp">... </span>            <span class="n">age</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">schema</span><span class="o">.</span><span class="n">Int</span>
+<span class="gp">... </span>            <span class="n">weight</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">schema</span><span class="o">.</span><span class="n">Float</span>
+<span class="gp">...</span>
+<span class="gp">... </span>        <span class="bp">self</span><span class="o">.</span><span class="n">define</span><span class="p">(</span> <span class="n">SkipList</span><span class="p">(</span><span class="s">&#39;ListOfAgents&#39;</span><span class="p">)[</span><span class="bp">self</span><span class="o">.</span><span class="n">schema</span><span class="o">.</span><span class="n">Agent</span><span class="p">,</span> <span class="n">sortOrder</span><span class="p">]</span> <span class="p">)</span>
+<span class="gp">... </span>        <span class="k">class</span> <span class="nc">Root</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">schema</span><span class="o">.</span><span class="n">Structure</span><span class="p">):</span>
+<span class="gp">... </span>            <span class="n">sortedAgents</span><span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">schema</span><span class="o">.</span><span class="n">ListOfAgents</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span> <span class="o">=</span> <span class="n">MyStorage</span><span class="p">(</span><span class="n">mmapFileName</span><span class="p">,</span> <span class="n">fileSize</span><span class="o">=</span><span class="mi">16000</span><span class="p">,</span> <span class="n">stringRegistrySize</span><span class="o">=</span><span class="mi">32</span><span class="p">)</span>
+<span class="go">Sort order is now being defined.</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">sortedAgents</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">schema</span><span class="o">.</span><span class="n">ListOfAgents</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">for</span> <span class="n">agentName</span><span class="p">,</span> <span class="n">age</span><span class="p">,</span> <span class="n">weight</span> <span class="ow">in</span> <span class="p">((</span><span class="s">&quot;Felix Leiter&quot;</span><span class="p">,</span> <span class="mi">31</span><span class="p">,</span> <span class="mf">95.3</span><span class="p">),</span> <span class="p">(</span><span class="s">&quot;Miss Moneypenny&quot;</span><span class="p">,</span> <span class="mi">23</span><span class="p">,</span> <span class="mf">65.4</span><span class="p">),</span> <span class="p">(</span><span class="s">&quot;Bill Tanner&quot;</span><span class="p">,</span><span class="mi">57</span><span class="p">,</span> <span class="mf">73.9</span><span class="p">)):</span> 
+<span class="gp">... </span>    <span class="n">agent</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">schema</span><span class="o">.</span><span class="n">Agent</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">agentName</span><span class="p">,</span> <span class="n">age</span><span class="o">=</span><span class="n">age</span><span class="p">,</span> <span class="n">weight</span><span class="o">=</span><span class="n">weight</span> <span class="p">)</span>
+<span class="gp">... </span>    <span class="n">p</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">sortedAgents</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="n">agent</span><span class="p">)</span>
+<span class="go">Comparing ...</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">for</span> <span class="n">agent</span> <span class="ow">in</span> <span class="n">p</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">sortedAgents</span><span class="p">:</span>
+<span class="gp">... </span>    <span class="k">print</span> <span class="n">agent</span><span class="o">.</span><span class="n">name</span>
+<span class="go">Miss Moneypenny</span>
+<span class="go">Felix Leiter</span>
+<span class="go">Bill Tanner</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">del</span> <span class="n">agent</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>The next time we open the storage, the snippet is again executed:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="n">p</span> <span class="o">=</span> <span class="n">Storage</span><span class="p">(</span><span class="n">mmapFileName</span><span class="p">,</span> <span class="n">fileSize</span><span class="o">=</span><span class="mi">16000</span><span class="p">,</span> <span class="n">stringRegistrySize</span><span class="o">=</span><span class="mi">32</span><span class="p">)</span>
+<span class="go">Sort order is now being defined.</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">agent</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">schema</span><span class="o">.</span><span class="n">Agent</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&quot;Auric Goldfinger&quot;</span><span class="p">,</span> <span class="n">age</span><span class="o">=</span><span class="mi">65</span><span class="p">,</span> <span class="n">weight</span><span class="o">=</span><span class="mf">87.3</span> <span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">sortedAgents</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="n">agent</span><span class="p">)</span>                                       
+<span class="go">Comparing ...</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">for</span> <span class="n">agent</span> <span class="ow">in</span> <span class="n">p</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">sortedAgents</span><span class="p">:</span>
+<span class="gp">... </span>    <span class="k">print</span> <span class="n">agent</span><span class="o">.</span><span class="n">name</span>
+<span class="go">Miss Moneypenny</span>
+<span class="go">Felix Leiter</span>
+<span class="go">Bill Tanner</span>
+<span class="go">Auric Goldfinger</span>
+</pre></div>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="storage.html"
+                        title="previous chapter">Getting Started with <tt class="docutils literal"><span class="pre">ptypes</span></tt></a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="graph.html"
+                        title="next chapter">Property Graphs</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="_sources/pcollections.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="graph.html" title="Property Graphs"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="storage.html" title="Getting Started with ptypes"
+             >previous</a> |</li>
+        <li><a href="index.html">ptypes 0.4 documentation</a> &raquo;</li>
+          <li><a href="examples.html" >Ptypes through examples</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2015, Amadeus IT Group.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.2.
+    </div>
+  </body>
+</html>
