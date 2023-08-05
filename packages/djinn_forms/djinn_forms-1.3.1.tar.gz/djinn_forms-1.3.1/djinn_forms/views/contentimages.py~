@@ -1,0 +1,59 @@
+import logging
+from django.db.models import get_model
+from djinn_contenttypes.views.base import CTDetailView, DetailView
+from pgcontent.models.attachment import DocumentAttachment
+
+
+log = logging.getLogger("pgcontent")
+
+
+class AttachmentImageView(DetailView):
+
+    template_name = "pgcontent/snippets/imgattachment_in_modal.html"
+    model = DocumentAttachment
+
+
+class ImageAttachmentList(CTDetailView):
+
+    """ Return listing of all images"""
+
+    def get_template_names(self):
+
+        return ["pgcontent/images_iframe.html"]
+
+    def get(self, request, *args, **kwargs):
+
+        self.object = self.get_object()
+        context = self.get_context_data(object=self.object)
+        return self.render_to_response(context, mimetype="text/plain")
+
+    def get_context_data(self, **kwargs):
+
+        try:
+
+            context = super(ImageAttachmentList, self).get_context_data(
+                **kwargs)
+
+            images = self.object.images.all()
+
+            if self.request.GET.get("image_ids", None):
+
+                split_by_comma = self.request.GET["image_ids"].split(",")
+                split_by_semicolon = [item.split(":")[0] for item in
+                                      split_by_comma]
+
+                image_ids = [img_id for img_id in split_by_semicolon if img_id]
+
+                img_type = self.request.GET.get("img_type",
+                                                "pgcontent.ImageAttachment")
+
+                images_by_id = get_model(*img_type.split(".")).objects.filter(
+                    pk__in=image_ids)
+
+                images = images | images_by_id
+
+            context.update({'images': images})
+
+            return context
+        except:
+            log.exception("")

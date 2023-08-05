@@ -1,0 +1,184 @@
+$(document).ready(function() {
+
+    // Extend Popover class.
+    var ProfilePopover = function (element, options) {
+      this.init('popover', element, options);
+    }
+
+    ProfilePopover.prototype = $.fn.popover.Constructor.prototype;
+
+    ProfilePopover.prototype.getContent = function() {
+      return pg.profile.fetch_profile_data(this.$element);
+    };
+
+    ProfilePopover.prototype.hasContent = function() {
+      return pg.profile.fetch_profile_data(this.$element);
+    };
+
+    $.fn.profilepopover = function (option) {
+      return this.each(function () {
+          var $this = $(this)
+          , data = $this.data('popover')
+          , options = typeof option == 'object' && option
+          if (!data) $this.data('popover', (data = new ProfilePopover(this, options)))
+                       if (typeof option == 'string') data[option]()
+                                                        })
+    }
+
+    $.fn.profilepopover.Constructor = ProfilePopover;
+
+    $('form#blog_form_.focus').find('textarea').focus();
+
+    // Events binding
+    //
+    $(document).on("mouseenter", pg.profile._pattern, function(e) {
+
+        // Not in modal window...
+        if ($(e.currentTarget).parents(".modal-body").length) {
+            return;
+        }
+
+        clearTimeout(pg.profile._timeout);
+        pg.profile.hide_current();
+
+        var placement = "right";
+
+        if ($(e.currentTarget).offset().left > 400) {
+            placement = "left";
+        }
+
+        $(e.currentTarget).profilepopover(
+            {"trigger": "manual", 
+             "html": true, 
+             "container": "body",
+             "placement": placement
+            }
+        );
+        pg.profile._current_popover = $(e.currentTarget);
+        pg.profile._timeout = setTimeout("pg.profile.show_current()", 300);
+      });
+
+    $(document).on("mouseleave", pg.profile._pattern, function(e) {
+
+        // Not in modal window...
+        if ($(e.currentTarget).parents(".modal-body").length) {
+            return;
+        }
+
+        clearTimeout(pg.profile._timeout);
+        pg.profile._timeout = setTimeout("pg.profile.hide_current()", 500);
+      });
+
+    $(document).on("mouseenter", ".popover", function(e) {
+        clearTimeout(pg.profile._timeout);
+      });
+
+    $(document).on("mouseleave", ".popover", function(e) {
+        pg.profile._timeout = setTimeout("pg.profile.hide_current()", 500);
+      });
+
+    $(document).on("click", "#close-welcome", function(e) {
+
+        var btn = $(e.currentTarget);
+
+        var url = btn.attr("href");
+
+        $.ajax({
+          async: true,
+          url: url,
+          data: {},
+          success: function(data) {
+              // Do nothing.
+          }
+      });
+
+    });
+
+    $("#member_filter a.more").click(function() {
+
+        var top = $(".filter_top").html();
+        var bottom = $(".filter_bottom").html();
+
+        $(".filter_bottom").html(top + bottom);
+        $(".filter_bottom").show();
+
+        $(".filter_top").hide();
+        $(".filter_more").hide();
+
+        return false;
+      });
+
+    // Remove avatar value
+    $(document).on("click", ".delete-avatar", function(e) {
+
+        var link = $(e.currentTarget);
+
+        $(link.data("valuefield")).val("");
+        link.parents(".avatarwidget").removeClass("edit");
+        $(link.data("target")).html("");
+        $(link.data("progress")).hide();
+
+        e.preventDefault();
+      });
+
+    $(document).on('formAdded', function(e) {
+
+        var form = $(e.target);
+
+        if (form.parents("#projects").length) {
+          form.find(".relate").each(function() {
+              djinn.forms.initRelateWidget($(this));
+            });
+          form.find('input,textarea').placehold();
+        }
+      });
+
+    $(document).on('djinn_forms_relate', function(event, widget) {
+        widget.find('input,textarea').placehold();
+    });
+
+    $(document).on("click", "section#projects a.formset-delete-button", function(e) {
+        /* Er zijn stiekum 2 linkjes om te klikken. Maar de ene is
+         * verborgen Bij een confirm klikken we via de callback
+         * functie op de verborgen Link
+         */
+        pu_in.core.confirmMessage(
+            gettext("Weet je zeker dat je dit project wilt verwijderen?"),
+            function(tgt) {
+              $(tgt).siblings('a[data-formset-delete-button]').click();
+              $(tgt).parents(".add-section").hide();
+            },
+            $(this),
+            gettext("verwijderen"),
+            gettext("annuleren")
+        );
+    });
+
+    /* In the view of the groupprofile, the invite widget saves all actions
+     * directly
+     */
+    $(document).on("djinn_forms_unrelate", function(event, widget, value) {
+
+        if ($("body").is(".ct.groupprofile.view")) {
+          
+          $.post(widget.parents("form").attr("action"),
+                 {"invitees": "", "invitees_rm": value, "invitees_add": ""},
+                 function() {},
+                 "json"
+                 );
+        }
+      });
+
+    $(document).on("djinn_forms_relate", function(event, widget, value) {
+
+        if ($("body").is(".ct.groupprofile.view")) {
+
+          $.post(widget.parents("form").attr("action"),
+                 {"invitees": "", "invitees_add": value, "invitees_rm": ""},
+                 function() {},
+                 "json"
+                 );
+        }
+      });
+
+  });
