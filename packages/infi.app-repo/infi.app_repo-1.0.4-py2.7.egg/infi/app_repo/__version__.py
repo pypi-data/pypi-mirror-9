@@ -1,0 +1,10 @@
+__version__ = "1.0.4"
+__git_commiter_name__ = "Guy Rozendorn"
+__git_commiter_email__ = "guy@rzn.co.il"
+__git_branch__ = '(detached from v1.0.4)'
+__git_remote_tracking_branch__ = '(No remote tracking)'
+__git_remote_url__ = '(Not remote tracking)'
+__git_head_hash__ = '8150832a94bd0188cb0a100ed22f0c9c0e7e182b'
+__git_head_subject__ = 'Finished release v1.0.4.'
+__git_head_message__ = '* release/v1.0.4:\n  Freezing dependencies\n  TRIVIAL empty commit for triggering new build\n  HOSTDEV-1949 PEP-440 changes\n  buildout.cfg: remove python-cjson from requirements\n  HOSTDEV-1928 supporting version x.y.z.post%%d+\n  APR-9 solaris\n  APR-9 solaris\n  TRIVIAL removing release_notes_url from releases.json\n  APR-8 removed the grouping by version inside "other versions" datatable, since the search box totaly messes it up (because of the rowspan)'
+__git_dirty_diff__ = ''
