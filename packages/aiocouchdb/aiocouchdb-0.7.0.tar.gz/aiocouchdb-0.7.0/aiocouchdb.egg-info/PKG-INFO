@@ -1,0 +1,182 @@
+Metadata-Version: 1.1
+Name: aiocouchdb
+Version: 0.7.0
+Summary: CouchDB client built on top of aiohttp (asyncio)
+Home-page: https://github.com/kxepal/aiocouchdb
+Author: Alexander Shorin
+Author-email: kxepal@gmail.com
+License: BSD
+Description: aiocouchdb
+        ==========
+        
+        CouchDB client built on top of `aiohttp`_.
+        
+        Current status: **beta**. ``aiocouchdb`` has all CouchDB API implements up to
+        1.6 release. However, it may lack of some usability and stability bits, but
+        work is in progress. Feel free to `send pull request`_ or `open issue`_ if you
+        find something that should be fixed.
+        
+        Also don't miss the docs: http://aiocouchdb.readthedocs.org/en/latest/
+        
+        Example
+        -------
+        
+        .. code:: python
+        
+            import sys
+            import asyncio
+            from aiocouchdb import Server
+        
+        
+            @asyncio.coroutine
+            def go(url):
+                server = Server(url)
+        
+                # multi-session workflow
+                admin = yield from server.session.open('admin', 's3cr1t')
+                user = yield from server.session.open('user', 'pass')
+        
+                admin_info = yield from server.session.info(auth=admin)
+                user_info = yield from server.session.info(auth=user)
+                print('admin:', admin_info)
+                print('user:', user_info)
+        
+                # db_updates is admin only resource
+                feed = yield from server.db_updates(feed='continuous', auth=admin,
+                                                    heartbeat=False, timeout=10000)
+                while True:
+                    event = yield from feed.next()
+                    if event is None:  # feed exhausted
+                        break
+                    dbname = event['db_name']
+        
+                    # want to use raw queries? that's easy
+                    resp = yield from server.resource.get(dbname, auth=user)
+                    if resp.status == 403:
+                        # ignore Forbidden errors
+                        continue
+                    # but respect everyone else
+                    yield from resp.maybe_raise_error()
+                    dbinfo = yield from resp.json()
+                    print(dbinfo)
+        
+                # close sessions
+                assert {'ok': True} == (yield from server.session.close(auth=admin))
+                assert {'ok': True} == (yield from server.session.close(auth=user))
+        
+        
+            if __name__ == '__main__':
+                if '--iocp' in sys.argv:
+                    from asyncio import events, windows_events
+                    sys.argv.remove('--iocp')
+                    el = windows_events.ProactorEventLoop()
+                    events.set_event_loop(el)
+        
+                loop = asyncio.get_event_loop()
+                loop.run_until_complete(go('http://localhost:5984'))
+        
+        
+        Requirements
+        ------------
+        
+        - Python 3.3+
+        - `aiohttp`_
+        - `oauthlib`_ (optional)
+        
+        
+        License
+        -------
+        
+        BSD
+        
+        
+        .. _aiohttp: https://github.com/KeepSafe/aiohttp
+        .. _oauthlib: https://github.com/idan/oauthlib
+        .. _open issue: https://github.com/kxepal/aiocouchdb/issues
+        .. _send pull request: https://github.com/kxepal/aiocouchdb/pulls
+        
+        Changes
+        =======
+        
+        0.7.0 (2015-02-18)
+        ------------------
+        
+        - Greatly improved multipart module, added multipart writer
+        - Document.update now supports multipart requests to upload
+          multiple attachments in single request
+        - Added Proxy Authentication provider
+        - Minimal requirements for aiohttp raised up to 0.14.0 version
+        
+        0.6.0 (2014-11-12)
+        ------------------
+        
+        - Adopt test suite to run against real CouchDB instance
+        - Database, documents and attachments now provides access to their name/id
+        - Remove redundant longnamed constructors
+        - Construct Database/Document/Attachment instances through __getitem__ protocol
+        - Add Document.rev method to get current document`s revision
+        - Add helpers to work with authentication database (_users)
+        - Add optional limitation of feeds buffer
+        - All remove(...) methods are renamed to delete(...) ones
+        - Add support for config option existence check
+        - Correctly set members for database security
+        - Fix requests with Accept-Ranges header against attachments
+        - Fix views requests when startkey/endkey should be null
+        - Allow to pass custom query parameters and request headers onto changes feed
+          request
+        - Handle correctly HTTP 416 error response
+        - Minor code fixes and cleanup
+        
+        0.5.0 (2014-09-26)
+        ------------------
+        
+        - Last checkpoint release. It's in beta now!
+        - Implements CouchDB Design Documents HTTP API
+        - Views refactoring and implementation consolidation
+        
+        0.4.0 (2014-09-17)
+        ------------------
+        
+        - Another checkpoint release
+        - Implements CouchDB Attachment HTTP API
+        - Minimal requirements for aiohttp raised up to 0.9.1 version
+        - Minor fixes for Document API
+        
+        0.3.0 (2014-08-18)
+        ------------------
+        
+        - Third checkpoint release
+        - Implements CouchDB Document HTTP API
+        - Support document`s multipart API (but not doc update due to COUCHDB-2295)
+        - Minimal requirements for aiohttp raised up to 0.9.0 version
+        - Better documentation
+        
+        0.2.0 (2014-07-08)
+        ------------------
+        
+        - Second checkpoint release
+        - Implements CouchDB Database HTTP API
+        - Bulk docs accepts generator as an argument and streams request doc by doc
+        - Views are processed as stream
+        - Unified output for various changes feed types
+        - Basic Auth accepts non-ASCII credentials
+        - Minimal requirements for aiohttp raised up to 0.8.4 version
+        
+        0.1.0 (2014-07-01)
+        ------------------
+        
+        - Initial checkpoint release
+        - Implements CouchDB Server HTTP API
+        - BasicAuth, Cookie, OAuth authentication providers
+        - Multi-session workflow
+Platform: UNKNOWN
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: BSD License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.3
+Classifier: Programming Language :: Python :: 3.4
+Classifier: Topic :: Database :: Front-Ends
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
