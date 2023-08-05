@@ -1,0 +1,160 @@
+#!/usr/bin/env python
+
+import sys
+import argparse
+import ConfigParser
+from os.path import expanduser
+
+from heisenberg import Heisenberg
+
+def add_sub_command(subparsers, name, help="", search=False, ssh=False, cmd=False, command=None):
+    if command is None:
+        command = name
+
+    parser = subparsers.add_parser(name, help=help)
+    parser.set_defaults(command=command)
+
+    if search:
+        add_search_arguments(parser)
+    if cmd:
+        add_cmd_arguments(parser)
+    if ssh:
+        add_ssh_arguments(parser)
+
+    return parser
+
+def add_search_arguments(parser):
+    parser.add_argument(
+        'search_pattern',
+        type=str,
+        help='A search pattern'
+    )
+    parser.add_argument(
+        '-s',
+        '--sort-key',
+        default='name',
+        type=str,
+        help='The column to sort results'
+    )
+    parser.add_argument(
+        '-p',
+        '--search-key',
+        default='name',
+        type=str,
+        help='The column to choose when searching'
+    )
+
+def add_ssh_arguments(parser):
+    parser.add_argument(
+        '-u',
+        '--user',
+        default='ubuntu',
+        type=str,
+        help='The username to use when connecting'
+    )
+
+def add_cmd_arguments(parser):
+    parser.add_argument(
+        'ssh_command',
+        type=str,
+        help='The command to run on',
+    )
+
+def main(args):
+    heisen = Heisenberg(args)
+    heisen.execute_command()
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        prog='ec2',
+        description='A utility for searching and connecting to EC2 instances',
+    )
+
+    parser.add_argument('-c', '--config', dest='config',
+                    default=expanduser("~/.aws/credentials"), help='Configuration file', metavar='FILE')
+
+    parser.add_argument('-z', '--cache-file', dest='cache_file',
+                    default=expanduser("~/.heisenberg_cache"), help='Cache file', metavar='FILE')
+
+    parser.add_argument('-r', '--refresh', dest='refresh',
+                    help='Refresh internal AWS instance cache', action="store_true")
+
+    parser.add_argument('--access-key', dest='access_key',
+                    help='AWS Access Key', metavar='AWS_ACCESS_KEY')
+
+    parser.add_argument('--secret-key', dest='secret_key',
+                    help='AWS Secret Key', metavar='AWS_SECRET_KEY')
+
+    parser.add_argument('--region', dest='region',
+                    help='AWS default region', metavar='AWS_REGION')
+
+    parser.add_argument('--profile', dest='profile', default='default',
+                    help='AWSCLI profile', metavar='AWS_PROFILE')
+
+    # sub-commands
+    subparsers = parser.add_subparsers()
+
+    add_sub_command(
+        subparsers,
+        'find',
+        help='List all the EC2 instances that match a pattern',
+        search=True,
+        ssh=False,
+        cmd=False,
+    )
+
+    add_sub_command(
+        subparsers,
+        'ssh',
+        help='Connect to EC2 host(s)',
+        search=True,
+        ssh=True,
+        cmd=False,
+    )
+
+    add_sub_command(
+        subparsers,
+        'cmd',
+        help='Run command(s) on matching EC2 host(s)',
+        search=True,
+        ssh=True,
+        cmd=True,
+    )
+
+    add_sub_command(
+        subparsers,
+        'local',
+        help='Run command(s) locally and subbing in matching EC2 host(s) as {host}',
+        search=True,
+        ssh=True,
+        cmd=True,
+    )
+
+    args = parser.parse_args()
+
+    if not args.region:
+        try:
+            config = ConfigParser.ConfigParser()
+            config.read(expanduser("~/.aws/config"))
+
+            profile = args.profile or 'default'
+            args.region = config.get('profile ' + profile, 'region')
+        except:
+            args.region = 'us-east-1'
+
+    try:
+        if not args.secret_key and not args.access_key:
+            credentials = ConfigParser.ConfigParser()
+            credentials.read(args.config)
+
+            args.access_key = credentials.get(args.profile, 'aws_access_key_id')
+            args.secret_key = credentials.get(args.profile, 'aws_secret_access_key')
+
+    except (ConfigParser.NoSectionError, ConfigParser.NoOptionError):
+        sys.stderr.write("ERROR: Malformed config file: {config}\n".format(
+            config=args.config
+        ))
+        sys.exit(1)
+
+    # start execution
+    main(args)
