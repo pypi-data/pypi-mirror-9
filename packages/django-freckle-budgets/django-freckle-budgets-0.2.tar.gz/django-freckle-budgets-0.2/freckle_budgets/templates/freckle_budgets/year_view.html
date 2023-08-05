@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% load freckle_budgets_tags i18n libs_tags %}
+
+{% block main %}
+<h1>{% trans "Budgets:" %} {{ year.year }}</h1>
+
+<p>Total cashflow budget: S${{ year.get_total_cashflow_budget|floatformat:2 }}</p>
+<p>Total investment budget: S${{ year.get_total_investment_budget|floatformat:2 }}</p>
+<p>Total unused budget: S${{ year.get_total_unused_budget|floatformat:2 }}</p>
+
+<hr />
+
+<div role="tabpanel">
+    <ul class="nav nav-tabs" role="tablist">
+        {% for project_month in project_months %}
+            <li role="presentation" class="{% if forloop.first %}active{% endif %}"><a href="#{{ project_month.0.get_date|date:"b" }}" aria-controls="{{ project_month.0.get_date|date:"b" }}" role="tab" data-toggle="tab">{{ project_month.0.get_date|date:"N" }}</a></li>
+        {% endfor %}
+    </ul>
+
+    <div class="tab-content">
+        {% for project_month in project_months %}
+        <div role="tabpanel" class="tab-pane {% if forloop.first %}active{% endif %}" id="{{ project_month.0.get_date|date:"b" }}">
+                <h2>{{ project_month.0.get_date|date:"F" }}</h2>
+                <div class="row">
+                    <div class="col-sm-9">
+                        <table class="table table-bordered freckle-budgets-table">
+                            <thead>
+                                <tr>
+                                    <th>{% trans "Monday" %}</th>
+                                    <th>{% trans "Tuesday" %}</th>
+                                    <th>{% trans "Wednesday" %}</th>
+                                    <th>{% trans "Thursday" %}</th>
+                                    <th>{% trans "Friday" %}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% get_weeks project_month.0 as weeks %}
+                                {% for week in weeks %}
+                                    <tr>
+                                        {% for day in week|slice:":5" %}
+                                            {% is_available_workday day project_month.0 as is_available_workday_ %}
+                                            <td class="{% if day.month != project_month.0.month %}text-muted-lighter freckle-budgets-date-unavailable{% endif %} {% if not is_available_workday_ %}freckle-budgets-date-unavailable{% endif %}">
+                                                <table class="freckle-budgets-table-cell">
+                                                    <tr>
+                                                        <td class="freckle-budgets-date">{{ day|date:"j" }}</td>
+                                                        <td>
+                                                            {% if day.month == project_month.0.month %}
+                                                                {% for project in project_month.1 %}
+                                                                    {% is_budget_fulfilled entries_times project day as is_budget_fulfilled_ %}
+                                                                    <div class="freckle-budgets-project" style="border:1px solid {{ project.project.color }};{% if is_budget_fulfilled_ %}background-color:{{ project.project.color }};{% endif %}"></div>
+                                                                {% endfor %}
+                                                            {% endif %}
+                                                        </td>
+                                                    </tr>
+                                                </table>
+                                            </td>
+                                        {% endfor %}
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+
+                        {% for employee in project_month.0.get_employees %}
+                            <h2>{{ employee }}</h2>
+                            <table class="table table-bordered">
+                                <thead>
+                                    <tr>
+                                        <th>{% trans "Project" %}</th>
+                                        <th>{% trans "Responsibility" %}</th>
+                                        <th>{% trans "Budget hours" %}</th>
+                                        <th>{% trans "Hours left" %}</th>
+                                        <th>{% trans "Hours/day" %}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% get_employee_project_months employee project_month.0 as employee_project_months %}
+                                    {% save "BUDGET_HOURS_TOTAL" 0 %}
+                                    {% save "HOURS_LEFT_TOTAL" 0 %}
+                                    {% save "HOURS_PER_DAY_TOTAL" 0 %}
+                                    {% for employee_project_month in employee_project_months %}
+                                        <tr>
+                                            <td>{{ employee_project_month.project_month.project.name }}</td>
+                                            <td>{{ employee_project_month.responsibility }}</td>
+                                            <td>
+                                                {{ employee_project_month.get_budget_hours|floatformat:2 }}
+                                                {% sum "BUDGET_HOURS_TOTAL" employee_project_month.get_budget_hours %}
+                                            </td>
+                                            <td>
+                                                {% get_hours_left_for_employee employee_project_month entries_times as hours_left %}
+                                                {{ hours_left|floatformat:2 }}
+                                                {% sum "HOURS_LEFT_TOTAL" hours_left %}
+                                            </td>
+                                            <td>
+                                                {% get_hours_per_day employee_project_month hours_left as hours_per_day %}
+                                                {{ hours_per_day|floatformat:2 }}
+                                                {% sum "HOURS_PER_DAY_TOTAL" hours_per_day %}
+                                            </td>
+                                        </tr>
+                                    {% endfor %}
+                                    <tr style="font-weight: bold;">
+                                        <td>{% trans "Total" %}</td>
+                                        <td></td>
+                                        <td>{{ BUDGET_HOURS_TOTAL|floatformat:2 }}</td>
+                                        <td>{{ HOURS_LEFT_TOTAL|floatformat:2 }}</td>
+                                        <td>{{ HOURS_PER_DAY_TOTAL|floatformat:2 }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        {% endfor %}
+                    </div>
+                    <div class="col-sm-3 freckle-budgets-month-info">
+                        <p>Max ressources: {{ project_month.0.get_available_ressources_max|floatformat:2 }} ({{ project_month.0.get_available_ressources_max_per_person}} / person)</p>
+                        <p>Work days: {{project_month.0.get_work_days_max|floatformat:2 }} </p>
+                        <hr />
+                        {% for project in project_month.0.get_cashflow_projects %}
+                            {% get_hours_left project entries_times as hours_left %}
+                            <p><div class="freckle-budgets-project" style="background-color:{{ project.project.color }};" data-toggle="tooltip" title="{{ project.get_daily_hours|floatformat:2 }}h / day; {{ hours_left|floatformat:2 }}hrs left"></div> {{ project.project.name }}: {{ project.get_budget_hours|floatformat:2 }}h (S${{ project.budget }})</p>
+                        {% endfor %}
+                        <p>Total profit: {{ project_month.0.get_total_cashflow_hours|floatformat:2 }}h (S${{ project_month.0.get_total_profit }})</p>
+                        <p>Average rate: S${{ project_month.0.get_average_rate|floatformat:2 }}/h</p>
+                        <hr />
+                        {% for project in project_month.0.get_investment_projects %}
+                            {% get_hours_left project entries_times as hours_left %}
+                            <p><div class="freckle-budgets-project" style="background-color:{{ project.project.color }};" data-toggle="tooltip" title="{{ project.get_daily_hours|floatformat:2 }}h / day; {{ hours_left|floatformat:2 }}hrs left"></div> {{ project.project.name }}: {{ project.get_budget_hours|floatformat:2 }}h (S${{ project.budget }})</p>
+                        {% endfor %}
+                        <p>Total investment: {{ project_month.0.get_total_investment_hours|floatformat:2 }}h (S${{ project_month.0.get_total_investment }})</p>
+                        <hr />
+                        <p><div class="freckle-budgets-project" style="background-color:#000;" data-toggle="tooltip" title="{{ project_month.0.get_unused_daily_hours|floatformat:2 }}h / day"></div> Unused: {{ project_month.0.get_unused_hours|floatformat:2 }}h (S${{ project_month.0.get_unused_budget|floatformat:2 }})</p>
+                    </div>
+                </div>
+            </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}
