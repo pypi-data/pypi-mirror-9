@@ -1,0 +1,136 @@
+#!/usr/bin/python
+# -*- coding:utf-8 -*-
+
+# Author: Pablo Abelenda
+# Contact: pablo.abelenda@interoud.com
+#
+# Maintainer: Pablo Saavedra
+# Contact: pablo.saavedra@interoud.com
+
+import os
+import sys
+import glob
+
+reload(sys)
+sys.setdefaultencoding('utf-8')
+
+from httplib2 import Http
+from urllib import urlencode
+from optparse import OptionParser
+import ConfigParser
+import simplejson as json
+
+def get_http_requester():
+    try:
+        h = Http(timeout=10)
+    except Exception:
+        h = Http()
+    return h
+
+
+hostname = "localhost"
+port = "80"
+storage_base_dir = "/storage/videos"
+token = "token"
+ssl = False
+logfile = "/dev/stdout"
+loglevel = 20
+delete = False
+
+# command line options parser ##################################################
+
+parser = OptionParser()
+parser.add_option("-H", "--hostname", 
+        dest="hostname", default=hostname,
+        help="LiveR hostname (default: %s)" % hostname)
+parser.add_option("-P", "--port", 
+        dest="port", help="LiveR port number (default: %s)" % port, 
+        default=port)
+parser.add_option("-l", "--logfile",
+        dest="logfile", help="Log file (default: %s)" % logfile,
+        default=logfile)
+parser.add_option("--loglevel",
+        dest="loglevel", help="Log level (default: %s)" % loglevel,
+        default=loglevel)
+parser.add_option("-t", "--token",
+        dest="token", help="Token for LiveR access (default: %s)" % token,
+        default=token)
+parser.add_option("--storagebasedir", 
+        dest="storage_base_dir", help="Storage basedir (default: %s)" % storage_base_dir,
+        default=storage_base_dir)
+parser.add_option("--ssl", 
+        dest="ssl", help="SSL ON/OFF (default: %s)" % ssl,
+        action="store_true",
+        default=ssl)
+parser.add_option("--delete",
+        dest="delete", help="Delete unreferenced mo (default: %s)" % delete,
+        action="store_true",
+        default=delete)
+(options, args) = parser.parse_args()
+
+delete = options.delete
+hostname = options.hostname
+port = options.port
+storage_base_dir = options.storage_base_dir
+token = options.token
+ssl = options.ssl
+logfile = options.logfile
+loglevel = options.loglevel
+
+# logging ######################################################################
+import logging
+hdlr = logging.FileHandler(logfile)
+hdlr.setFormatter(logging.Formatter('%(levelname)s %(asctime)s %(message)s'))
+logger = logging.getLogger('asm')
+logger.addHandler(hdlr)
+logger.setLevel(int(loglevel))
+
+# setting up ###################################################################
+
+logger.info("Default encoding: %s" % sys.getdefaultencoding())
+
+liver_http_base="http://" + hostname + ":" + port
+if ssl:
+    liver_http_base="https://" + hostname + ":" + port
+logger.info("LiveR base URL: %s" % liver_http_base)
+
+getMoURL = "%s/liver/api/external/get_mo?token=%s&all=1" % ( liver_http_base,token )
+
+headers = {'User-Agent': 'liver-mo-status'}
+
+
+# main action ##################################################################
+
+try:
+    h = get_http_requester()
+    resp, content = h.request(getMoURL, "GET", None , headers=headers)
+    logger.debug("Response: %s" % resp)
+    logger.debug("Content: %s" % content)
+    j_content=json.loads(content)
+    logger.debug("Result: %s" % j_content["result"])
+
+    media_in_liver=j_content["response"]
+
+    for f in glob.glob(storage_base_dir + "/*"):
+        try:
+            i = None
+            if f.endswith(".smil"):
+                i = media_in_liver.index(f.split("/")[-1])
+            else:
+                i = media_in_liver.index(f)
+            p = media_in_liver.pop(i)
+        except Exception as e:
+            print ("File with no reference in liveR: %s" % f)
+            if delete:
+                print ("Deleting file: %s" % f)
+                os.remove(f)
+
+    for f in media_in_liver:
+        print ("liveR recordings without file on storage: %s" % f)
+
+except Exception, e:
+    logger.error("Errors during response processing: %s" % (repr(e)))
+
+
+
+
