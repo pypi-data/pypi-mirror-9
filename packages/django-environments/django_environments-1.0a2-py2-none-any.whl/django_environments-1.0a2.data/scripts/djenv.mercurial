@@ -1,0 +1,132 @@
+#
+# Mercurial utilities for django-environments
+# 
+
+hgbaseport=7100
+
+# Hash function that should run just about anywhere
+function _hash() {
+    if which openssl > /dev/null; then
+        openssl md5
+    elif which md5 > /dev/null; then
+        md5
+    else
+        cksum
+    fi
+}
+
+# Start hg server in daemon mode and open first argument in browser
+function hgserve() {
+    _verify_project_root || return 1
+
+    local tmpdir=$PROJECT_ROOT/tmp
+    [ ! -d $tmpdir ] && mkdir $tmpdir
+    hgpidfile=$tmpdir/hgserve.pid
+
+    # Determine port number
+    local numhash=`basename $PROJECT_ROOT | _hash | sed 's/[^0-9]//g'`
+    hgport=`expr $hgbaseport + ${numhash:0:2}`
+
+    # See if the server is alive - start it if not
+    kill -0 `cat $hgpidfile 2>&1` > /dev/null 2>&1
+    if [ ! $? -eq 0 ]; then
+        cwd=`pwd`
+        cdroot
+        hg serve --port $hgport --daemon \
+            --pid-file $PROJECT_ROOT/tmp/hgserve.pid
+        sleep 0.5
+        cd $cwd
+    fi
+
+    [ ! "$1" = "--no-open" ] && open_url http://localhost:$hgport/$1
+}
+
+# Browse files in current branch
+function hgbrowse() {
+    _verify_project_root || return 1
+
+    hgserve --no-open
+
+    path=file/`hg branch``echo \`pwd\` | sed "s#$PROJECT_ROOT##"`
+    [ ! -z "$1" ] && path=$path/$1
+
+    open_url http://localhost:$hgport/$path
+}
+
+# Shut down hg server
+function hgkill() {
+    kill -9 `cat "$hgpidfile" 2>&1` > /dev/null 2>&1
+    if [ ! $? -eq 0 ]; then
+        echo "Server not running or other error" 1>&2
+    fi
+}
+
+# Runs an hg command on all hg repositories in the externals directory,
+# e.g. 'hgexternals pull -u'
+function hgexternals() {
+    _verify_project_root || return 1
+
+    for external in $PROJECT_ROOT/externals/*; do
+        if [ -d $external/.hg ]; then
+            echo `basename $external`:
+            _IFS=$IFS
+            IFS= # magic
+            hg --repository $external $*
+            IFS=$_IFS
+            echo
+        fi
+    done
+}
+
+# Pull and update the project and all Mercurial externals
+function hgfetchall() {
+    _verify_project_root || return 1
+
+    hg --repository $PROJECT_ROOT pull -u
+    echo
+    hgexternals pull -u
+}
+
+# List all .orig files
+function hgfindorig() {
+    _verify_project_root || return 1
+
+    find -H $PROJECT_ROOT -name \*.orig
+}
+
+# Remove all .orig files
+function hgremoveorig() {
+    _verify_project_root || return 1
+
+    find -H $PROJECT_ROOT -name \*.orig -print -delete
+}
+
+# Find out who added those XXX / TODO / FIXME statements
+# Note: searches only through clean Mercurial-versioned files
+function hgtodos() {
+    _verify_project_root || return 1
+
+    pattern="(TO.?DO|XXX|FIXME)\b"
+    (
+        IFS="
+"
+        cd $PROJECT_ROOT
+        # Find clean files with comments and feed them to hg blame
+        for file in `grep --extended-regexp $pattern --files-with-matches \
+                            --binary-files=without-match \
+                                \`hg status --clean --no-status\``; do
+            hg blame --user --file --changeset --line-number $file | \
+                sed 's/^ *//' | grep --extended-regexp $pattern
+        done
+    )
+}
+
+# Clean up
+function _djenv_mercurial_cleanup () {
+    # Stop server
+    hgkill > /dev/null 2>&1
+    # Clean environment
+    unset hgport
+}
+
+_djenv_register_cleanup _djenv_mercurial_cleanup 
