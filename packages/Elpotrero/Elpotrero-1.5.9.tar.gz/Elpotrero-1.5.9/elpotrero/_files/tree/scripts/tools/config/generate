@@ -1,0 +1,204 @@
+#!/usr/bin/env python
+import os
+import re
+import sys
+import logging
+import elpotrero.lib.util as elutil
+import configurationvalues as confvals
+from jinja2 import Template
+
+_logger = None
+_isverbose = False
+
+
+def replace_fname(oldfilename, context):
+    """Utility class for giving us new context-aware filenames
+
+    When generating new configuration files, sometimes the files themselves
+    must be be based on the configuration parameters.  That is, a file in
+    the production branch will have a name that reflects that branch, or a
+    file will be partially named after the project itself.  For example
+    "dosriendas.prd"
+
+    This function checks filenames to see if they contain Upper case words in
+    the name.  For example db.PROJECT.DOMAIN, both the "PROJECT" and "DOMAIN"
+    substrings will be replaced by "someproject" and "com" to give us
+    db.someproject.com
+
+    Keyword arguments:
+        oldfilename -- the original name of the file we are checking
+        context -- this is a context dictionary which contains the correct
+            key-value pairs we are checking for.  In the example above
+            "PROJECT" would result in "somename" when we check the context
+            dictionary
+    """
+    global _logger
+
+    p = re.compile(r'\b([A-Z]+)\b')
+    keys = p.findall(oldfilename)
+
+    newfilename = oldfilename
+
+    for k in keys:
+        if k.lower() in context:
+            newval = context[k.lower()]
+            newfilename = newfilename.replace(k, newval)
+
+    return newfilename
+
+
+def _getsplitpath(path):
+    plist = path.split(os.path.sep)
+    index = plist.index('scripts')
+    return os.path.sep.join(plist[index:])
+
+
+def buildclear(pathstuff):
+    """
+    This method clears all the _build directories in the paths
+    """
+    global _logger
+
+    buildpath = os.path.join(pathstuff, '_build')
+
+    # first check to see if the path including "_build" exists
+    # if it doesn't, then check to see if the general path to that
+    # configuraiton file exists, and if pathstuff at least exist,
+    # create the full buildpath
+    if not os.path.isdir(buildpath):
+        if os.path.isdir(pathstuff):
+            os.makedirs(buildpath)
+
+    for _fname in os.listdir(buildpath):
+
+        # skip this iteration if the file name is "readme", we don't
+        # want to delete those files
+        if _fname == "readme":
+            continue
+
+        _fpath = os.path.join(buildpath, _fname)
+
+        try:
+            if os.path.isfile(_fpath):
+                os.unlink(_fpath)
+        except Exception, e:
+            print e
+
+
+def buildfiles(pathstuff, context):
+    global _logger
+    global _verbose
+
+    filespath = os.path.join(pathstuff, '_files')
+    buildpath = os.path.join(pathstuff, '_build')
+
+    _templatefiles = [f for f in os.listdir(filespath)
+                      if os.path.isfile(os.path.join(filespath, f))
+                      and f[0] != '.']
+
+    buildclear(pathstuff)
+    _logger.debug("--beg debug buildfiles--")
+
+    for idx, _file in enumerate(_templatefiles):
+
+        # Note: See the docstring on replace_fname to understand what this does
+        _buildfile = replace_fname(_file, context)
+
+        with file(os.path.join(filespath, _file), 'r') as stream_in:
+            template = Template(stream_in.read())
+
+        _logger.debug("--debug buildfiles context={0}--".format(context))
+        _logger.debug("--debug buildfiles template={0}--".format(template))
+
+        with file(os.path.join(buildpath, _buildfile), 'w') as stream_out:
+            stream_out.write(template.render(context))
+
+        read_msg = "read file {0} from {1}"
+        if idx == len(_templatefiles) - 1:
+            write_msg = "wrote file {0} in {1}\n\n"
+        else:
+            write_msg = "wrote file {0} in {1}\n"
+
+        if _isverbose:
+            _logger.info(read_msg.format(_file, _getsplitpath(filespath)))
+            _logger.info(write_msg.format(_buildfile,
+                                          _getsplitpath(buildpath)))
+
+    _logger.debug("--end debug buildfiles--")
+
+
+def help():
+    _HELPMSG = """
+-d,   --debug     display debug info
+
+-c,   --clear     clear all files
+
+-v,   --verbose   more detail in messages
+
+-ak,  --allkeys   show all keys
+
+-cx,  --context   show the context
+
+-h,   --help      this help message
+"""
+    return _HELPMSG
+
+
+def main(args):
+    global _logger
+    global _isverbose
+    formatter = elutil.create_logformatter("%(filename)s %(message)s", "")
+    elutil.setup_logging('/tmp/logs', scrnlog=True,
+                         logname='generate.debug',
+                         screen_formatter=formatter,
+                         debug=elutil.findflags('-d', '--debug', args))
+
+    _logger = logging.getLogger('standard.core')
+    _logger.info("current working directory = {0}".format(os.getcwd()))
+
+    flagclear = elutil.findflags('-c', '--clear', args)
+    flaghelp = elutil.findflags('-h', '--help', args)
+    flagcontext = elutil.findflags('-cx', '--context', args)
+    flagallkeys = elutil.findflags('-ak', '--allkeys', args)
+
+    _isverbose = elutil.findflags('-v', '--verbose', args)
+
+    if flaghelp:
+        print help()
+        sys.exit()
+
+    if flagcontext:
+        print confvals.getconfigurationcontext()
+        sys.exit()
+
+    if flagallkeys:
+        context = confvals.getconfigurationcontext()
+        print context.keys()
+        sys.exit()
+
+    # the configuration files
+    context = confvals.getconfigurationcontext()
+
+    # the conf values we need to find all our files
+
+    projectpath = confvals.getprojectpath()
+    _logger.info("set project path to {0}\n".format(projectpath))
+
+    # the location of all the _files and _build directories we are going to be
+    # working on
+    genpaths = confvals.getlayoutvalue('build.paths').values()
+
+    for gpath in genpaths:
+        # create a full path by joining the generate path to the project path
+        gpathfull = os.path.join(projectpath, gpath)
+
+        if flagclear:
+            _logger.info("clearing configuration files in {0}".format(gpath))
+            buildclear(gpathfull)
+        else:
+            _logger.info("creating configuration files in {0}".format(gpath))
+            buildfiles(gpathfull, context)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
