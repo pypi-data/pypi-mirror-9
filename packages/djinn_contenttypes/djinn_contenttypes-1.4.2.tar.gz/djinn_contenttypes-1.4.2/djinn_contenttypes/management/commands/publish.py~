@@ -1,0 +1,27 @@
+from datetime import datetime
+from django.core.management.base import BaseCommand
+from djinn_contenttypes.models.publishable import PublishableContent
+from djinn_contenttypes.registry import CTRegistry
+from djinn_contenttypes.models.signal_processors import publish
+
+
+class Command(BaseCommand):
+
+    help = """Publish contenttypes if need be"""
+
+    def handle(self, *args, **options):
+
+        """check contentitems that just have reached published state
+        due to publish timestamp"""
+
+        now = datetime.now()
+
+        for ctype in CTRegistry.list_types():
+
+            model = CTRegistry.get_attr(ctype, "class")
+
+            if issubclass(model, PublishableContent):
+
+                for instance in model.objects.filter(publish_notified=False,
+                                                     publish_from__lt=now):
+                    publish.send(instance.__class__, instance)

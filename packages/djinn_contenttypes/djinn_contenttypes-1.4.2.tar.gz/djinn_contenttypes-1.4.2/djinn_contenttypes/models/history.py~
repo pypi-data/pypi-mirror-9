@@ -1,0 +1,58 @@
+from django.db import models
+from django.conf import settings
+from django.contrib.contenttypes.models import ContentType
+from django.contrib.contenttypes import generic
+
+
+CREATED = 1
+CHANGED = 2
+PUBLISHED = 3
+UNPUBLISHED = 4
+
+
+class HistoryManager(models.Manager):
+
+    def log(self, instance, status_flag, user=None, change_message=''):
+
+        entry = self.model(
+            user=user,
+            object_id=instance.id,
+            object_ct=ContentType.objects.get_for_model(instance),
+            status_flag=status_flag,
+            change_message=change_message)
+        entry.save()
+
+    def get_last(self, instance, flags=[]):
+
+        _filter = {
+            'object_id': instance.id,
+            'object_ct': ContentType.objects.get_for_model(instance)}
+
+        if flags:
+            _filter['status_flag__in'] = flags
+
+        return self.filter(**_filter).last()
+
+
+class History(models.Model):
+
+    """ status history of content """
+
+    date = models.DateTimeField(auto_now_add=True)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True)
+    object_ct = models.ForeignKey(ContentType)
+    object_id = models.PositiveIntegerField()
+    content_object = generic.GenericForeignKey('object_ct', 'object_id')
+    status_flag = models.PositiveSmallIntegerField()
+    change_message = models.TextField(blank=True)
+
+    objects = HistoryManager()
+
+    def __unicode__(self):
+
+        return "%s " % self.content_object
+
+    class Meta:
+
+        app_label = "djinn_contenttypes"
+        ordering = ["-date"]
