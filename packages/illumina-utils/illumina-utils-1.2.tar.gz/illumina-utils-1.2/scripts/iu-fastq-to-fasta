@@ -1,0 +1,80 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# Copyright (C) 2011, A. Murat Eren
+#
+# This program is free software; you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free
+# Software Foundation; either version 2 of the License, or (at your option)
+# any later version.
+#
+# Please read the COPYING file.
+
+
+import os
+import sys
+
+import IlluminaUtils.lib.fastqlib as u
+from IlluminaUtils.utils.helperfunctions import reverse_complement
+import IlluminaUtils.utils.terminal as terminal
+
+run = terminal.Run()
+progress = terminal.Progress()
+
+def main(input_file_path, output_file_path, number_of_sequences = -1, rev_comp = False, compressed = False):
+    fastq = u.FastQSource(input_file_path, compressed)
+    output = u.FileOutput(output_file_path, compressed)
+
+    progress.new('Processing')
+    while fastq.next(raw=True) and number_of_sequences:
+        if fastq.p_available:
+            progress.update('~%.2f%%' % (fastq.percent_read))
+
+        e = fastq.entry
+
+        output.write('>%s\n%s\n' % (e.header_line,
+                                    e.sequence if not rev_comp else reverse_complement(e.sequence)))
+        number_of_sequences -= 1
+
+    progress.end()
+    fastq.close()
+    output.close()
+
+    run.info('Output FASTA', output_file_path)
+
+
+if __name__ == '__main__':
+    import argparse
+
+    parser = argparse.ArgumentParser(description='Convert FastQ to FASTA')
+    parser.add_argument('input', metavar = 'INPUT',
+                        help = 'FASTQ file to be converted')
+    parser.add_argument('-n', '--number-of-sequences', type=int, default = -1,
+                        metavar = 'NUMBER', help = 'Number of sequences to be converted')
+    parser.add_argument('-o', '--output', help = 'FASTA output (default: [-i]-FASTA-[-n]')
+    parser.add_argument('-r', '--rev-comp', action = 'store_true', default = False,
+                            help = 'When set, during the conversion reads will be reverse\
+                                    complemented.')
+    args = parser.parse_args()
+
+    input_file_path = args.input
+    
+    compressed = input_file_path.endswith('.gz')
+    
+    if args.output:
+        if compressed and not args.output.endswith('.gz'):
+            output_file_path = args.output + '.gz'
+        else:
+            output_file_path = args.output
+    else:
+        if compressed:
+            if args.number_of_sequences > 0:
+                output_file_path = input_file_path[:-3] + '-FASTA-%d.gz' % args.number_of_sequences
+            else:
+                output_file_path = input_file_path[:-3] + '-FASTA.gz'
+        else:
+            if args.number_of_sequences > 0:
+                output_file_path = input_file_path + '-FASTA-%d' % args.number_of_sequences
+            else:
+                output_file_path = input_file_path + '-FASTA'
+
+    sys.exit(main(input_file_path, output_file_path, args.number_of_sequences, args.rev_comp, compressed))
