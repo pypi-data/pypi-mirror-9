@@ -1,0 +1,464 @@
+Installation of Kofa
+####################
+
+These are generic installation instructions for the WAeUP_ ``Kofa``
+student information portal and customized versions thereof.
+
+For specific aspects of this package please refer to the local README
+file.
+
+Please note, that **only Linux-based installs** are described and actively
+supported. We recommend use of Debian_ / Ubuntu_.
+
+.. note:: This means we do not actively support Windows(tm)!
+
+.. contents::
+
+
+Prerequisites
+*************
+
+The Kofa packages are based on `Grok`_, which is a Python_
+framework for agile webapplication development. Grok_ itself is based
+on `Zope`_.
+
+Both, Grok_ and Zope_, are written in the `Python`_ programming
+language (with parts written in C). You therefore have to have
+`Python`_ installed (including `Python`_ headers).
+
+
+Preparing the System
+====================
+
+For a `Kofa` install we need of course `Python`_ installed as well as
+some standard developer tools like C compilers, C libraries, etc.
+
+What you need (Debian/Ubuntu package names in brackets):
+
+* Python 2.7 (``python2.7``)
+
+* Python 2.7 development files (``python2.7-dev``)
+
+* A C-Compiler with basic C developer libraries (``build-essential``)
+
+* A subversion client (``subversion``)
+
+* XML and XSLT development libraries (``libxml2-dev``, ``libxslt1-dev``)
+
+* enscript (``enscript``) [optional]
+
+  This is only needed if you want test coverage reports.
+
+All these packages can be installed on Debian systems like this::
+
+  $ sudo apt-get install python2.7 python2.7-dev subversion \
+                         build-essential enscript libxml2-dev libxslt1-dev
+
+Afterwards you should be able to enter::
+
+  $ python2.7
+
+at the commandline and get a Python_ prompt. Quit the interpreter
+pressing <CTRL-D>.
+
+
+Installing `virtualenv`
+=======================
+
+We strongly suggest use of `virtualenv`_ to create Python_ sandboxes
+where you can run your code without touching any other installations.
+
+`virtualenv`_ is also the only possibility to build a `Kofa` install
+without the need of superuser permissions. In short: `virtualenv`_
+will make your life easier. Use it.
+
+Detailed install instructions for `virtualenv`_ can be found on
+http://www.virtualenv.org/en/latest/virtualenv.html#installation.
+
+The short way for a user install (no superuser perms required) is like
+this::
+
+  $ curl -O https://pypi.python.org/packages/source/v/virtualenv/virtualenv-1.11.4.tar.gz#md5=9accc2d3f0ec1da479ce2c3d1fdff06e
+  $ tar xvfz virtualenv-1.11.4.tar.gz
+  $ cd virtualenv-1.11.4
+  $ python virtualenv.py py27
+
+Superusers can install `virtualenv`_ system-wide much easier. On
+`Debian`_/`Ubuntu`_ systems where you have superuser permissions, you
+can install `virtualenv`_ via::
+
+  $ sudo apt-get install python-virtualenv
+
+*Or*, if `pip` is installed already (superusers can install it via
+ ``sudo apt-get install python-pip`` on `Debian`_/`Ubuntu`_)::
+
+  $ sudo pip install virtualenv
+
+
+Creating a Sandbox
+==================
+
+After installing `virtualenv`_ you can install local sandboxes like
+this (if `virtualenv` is installed system-wide)::
+
+  $ virtualenv --no-site-packages py27
+
+*or* like this::
+
+  $ python /path/to/my/virtualenv.py --no-site-packages py27
+
+where ``py27`` is a directory in the filesystem where your sandbox
+will be created. `virtualenv` will also create this directory for
+you. While you can pick any sandbox name you want, it is recommended
+to use a sandbox name that is short and at the same time reflects the
+Python version used (here: Python 2.7).
+
+By passing the ``no-site-packages`` switch we tell `virtualenv` to
+provide a clean environment without any extra-packages installed
+systemwide. More recent versions of `virtualenv`_ have this option set
+by default.
+
+Another often used option of `virtualenv`_ is ``-p``. With ``-p`` you
+can tell `virtualenv`_ which Python executable to use as base for the
+new sandbox.
+
+You now can activate the sandbox by doing::
+
+  $ source py27/bin/activate
+  (py27)$
+
+You will notice that the input prompt changes, indicating the name of
+the sandbox activated.
+
+To deactivate the sandbox at any time, enter::
+
+  (py27)$ deactivate
+
+and the prompt will be the same as before the activation.
+
+For the following steps make sure the sandbox is active.
+
+
+Getting the Sources
+===================
+
+Now, as the sandbox is activated (see above, if not), we can fetch the
+sources for Kofa.
+
+As Kofa is currently available from the Subversion_ repository only,
+we use the Subversion_ client `svn` and checkout the main devel branch
+of the `waeup.kofa` package like this::
+
+  (py27)$ svn co https://svn.waeup.org/repos/main/waeup.kofa/trunk
+
+The command should fetch the Kofa base package sources for you and
+will put everything in a new directory ``trunk/``.
+
+Now enter the new directory::
+
+  (py27)$ cd trunk/
+
+and you can start building the real package.
+
+.. note:: If you not want to work with the `waeup.kofa` package but a
+          customized package (like ``waeup.aaue`` or similar), then
+          you can use the above checkout command but with
+          ``waeup.kofa`` replaced by the name of the customized
+          package::
+
+            (py27)$ svn co https://svn.waeup.org/repos/main/<PKG-NAME>/trunk
+
+          For the exact link, please refer to the README.txt file in
+          your package.
+
+
+Bootstrapping the Build
+=======================
+
+After `Creating a Sandbox`_ and `Getting the Sources`_ we have to
+initialize the newly created development environment::
+
+  (py27)$ python bootstrap.py
+
+This should create a local ``bin/`` directory with at least a script
+``buildout`` in it.
+
+If bootstrapping fails, chances are, that you need the `distribute`
+package installed. In a virtual environment you can install it without
+interfering with other packages installed on your server::
+
+  (py27)$ pip install --upgrade distribute
+
+Afterwards you have to retry the bootstrapping, until you get a
+working ``buildout`` script in the local ``bin/`` directory.
+
+Once the ``buildout`` script exists, you do not have to activate the
+virtual envronment any more (although you can).
+
+
+Part 1: Single Client Setup
+***************************
+
+You can run ``Kofa`` with a single client (useful for evaluation,
+development, etc.) or with multiple clients running in parallel. The
+latter setup is useful in productive environments with many thousands
+users and called a ``ZEO`` install. We will cover both setup
+types. The first is covered here, the latter one is covered in `Part
+2: ZEO Install`_.
+
+
+Building the Package
+====================
+
+In the sources directory (``trunk/``) you have to prepare the
+project to fetch needed components (eggs), compile C-code parts,
+etc. This is done by a single command ``buildout``::
+
+  $ ./bin/buildout
+
+If this is your first install of some Grok-related project, this step
+will need some time as lots of sources have to be fetched, many
+components must be compiled, etc.
+
+This step must be redone whenever you change something in
+``buildout.cfg``, ``buildout-zeo.cfg``, or ``setup.py``.
+
+Note that if you have more than one sandbox for a Zope-based web
+application, it will probably make sense to share the eggs between the
+different sandboxes.  You can tell ``zc.buildout`` to use a central
+eggs directory by creating ``~/.buildout/default.cfg`` with the
+following contents::
+
+  [buildout]
+  eggs-directory = /home/bruno/buildout-eggs
+
+where the given directory should be exist beforehand. All eggs of all
+`buildout` projects will then be stored in this directory (and not
+fetched anew if already existing there).
+
+
+Start the Instance
+==================
+
+You should be able now to start the created instance by doing::
+
+  $ ./bin/kofactl fg
+
+Alternatively you can do::
+
+  $ bin/paster serve parts/etc/deploy-themed.ini
+
+The port numbers where Kofa is running on your server are defined in
+`buildout.cfg` under ``[kofa_params]``.
+
+If you now point a browser to the right port on your server, for example::
+
+  localhost:8080
+
+you should get a login pop-up, where you can login as superuser with
+``grok`` and ``grok`` as username/password (Kofa base package only!).
+
+You can stop the instance by pressing <CTRL-C>.
+
+If you are connected and logged in,
+you should be able to add the grok-based applications
+(such as ``University``) from the menu.
+
+Add an instance of ``University`` and click on the link next to the
+then visible entry in the list of installed applications.
+
+Running the Tests
+=================
+
+All WAeUP_ packages come with comprehensive test suites ensuring the
+software quality also after changes and updates.
+
+The package tests are easily run by executing the test runner
+from the ``bin`` directory::
+
+  $ ./bin/test
+
+Use the ``-c`` option to get coloured output. Use the ``--pdb`` option
+to start the Python_ debugger when a test fails.
+
+
+Part 2: ZEO Install
+*******************
+
+Each ZEO install consists of at least one ZEO server and normally two
+or more ZEO clients. While the ZEO server is meant to manage the ZODB
+database for clients, the clients connect to the outside world, listen
+for request and do the real dataprocessing.
+
+We prepared a `buildout` configuration that sets up one server
+configuration and two client configs. This configuration is in
+``buildout-zeo.cfg``.
+
+Generating the ZEO Setup
+========================
+
+To install Kofa ZEO-based you can run `buildout` with the given
+(or your own) configuration file like this::
+
+  $ ./bin/buildout -c buildout-zeo.cfg
+
+This should generate all scripts necessary to run servers, clients,
+etc.
+
+Starting ZEO Servers and Clients
+================================
+
+First start the server::
+
+  $ ./bin/zeo_server start
+
+Clients can be started by doing::
+
+  $ ./bin/zeo_client1 start
+  $ ./bin/zeo_client2 start
+
+This will start both clients in daemon mode.
+
+Instead of ``start`` you can, as usually, start an instance in
+foreground (``fg``), etc. You know the drill.
+
+
+Manually Starting ZEO Clients
+=============================
+
+This is normally not neccessary.
+
+``zeo_clientN`` scripts are basically wrappers around calls to
+``bin/paster``. You can bypass this wrapper and start a client
+'manually' like this::
+
+  $ ./bin/paster serve --pid-file var/zeo1.pid --daemon \
+        pars/etc/zeo1.ini
+
+It is important to give a pid-file as `paster` otherwise can not start
+different clients (they would all refer to the same pid file
+`paster.pid` and refuse to start after the first client was started).
+
+
+Setup (paramters, ports, etc.)
+==============================
+
+By default the server will listen on port 8100 for requests from
+localhost (not: from the outside world).
+
+You can change ZEO server settings in the ``[zeo_server]`` section
+of ``buildout-zeo.conf``. Run `buildout` afterwards.
+
+The clients will listen on port 8081 and 8082. You can change settings
+in ``etc/zeo1.ini.in`` and ``etc/zeo2.ini.in`` respectively. Run
+buildout after any change.
+
+If you want to change the paster wrapper for any zeo client, you can
+edit ``etc/zeo1.conf`` and/or ``etc/zeo2.conf``. Run buildout
+afterwards.
+
+
+Stopping ZEO Servers and Clients
+================================
+
+Given everything was started in daemon mode, first stop the clients::
+
+  $ ./bin/zeo_client1 stop
+  $ ./bin/zeo_client2 stop
+
+Then stop the ZEO server::
+
+  $ ./bin/zeo_server stop
+
+
+Creating New ZEO Clients
+========================
+
+You want more ZEO clients to be created by `buildout`? Easy. Three
+steps are neccessary.
+
+1. Create config files in `etc/`
+--------------------------------
+
+Each client needs two configuration files:
+
+  - ``etc/zeoN.conf``
+       configuring the paster wrapper
+
+  - ``etc/zeoN.ini``
+       configuring the runtime config, ports, etc.
+
+Just copy over these files from the already existing zeo1/zeo2 files
+and replace ``zeo1`` or ``zeo2`` with your new name.
+
+2. Update buildout-zeo.cfg
+--------------------------
+
+Here, inside ``buildourt-zeo.cfg`` also three steps are needed.
+
+* 2.1. Create new .ini and .conf entries
+
+  The .conf and .ini files in etc/ are only templates that have to be
+  generated in their really used final location. In buildout-zeo.cfg
+  you can care for this by creating a new ``[zeoN_ini]`` and
+  ``[zeoN_conf]`` option (replacing ``N`` with a number, of course).
+
+  Just copy over existing entries and replace the mentions of ``zeo1``
+  or ``zeo2`` by your ``zeoN``.
+
+* 2.2. Create a new ``zeo_clientN`` entry
+
+  Then you have to create an entry that will generate the
+  ``zeo_clientN`` script. Again, just copy over an existing
+  ``[zeo_client1]`` entry and replace ``1`` withg your client number.
+
+* 2.3. Register the new sections in ``[buildout]`` section
+
+  When done with the above: add the new section in ``[buildout]``::
+
+    [buildout]
+      ...
+      <old entries...>
+      ...
+      zope_conf_zeo_5
+      zeo5_ini
+      zeo_client5
+
+  depending on how you named your new sections.
+
+3. Rerun ``buildout``
+---------------------
+
+When adding or removing client/server instances, make sure to stop all
+running servers/clients before rerunning buildout.
+
+To activate the new setup, rerun buildout::
+
+  $ bin/buildout -c buildout-zeo.cfg
+
+This should generate any new clients and remove older ones or just
+update configuration files.
+
+
+Considerations
+==============
+
+There are some things in the current buildout-zeo.cfg we might do not
+want. It extends the regular ``buildout.cfg`` so that we do not have
+to repeat most sections but the ``parts`` in ``[buildout]`` have to be
+listed.
+
+We need, however, not everything with a ZEO-deploy that is listed in a
+default buildout. We might do not need docs, no profiling, etc. Also a
+regular non-ZEO kofactl might not make to much sense. Therefore all
+this might be subject to changes.
+
+.. _Debian: http://www.debian.org/
+.. _Grok: http://grok.zope.org/
+.. _Python: http://www.python.org/
+.. _Subversion: http://subversion.apache.org/
+.. _Ubuntu: http://www.ubuntu.com/
+.. _virtualenv: http://www.virtualenv.org/en/latest/
+.. _WAeUP: https://www.waeup.org/
+.. _Zope: http://www.zope.org/
+.. _zc.buildout: http://cheeseshop.python.org/pypi/zc.buildout

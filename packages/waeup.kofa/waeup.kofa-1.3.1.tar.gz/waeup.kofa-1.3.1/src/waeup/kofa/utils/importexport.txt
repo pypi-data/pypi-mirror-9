@@ -1,0 +1,145 @@
+Importing and Exporting Things
+******************************
+
+The waeup package tries to support all special object types to be
+exportable and importable.
+
+.. :doctest:
+.. :layer: waeup.kofa.testing.KofaUnitTestLayer
+
+As imports and exports of data are a cruical point when doing updates
+or to enable data backups, this support must be considered a serious
+topic for the base functionality of the whole software.
+
+Exports and imports are implemented using the Zope component framework
+capabilities. This means we need some adapters and utilities, which we
+register, by grokking the whole package. This is done on startup
+automatically, but in doctests (like this one) it is done by the
+testlayer.
+
+Furthermore we need something to import/export. As only pickable
+classes are importable/exportable and these have to be defined in some
+globally reachable module, we first define some silly object in
+filesystem and adjust the path to lookup modules:
+
+    >>> import os
+    >>> import sys
+    >>> os.mkdir('stoneage')
+    >>> old_sys_path = sys.path
+    >>> open(os.path.join('stoneage', '__init__.py'), 'wb').write(
+    ... """
+    ... class Cave(object):
+    ...   name = 'Unnamed cave'
+    ...   dinoports = 2
+    ... """)
+    >>> sys.path.append(os.getcwd())
+
+Now we can import stoneage.Cave objects.
+
+
+Exporting XML
+=============
+
+One of the major formats we support for data export is XML.
+
+When we want to export an object, we can choose the destination
+file. If we do not give a file to write to, we get a StringIO object,
+i.e. an in-memory file.
+
+We can export caves. First we create a cave:
+
+    >>> from stoneage import Cave
+    >>> mycave = Cave()
+    >>> mycave.name = 'Freds Cave'
+    >>> mycave.dinoports = 1
+
+Exporting plain XML
+-------------------
+
+Now let's export it to XML. To do this we first ask the framework for
+an exporter::
+
+    >>> from waeup.kofa.interfaces import IKofaXMLExporter
+    >>> exporter = IKofaXMLExporter(mycave)
+    >>> exporter
+    <waeup.kofa.utils.importexport.XMLExporter object at 0x...>
+
+All exporters provide an ``export(<obj>)`` method::
+
+    >>> result = exporter.export()
+
+The result is an object of type StringIO. We therefore use its
+`read()` method to get the actual XML data::
+
+    >>> print result.read()
+    <?xml version="1.0" encoding="utf-8" ?>...
+
+
+Generating XML files
+--------------------
+
+We can also let the results be written to a file::
+
+    >>> result = exporter.export('myexport.xml')
+    >>> print open('myexport.xml', 'rb').read()
+    <?xml version="1.0" encoding="utf-8" ?>
+    <pickle>
+      <object>
+    ...
+    </pickle>
+
+
+Importing XML
+=============
+
+We can generate objects from XML.
+
+We change the name of the cave:
+
+    >>> mycave.name = 'Another name'
+
+Now we create an importer for that object:
+
+    >>> from waeup.kofa.interfaces import IKofaXMLImporter
+    >>> importer = IKofaXMLImporter(mycave)
+
+Importing from filenames
+------------------------
+
+We can use a filepath to import from the denoted file::
+
+    >>> new_obj = importer.doImport('myexport.xml')
+
+The object created is indeed a cave::
+
+    >>> new_obj
+    <stoneage.Cave object at 0x...>
+
+    >>> new_obj.name
+    'Freds Cave'
+
+The new object is really a new object::
+
+    >>> new_obj is mycave
+    False
+
+Importing from filelike objects
+-------------------------------
+
+We can also pass a file-like object instead of a filepath::
+
+    >>> filelike_obj = open('myexport.xml', 'rb')
+    >>> new_obj = importer.doImport(filelike_obj)
+
+The object created is indeed a faculty::
+
+    >>> new_obj
+    <stoneage.Cave object at 0x...>
+
+Clean up::
+
+    >>> import os
+    >>> import shutil
+    >>> sys.path = old_sys_path
+    >>> os.unlink('myexport.xml')
+    >>> shutil.rmtree('stoneage')

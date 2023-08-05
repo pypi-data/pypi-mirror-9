@@ -1,0 +1,421 @@
+Image Widgets
+=============
+
+This is an infrastructure to create an image file widget that behaves
+as much as possible like a normal text widget in formlib. Normally a
+file widget loses its file data when a form is re-presented for
+reasons of failing form validation. A ``hurry.file`` widget retains
+the file, for example by storing it in a session.
+
+In order to do this, we have a special way to store file data along with
+its filename:
+
+  >>> import os
+  >>> from waeup.kofa.image import KofaImageFile
+  >>> testimage = os.path.join(os.path.dirname(__file__), 'sample.jpg')
+  >>> testimage2 = os.path.join(os.path.dirname(__file__), 'sample2.jpg')
+  >>> some_file = KofaImageFile('foo.jpg', open(testimage, 'rb').read())
+  >>> some_file.filename
+  'foo.jpg'
+  >>> 'Created with GIMP' in some_file.data
+  True
+
+We can provide a download widget. In this case, there's nothing
+to download:
+
+  >>> from hurry.file.browser import DownloadWidget
+  >>> from hurry.file.schema import File
+  >>> from waeup.kofa.image.schema import ImageFile
+  >>> from zope.publisher.browser import TestRequest
+  >>> field = ImageFile(__name__='foo', title=u'Foo')
+  >>> field = field.bind(None)
+  >>> request = TestRequest()
+  >>> widget = DownloadWidget(field, request)
+  >>> widget()
+  u'<div>Download not available</div>'
+
+Even if there were data in the request, there'd be nothing to download:
+
+  >>> from zope.publisher.browser import FileUpload
+  >>> request = TestRequest(form={'field.foo': FileUpload(some_file)})
+  >>> widget = DownloadWidget(field, request)
+  >>> widget()
+  u'<div>Download not available</div>'
+
+Now set a value:
+
+  >>> widget.setRenderedValue(some_file)
+  >>> widget()
+  u'<a href="foo.jpg">foo.jpg</a>'
+
+Instead of downloading, we can also use a thumbnail widget:
+
+  >>> from waeup.kofa.image.browser import ThumbnailWidget
+  >>> request = TestRequest(form={'field.foo': FileUpload(some_file)})
+  >>> widget = ThumbnailWidget(field, request)
+  >>> widget.setRenderedValue(some_file)
+  >>> widget()
+  u'<img src="foo.jpg" />'
+
+Now on to an edit widget. First the case in an add form with no
+data already available, and no data in request:
+
+  >>> from waeup.kofa.image.browser import EncodingImageFileWidget
+  >>> field = ImageFile(__name__='foo', title=u'Foo', required=False)
+  >>> field = field.bind(None)
+  >>> request = TestRequest()
+  >>> widget = EncodingImageFileWidget(field, request)
+
+  >>> def normalize(s):
+  ...   return u'\n  '.join(filter(None, s.split(' ')))
+
+  >>> print normalize(widget())
+  <input
+    class="fileType"
+    id="field.foo"
+    name="field.foo"
+    size="20"
+    type="file"
+    />
+
+Now let's try a situation where data is available in the request, but
+it's an empty string for the file:
+
+  >>> request = TestRequest(form={'field.foo': u''})
+  >>> widget = EncodingImageFileWidget(field, request)
+
+  >>> def normalize(s):
+  ...   return '\n  '.join(filter(None, s.split(' ')))
+
+  >>> print normalize(widget())
+  <input
+    class="fileType"
+    id="field.foo"
+    name="field.foo"
+    size="20"
+    type="file"
+    />
+
+Now let's render again when there's already available data. What should show
+up is an extra, hidden field which contains the file_id:
+
+  >>> widget.setRenderedValue(some_file)
+  >>> print normalize(widget())
+  <img... />...
+  ...<input
+    class="fileType"
+    id="field.foo"
+    name="field.foo"
+    size="20"
+    type="file"
+    />
+    (foo.jpg)<input
+    class="hiddenType"
+    id="field.foo.file_id"
+    name="field.foo.file_id"
+    type="hidden"
+    value="Zm9vLmpw...="
+    />
+
+Now let's render again, this time with file data available in the request
+instead. The same should happen:
+
+  >>> request = TestRequest(form={'field.foo': FileUpload(some_file)})
+  >>> widget = EncodingImageFileWidget(field, request)
+  >>> print normalize(widget())
+  <img... />...
+  ...<input
+    class="fileType"
+    id="field.foo"
+    name="field.foo"
+    size="20"
+    type="file"
+    />
+    (foo.jpg)<input
+    class="hiddenType"
+    id="field.foo.file_id"
+    name="field.foo.file_id"
+    type="hidden"
+    value="Zm9vLmpwZ...="
+    />
+
+Now let's render again, this time not with file data available in the
+request, but an id. Again, we should see the same:
+
+  >>> request = TestRequest(form={'field.foo.file_id':
+  ...                             'Zm9vLnR4dAp0aGUgY29udGVudHM='})
+  >>> widget = EncodingImageFileWidget(field, request)
+  >>> print normalize(widget())
+  <img... />...
+  ...<input
+    class="fileType"
+    id="field.foo"
+    name="field.foo"
+    size="20"
+    type="file"
+    />
+    (foo.txt)<input
+    class="hiddenType"
+    id="field.foo.file_id"
+    name="field.foo.file_id"
+    type="hidden"
+    value="Zm9vLnR4dAp0aGUgY29udGVudHM="
+    />
+
+If there is both file data and an id, something else happens. First, let's
+prepare some new file:
+
+  >>> another_file = KofaImageFile('bar.txt', 'bar contents')
+
+We happen to know, due to the implementation of
+EncodingImageFileWidget, that the file_id is going to be
+"Zm9vLnR4dAp0aGUgY29udGVudHM=". Let's make a request with the original
+id, but a new file upload:
+
+  >>> request = TestRequest(form={'field.foo': FileUpload(another_file),
+  ...                             'field.foo.file_id':
+  ...                             'Zm9vLnR4dAp0aGUgY29udGVudHM='})
+
+We expect the new file to be the one that's uploaded:
+
+  >>> widget = EncodingImageFileWidget(field, request)
+  >>> print normalize(widget())
+  <img... />...
+  ...<input
+    class="fileType"
+    id="field.foo"
+    name="field.foo"
+    size="20"
+    type="file"
+    />
+    (bar.txt)<input
+    class="hiddenType"
+    id="field.foo.file_id"
+    name="field.foo.file_id"
+    type="hidden"
+    value="YmFyLnR4dApiYXIgY29udGVudHM="
+    />
+
+Support for File Retrievals
+---------------------------
+
+As :class:`waeup.kofa.image.KofaImageFile` objects support storing
+image data by using external 'storages', also our widgets should do
+so.
+
+We create a simple IFileRetrieval utility and enable it:
+
+  >>> import hashlib
+  >>> from zope.component import provideUtility
+  >>> from hurry.file.interfaces import IFileRetrieval
+  >>> from StringIO import StringIO
+  >>> class MyFileRetrieval(object):
+  ...     storage = dict()
+  ...     def getFile(self, data):
+  ...         entry = self.storage.get(data, None)
+  ...         if entry is None:
+  ...             return None
+  ...         return StringIO(entry)
+  ...     def createFile(self, filename, f):
+  ...         contents = f.read()
+  ...         id_string = hashlib.md5(contents).hexdigest()
+  ...         result = KofaImageFile(filename, id_string)
+  ...         self.storage[id_string] = contents
+  ...         return result
+
+  >>> retrieval = MyFileRetrieval()
+  >>> provideUtility(retrieval, IFileRetrieval)
+
+With this utility in place we can post requests. When no data was
+posted and the field also contains no data, we will get a simple
+input as appropriate for add forms:
+
+  >>> field = ImageFile(__name__='foo', title=u'Foo', required=False)
+  >>> field = field.bind(None)
+  >>> request = TestRequest()
+  >>> widget = EncodingImageFileWidget(field, request)
+  >>> print normalize(widget())
+  <input
+    class="fileType"
+    id="field.foo"
+    name="field.foo"
+    size="20"
+    type="file"
+    />
+
+If the request contains empty data but it is only an empty string, the
+result will be the same:
+
+  >>> request = TestRequest(form={'field.foo': u''})
+  >>> widget = EncodingImageFileWidget(field, request)
+  >>> print normalize(widget())
+  <input
+    class="fileType"
+    id="field.foo"
+    name="field.foo"
+    size="20"
+    type="file"
+    />
+
+We now want to simulate, that the field contains already data,
+identified by some `file_id`. To do so, we first store the data in our
+file retrieval and then create a KofaImageFile object with that
+file_id stored:
+
+  >>> from waeup.kofa.image import createKofaImageFile
+  >>> image = createKofaImageFile(
+  ...     'sample.jpg', open(testimage, 'rb'))
+  >>> file_id = image.data
+  >>> file_id    # MD5 sum of the file contents
+  '9feac4265077922000aa8b88748e25be'
+
+  >>> import hashlib
+  >>> hashlib.md5(open(testimage, 'rb').read()).hexdigest()
+  '9feac4265077922000aa8b88748e25be'
+
+The new file was stored by our utility, as createKofaImageFile looks
+up IFileRetrieval utilities and uses them:
+
+  >>> retrieval.storage.keys()
+  ['9feac4265077922000aa8b88748e25be']
+
+We set this image as value of the widget:
+
+  >>> widget.setRenderedValue(image)
+  >>> print normalize(widget())
+  <img
+    src="sample.jpg"
+    /><br
+    /><input
+    class="fileType"
+    id="field.foo"
+    name="field.foo"
+    size="20"
+    type="file"
+    />
+    (sample.jpg)<input
+    class="hiddenType"
+    id="field.foo.file_id"
+    name="field.foo.file_id"
+    type="hidden"
+    value="c2FtcGxlLmpwZwo5ZmVhYzQyNjUwNzc5MjIwMDBhYThiODg3NDhlMjViZQ=="
+    />
+
+  >>> retrieval.storage.keys()
+  ['9feac4265077922000aa8b88748e25be']
+
+The stored hidden value contains the filename and our file_id:
+
+  >>> "c2FtcGxlLmpwZwo5ZmVhYzQyNjUwNzc5MjIwMDBhYThiODg3NDhlMjViZQ==".decode(
+  ...    'base64')
+  'sample.jpg\n9feac4265077922000aa8b88748e25be'
+
+Now, we want the the widget rendered again but this time with the data
+coming from the request. To do so, we have to create a FileUpload
+object that wraps the real file:
+
+  >>> class UploadedFile(object):
+  ...   headers = {}
+  ...   def __init__(self, filename, f):
+  ...     self.filename = filename
+  ...     self.file = f
+
+Now we can 'post' the request and will get the same result as above:
+
+  >>> upload = FileUpload(UploadedFile('sample.jpg', open(testimage, 'rb')))
+  >>> request = TestRequest(form={'field.foo': upload})
+  >>> widget = EncodingImageFileWidget(field, request)
+  >>> print normalize(widget())
+  <img... />...
+  ...<input
+    class="fileType"
+    id="field.foo"
+    name="field.foo"
+    size="20"
+    type="file"
+    />
+    (sample.jpg)<input
+    class="hiddenType"
+    id="field.foo.file_id"
+    name="field.foo.file_id"
+    type="hidden"
+    value="c2FtcGxlLmpwZwo5ZmVhYzQyNjUwNzc5MjIwMDBhYThiODg3NDhlMjViZQ=="
+    />
+
+Now let's render again, this time not with file data available in the
+request, but an id. Again, we should see the same:
+
+  >>> request = TestRequest(form={
+  ...   'field.foo.file_id':
+  ...   'c2FtcGxlLmpwZwo5ZmVhYzQyNjUwNzc5MjIwMDBhYThiODg3NDhlMjViZQ=='})
+  >>> widget = EncodingImageFileWidget(field, request)
+  >>> print normalize(widget())
+  <img... />...
+  ...<input
+    class="fileType"
+    id="field.foo"
+    name="field.foo"
+    size="20"
+    type="file"
+    />
+    (sample.jpg)<input
+    class="hiddenType"
+    id="field.foo.file_id"
+    name="field.foo.file_id"
+    type="hidden"
+    value="c2FtcGxlLmpwZwo5ZmVhYzQyNjUwNzc5MjIwMDBhYThiODg3NDhlMjViZQ=="
+    />
+
+If there is both file data and an id, something else happens. First, let's
+prepare some new file:
+
+  >>> upload = FileUpload(UploadedFile('sample2.jpg', open(testimage2, 'rb')))
+
+We happen to know, due to the implementation of
+EncodingImageFileWidget, that the file_id is going to be
+"Zm9vLnR4dAp0aGUgY29udGVudHM=". Let's make a request with the original
+id, but a new file upload:
+
+  >>> request = TestRequest(form={'field.foo': upload,
+  ...                             'field.foo.file_id':
+  ...                             'Z2FtcGxlLmpwZwr/2P/gAA=='})
+
+We expect the new file to be the one that's uploaded:
+
+  >>> field = ImageFile(__name__='foo', title=u'Foo', required=False)
+  >>> field = field.bind(None)
+  >>> widget = EncodingImageFileWidget(field, request)
+  >>> print normalize(widget())
+  <img... />...
+  ...<input
+    class="fileType"
+    id="field.foo"
+    name="field.foo"
+    size="20"
+    type="file"
+    />
+    (sample2.jpg)<input
+    class="hiddenType"
+    id="field.foo.file_id"
+    name="field.foo.file_id"
+    type="hidden"
+    value="c2FtcGxlMi5qcGcKZDk2MDkwZWRlMmRjODlkZDdkZWM5ZDU3MmFkNThjNzQ="
+    />
+
+The value displayed above again means the filename and md5 sum of the
+stored file:
+
+  >>> "c2FtcGxlMi5qcGcKZDk2MDkwZWRlMmRjODlkZDdkZWM5ZDU3MmFkNThjNzQ=".decode(
+  ...      'base64')
+  'sample2.jpg\nd96090ede2dc89dd7dec9d572ad58c74'
+
+where the md5 sum is in fact correct:
+
+  >>> import hashlib
+  >>> hashlib.md5(open(testimage2, 'rb').read()).hexdigest()
+  'd96090ede2dc89dd7dec9d572ad58c74'
+
+Our file retrieval utility now contains two files:
+
+  >>> retrieval.storage.keys()
+  ['9feac4265077922000aa8b88748e25be', 'd96090ede2dc89dd7dec9d572ad58c74']

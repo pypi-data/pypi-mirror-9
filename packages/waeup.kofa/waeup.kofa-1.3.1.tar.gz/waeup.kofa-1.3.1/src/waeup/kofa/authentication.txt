@@ -1,0 +1,212 @@
+Kofa authentication
+*******************
+
+We need to protect most pieces of our portals from unauthenticated
+access.
+
+Therefore users have to login to access main functionality and they
+are able to log out afterwards.
+
+Before we can check access we have to create an app:
+
+  >>> from zope.component.hooks import setSite # only needed in tests
+  >>> from waeup.kofa.app import University
+  >>> root = getRootFolder()
+  >>> u = University()
+  >>> root['app'] = u
+  >>> setSite(root['app'])                     # only needed in tests
+
+To make sure, we can 'watch' pages, we first have to initialize our
+test browser:
+
+  >>> from zope.testbrowser.testing import Browser
+  >>> browser = Browser()
+  >>> browser.handleErrors = False
+
+Creating users (principals)
+===========================
+
+Before we can login, we have to provide a user (``principal`` in Zope
+terms) with a password (and optional a title or description):
+
+  >>> root['app']['users'].addUser('bob', 'bobsecret',
+  ...                           title='Bob', description='A sample user')
+
+We can also add complete `Account` objects. An `Account` stores the
+user credentials and some metadata persistently:
+
+  >>> from waeup.kofa.authentication import Account
+  >>> alice = Account('alice', 'alicesecret',roles=['waeup.ManageDataCenter'])
+  >>> root['app']['users'].addAccount(alice)
+
+See ``userscontainer.txt`` for details about the UsersContainer we use here.
+
+Users and local roles
+=====================
+
+Accounts also hold infos about local roles assigned to a user. In the
+beginning, users have the local owner role of their own account object:
+
+  >>> alice.getLocalRoles()
+  {'waeup.local.Owner': [<waeup.kofa.authentication.Account object at 0x...>]}
+
+User  automatically get the global AcademicsOfficer role:
+
+  >>> alice.getSiteRolesForPrincipal()
+  ['waeup.ManageDataCenter', 'waeup.AcademicsOfficer']
+
+We can tell an account, that Alice got some role for another object:
+
+  >>> chalet = object()
+  >>> root['app']['chalet'] = chalet
+  >>> alice.notifyLocalRoleChanged(chalet, 'BigBoss', granted=True)
+
+Now Alice is the Big Boss:
+
+  >>> alice.getLocalRoles()
+  {'BigBoss': [<object object at 0x...>]}
+
+When we do not want Alice to be the Big Boss we can tell that too:
+
+  >>> alice.notifyLocalRoleChanged(chalet, 'BigBoss', granted=False)
+  >>> alice.getLocalRoles()
+  {'waeup.local.Owner': [<waeup.kofa.authentication.Account object at 0x...>]}
+
+We can also use events to trigger such actions. This is recommended
+because we do not neccessarily know where Alice lives:
+
+  >>> from waeup.kofa.authentication import LocalRoleSetEvent
+  >>> from zope.event import notify
+  >>> notify(LocalRoleSetEvent(chalet, 'BigBoss', 'alice',
+  ...                          granted=True))
+  >>> alice.getLocalRoles()
+  {'BigBoss': [<object object at 0x...>]}
+
+When objects are deleted, local roles are also deleted
+semi-magically. This happens through event subscribers listening to
+IObjectRemovedEvents. The latters are naturally only fired when ZODB
+stored objects are removed. Furthermore this subscriber reads the
+internal local roles table.
+
+We create a faculty and grant Bob a local role:
+
+   >>> from zope.securitypolicy.interfaces import IPrincipalRoleManager
+   >>> from waeup.kofa.university.faculty import Faculty
+   >>> faculty = Faculty()
+   >>> root['app']['bobs_fac'] = faculty
+   >>> role_manager = IPrincipalRoleManager(faculty)
+   >>> role_manager.assignRoleToPrincipal(
+   ...    'waeup.PortalManager', 'bob')
+
+We notify the machinery about that fact:
+
+   >>> notify(LocalRoleSetEvent(faculty, 'waeup.PortalManager', 'bob',
+   ...                          granted=True))
+   >>> bob = root['app']['users']['bob']
+   >>> bob.getLocalRoles()
+   {'waeup.PortalManager': [<waeup.kofa...Faculty object at 0x...>]}
+
+When we delete the faculty from ZODB, also Bobs roles are modified:
+
+   >>> del root['app']['bobs_fac']
+   >>> bob.getLocalRoles()
+   {'waeup.local.Owner': [<waeup.kofa.authentication.Account object at 0x...>]}
+
+If one notifies the machinery of a local role removal for an object
+that cannot have local roles, this will cause no trouble:
+
+   >>> mycontext = None #object()
+   >>> notify(LocalRoleSetEvent(
+   ...   mycontext, 'waeup.PortalManager', 'bob', granted=False
+   ... )) is None
+   True
+
+When an account get deleted, also the local roles of the owner get
+removed. Let's setup a local role for `alice`:
+
+   >>> faculty = Faculty()
+   >>> root['app']['alice_fac'] = faculty
+   >>> role_manager = IPrincipalRoleManager(faculty)
+   >>> role_manager.assignRoleToPrincipal(
+   ...    'waeup.PortalManager', 'alice')
+   >>> notify(LocalRoleSetEvent(faculty, 'waeup.PortalManager', 'alice',
+   ...                          granted=True))
+
+The local role is set now:
+
+   >>> from zope.securitypolicy.interfaces import IPrincipalRoleMap
+   >>> IPrincipalRoleMap(faculty).getPrincipalsAndRoles()
+   [('waeup.PortalManager', 'alice', PermissionSetting: Allow)]
+
+But when we delete Alices account from ZODB:
+
+   >>> del root['app']['users']['alice']
+   >>> IPrincipalRoleMap(faculty).getPrincipalsAndRoles()
+   []
+
+the local role has gone and also the site roles have been removed:
+
+   >>> prm = IPrincipalRoleManager(root['app'])
+   >>> [x[0] for x in prm.getRolesForPrincipal('alice')
+   ...      if x[0].startswith('waeup.')]
+   []
+
+
+Logging in via side bar
+=======================
+
+We can access the front page without restrictions:
+
+  >>> browser.open('http://localhost/app')
+  >>> print browser.headers['Status']
+  200 Ok
+
+We have to go to one of the login pages first:
+
+  >>> browser.open('http://localhost/app')
+  >>> browser.getLink('Login').click()
+  >>> print browser.headers['Status']
+  200 Ok
+
+There is a login form on tis page:
+
+  >>> 'form.login' in browser.contents
+  True
+
+  >>> 'form.logout' in browser.contents
+  False
+
+We use this form:
+
+  >>> browser.getControl(name='form.login').value = 'bob'
+  >>> browser.getControl(name='form.password').value = 'invalidpw'
+  >>> browser.getControl('Login').click()
+  >>> 'You entered invalid credentials' in browser.contents
+  True
+
+  >>> browser.getControl(name='form.login').value = 'bob'
+  >>> browser.getControl(name='form.password').value = 'bobsecret'
+  >>> browser.getControl('Login').click()
+
+Now the login form is gone. Instead we have the opportunity to logout:
+
+  >>> 'form.login' in browser.contents
+  False
+
+  >>> logout = browser.getLink('Logout')
+  >>> logout
+  <Link text='Logout' url='http://localhost/app/@@logout'>
+
+The user title is also displayed in the sidebar:
+
+  >>> 'Bob' in browser.contents
+  True
+
+We can also log out afterwards:
+
+  >>> logout.click()
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...Login
+  ...
+

@@ -1,0 +1,146 @@
+:mod:`waeup.kofa.app` -- central components for Kofa
+****************************************************
+
+.. :doctest:
+.. :layer: waeup.kofa.testing.KofaUnitTestLayer
+
+.. module:: waeup.kofa.app
+
+.. class:: University
+
+  The main Kofa application object is given with
+  :class:`University`. It provides the main containers as faculties,
+  hostels, etc.
+
+  .. attribute:: name
+
+     A string. The name of a university.
+
+  .. attribute:: faculties
+
+     An arbitrary object containing "faculties". In the case of
+     `University` it is a container of type
+     `waeup.kofa.interfaces.IFacultiesContainer`.
+
+
+Creating `University` instances
+===============================
+
+As :class:`University` instances make use of the Zope Component
+Architecture (ZCA), we have to setup the basic component registries,
+before we can create instances. We do this by simply grokking the
+whole :mod:`waeup` package. This way all interfaces, utilities and adapters
+defined in the package are looked up and registered with the global
+registries (this is done by the testlayer automatically).
+
+Now we can import the :class:`University` class and create an
+instance:
+
+    >>> from waeup.kofa.app import University
+    >>> myuniversity = University()
+    >>> myuniversity
+    <waeup.kofa.app.University object at 0x...>
+
+Instances of `University` comply with the interface
+`waeup.kofa.interfaces.IUniversity`:
+
+    >>> from zope.interface.verify import verifyClass
+    >>> from waeup.kofa.interfaces import IUniversity
+    >>> verifyClass(IUniversity, University)
+    True
+
+A freshly created instance provides the attributes promised by the
+interface:
+
+    >>> from waeup.kofa.app import University
+    >>> myuniversity = University()
+    >>> myuniversity['configuration'].name
+    u'Sample University'
+
+    >>> myuniversity['faculties']
+    <waeup.kofa.university.facultiescontainer.FacultiesContainer object at 0x...>
+
+  >>> myuniversity['students']
+  <waeup.kofa.students.container.StudentsContainer object at 0x...>
+
+  >>> myuniversity['users']
+  <waeup.kofa.userscontainer.UsersContainer object at 0x...>
+
+  >>> myuniversity['datacenter']
+  <waeup.kofa.datacenter.DataCenter object at 0x...>
+
+  >>> myuniversity['configuration']
+  <waeup.kofa.configuration.ConfigurationContainer object at 0x...>
+
+We can export universities. For this we lookup an appropriate exporter
+first::
+
+  >>> from waeup.kofa.interfaces import IKofaExporter
+  >>> exporter = IKofaExporter(myuniversity)
+  >>> exporter
+  <waeup.kofa.utils.importexport.Exporter object at 0x...>
+
+Now we can trigger the export::
+
+  >>> exporter.export()
+  <cStringIO.StringO object at 0x...>
+
+We can also get an XML representation as file. If we do not provide a
+filepath, we will get an instance of `cStringIO.StringIO`, i.e. a
+memory file::
+
+  >>> from waeup.kofa.interfaces import IKofaXMLExporter
+  >>> exporter = IKofaXMLExporter(myuniversity)
+  >>> f = exporter.export()
+  >>> f
+  <cStringIO.StringO object at 0x...>
+
+  >>> print f.read()
+  <?xml version="1.0" encoding="utf-8" ?>
+  <pickle>
+    <initialized_object id="...">
+  ...
+  </pickle>
+
+Kofa plugins
+============
+
+waeup.kofa provides an API to 'plugin' components. Things that should
+be setup at creation time of a Kofa application can indicate
+that by providing a utility providing IKofaPlugin.
+
+The plugins are looked up by an created app, which then will call the
+``setup()`` method of each plugin.
+
+   >>> from waeup.kofa.interfaces import IKofaPluggable
+   >>> from zope.component import getAdapters, getUtilitiesFor
+   >>> sorted(list(getUtilitiesFor(IKofaPluggable)))
+   [(u'accesscodes', <waeup.kofa.accesscodes...AccessCodePlugin ...)]
+
+
+We can provide a new plugin like this:
+
+   >>> import grok
+   >>> from waeup.kofa.interfaces import IKofaPluggable
+   >>> class MyPlugin(grok.GlobalUtility):
+   ...   grok.implements(IKofaPluggable)
+   ...   def setup(self, site, name, logger):
+   ...     print "Setup was called for"
+   ...     print site
+   ...   def update(self, site, name, logger):
+   ...     pass
+
+When we register the plugin
+
+   >>> grok.testing.grok_component('MyPlugin', MyPlugin)
+   True
+
+and setup a new Kofa instance, we will get a message:
+
+   >>> from waeup.kofa.app import University
+   >>> site = University()
+   Setup was called for
+   <waeup.kofa.app.University object at 0x...>
+
+Apparently the plugin can do with the University object whatever it
+likes. That's what plugins are for.

@@ -1,0 +1,228 @@
+:mod:`waeup.kofa.utils.helpers` -- Helpers for Kofa
+***************************************************
+
+.. module:: waeup.kofa.utils.helpers
+
+Helper functions for Kofa.
+
+.. :doctest:
+
+:func:`remove_file_or_directory`
+================================
+
+.. function:: remove_file_or_directory(path)
+
+   Removes a file or directory given by a path. We can remove files:
+
+     >>> import os
+     >>> import tempfile
+     >>> old_location = os.getcwd()
+     >>> new_location = tempfile.mkdtemp()
+     >>> os.chdir(new_location)
+
+     >>> from waeup.kofa.utils.helpers import remove_file_or_directory
+     >>> open('blah', 'wb').write('nonsense')
+     >>> 'blah' in os.listdir('.')
+     True
+
+     >>> remove_file_or_directory('blah')
+     >>> 'blah' in os.listdir('.')
+     False
+
+   We can remove directories:
+
+     >>> os.mkdir('blah')
+     >>> 'blah' in os.listdir('.')
+     True
+
+     >>> remove_file_or_directory('blah')
+     >>> 'blah' in os.listdir('.')
+     False
+
+
+:func:`copy_filesystem_tree`
+============================
+
+.. function:: ccopy_filesystem_tree(src_path, dst_path[, overwrite=False[, del_old=False]])
+
+   Copies the contents of an (existing) directory to another
+   (existing) directory.
+
+   :param src_path: filesystem path to copy from
+   :type  src_path: string
+   :param dst_path: filesystem path to copy to
+   :type  dst_path: string
+   :keyword overwrite: Whether exiting files with same names should be
+                     overwritten.
+   :type  overwrite: bool
+   :keyword del_old: Whether old contents in destination path should be 
+                   removed.
+   :type  del_old: bool
+   :return: List of non-copied files
+ 
+   Both directories must exist.
+
+   Unix hidden files and directories (starting with '.') are not
+   processed by this function.
+
+   Without any further parameters, we can copy complete file trees:
+
+     >>> os.mkdir('src')
+     >>> os.mkdir('dst')
+     >>> open(os.path.join('src', 'blah'), 'wb').write('nonsense')
+
+     >>> from waeup.kofa.utils.helpers import copy_filesystem_tree
+     >>> result = copy_filesystem_tree('src', 'dst')
+
+   As a result we get a list of non-copied files:
+
+     >>> result
+     []
+
+   The created file was indeed copied:
+
+     >>> 'blah' in os.listdir('dst')
+     True
+
+   Hidden files (i.e. such starting with a dot) are not copied:
+
+     >>> open(os.path.join('src', '.blah'), 'wb').write('nonsense')
+     >>> result = copy_filesystem_tree('src', 'dst')
+     >>> '.blah' in os.listdir('dst')
+     False
+
+   This function supports some keyword parameters as explained below.
+
+Using ``overwrite``
+-------------------
+
+Boolean. If set to ``True``, any existing and same named files and
+directories in the destination dir are overwritten with copies from
+the source. Default is `False`.
+
+Normally, existing same named files in the destination are not
+overwritten:
+
+    >>> open(os.path.join('src', 'blah'), 'wb').write('newnonsense')
+    >>> result = copy_filesystem_tree('src', 'dst')
+    >>> open(os.path.join('dst', 'blah'), 'rb').read()
+    'nonsense'
+
+Instead the filename is added to the result (a list of non-copied
+files):
+
+    >>> result
+    ['blah']
+
+If, however, we use `overwrite`, the existing file will be
+overwritten:
+
+    >>> result = copy_filesystem_tree('src', 'dst', overwrite=True)
+    >>> open(os.path.join('dst', 'blah'), 'rb').read()
+    'newnonsense'
+
+    >>> result
+    []
+
+This also works for complete directories:
+
+    >>> os.mkdir(os.path.join('src', 'mydir'))
+    >>> os.mkdir(os.path.join('dst', 'mydir'))
+    >>> open(os.path.join(
+    ...   'src', 'mydir', 'blah'), 'wb').write('srcblah')
+    >>> open(os.path.join(
+    ...   'dst', 'mydir', 'blah'), 'wb').write('dstblah')
+
+    >>> result = copy_filesystem_tree('src', 'dst', overwrite=True)
+    >>> open(os.path.join('dst', 'mydir', 'blah'), 'rb').read()
+    'srcblah'
+
+
+Using ``del_old``
+-----------------
+
+Boolean. If set to ``True``, any copied files and directories will be
+removed from the src dir. Default is `False`.
+
+    >>> result = copy_filesystem_tree('src', 'dst', overwrite=True,
+    ...                                           del_old=True)
+    >>> os.listdir('src')
+    ['.blah']
+
+All files and directories are removed from src, except the hidden file
+we created in the beginning.
+
+
+Clean up:
+
+    >>> import shutil
+    >>> shutil.rmtree(new_location)
+    >>> os.chdir(old_location)
+    
+
+
+:func:`get_inner_HTML_part()`
+=============================
+
+.. function:: get_inner_HTML_part(html_code)
+
+   Get the 'inner' part out of a piece of HTML code.
+
+   Helper function mainly to extract 'real content' from already
+   rendered forms.
+
+   The term 'inner part' here means the ``<form>`` part of an HTML
+   snippet. If this cannot be found, we look for a ``<body>`` part and
+   if this cannot be found as well, we simply return the whole input.
+
+   If a ``<form>`` part can be found in an HTML snippet, this is
+   returned with all preceeding/following stuff stripped:
+
+     >>> from waeup.kofa.utils.helpers import get_inner_HTML_part
+     >>> print get_inner_HTML_part("""<html>
+     ... <head>
+     ... </head>
+     ... <BLANKLINE>
+     ... <body>
+     ... <form action="http://localhost/myuniversity/faculties/TF/add"
+     ...       method="post" class="edit-form"
+     ...       enctype="multipart/form-data">
+     ...   <h1>Add a department</h1>
+     ... </form>
+     ... </body>
+     ... </html>
+     ... """)
+     <BLANKLINE>
+     <form action="http://localhost/myuniversity/faculties/TF/add"
+           method="post" class="edit-form"
+           enctype="multipart/form-data">
+     <BLANKLINE>
+       <h1>Add a department</h1>
+     </form>
+     <BLANKLINE>
+     <BLANKLINE>
+
+   If there is no ``<form>`` part, try to find any ``<body>`` part:
+
+     >>> print get_inner_HTML_part("""<html>
+     ... <head>
+     ... </head>
+     ... <BLANKLINE>
+     ... <body>
+     ...  <div>Some content</div>
+     ... </body>
+     ... </html>
+     ... """)
+     <BLANKLINE>
+      <div>Some content</div>
+     <BLANKLINE>
+
+   If there is also no ``<body>`` tag, we return the input as-is:
+
+     >>> print get_inner_HTML_part("""<div>
+     ...  <div>Some content</div>
+     ... </div>
+     ... """)
+     <div>
+      <div>Some content</div>
+     </div>

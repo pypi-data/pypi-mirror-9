@@ -1,0 +1,448 @@
+:mod:`waeup.kofa.accesscodes.browser` -- UI components for access-codes
+***********************************************************************
+
+.. module:: waeup.kofa.accesscodes.browser
+
+Here we visit the access-code related parts of a Kofa site using
+a virtual browser.
+
+:NOTTest-Layer: functional
+
+Preliminaries
+=============
+
+Before we can do anything, we have to create a university site:
+
+    >>> from zope.testbrowser.testing import Browser
+    >>> browser = Browser()
+    >>> browser.addHeader('Authorization', 'Basic mgr:mgrpw')
+    >>> browser.handleErrors = False
+    >>> root = getRootFolder()
+
+    >>> from waeup.kofa.app import University
+    >>> u = University()
+    >>> root['myuniversity'] = u
+
+We set a new datacenter storage path:
+
+  >>> import os
+  >>> browser.open('http://localhost/myuniversity')
+  >>> browser.getLink('Data Center').click()
+  >>> browser.getLink('Edit settings').click()
+  >>> pathsetting = browser.getControl(name='newpath')
+
+  >>> cwd = os.getcwd()
+  >>> uploadpath = os.path.join(cwd, 'ac_testfiles')
+  >>> os.mkdir(uploadpath)
+  >>> pathsetting.value = uploadpath
+  >>> browser.getControl(name='save').click()
+
+We remove any existing 'accesscodes' dir from datacenter dir:
+
+  >>> import shutil
+  >>> if os.path.exists(os.path.join(uploadpath, 'accesscodes')):
+  ...   shutil.rmtree(os.path.join(uploadpath, 'accesscodes'))
+
+
+Access-code management screen
+=============================
+
+For users that have the right to manage access-code related stuff, the
+home page of a `University` instance provides a link to the
+access-code management screen. In the beginning, there are already
+three empty batches available which will be filled by online payments:
+
+    >>> browser.open('http://localhost/myuniversity')
+    >>> browser.getLink('Access Codes').click()
+    >>> print browser.contents
+    <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+    ...
+    ...<h1 class="kofa-content-label">Access Code Batches</h1>
+    ...
+    ... The following batches are available:
+    ...CLR...
+    ...HOS...
+    ...SFE...
+    ...
+
+Adding batches
+==============
+
+We can add a batch of access-codes using a button displayed in the
+action bar:
+
+    >>> browser.getLink('Add Access Code Batch').click()
+
+The add screen shows a form where we have to enter a prefix, the
+number of access codes to be generated and the costs for each card.
+
+    >>> browser.getControl(name='form.prefix').value = 'APP'
+    >>> browser.getControl(name='form.entry_num').value = '5'
+    >>> browser.getControl(name='form.cost').value = '12.12'
+
+If we click 'cancel' afterwards, the whole process will be cancelled
+and we'll be redirected to the management screen:
+
+    >>> browser.getControl('Cancel').click()
+    >>> browser.url
+    'http://localhost/myuniversity/accesscodes'
+
+    >>> 'Batch creation cancelled' in browser.contents
+    True
+
+Now let's try again and this time we finish the procedure by clicking
+'Create batch' in the form:
+
+    >>> browser.getLink('Add Access Code Batch').click()
+    >>> browser.getControl(name='form.prefix').value = 'APP'
+    >>> browser.getControl(name='form.entry_num').value = '5'
+    >>> browser.getControl(name='form.cost').value = '12.12'
+    >>> browser.getControl('Create batch').click()
+
+We're also redirected to the management screen, with a notice about
+the freshly created batch:
+
+    >>> print browser.contents
+    <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+    ...
+    ...<h1 class="kofa-content-label">Access Code Batches</h1>
+    ...
+    ... The following batches are available:
+    ...APP
+    ...-
+    ...1
+    ...
+    ...5
+    ...
+    ...0
+    ...
+    ...12.12...
+    ...zope.mgr...
+    ...
+
+which means: there exists a batch named ``APP-1`` with 5 entries of
+which 0 have been devalidated, each one costs ``12.12`` and the batch
+was created by ``zope.mgr``.
+
+We create a second batch to see whether searching and related stuff
+works:
+
+    >>> browser.getLink('Add Access Code Batch').click()
+    >>> browser.getControl(name='form.prefix').value = 'APP'
+    >>> browser.getControl(name='form.entry_num').value = '5'
+    >>> browser.getControl(name='form.cost').value = '10.12'
+    >>> browser.getControl('Create batch').click()
+
+And a third one that can be deleted afterwards:
+
+    >>> browser.getLink('Add Access Code Batch').click()
+    >>> browser.getControl(name='form.prefix').value = 'BLA'
+    >>> browser.getControl(name='form.entry_num').value = '3'
+    >>> browser.getControl(name='form.cost').value = '19.12'
+    >>> browser.getControl('Create batch').click()
+
+
+Creating Archive Files
+======================
+
+Once a batch is created, we can archive it. To do so we have to tick
+the respective checkbox and click on 'Archive':
+
+    >>> ctrl = browser.getControl(name='batches')
+    >>> ctrl.getControl(value='APP-2').selected = True
+    >>> browser.getControl(name='archive').click()
+    >>> print browser.contents
+    <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+    ...
+    <div ...>Archived APP-2 (APP-2_archive-...-zope.mgr.csv)</div>
+    ...
+
+If we do not select a batch and try to archive or delete, the system
+will complain:
+
+    >>> browser.getControl(name='archive').click()
+    >>> print browser.contents
+    <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+    ...
+    <div ...>No batch selected.</div>
+    ...
+
+Deleting Batches
+================
+
+We can delete batches. They are automatically archived when doing so:
+
+    >>> ctrl = browser.getControl(name='batches')
+    >>> ctrl.getControl(value='BLA-1').selected = True
+    >>> browser.getControl('Archive and delete').click()
+    >>> print browser.contents
+    <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+    ...Archived BLA-1 (BLA-1_archive-...-zope.mgr.csv)...
+    ...Deleted batch BLA-1...
+    ...
+
+
+Reimporting Batches
+===================
+
+We can reimport batches using the log files written when a batch was
+created before. So one can reimport the freshly deleted BLA-1
+batch.
+
+To do so we must copy the logfile into the ``imports`` dir of
+accesscodes inside the university's datacenter storage. Otherwisae the
+list of importable files is empty:
+
+    >>> browser.getLink('Reimport Access Code Batch').click()
+    >>> print browser.contents
+    <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+    ...
+    ...No import batches available...
+    ...
+
+We can cancel that operation:
+
+    >>> browser.getControl('Cancel').click()
+
+We copy the ``BLA-1`` archive batch file over to the ``imports`` directory:
+
+    >>> ac_storage = os.path.join(uploadpath, 'accesscodes')
+    >>> logfile2 = os.path.join(ac_storage, 
+    ...                         sorted(os.listdir(ac_storage))[-2])
+    >>> filename = os.path.basename(logfile2)
+    >>> filename
+    'BLA-1_archive...-zope.mgr.csv'
+
+    >>> import shutil
+    >>> import_path = os.path.join(ac_storage, 'imports')
+    >>> shutil.copy(logfile2, import_path)
+
+Now the file will be presented as import source:
+
+    >>> browser.getLink('Reimport Access Code Batch').click()
+    >>> filename in browser.contents
+    True
+
+If we do not tick a filename to import and click 'Reimport', we will
+be warned:
+
+    >>> browser.getControl('Reimport').click()
+    >>> print browser.contents
+    <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+    ...No file chosen. Action cancelled...
+
+Now let's really reimport the batch:
+
+    >>> browser.getLink('Reimport Access Code Batch').click()
+    >>> ctrl = browser.getControl(name='filenames')
+    >>> ctrl.getControl(value=filename).selected = True
+    >>> browser.getControl('Reimport').click()
+
+The batch does exist now again:
+
+    >>> print browser.contents
+    <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+    ...Successfully reimported: BLA-1_archive...-zope.mgr.csv...
+    ...
+
+If we try to reimport an existing batch, that won't work:
+
+    >>> browser.getLink('Reimport Access Code Batch').click()
+    >>> ctrl = browser.getControl(name='filenames')
+    >>> ctrl.getControl(value=filename).selected = True
+    >>> browser.getControl('Reimport').click()
+    >>> print browser.contents
+    <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+    ...This batch already exists: BLA-1_archive...-zope.mgr.csv...
+    ...
+
+Searching Access Codes
+======================
+
+We can search for access codes already created.
+
+First we pick some really existing access codes to look for:
+
+    >>> codes = getRootFolder()['myuniversity']['accesscodes']
+    >>> app_1_codes = codes[u'APP-1']
+    >>> app_2_codes = codes[u'APP-2']
+    >>> bla_1_codes = codes[u'BLA-1']
+
+    >>> browser.open('http://localhost/myuniversity/accesscodes/search')
+    >>> ctrl = browser.getControl(name='searchtype')
+    >>> ctrl.getControl(value='code').selected = True
+    >>> browser.getControl(name='searchterm').value = app_1_codes.keys()[0]
+    >>> browser.getControl(name='search').click()
+
+The first access code in the ``APP-1`` batch is displayed:
+
+    >>> print browser.contents
+    <!DOCTYPE html ...
+    ...
+      value="APP-1..." /></td>
+      <td>...</td>
+      <td>APP-1-...</td>
+      <td>initialized</td>
+      <td>... - initialized by Manager</td>
+    ...
+
+We can also search for batch serials (the number of an access code
+inside its batch). Looking for number ``1`` will display first access
+code of each batch ('APP-1', 'APP-2', and 'BLA-1')
+
+    >>> browser.open('http://localhost/myuniversity/accesscodes/search')
+    >>> ctrl = browser.getControl(name='searchtype')
+    >>> ctrl.getControl(value='batch_serial').selected = True
+    >>> browser.getControl(name='searchterm').value = '1'
+    >>> browser.getControl(name='search').click()
+    >>> print browser.contents
+    <!DOCTYPE html ...
+    ...
+      value="APP-1..." /></td>
+      <td>1</td>
+      <td>APP-1-...</td>
+      <td>initialized</td>
+      <td>... - initialized by Manager</td>
+    ...
+
+Searching for non-integer values does not result in an exception:
+
+    >>> ctrl = browser.getControl(name='searchtype')
+    >>> ctrl.getControl(value='batch_serial').selected = True
+    >>> browser.getControl(name='searchterm').value = 'xyz'
+    >>> browser.getControl(name='search').click()
+    >>> print browser.contents
+    <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+    ...
+
+And we can search for text in history messages of access
+codes. Looking for the string ``initialized`` we get nearly all
+entries:
+
+    >>> browser.open('http://localhost/myuniversity/accesscodes/search')
+    >>> ctrl = browser.getControl(name='searchtype')
+    >>> ctrl.getControl(value='history').selected = True
+    >>> browser.getControl(name='searchterm').value = 'initialized'
+    >>> browser.getControl(name='search').click()
+    >>> print browser.contents
+    <!DOCTYPE html ...
+    ...
+      value="APP-1-<10-DIGITS>" /></td>
+      <td>1</td>
+      <td>APP-1-<10-DIGITS></td>
+      <td>initialized</td>
+      <td>... - initialized by Manager</td>
+    ...
+
+Enabling and Disabling Found Access Codes
+-----------------------------------------
+
+If a search is successfull, we can enable or disable the found access
+codes:
+
+    >>> browser.open('http://localhost/myuniversity/accesscodes/search')
+    >>> ctrl = browser.getControl(name='searchtype')
+    >>> ctrl.getControl(value='history').selected = True
+    >>> browser.getControl(name='searchterm').value = 'initialized'
+    >>> browser.getControl(name='search').click()
+
+This lists all access codes. We now tick one to disable it and click
+on the appropriate button:
+
+    >>> entries = browser.getControl(name='entries')
+    >>> entries.controls[0].selected = True
+    >>> browser.getControl('Disable ACs').click()
+    >>> print browser.contents
+    <!DOCTYPE html ...
+    ...APP-1-<10-DIGITS> disabled.</div>
+    ...
+
+We cannot disable the same entry again:
+
+    >>> entries = browser.getControl(name='entries')
+    >>> entries.controls[0].selected = True
+    >>> browser.getControl('Disable ACs').click()
+    >>> print browser.contents
+    <!DOCTYPE html ...
+    <div ...>APP-1-<10-DIGITS>: Disable transition not allowed.</div>
+    ...
+
+But we can reenable the same entry:
+
+    >>> entries = browser.getControl(name='entries')
+    >>> entries.controls[0].selected = True
+    >>> browser.getControl('Enable ACs').click()
+    >>> print browser.contents
+    <!DOCTYPE html ...
+    ...APP-1-<10-DIGITS> (re-)enabled.</div>
+    ...
+
+Enabling already enabled items gives a warning:
+
+    >>> entries = browser.getControl(name='entries')
+    >>> entries.controls[0].selected = True
+    >>> browser.getControl('Enable ACs').click()
+    >>> print browser.contents
+    <!DOCTYPE html ...
+    <div ...>APP-1-<10-DIGITS>: Re-enable transition not allowed.</div>
+    ...
+
+Log- and Archive Files
+======================
+
+We store log- and archive-files inside the storage managed by the
+local datacenter. Access-code related files are placed inside an
+``accesscode`` subdir:
+
+    >>> ac_storage = os.path.join(uploadpath, 'accesscodes')
+
+Log files for access-code batches
+---------------------------------
+
+Whenever a batch is created, there is also a log file with all entries
+created:
+
+    >>> sorted(os.listdir(ac_storage))
+    ['APP-1-...-zope.mgr.csv', 'APP-2-...-zope.mgr.csv', ...]
+
+Each logfile name contains the prefix, batch number, date of creation
+and userid of creator.
+
+    >>> logfile1 = os.path.join(ac_storage, 
+    ...                         sorted(os.listdir(ac_storage))[0])
+    >>> print open(logfile1, 'rb').read()
+    "serial","ac","cost"
+    "APP","1","12.12"
+    "0","APP-1-<10-DIGITS>"
+    "1","APP-1-<10-DIGITS>"
+    "2","APP-1-<10-DIGITS>"
+    "3","APP-1-<10-DIGITS>"
+    "4","APP-1-<10-DIGITS>"
+
+
+
+Archive files
+-------------
+
+We created an archive file above. An archive file name consists of the
+batch prefix, batch number, the string ``_archive``, creation datetime of
+the archive file and userid of batch creator:
+
+    >>> sorted(os.listdir(ac_storage))
+    [..., 'BLA-1_archive-...-zope.mgr.csv', 'imports']
+
+Archive files eventually also contain infos about invalidation dates
+and have a slightly different format therefore.
+
+    >>> archive_file = os.path.join(ac_storage,
+    ...                             sorted(os.listdir(ac_storage))[-2])
+    >>> print open(archive_file, 'rb').read()
+    "prefix","serial","ac","state","history","cost","owner"
+    "BLA","19.12","1","3"
+    "BLA","0","BLA-1-<10-DIGITS>","initialized","...","19.12",""
+    "BLA","1","BLA-1-<10-DIGITS>","initialized","...","19.12",""
+    "BLA","2","BLA-1-<10-DIGITS>","initialized","...","19.12",""
+
+Clean up:
+
+    >>> shutil.rmtree(uploadpath)

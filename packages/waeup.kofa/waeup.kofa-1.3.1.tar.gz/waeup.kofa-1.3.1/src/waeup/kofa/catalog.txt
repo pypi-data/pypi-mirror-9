@@ -1,0 +1,235 @@
+:mod:`waeup.kofa.catalog` -- Cataloging support Kofa
+****************************************************
+
+.. module:: waeup.kofa.catalog
+
+Components that support cataloging and searching objects inside a
+Kofa site.
+
+.. :doctest:
+.. :layer: waeup.kofa.testing.KofaUnitTestLayer
+
+.. contents::
+
+Classes
+=======
+
+:class:`KofaQuery`
+------------------
+
+.. class:: KofaQuery()
+
+   .. attribute:: grok.implements(hurry.query.interfaces.IQuery)
+
+   A `hurry.query.query.Query` compatible query that also supports
+   retrival of plain ``Bree`` result sets as used inside a catalog.
+
+   Like `hurry.query.query.Query` objects, `KofaQuery` is some kind
+   of a meta query or 'compound query' that can give the cataloged
+   objects (or their int ids) matching one or more 'subqueries'.
+
+   This way you can search for objects (or their int ids) that match
+   several criteria at the same time. See ``examples`` section below.
+
+   A singleton instance of this class is also available as global
+   utility.
+
+   .. method:: searchResults(query)
+
+     Get the cataloged objects determined by ``query``.
+
+   .. method:: apply(query)
+
+     Get the list of int ids (a `BTree` result set) for objects
+     determined by ``query``.
+
+     The list of int ids is less expensive to compute than the
+     complete search results and sufficient, for instance, when you
+     only need the number of objects that match a query and not the
+     objects themselves.
+
+Examples
+========
+
+Getting a general query object
+------------------------------
+
+We can get a KofaQuery object by asking for an unnamed global utility
+implementing `hurry.query.interfaces.IQuery`:
+
+    >>> from hurry.query.interfaces import IQuery
+    >>> from zope.component import getUtility
+    >>> q = getUtility(IQuery)
+    >>> q
+    <waeup.kofa.catalog.KofaQuery object at 0x...>
+
+This query can get 'subqueries' and delivers the objects found or
+their ids. To show this we have to setup a catalog with some entries.
+
+
+Setting up a catalog and feeding it
+-----------------------------------
+
+    >>> from zope.catalog.interfaces import ICatalog
+    >>> from zope.catalog.catalog import Catalog
+    >>> mycat = Catalog()
+
+We register this catalog with the component architechture as a utility
+named 'mycatalog':
+
+    >>> from zope.component import provideUtility
+    >>> provideUtility(mycat, ICatalog, 'mycatalog')
+
+We setup a special content type whose instances we will catalog later:
+
+    >>> from zope.interface import Interface, Attribute, implements
+    >>> from zope.container.contained import Contained
+    >>> class IMammoth(Interface):
+    ...   name = Attribute('name')
+    ...   age = Attribute('age')
+
+    >>> class Mammoth(Contained):
+    ...   implements(IMammoth)
+    ...   def __init__(self, name, age):
+    ...     self.name = name
+    ...     self.age = age
+    ...   def __cmp__(self, other):
+    ...     return cmp(self.name, other.name)
+
+By including the __cmp__ method we make sure search results can be
+stably sorted.
+
+We also setup a `zope.intid.interfaces.IIntIds` utility. This is not
+necessary for plain catalogs, but when we want to use KofaQuery (or
+`hurry.query.query.Query` objects), as to get a unique mapping from
+objects (stored in ZODB) to integer numbers (stored in catalogs),
+these query objects lookup a global IIntIds utiliy:
+
+    >>> from zope import interface
+    >>> import zope.intid.interfaces
+    >>> class DummyIntId(object):
+    ...     interface.implements(zope.intid.interfaces.IIntIds)
+    ...     MARKER = '__dummy_int_id__'
+    ...     def __init__(self):
+    ...         self.counter = 0
+    ...         self.data = {}
+    ...     def register(self, obj):
+    ...         intid = getattr(obj, self.MARKER, None)
+    ...         if intid is None:
+    ...             setattr(obj, self.MARKER, self.counter)
+    ...             self.data[self.counter] = obj
+    ...             intid = self.counter
+    ...             self.counter += 1
+    ...         return intid
+    ...     def getObject(self, intid):
+    ...         return self.data[intid]
+    ...     def __iter__(self):
+    ...         return iter(self.data)
+    >>> intid = DummyIntId()
+    >>> from zope.component import provideUtility
+    >>> provideUtility(intid, zope.intid.interfaces.IIntIds)
+
+Now we can catalog some mammoths. Here we create a herd and catalog
+each item of it:
+
+    >>> from zope.catalog.field import FieldIndex
+    >>> mycat['mammoth_name'] = FieldIndex('name', IMammoth)
+    >>> mycat['mammoth_age'] = FieldIndex('age', IMammoth)
+
+    >>> herd = [
+    ...   Mammoth(name='Fred', age=33),
+    ...   Mammoth(name='Hank', age=30),
+    ...   Mammoth(name='Wilma', age=28),
+    ... ]
+
+    >>> for mammoth in herd:
+    ...   mycat.index_doc(intid.register(mammoth), mammoth)
+
+
+Searching for result sets
+-------------------------
+
+Finally we can perform queries:
+
+    >>> from hurry.query import Eq
+    >>> from zope.component import getUtility
+    >>> subquery1 = Eq(('mycatalog', 'mammoth_name'), 'Fred')
+
+The latter means: search for objects whose name is ``'Fred'`` in the
+``mammoth_name`` index of a catalog registered as a utility named
+``mycatalog``.
+
+    >>> from hurry.query import Between
+    >>> subquery2 = Between(('mycatalog', 'mammoth_age'), 30, 33)
+
+This means: ask for objects cataloged in an index named 'mammoth_age',
+whose cataloged value is between 30 and 33 (including this values).
+
+    >>> r1 = q.apply(subquery2)
+    >>> r1
+    IFSet([0, 1])
+
+Using ``apply()`` above, we get a set of values stored in an
+``IFBTree``:
+
+    >>> type(r1)
+    <type 'BTrees.IFBTree.IFSet'>
+
+``IFBTree`` objects implement a rather efficient integer to float
+mapping where also integers are allowed as values. For each object
+found (i.e. mammoths whose age is between 30 and 33), we get the
+number of its entry.
+
+To get the real object, we can use intids here, because we setup an
+appropriate IIntIds utility before:
+
+    >>> [intid.getObject(x).name for x in r1]
+    ['Fred', 'Hank']
+
+We can (and should) also use the `searchResults()` method explained
+below to do that.
+
+Retrieving BTree sets can, however, make sense, if you want to know
+only the number of results for a particular query or whether there are
+results at all in a more efficient way:
+
+    >>> len(r1)
+    2
+
+Searching for objects
+---------------------
+
+Very often we don't want to know the catalog-internal 'ids' of
+searched objects but the objects themselves.
+
+This can be done by using the ``searchResults`` method of
+``KofaQuery``:
+
+    >>> r2 = q.searchResults(subquery1)
+    >>> r2
+    <zope.catalog.catalog.ResultSet instance at 0x...>
+
+    >>> list(r2)
+    [<Mammoth object at 0x...>]
+
+We got one result item, we can immediately ask for further infos. To
+access a result item by its index number, we have to turn the
+ResultSet into an ordinary list before:
+
+    >>> entry = list(r2)[0]
+    >>> entry.name, entry.age
+    ('Fred', 33)
+
+We can also use ``subquery2`` as above:
+
+    >>> r3 = q.searchResults(subquery2)
+    >>> [(x.name, x.age) for x in r3]
+    [('Fred', 33), ('Hank', 30)]
+
+or use both queries at once:
+
+    >>> r4 = q.searchResults(subquery1 & subquery2)
+    >>> [(x.name, x.age) for x in r4]
+    [('Fred', 33)]
+
+which will give us, of course, the same result set as with subquery1.

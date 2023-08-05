@@ -1,0 +1,141 @@
+Certificate Courses
+*******************
+
+Courses are referred to by certificate courses.
+
+We can be sure, that when removing courses or referrers of them,
+other data will be handled in a way we expect. That is,
+
+* when we remove a course, we want all referrers to it be removed as
+  well
+
+* when we remove a referrer of a course, nothing else should be
+  touched but only this very referrer.
+
+
+As correct deletion of referrer needs support of catalogs (we lookup
+catalogs to find referrers), we need a fully blown ZODB here,
+including an instance of :class:`waeup.kofa.app.University`, as this is our
+`ISite` object where the catalogs are stored.
+
+We create a complete university tree, starting with a
+:class:`University` instance and going down to courses, certificats
+and course certificates:
+
+    >>> from waeup.kofa.app import University
+    >>> root = getRootFolder()
+    >>> root['app'] = University()
+
+We have to set the site, to enable proper working of catalogs and
+`IObjectRemoved` handlers:
+
+    >>> from zope.app.component.hooks import setSite
+    >>> setSite(root['app'])
+
+    >>> from zope.component import createObject
+    >>> faculty = createObject('waeup.Faculty')
+    >>> faculty.code = 'FAC'
+    >>> root['app']['faculties'].addFaculty(faculty)
+    >>> fac = root['app']['faculties']['FAC']
+
+    >>> dept = createObject('waeup.Department')
+    >>> dept.code = 'DEPT'
+    >>> root['app']['faculties']['FAC'].addDepartment(dept)
+
+    >>> course = createObject('waeup.Course')
+    >>> course.code = 'CRS1'
+    >>> fac['DEPT'].courses.addCourse(course)
+
+Now let's add another department, which will also hold a course:
+
+    >>> dept2 = createObject('waeup.Department')
+    >>> dept2.code = 'DEPT2'
+    >>> root['app']['faculties']['FAC'].addDepartment(dept2)
+
+    >>> course = createObject('waeup.Course')
+    >>> course.code = 'CRS2'
+    >>> fac['DEPT2'].courses.addCourse(course)
+
+Finally, we add a certificate with referrers (certificate courses) to
+the created courses:
+
+    >>> cert = createObject('waeup.Certificate')
+    >>> cert.code = 'CERT'
+    >>> fac['DEPT'].certificates.addCertificate(cert)
+
+    >>> fac['DEPT'].certificates['CERT'].addCertCourse(
+    ...   fac['DEPT'].courses['CRS1'])
+
+    >>> fac['DEPT'].certificates['CERT'].addCertCourse(
+    ...   fac['DEPT2'].courses['CRS2'])
+
+We add the latter course again, but this time for the second level:
+
+    >>> fac['DEPT'].certificates['CERT'].addCertCourse(
+    ...   fac['DEPT2'].courses['CRS2'], level=200)
+
+So, we have three referrers in our certificate of two different
+courses stored somewhere in the application:
+
+    >>> list(fac['DEPT'].certificates['CERT'])
+    [u'CRS1_100', u'CRS2_100', u'CRS2_200']
+
+Both, the courses themselves and the referrers of them, are the same
+(not only equal):
+
+    >>> a = root['app']['faculties']['FAC']['DEPT']
+    >>> b1 = a.courses['CRS1']
+    >>> b2 = a.certificates['CERT']['CRS1_100'].course
+    >>> b1 is b2
+    True
+
+If we remove the course, also the select item in the certificate course
+will be gone:
+
+    >>> list(a.certificates['CERT'])
+    [u'CRS1_100', u'CRS2_100', u'CRS2_200']
+
+    >>> list(a.courses)
+    [u'CRS1']
+
+    >>> del root['app']['faculties']['FAC']['DEPT'].courses['CRS1']
+    >>> list(a.certificates['CERT'])
+    [u'CRS2_100', u'CRS2_200']
+
+    >>> list(a.courses)
+    []
+
+If we remove a referrer of a course, this will not touch the course
+nor other referrers:
+
+    >>> del fac['DEPT'].certificates['CERT']['CRS2_200']
+    >>> list(a.certificates['CERT'])
+    [u'CRS2_100']
+
+    >>> list(fac['DEPT2'].courses)
+    [u'CRS2']
+
+If a single course is registered for several levels in a single
+certificate, this will not block things if the course is removed
+(regression test):
+
+We add the same course as a reference for level 200 and level 300:
+
+    >>> fac['DEPT'].certificates['CERT'].addCertCourse(
+    ...   fac['DEPT2'].courses['CRS2'], level=200)
+    >>> fac['DEPT'].certificates['CERT'].addCertCourse(
+    ...   fac['DEPT2'].courses['CRS2'], level=300)
+
+Deleting the course (thus also the refererrers) will work:
+
+    >>> del root['app']['faculties']['FAC']['DEPT2'].courses['CRS2']
+
+Now all references are gone:
+
+    >>> list(a.certificates['CERT'])
+    []
+
+and also the course itself vanished:
+
+    >>> list(fac['DEPT2'].courses)
+    []

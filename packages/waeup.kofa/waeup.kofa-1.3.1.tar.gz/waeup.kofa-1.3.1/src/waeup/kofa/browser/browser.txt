@@ -1,0 +1,1352 @@
+Browsing Kofa
+*************
+
+Here we visit all parts of a Kofa portal using a browser.
+
+University
+==========
+
+We can watch universities in the browser.
+
+We create an university object and put into the ZODB root::
+
+  >>> root = getRootFolder()
+  >>> list(root)
+  []
+
+  >>> from waeup.kofa.app import University
+  >>> u = University()
+  >>> root['myuniversity'] = u
+  >>> list(root)
+  [u'myuniversity']
+
+  >>> from zope.component.hooks import setSite
+  >>> setSite(root['myuniversity'])
+
+To make sure, we can 'watch' pages, we first have to initialize out
+test browser::
+
+  >>> from zope.testbrowser.testing import Browser
+  >>> browser = Browser()
+
+Let's get the default view of a university::
+
+  >>> browser.open('http://localhost/myuniversity')
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...Welcome to WAeUP.Kofa...
+  ...
+
+We can change to German::
+  >>> browser.getLink('de').click()
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...Anfragen...
+  ...
+
+And then change back to English by clicking on the third link containing 'en'
+behind 'Anfragen' and 'Einloggen'::
+  >>> browser.getLink('en', index=2).click()
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...Enquiries...
+  ...
+
+The contact form for anonymous users is called 'Enquiries'::
+
+  >>> browser.open('http://localhost/myuniversity')
+  >>> browser.getLink('Enquiries').click()
+  >>> browser.getControl('Send').click()
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...Required input is missing...
+  ...
+
+  >>> browser.getControl(name='form.fullname').value = "Bob Tester"
+  >>> browser.getControl(name='form.email_from').value = "xx@yy.zz"
+  >>> browser.getControl(name='form.body').value = u'test message'
+  >>> browser.getControl('Send').click()
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...Your message has been sent...
+  ...
+
+Registered users with an email address can request a password change:
+
+  >>> root['myuniversity']['users'].addUser('forgetful', 'secret',title='Bob Forgetful',
+  ...                               description='A forgetful user', email='aa@aa.ng')
+  >>> browser.open('http://localhost/myuniversity/changepw')
+  >>> browser.getControl(name="form.identifier").value = 'forgetful'
+  >>> browser.getControl(name="form.email").value = 'aa@aa.ng'
+  >>> browser.getControl("Send login credentials").click()
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...An email with your user name and password has been sent to aa@aa.ng...
+
+Now we login as manager::
+
+  >>> browser.addHeader('Authorization', 'Basic mgr:mgrpw')
+  >>> browser.handleErrors = False
+
+We can then get an edit view of the configuration container::
+
+  >>> browser.open('http://localhost/myuniversity/configuration')
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...<form action="http://localhost/myuniversity/configuration/@@index"
+  ...
+
+The edit form contains the default value for the university name::
+
+  >>> 'Sample University' in browser.contents
+  True
+
+We can perform several actions on the edit form::
+
+  >>> browser.getControl("Save", index=0).click()
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...Form has been saved...
+  ...
+
+  >>> browser.open('http://localhost/myuniversity/configuration')
+  >>> browser.getControl("Update plugins").click()
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...Plugins were updated. See log file for details...
+  ...
+
+The default frontpage HTML has been saved in a dictionary
+and is properly rendered on the frontpage of the portal:
+
+  >>> browser.open('http://localhost/myuniversity')
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...<h1>Welcome to WAeUP.Kofa...</h1>
+  ...
+
+The German part is really not being rendered:
+
+  >>> 'Willkommen' in browser.contents
+  False
+
+
+If we change to German so that the German part of frontpage.rst is rendered:
+
+  >>> browser.open('http://localhost/myuniversity//@@change_language?lang=de')
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...<h1>Willkommen auf WAeUP.Kofa...</h1>
+  ...
+
+The English part is really not being rendered:
+
+  >>> 'Welcome' in browser.contents
+  False
+
+Switch back to English:
+
+  >>> browser.open('http://localhost/myuniversity//@@change_language?lang=en')
+
+We can export a university as XML::
+
+  >>> browser.open('http://localhost/myuniversity/export.xml')
+  >>> print browser.contents
+  <?xml version="1.0" encoding="utf-8" ?>
+  <pickle>
+  ...
+  </pickle>
+
+  >>> print browser.headers
+  Status: 200 Ok
+  Content-Length: ...
+  Content-Type: text/xml; charset=UTF-8
+  X-Powered-By: Zope (www.zope.org), Python (www.python.org)
+
+
+Portal Users
+============
+
+  >>> browser.open('http://localhost/myuniversity')
+  >>> browser.getLink('Portal Users').click()
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...Portal Users...
+  ...
+
+We can add users:
+
+  >>> browser.getLink("Add user").click()
+  >>> browser.getControl(name="form.name").value = 'bob'
+  >>> browser.getControl(name="form.title").value = 'Bob The User'
+  >>> browser.getControl(name="password").value = 'secret'
+  >>> browser.getControl(name="control_password").value = 'secret'
+  >>> browser.getControl(name="form.email").value = 'xx@yy.zz'
+  >>> browser.getControl(name="form.phone.country").value = ['+234']
+  >>> browser.getControl(name="form.phone.area").value = '123'
+  >>> browser.getControl(name="form.phone.ext").value = '45678'
+  >>> browser.getControl("Add user").click()
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...<td>bob</td>
+  ...
+
+We can edit user bob:
+
+  >>> browser.getControl("Manage", index=0).click()
+  >>> browser.getControl("Save", index=0).click()
+  >>> browser.getControl("Cancel", index=0).click()
+
+We can add site roles which are then displayed on the user container page.
+Since the test browser does not use javascript, we have to add site roles
+manually by setting the roles attribute:
+
+  >>> print root['myuniversity']['users']['bob'].roles
+  []
+  >>> root['myuniversity']['users']['bob'].roles = ['waeup.ApplicationsOfficer']
+  >>> print root['myuniversity']['users']['bob'].roles
+  ['waeup.ApplicationsOfficer']
+  >>> browser.open('http://localhost/myuniversity/users')
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...<td nowrap>Applications Officer (view only) <br /></td>
+  ...
+
+Users can't be added twice:
+
+  >>> browser.open('http://localhost/myuniversity/users/add')
+  >>> browser.getControl(name="form.name").value = 'bob'
+  >>> browser.getControl(name="form.title").value = 'Bob The User'
+  >>> browser.getControl(name="password").value = 'secret'
+  >>> browser.getControl(name="control_password").value = 'secret'
+  >>> browser.getControl(name="form.email").value = 'xx@yy.zz'
+  >>> browser.getControl(name="form.phone.country").value = ['+234']
+  >>> browser.getControl(name="form.phone.area").value = '123'
+  >>> browser.getControl(name="form.phone.ext").value = '45678'
+  >>> browser.getControl("Add user").click()
+  >>> 'The userid chosen already exists' in browser.contents
+  True
+
+Users can be deleted:
+
+  >>> browser.open('http://localhost/myuniversity/users')
+  >>> browser.getControl("Remove", index=0).click()
+  >>> 'User account bob successfully deleted' in browser.contents
+  True
+
+
+
+Contact Form
+============
+
+Let's enter the contact form::
+
+  >>> browser.open('http://localhost/myuniversity/contactadmin')
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...Contact
+  ...
+
+We fill the form  (this will send a real message to
+contact@waeup.org)::
+
+  >>> browser.open('http://localhost/myuniversity/contactadmin')
+  >>> browser.getControl(name='form.body').value = "test message"
+  >>> browser.getControl('Send').click()
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...Your message has been sent...
+  ...
+
+If this test fails, chances are, that the local machine has no SMTP
+server installed.
+
+
+
+Faculties
+=========
+
+Faculties are stored in a special container of `IUniversity`
+instances. The container is called ``faculties`` and provides an
+add-form to add new faculties::
+
+  >>> browser.open('http://localhost/myuniversity/faculties/manage')
+  >>> browser.getControl('Add faculty').click()
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...*...
+  ...<span>Name of faculty</span>:
+  ...
+  >>> browser.getControl('Cancel').click()
+  >>> browser.open('http://localhost/myuniversity/faculties/add')
+
+We fill in a new name for our new faculty::
+
+  >>> ctrl = browser.getControl(name='form.title')
+  >>> ctrl.value = 'TestFac'
+
+Furthermore we add a prefix and a code (kind of abbreviation):
+
+  >>> browser.getControl(name='form.code').value = 'TF'
+
+Finally we click on 'Add Faculty' to add the new thing::
+
+  >>> browser.getControl('Add faculty').click()
+
+We can view a faculty by browsing a URL like this::
+
+  >>> browser.open('http://localhost/myuniversity/faculties/TF')
+
+Afterwards, the faculty should be visible:
+
+  >>> browser.open('http://localhost/myuniversity/faculties')
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  ...<h1 class="kofa-content-label">Academic Section</h1>
+  ...<td> <a href="http://localhost/myuniversity/faculties/TF"> <span>TF</span></a></td>
+  ...
+
+We can 'visit' each faculty by clicking on the appropriate link:
+
+  >>> browser.getLink('TF').click()
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...Faculty of TestFac (TF)...
+  ...
+
+If we add the same faculty twice, an error message will occur:
+
+  >>> browser.open('http://localhost/myuniversity/faculties/add')
+  >>> ctrl = browser.getControl(name='form.title')
+  >>> ctrl.value = 'TestFac'
+  >>> browser.getControl(name='form.code').value = 'TF'
+  >>> browser.getControl('Add faculty').click()
+  >>> 'The faculty code chosen already exists.' in browser.contents
+  True
+
+Modifying faculties
+-------------------
+
+A faculty can directly be reached by its code:
+
+  >>> browser.open('http://localhost/myuniversity/faculties/TF')
+
+We can change the settings for a faculty by clicking on the
+provided 'Manage  faculty' button:
+
+  >>> browser.getLink('Manage faculty').click()
+
+Let's set a new title and save the form:
+
+  >>> browser.getControl(name='form.title').value = "My renamed faculty"
+  >>> browser.getControl(name='form.actions.save').click()
+
+Our faculty was indeed renamed to ``My renamed faculty``:
+
+  >>> browser.open('http://localhost/myuniversity/faculties')
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...<h1 class="kofa-content-label">Academic Section</h1>
+  ...<td> <a href="http://localhost/myuniversity/faculties/TF"> <span>TF</span></a></td>
+  ...<td>Faculty of My renamed faculty (TF)</td>
+  ...
+
+We can grant local roles:
+
+  >>> root['myuniversity']['users'].addUser('bob', 'secret',title='Bob',
+  ...                               description='A sample user')
+  >>> browser.open('http://localhost/myuniversity/faculties/TF/manage')
+  >>> browser.getControl(name="user").value = ['bob']
+  >>> browser.getControl(
+  ...     name="local_role").value = ['waeup.local.DepartmentManager']
+  >>> browser.getControl("Add local role").click()
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...<td>bob</td>
+  ...
+
+On the portal user page the new local role is displayed:
+
+  >>> browser.getLink("Portal Users").click()
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...<td>Department Manager:...
+  ...
+
+The local role can be removed again:
+
+  >>> browser.open('http://localhost/myuniversity/faculties/TF/manage')
+  >>> ctrl = browser.getControl(name='role_id')
+  >>> browser.getControl("Remove selected local roles").click()
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...No local role selected...
+  ...
+
+  >>> browser.open('http://localhost/myuniversity/faculties/TF/manage')
+  >>> ctrl = browser.getControl(name='role_id')
+  >>> ctrl.getControl(value='bob|waeup.local.DepartmentManager').selected = True
+  >>> browser.getControl("Remove selected local roles").click()
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...Local role successfully removed...
+  ...
+
+Deleting faculties
+------------------
+
+  >>> browser.open('http://localhost/myuniversity/faculties/manage')
+  >>> browser.getControl('Cancel').click()
+  >>> print browser.url
+  http://localhost/myuniversity/faculties
+  >>> browser.getLink('Manage academic section').click()
+  >>> browser.getControl('Add faculty').click()
+  >>> ctrl = browser.getControl(name='form.title')
+  >>> ctrl.value = 'Second Faculty'
+  >>> browser.getControl(name='form.code').value = 'TF2'
+  >>> browser.getControl('Add faculty').click()
+  >>> browser.open('http://localhost/myuniversity/faculties/manage')
+  >>> browser.getControl("Remove selected", index=0).click()
+  >>> 'No item selected' in browser.contents
+  True
+  >>> browser.open('http://localhost/myuniversity/faculties/manage')
+  >>> ctrl = browser.getControl(name='val_id')
+  >>> ctrl.getControl(value='TF2').selected = True
+  >>> browser.getControl("Remove selected", index=0).click()
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...Successfully removed:...
+  ...
+
+Departments
+===========
+
+Adding departments
+------------------
+
+Departments are stored in :class:`IFaculty` instances with their code
+as key. Faculties therefore are also department containers. Faculties
+provides an add-form to add new departments:
+
+  >>> browser.open('http://localhost/myuniversity/faculties/TF/add')
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...*</span>
+  ...<span>Name of department</span>:
+  ...
+  >>> browser.getControl('Cancel').click()
+  >>> browser.open('http://localhost/myuniversity/faculties/TF/add')
+
+We fill in a new name for our new department:
+
+  >>> ctrl = browser.getControl(name='form.title')
+  >>> ctrl.value = 'TestDept'
+
+Furthermore we add a code (kind of abbreviation):
+
+  >>> browser.getControl(name='form.code').value = 'TD'
+
+Finally we click on 'Add Department' to add the new thing::
+
+  >>> browser.getControl('Add department').click()
+
+If we try to register a department under the same code twice we will
+get an error:
+
+  >>> browser.open('http://localhost/myuniversity/faculties/TF/add')
+  >>> ctrl = browser.getControl(name='form.title')
+  >>> ctrl.value = 'Another TestDept with same code'
+  >>> browser.getControl(name='form.code').value = 'TD'
+  >>> browser.getControl('Add department').click()
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...The code chosen already exists in this faculty...
+  ...
+
+We can view a department by browsing a URL like this::
+
+  >>> browser.open('http://localhost/myuniversity/faculties/TF/TD')
+
+Afterwards, the department should be visible::
+
+  >>> browser.open('http://localhost/myuniversity/faculties/TF')
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...<h1 class="kofa-content-label">Departments</h1>
+  ...<td> <a href="http://localhost/myuniversity/faculties/TF/TD"> <span>TD</span></a></td>
+  ...<td>Department of TestDept (TD)</td>
+  ...
+
+
+Modifying departments
+---------------------
+
+We can change the settings for a department by clicking on the
+provided 'Edit department' button:
+
+  >>> browser.open('http://localhost/myuniversity/faculties/TF/TD')
+  >>> browser.getLink('Manage department').click()
+
+Let's set a new title and save the form:
+
+  >>> browser.getControl(name='form.title').value = "My test dept"
+  >>> browser.getControl(name='form.actions.save').click()
+
+Clicking 'Save' we will stay on the settings form. So we can change
+the department again.
+
+  >>> browser.getControl(name='form.title').value = "My renamed dept"
+  >>> ctrl = browser.getControl("Save")
+  >>> ctrl.click()
+
+
+Our department was indeed renamed to ``My renamed dept``:
+
+  >>> browser.open('http://localhost/myuniversity/faculties/TF')
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  ...<h1 class="kofa-content-label">Departments</h1>
+  ...<td> <a href="http://localhost/myuniversity/faculties/TF/TD"> <span>TD</span></a></td>
+  ...<td>Department of My renamed dept (TD)</td>
+  ...
+
+We can grant local roles:
+
+  >>> browser.open('http://localhost/myuniversity/faculties/TF/TD/manage')
+  >>> browser.getControl(name="user").value = ['bob']
+  >>> browser.getControl(
+  ...     name="local_role").value = ['waeup.local.DepartmentManager']
+  >>> browser.getControl("Add local role").click()
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...<td>bob</td>
+  ...
+
+The local role can be removed again:
+
+  >>> browser.open('http://localhost/myuniversity/faculties/TF/TD/manage')
+  >>> ctrl = browser.getControl(name='role_id')
+  >>> browser.getControl("Remove selected local roles").click()
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...No local role selected...
+  ...
+
+  >>> browser.open('http://localhost/myuniversity/faculties/TF/TD/manage')
+  >>> ctrl = browser.getControl(name='role_id')
+  >>> ctrl.getControl(
+  ...     value='bob|waeup.local.DepartmentManager').selected = True
+  >>> browser.getControl("Remove selected local roles").click()
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...Local role successfully removed...
+  ...
+
+Deleting departments
+--------------------
+
+  >>> browser.open('http://localhost/myuniversity/faculties/TF/manage')
+  >>> browser.getControl('Cancel', index=0).click()
+  >>> print browser.url
+  http://localhost/myuniversity/faculties/TF
+  >>> browser.getLink('Manage faculty').click()
+  >>> browser.getControl('Add department').click()
+  >>> ctrl = browser.getControl(name='form.title')
+  >>> ctrl.value = 'Second Department'
+  >>> browser.getControl(name='form.code').value = 'TD2'
+  >>> browser.getControl('Add department').click()
+  >>> browser.open('http://localhost/myuniversity/faculties/TF/manage')
+  >>> browser.getControl("Remove selected", index=0).click()
+  >>> 'No item selected' in browser.contents
+  True
+  >>> browser.open('http://localhost/myuniversity/faculties/TF/manage')
+  >>> ctrl = browser.getControl(name='val_id')
+  >>> ctrl.getControl(value='TD2').selected = True
+  >>> browser.getControl("Remove selected", index=0).click()
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...Successfully removed:...
+  ...
+
+
+Courses
+=======
+
+Once we have a department, we can add courses.
+
+Adding courses
+--------------
+
+Courses are stored in :class:`ICoursesContainer` instances with their
+code as key. CoursesContainers are normally availabe as `course`
+attribute of :class:`waeup.kofa.university.department.Department`
+instances.
+
+To ease the life of users we do not require to browse the
+coursescontainers (which have a rather flat user interface), but
+provide adding of courses in department views.
+
+Each department provides a ``Add course`` action button near top.
+
+Departments provide an add-form to add new courses:
+
+  >>> dept_url = 'http://localhost/myuniversity/faculties/TF/TD'
+  >>> browser.open(dept_url + '/manage')
+  >>> browser.getControl('Add course').click()
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...*</span>
+  ...<span>Title of course</span>:
+  ...
+
+We fill in a name for our new course:
+
+  >>> ctrl = browser.getControl(name='form.title')
+  >>> ctrl.value = 'My Course 1'
+
+Furthermore we add a code (kind of abbreviation):
+
+  >>> browser.getControl(name='form.code').value = 'COURSE1'
+
+This course will take place in the the first semester, so we set the
+`semester` value to 1:
+
+  >>> ctrl = browser.getControl(name='form.semester')
+  >>> ctrl.options
+  ['1', '2', '3', '9']
+
+  >>> ctrl.displayOptions
+  ['1st Semester', '2nd Semester', 'Combined', 'N/A']
+
+  >>> ctrl.value = ['1']
+
+Finally, we create the course:
+
+  >>> browser.getControl('Add course').click()
+
+If we try to register a course under the same code twice we will
+get an error:
+
+  >>> browser.open(dept_url + '/addcourse')
+  >>> ctrl = browser.getControl(name='form.title')
+  >>> ctrl.value = 'Another course with same code'
+  >>> browser.getControl(name='form.code').value = 'COURSE1'
+  >>> browser.getControl('Add course').click()
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...A course with same code already exists:...
+  ...
+
+Our course will be linked under the code on the department page:
+
+  >>> browser.open(dept_url)
+  >>> browser.getLink('COURSE1').click()
+  >>> browser.url
+  'http://localhost/myuniversity/faculties/TF/TD/courses/COURSE1'
+
+Before we really add a course we can cancel the action and will be
+redirected to the department page:
+
+  >>> browser.open(dept_url + '/addcourse')
+  >>> browser.getControl('Cancel').click()
+  >>> browser.url
+  'http://localhost/myuniversity/faculties/TF/TD'
+
+
+Modifying courses
+-----------------
+
+We can change the settings for a course by clicking on the provided
+'Edit settings' link:
+
+  >>> browser.open(dept_url + '/courses/COURSE1')
+  >>> browser.getLink('Edit course').click()
+
+When modifying a course, we cannot change the code any more:
+
+  >>> browser.getControl(name='form.code')
+  Traceback (most recent call last):
+  ...
+  LookupError: name 'form.code'
+
+Let's set a new title and save the form:
+
+  >>> browser.getControl(name='form.title').value = "My test course"
+  >>> browser.getControl(name='form.actions.save').click()
+
+Clicking 'Save' we will stay on the settings form. So we can change
+the course again. If we click ``Cancel`` nothing will be
+changed:
+
+  >>> browser.getControl(name='form.title').value = "Blah"
+  >>> browser.getControl('Cancel').click()
+
+Our course was not renamed to ``Blah``:
+
+  >>> browser.open('http://localhost/myuniversity/faculties/TF/TD')
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...<td>My test course</td>...
+  ...
+
+Searching courses
+-----------------
+
+  >>> browser.open('http://localhost/myuniversity/faculties/search')
+  >>> browser.getControl(name='query').value = "My test course"
+  >>> browser.getControl('Search').click()
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...faculties/TF/TD/courses/COURSE1">COURSE1</a>
+  ...
+
+  >>> browser.open('http://localhost/myuniversity/faculties/search')
+  >>> browser.getControl(name='query').value = "COURSE1"
+  >>> browser.getControl('Search').click()
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...faculties/TF/TD/courses/COURSE1">COURSE1</a>
+  ...
+
+  >>> browser.getControl(name='query').value = "Nonsense"
+  >>> browser.getControl('Search').click()
+  >>> 'Search Results' in browser.contents
+  False
+  >>> '<div class="alert alert-warning">No object found.</div>' in browser.contents
+  True
+
+  >>> browser.getControl(name='query').value = ""
+  >>> browser.getControl('Search').click()
+  >>> 'Empty search string' in browser.contents
+  True
+
+We can grant local roles:
+
+  >>> browser.open('http://localhost/myuniversity/faculties/TF/TD/courses/COURSE1/manage')
+  >>> browser.getControl(name="user").value = ['bob']
+  >>> browser.getControl(
+  ...     name="local_role").value = ['waeup.local.Lecturer']
+  >>> browser.getControl("Add local role").click()
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...<td>bob</td>
+  ...
+
+On the portal user page the new local role is displayed:
+
+  >>> browser.getLink("Portal Users").click()
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...<td>Lecturer:...
+  ...
+
+The local role can be removed again:
+
+  >>> browser.open('http://localhost/myuniversity/faculties/TF/TD/courses/COURSE1/manage')
+  >>> ctrl = browser.getControl(name='role_id')
+  >>> browser.getControl("Remove selected local roles").click()
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...No local role selected...
+  ...
+
+  >>> browser.open('http://localhost/myuniversity/faculties/TF/TD/courses/COURSE1/manage')
+  >>> ctrl = browser.getControl(name='role_id')
+  >>> ctrl.getControl(value='bob|waeup.local.Lecturer').selected = True
+  >>> browser.getControl("Remove selected local roles").click()
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...Local role successfully removed...
+  ...
+
+Deleting courses
+----------------
+
+We can delete courses by browsing the manage page of the containing
+department and checking the appropriate select box and clicking the
+´´Remove selected´´ button.
+
+  >>> browser.open(
+  ...     'http://localhost/myuniversity/faculties/TF/TD/@@manage#tab-2')
+  >>> 'My test course' in browser.contents
+  True
+
+  >>> browser.getControl('Cancel', index=0).click()
+  >>> browser.getLink('Manage department').click()
+  >>> browser.getControl('Remove selected courses').click()
+  >>> 'No item selected' in browser.contents
+  True
+
+  >>> browser.getControl(
+  ...    name='val_id').getControl(value='COURSE1').selected = True
+  >>> browser.getControl('Remove selected courses').click()
+
+  >>> browser.open('http://localhost/myuniversity/faculties/TF/TD')
+  >>> 'My renamed course' in browser.contents
+  False
+
+
+Deleting departments with courses
+---------------------------------
+
+  >>> browser.open('http://localhost/myuniversity/faculties/TF/manage')
+  >>> browser.getControl('Cancel', index=0).click()
+  >>> browser.getLink('Manage faculty').click()
+  >>> browser.getControl('Add department').click()
+  >>> ctrl = browser.getControl(name='form.title')
+  >>> ctrl.value = 'Third Department'
+  >>> browser.getControl(name='form.code').value = 'TD3'
+  >>> browser.getControl('Add department').click()
+  >>> browser.open('http://localhost/myuniversity/faculties/TF/TD3/manage')
+  >>> browser.getControl('Add course').click()
+  >>> ctrl = browser.getControl(name='form.title')
+  >>> ctrl.value = 'My Course 5'
+  >>> browser.getControl(name='form.code').value = 'COURSE5'
+  >>> browser.getControl('Add course').click()
+  >>> browser.open('http://localhost/myuniversity/faculties/TF/manage')
+  >>> ctrl = browser.getControl(name='val_id')
+  >>> ctrl.getControl(value='TD3').selected = True
+  >>> browser.getControl("Remove selected", index=0).click()
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...Successfully removed:...
+  ...
+
+Certificates
+============
+
+Once we have a department, we can add also certificats.
+
+Adding certificates
+-------------------
+
+Certificates are stored in :class:`ICertificatesContainer` instances
+with their code as key. CertificatesContainers are normally availabe as
+`certificates` attribute of
+:class:`waeup.kofa.university.department.Department` instances.
+
+To ease the life of users we do not require to browse the
+certificatescontainers (which have in fact no user interface), but
+provide adding of certificates in department views.
+
+Each department provides a ``Add certificate`` action button near top.
+
+Departments provide an add-form to add new certificates:
+
+  >>> dept_url = 'http://localhost/myuniversity/faculties/TF/TD'
+  >>> browser.open(dept_url + '/manage')
+  >>> browser.getControl('Add certificate').click()
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...*</span>
+  ...<span>Title</span>:
+  ...
+
+We fill in a name for our new cert:
+
+  >>> ctrl = browser.getControl(name='form.title')
+  >>> ctrl.value = 'My Certificate 1'
+
+Furthermore we add a code (kind of abbreviation):
+
+  >>> browser.getControl(name='form.code').value = 'CERT1'
+
+Set the remaining required fields:
+
+  >>> browser.getControl(name='form.study_mode').value = ['ug_ft']
+  >>> browser.getControl(name='form.start_level').value = ['100']
+  >>> browser.getControl(name='form.end_level').value = ['400']
+  >>> browser.getControl(name='form.application_category').value = ['basic']
+
+Finally, we create the certificate:
+
+  >>> browser.getControl('Add certificate').click()
+
+If we try to register a certificate under the same code twice we will
+get an error:
+
+  >>> browser.open(dept_url + '/addcertificate')
+  >>> ctrl = browser.getControl(name='form.title')
+  >>> ctrl.value = 'Another cert with same code'
+  >>> browser.getControl(name='form.code').value = 'CERT1'
+  >>> browser.getControl(name='form.study_mode').value = ['ug_ft']
+  >>> browser.getControl(name='form.start_level').value = ['100']
+  >>> browser.getControl(name='form.end_level').value = ['400']
+  >>> browser.getControl(name='form.application_category').value = ['basic']
+
+  >>> browser.getControl('Add certificate').click()
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...A certificate with same code already exists:...
+  ...
+
+Our certificate will be linked under the code on the department page:
+
+  >>> browser.open(dept_url)
+  >>> browser.getLink('CERT1').click()
+  >>> browser.url
+  'http://localhost/myuniversity/faculties/TF/TD/certificates/CERT1'
+
+Before we really add a certificate we can cancel the action and will be
+redirected to the department page:
+
+  >>> browser.open(dept_url + '/addcertificate')
+  >>> browser.getControl('Cancel').click()
+  >>> browser.url
+  'http://localhost/myuniversity/faculties/TF/TD'
+
+
+Modifying certificates
+----------------------
+
+We can change the settings for a cert by clicking on the provided
+'Edit certificate' link:
+
+  >>> browser.open(dept_url + '/certificates/CERT1')
+  >>> browser.getLink('Manage certificate').click()
+
+When modifying a certificate, we cannot change the code any more:
+
+  >>> browser.getControl(name='form.code')
+  Traceback (most recent call last):
+  ...
+  LookupError: name 'form.code'
+
+Let's set a new title and save the form:
+
+  >>> browser.getControl(name='form.title').value = "My test cert"
+  >>> browser.getControl(name='form.actions.save').click()
+
+Clicking 'Save' we will stay on the settings form. So we can change
+the cert again.
+
+  >>> browser.getControl(name='form.title').value = "My renamed cert"
+  >>> ctrl = browser.getControl("Save",index=0)
+  >>> ctrl.click()
+
+If we go to the settings page and click ``Cancel`` nothing will be
+changed:
+
+  >>> browser.getControl(name='form.title').value = "Blah"
+  >>> browser.getControl('Cancel',index=0).click()
+
+Our certificate was indeed renamed to ``My renamed cert`` and not to
+``Blah``:
+
+  >>> browser.open('http://localhost/myuniversity/faculties/TF/TD')
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...<td>My renamed cert</td>...
+  ...
+
+Searching certificates
+----------------------
+
+  >>> browser.open('http://localhost/myuniversity/faculties/search')
+  >>> browser.getControl(name='query').value = "My renamed cert"
+  >>> browser.getControl('Search').click()
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...faculties/TF/TD/certificates/CERT1">CERT1</a>
+  ...
+
+  >>> browser.open('http://localhost/myuniversity/faculties/search')
+  >>> browser.getControl(name='query').value = "CERT1"
+  >>> browser.getControl('Search').click()
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...faculties/TF/TD/certificates/CERT1">CERT1</a>
+  ...
+
+Deleting certificates
+---------------------
+
+We can delete certificates by browsing the manage page of the
+containing department and checking the appropriate select box and
+clicking the ´´Remove selected´´ button.
+
+  >>> browser.open(
+  ...    'http://localhost/myuniversity/faculties/TF/TD/@@manage#tab-3')
+  >>> 'My renamed cert' in browser.contents
+  True
+
+  >>> browser.getControl('Remove selected certificates').click()
+  >>> 'No item selected' in browser.contents
+  True
+
+  >>> browser.getControl(name='val_id').getControl(
+  ...    value='CERT1').selected = True
+  >>> browser.getControl('Remove selected certificates').click()
+  >>> 'My renamed cert' in browser.contents
+  False
+
+
+CertificateCourses
+==================
+
+Once we have a certificate, we can add also certificate courses. These
+are referrers of courses with some extra data.
+
+Before we can work with certificate courses, we need some certificates
+and courses to be available.
+
+  >>> browser.open(dept_url + '/addcourse')
+  >>> ctrl = browser.getControl(name='form.title')
+  >>> ctrl.value = 'Another course with same code'
+  >>> browser.getControl(name='form.code').value = 'COURSE1'
+  >>> browser.getControl(name='form.title').value = 'Course 1'
+  >>> browser.getControl('Add course').click()
+
+  >>> browser.open(dept_url + '/addcourse')
+  >>> ctrl = browser.getControl(name='form.title')
+  >>> ctrl.value = 'Another course with same code'
+  >>> browser.getControl(name='form.code').value = 'COURSE2'
+  >>> browser.getControl(name='form.title').value = 'Course 2'
+  >>> browser.getControl('Add course').click()
+
+  >>> browser.open(dept_url + '/addcertificate')
+  >>> ctrl = browser.getControl(name='form.title')
+  >>> ctrl.value = 'Another cert with same code'
+  >>> browser.getControl(name='form.code').value = 'CERT1'
+  >>> browser.getControl(name='form.title').value = 'Certificate 1'
+  >>> browser.getControl(name='form.study_mode').value = ['ug_ft']
+  >>> browser.getControl(name='form.start_level').value = ['100']
+  >>> browser.getControl(name='form.end_level').value = ['400']
+  >>> browser.getControl(name='form.application_category').value = ['basic']
+  >>> browser.getControl('Add certificate').click()
+
+  >>> browser.open(dept_url + '/addcertificate')
+  >>> ctrl = browser.getControl(name='form.title')
+  >>> ctrl.value = 'Another cert with same code'
+  >>> browser.getControl(name='form.code').value = 'CERT2'
+  >>> browser.getControl(name='form.title').value = 'Certificate 2'
+  >>> browser.getControl(name='form.study_mode').value = ['ug_ft']
+  >>> browser.getControl(name='form.start_level').value = ['100']
+  >>> browser.getControl(name='form.end_level').value = ['400']
+  >>> browser.getControl(name='form.application_category').value = ['basic']
+  >>> browser.getControl('Add certificate').click()
+
+
+Adding certificatecourses
+-------------------------
+
+Certcourses are stored in :class:`ICertificate` instances
+with their code as key.
+
+Each certificate provides a ``Add certificate course`` action button near top.
+
+Certificates provide an add-form to add new certcourses:
+
+  >>> cert_url = dept_url + '/certificates/CERT1'
+  >>> browser.open(cert_url + '/manage')
+  >>> browser.getControl('Add certificate course').click()
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...*</span>
+  ...<span>Level</span>:
+  ...
+
+In the add-form we will get a list of available courses to select
+from. This list will contain all courses stored in the site, not only
+the ones from local department:
+
+  >>> ctrl = browser.getControl(name='form.course')
+  >>> ctrl.displayOptions
+  ['--', 'COURSE1 - Course 1', 'COURSE2 - Course 2']
+
+We select the first course and create our certificatecourse:
+
+  >>> ctrl.getControl('COURSE1').selected = True
+  >>> browser.getControl(name='form.level').value = ['100']
+  >>> browser.getControl('Add certificate course').click()
+
+Our certificatecourse will be linked on the parent certificate page:
+
+  >>> browser.open(cert_url)
+  >>> browser.getLink('COURSE1_100').click()
+  >>> browser.url
+  'http://localhost/my...sity/faculties/TF/TD/certificates/CERT1/COURSE1_100'
+
+We can't add the same certificatecourse twice:
+
+  >>> cert_url = dept_url + '/certificates/CERT1'
+  >>> browser.open(cert_url + '/manage')
+  >>> browser.getControl('Add certificate course').click()
+  >>> ctrl = browser.getControl(name='form.course')
+  >>> ctrl.getControl('COURSE1').selected = True
+  >>> browser.getControl(name='form.level').value = ['100']
+  >>> browser.getControl('Add certificate course').click()
+  >>> 'The chosen certificate course is already' in browser.contents
+  True
+
+When we started to add a new certificatecourse, we can also cancel the
+process before submitting. This will bring us back to the certificate
+page:
+
+  >>> browser.open(cert_url + '/addcertificatecourse')
+  >>> browser.getControl('Cancel').click()
+  >>> browser.url
+  'http://localhost/myuniversity/faculties/TF/TD/certificates/CERT1'
+
+
+Modifying certificatecourses
+----------------------------
+
+We can change the settings for a certcourse by clicking on the
+provided 'Edit certificate course' link:
+
+  >>> browser.open(cert_url + '/COURSE1_100')
+  >>> browser.getLink('Edit certificate course').click()
+
+If we just click 'Save and return' nothing will change:
+
+  >>> browser.getControl("Save and return").click()
+  >>> browser.getLink('COURSE1_100').click()
+  >>> browser.url
+  'http://localhost/myun.../TF/TD/certificates/CERT1/COURSE1_100'
+
+Let's set a new level (it was 100 before) and save the form. This will
+bring us to the certificate index page afterwards:
+
+  >>> browser.open(cert_url + '/COURSE1_100/manage')
+  >>> browser.getControl(name='form.level').value = ['200']
+  >>> browser.getControl("Save and return").click()
+
+As we changed the level, also the URL will change:
+
+  >>> browser.getLink('COURSE1_200').click()
+  >>> browser.url
+  'http://localhost/myun.../TF/TD/certificates/CERT1/COURSE1_200'
+
+If we go to the settings page and click ``Cancel`` nothing will be
+changed:
+
+  >>> browser.getLink('Edit certificate course').click()
+  >>> browser.getControl(name='form.level').value = ['400']
+  >>> browser.getControl('Cancel').click()
+
+Our certcourse provides a new level of 200 and not 400:
+
+  >>> browser.open(cert_url + '/COURSE1_200')
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  ...<td>Level:</td>
+  ...<td>200 (Year 2)</td>
+  ...
+
+Searching certificatecourses
+----------------------------
+
+  >>> browser.open('http://localhost/myuniversity/faculties/search')
+  >>> browser.getControl(name='query').value = "COURSE1"
+  >>> browser.getControl('Search').click()
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"...
+  ...faculties/TF/TD/certificates/CERT1/COURSE1_200">COURSE1</a>
+  ...
+
+  >>> browser.getControl(name='query').value = "*"
+  >>> browser.getControl('Search').click()
+  >>> 'Search string not allowed' in browser.contents
+  True
+
+Deleting certificatecourses
+---------------------------
+
+We can delete certcourses by browsing the containing certificate manage page:
+
+  >>> browser.open(cert_url + '/manage#tab-2')
+  >>> 'COURSE1_200</a>' in browser.contents
+  True
+  >>> browser.getControl('Remove selected certificate courses').click()
+  >>> 'No item selected' in browser.contents
+  True
+  >>> browser.getControl(name='val_id').getControl(
+  ...    value='COURSE1_200').selected = True
+  >>> browser.getControl('Remove selected certificate courses').click()
+  >>> 'Successfully removed: COURSE1_200' in browser.contents
+  True
+
+  >>> 'COURSE1_200</a>' in browser.contents
+  False
+
+
+
+Data Center
+===========
+
+The data center helps us uploading files for later import or similar.
+
+  >>> browser.open('http://localhost/myuniversity')
+  >>> browser.getLink('Data Center').click()
+
+Setting the file path
+---------------------
+
+A datacenter stores files in a path in filesystem. By default this is
+a directory in the sources:
+
+  >>> print browser.contents
+  <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  ...
+  <b>Storage path:</b> <span>.../parts/test/datacenter</span>
+  ...
+
+Going to 'Settings` we can change the path:
+
+  >>> browser.getLink('Edit settings').click()
+  >>> pathsetting = browser.getControl(name='newpath')
+
+We create a directory and set it as our upload path:
+
+  >>> import os
+  >>> cwd = os.getcwd()
+  >>> uploadpath = os.path.join(cwd, 'testfiles')
+  >>> os.mkdir(uploadpath)
+  >>> pathsetting.value = uploadpath
+
+And submit the form:
+
+  >>> browser.getControl(name='save').click()
+
+We clean up the set directory path, as there might be some files be
+copied some files from installation:
+
+  >>> files = os.listdir(uploadpath)
+  >>> for filename in files:
+  ...   if os.path.isdir(os.path.join(uploadpath, filename)):
+  ...     continue
+  ...   os.unlink(os.path.join(uploadpath, filename))
+
+We also remove any existing 'accesscodes' subdir:
+
+  >>> import shutil
+  >>> for filename in files:
+  ...   if not os.path.isdir(os.path.join(uploadpath, filename)):
+  ...     continue
+  ...   if filename != 'accesscodes':
+  ...     continue
+  ...   shutil.rmtree(os.path.join(uploadpath, filename))
+
+The new upload directory is now empty, except from the logs and other
+standard dirs, which are created automatically:
+
+  >>> sorted(os.listdir(uploadpath))
+  ['deleted', 'finished', 'logs', 'unfinished']
+
+
+Uploading files
+---------------
+
+Now we can upload files. Most interesting files might be CSV files,
+that can be imported lateron. We create a CSV file containing faculty
+descriptions:
+
+  >>> open('faculties.csv', 'wb').write(
+  ... """code,title,title_prefix
+  ... FA,Arts,faculty
+  ... FS,Sciences,faculty
+  ... """)
+
+Now we can upload this file. To do this, we first go to the upload
+page:
+
+  >>> browser.getLink('Upload data').click()
+
+and enter the appropriate data in the form:
+
+  >>> filewidget = browser.getControl(name='uploadfile:file')
+  >>> filewidget
+  <Control name='uploadfile:file' type='file'>
+
+A sidenote for developers: by marking the filewidget with the
+``:file`` extension, we tell Zope to handle this field as a file
+widget.
+
+  >>> import cStringIO
+  >>> filecontents = cStringIO.StringIO(
+  ...   open('faculties.csv', 'rb').read())
+  >>> filewidget.add_file(filecontents, 'text/plain', 'myfaculties.csv')
+
+  >>> browser.getControl(name='SUBMIT').click()
+
+The file was indeed uploaded, with the current userid inserted:
+
+  >>> sorted(os.listdir(uploadpath))
+  ['deleted', 'finished', 'logs', 'myfaculties_zope.mgr.csv', 'unfinished']
+
+We create and upload also a CSV file containing departments:
+
+  >>> open('departments.csv', 'wb').write(
+  ... """code,title,title_prefix,faculty_code
+  ... LIT,Literature,department,FA
+  ... SOC,Sociology,department,FA
+  ... PHY,Physics,department,FS
+  ... INF,Informatics,department,FS
+  ... MAT,Math,department,FS
+  ... """)
+
+  >>> browser.open('http://localhost/myuniversity/datacenter/upload')
+  >>> browser.getControl(name='uploadfile:file').add_file(
+  ...   cStringIO.StringIO(open('departments.csv', 'rb').read()),
+  ...   'text/plain', 'mydepartments.csv')
+  >>> browser.getControl(name='SUBMIT').click()
+
+We create and upload also a CSV file containing courses:
+
+  >>> open('courses.csv', 'wb').write(
+  ... """code,level,title,passmark,credits,semester,faculty,department
+  ... LI1,,Introduction to Literature I,40,2,1,FA,LIT
+  ... LI2,,Introduction to Literature II,40,2,2,FA,LIT
+  ... AN1,000,Analysis I,40,2,1,FS,MAT
+  ... AN2,000,Analysis II,40,2,2,FS,MAT
+  ... """)
+
+  >>> browser.open('http://localhost/myuniversity/datacenter/upload')
+  >>> browser.getControl(name='uploadfile:file').add_file(
+  ...   cStringIO.StringIO(open('courses.csv', 'rb').read()),
+  ...   'text/plain', 'mycourses.csv')
+  >>> browser.getControl(name='SUBMIT').click()
+
+We create and upload also a CSV file containing certificates:
+
+  >>> open('certificates.csv', 'wb').write(
+  ... """code,title,faculty_code,department_code,study_mode,end_level,m_prefix,start_level,application_category
+  ... LBA,BACHELOR OF LITERATURE,FA,LIT,UG,ug_ft,500,LIT,100,basic
+  ... LMA,MASTER OF LITERATURE,FA,LIT,UG,ug_pt,500,LIT,100,cest
+  ... DME,DIPLOMA OF MATH,FS,MAT,DP,dp_ft,200,DME,100,cest
+  ... """)
+
+  >>> browser.open('http://localhost/myuniversity/datacenter/upload')
+  >>> browser.getControl(name='uploadfile:file').add_file(
+  ...   cStringIO.StringIO(open('certificates.csv', 'rb').read()),
+  ...   'text/plain', 'mycertificates.csv')
+  >>> browser.getControl(name='SUBMIT').click()
+
+We create and upload also a CSV file containing certificate courses:
+
+  >>> open('certcourses.csv', 'wb').write(
+  ... """code,faculty_code,department_code,certificate_code,level,mandatory
+  ... LI1,FA,LIT,LBA,100,True
+  ... LI2,FA,LIT,LBA,200,True
+  ... """)
+
+  >>> browser.open('http://localhost/myuniversity/datacenter/upload')
+  >>> browser.getControl(name='uploadfile:file').add_file(
+  ...   cStringIO.StringIO(open('certcourses.csv', 'rb').read()),
+  ...   'text/plain', 'mycertcourses.csv')
+  >>> browser.getControl(name='SUBMIT').click()
+
+
+Importing a CSV file
+--------------------
+
+The import of CSV files is described in batchprocessing.txt.
+
+
+Clean up:
+
+  >>> import os
+  >>> import shutil
+  >>> shutil.rmtree(uploadpath)
+

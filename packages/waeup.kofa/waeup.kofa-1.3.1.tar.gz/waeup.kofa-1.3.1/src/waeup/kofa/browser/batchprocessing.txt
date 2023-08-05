@@ -1,0 +1,675 @@
+Batch processing via browser
+****************************
+
+Preliminaries:
+
+We define a function that looks up a form with several submit buttons
+for the one with a given value (this functionality is missing in
+zope.testbrowser):
+
+    >>> def lookup_submit_value(name, value, browser):
+    ...   """Find a button with a certain value."""
+    ...   for num in range(0, 100):
+    ...     try:
+    ...       button = browser.getControl(name=name, index=num)
+    ...       if button.value.endswith(value):
+    ...         return button
+    ...     except IndexError:
+    ...       break
+    ...   return None
+
+Create a site:
+
+    >>> from waeup.kofa.app import University
+    >>> getRootFolder()['app'] = University()
+    >>> from zope.component.hooks import setSite
+    >>> setSite(getRootFolder()['app'])
+
+Create a datacenter storage path:
+
+    >>> import os
+    >>> import tempfile
+    >>> dc_path = tempfile.mkdtemp()
+
+Log in:
+
+    >>> from zope.testbrowser.testing import Browser
+    >>> browser = Browser()
+    >>> browser.addHeader('Authorization', 'Basic mgr:mgrpw')
+    >>> browser.handleErrors = False
+
+Set datacenter path and deselect moving old data:
+
+    >>> browser.open('http://localhost/app')
+    >>> browser.getLink('Data Center').click()
+    >>> browser.getLink('Edit settings').click()
+    >>> browser.getControl(name='newpath').value = dc_path
+    >>> browser.getControl(name='move').value = False
+    >>> browser.getControl(name='save').click()
+
+Set non-usable datacenter path:
+
+    >>> browser.getLink('Edit settings').click()
+    >>> browser.getControl(name='newpath').value = '/'
+    >>> browser.getControl(name='save').click()
+    >>> 'Given storage path cannot be used.' in browser.contents
+    True
+    >>> browser.getControl('Back to Data Center').click()
+
+
+Batch processing faculties
+==========================
+
+Go to datacenter page:
+
+    >>> browser.open('http://localhost/app/datacenter')
+
+Prepare a CSV file for faculties (extended ascii values are accepted):
+
+    >>> open('faculties.csv', 'wb').write(
+    ... """code,title,title_prefix
+    ... FAC1,Faculty 1,faculty
+    ... FAC2,Faculty 2,institute
+    ... FAC3,Fäcülty 3,school
+    ... """)
+
+Upload the file:
+
+    >>> import cStringIO
+    >>> browser.getLink('Upload data').click()
+    >>> filecontents = cStringIO.StringIO(
+    ...   open('faculties.csv', 'rb').read())
+    >>> filewidget = browser.getControl(name='uploadfile:file')
+    >>> filewidget.add_file(filecontents, 'text/plain', 'faculties.csv')
+    >>> browser.getControl(name='SUBMIT').click()
+
+Step 1: start batch processing:
+
+    >>> browser.getLink('Process data').click()
+    >>> button = lookup_submit_value(
+    ...   'select', 'faculties_zope.mgr.csv', browser)
+    >>> button.click()
+
+Step 2: select a processor and mode:
+
+    >>> importerselect = browser.getControl(name='importer')
+    >>> importerselect.displayOptions
+    ['AccessCodeBatch Processor',
+    'AccessCode Processor',
+    'Applicant Processor',
+    'ApplicantsContainer Processor',
+    'CertificateCourse Processor',
+    'Certificate Processor',
+    'Course Processor',
+    'CourseTicket Processor',
+    'Department Processor',
+    'Faculty Processor',
+    'Hostel Processor',
+    'Public HTML Document Processor',
+    'StudentOnlinePayment Processor',
+    'Public PDF Document Processor',
+    'Public REST Document Processor',
+    'Student Processor',
+    'StudentStudyCourse Processor (update only)',
+    'StudentStudyLevel Processor',
+    'User Processor',
+    'Verdict Processor (special processor, update only)']
+
+    >>> importerselect.getControl('Faculty Processor').selected = True
+
+    >>> modeselect = browser.getControl(name='mode')
+    >>> modeselect.options
+    ['create', 'update', 'remove']
+
+    >>> modeselect.getControl(value='create').selected = True
+    >>> browser.getControl('Proceed to step 3').click()
+
+Step 3: Fix headerlines
+
+We get informed that there are no problems with the current header:
+
+    >>> print browser.contents
+    <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+    ...
+    Header fields OK
+    ...
+
+The submit button is enabled:
+
+    >>> browser.getControl('Perform import').disabled
+    False
+
+    >>> browser.getControl('Perform import').click()
+
+Step 4: See import results
+
+The import was successful:
+
+    >>> print browser.contents
+    <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+    ...Successfully processed 3 rows...
+    ...Batch processing finished...
+    ...File:...faculties_zope.mgr.csv...
+
+We can grep the entries generated in logfile:
+
+    >>> browser.open('http://localhost/app/datacenter/logs')
+    >>> browser.getControl('Show', index=0).click()
+    >>> print browser.contents
+    <!DOCTYPE ...
+    ...<h1 class="kofa-content-label">Logfile datacenter.log</h1>...
+
+    >>> browser.getControl(name='query').value = "zope.mgr"
+    >>> browser.getControl('Search').click()
+    >>> 'zope.mgr - processed' in browser.contents
+    True
+
+
+Batch processing departments
+============================
+
+    >>> browser.open('http://localhost/app/datacenter')
+
+Prepare a CSV file for departments:
+
+    >>> open('departments.csv', 'wb').write(
+    ... """code,faculty_code,title,title_prefix
+    ... DEP1,FAC1,Department 1,department
+    ... DEP2,FAC2,Department 2,centre
+    ... """)
+
+Upload the file:
+
+    >>> import cStringIO
+    >>> browser.getLink('Upload data').click()
+    >>> filecontents = cStringIO.StringIO(
+    ...   open('departments.csv', 'rb').read())
+    >>> filewidget = browser.getControl(name='uploadfile:file')
+    >>> filewidget.add_file(filecontents, 'text/plain', 'departments.csv')
+    >>> browser.getControl(name='SUBMIT').click()
+
+Step 1: start batch processing:
+
+    >>> browser.getLink('Process data').click()
+    >>> button = lookup_submit_value(
+    ...   'select', 'departments_zope.mgr.csv', browser)
+    >>> button.click()
+
+Step 2: select a processor and mode:
+
+    >>> importerselect = browser.getControl(name='importer')
+    >>> importerselect.getControl('Department Processor').selected = True
+    >>> modeselect = browser.getControl(name='mode')
+    >>> modeselect.getControl(value='create').selected = True
+    >>> browser.getControl('Proceed to step 3').click()
+
+Step 3: Fix headerlines
+
+We get informed that there are no problems with the current header:
+
+    >>> print browser.contents
+    <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+    ...
+    Header fields OK
+    ...
+
+The submit button is enabled:
+
+    >>> browser.getControl('Perform import').disabled
+    False
+
+    >>> browser.getControl('Perform import').click()
+
+Step 4: See import results
+
+The import was successful:
+
+    >>> print browser.contents
+    <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+    ...Successfully processed 2 rows...
+    ...Batch processing finished...
+    ...File:...departments_zope.mgr.csv...
+
+Batch processing courses
+========================
+
+    >>> browser.open('http://localhost/app/datacenter')
+
+Prepare a CSV file for courses:
+
+    >>> open('courses.csv', 'wb').write(
+    ... """code,faculty_code,department_code,title,level,passmark,credits,semester
+    ... CRS1,FAC1,DEP1,Course 1,100,40,2,1
+    ... CRS2,FAC1,DEP1,Course 2,100,40,2,2
+    ... """)
+
+Upload the file:
+
+    >>> import cStringIO
+    >>> browser.getLink('Upload data').click()
+    >>> filecontents = cStringIO.StringIO(
+    ...   open('courses.csv', 'rb').read())
+    >>> filewidget = browser.getControl(name='uploadfile:file')
+    >>> filewidget.add_file(filecontents, 'text/plain', 'courses.csv')
+    >>> browser.getControl(name='SUBMIT').click()
+
+Step 1: start batch processing:
+
+    >>> browser.getLink('Process data').click()
+    >>> button = lookup_submit_value(
+    ...   'select', 'courses_zope.mgr.csv', browser)
+    >>> button.click()
+
+Step 2: select a processor and mode:
+
+    >>> importerselect = browser.getControl(name='importer')
+    >>> importerselect.getControl('Course Processor', index=1).selected = True
+    >>> modeselect = browser.getControl(name='mode')
+    >>> modeselect.getControl(value='create').selected = True
+    >>> browser.getControl('Proceed to step 3').click()
+
+Step 3: Fix headerlines
+
+We get informed that there are no problems with the current header:
+
+    >>> print browser.contents
+    <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+    ...
+    Header fields OK
+    ...
+
+The submit button is enabled:
+
+    >>> browser.getControl('Perform import').disabled
+    False
+
+    >>> browser.getControl('Perform import').click()
+
+Step 4: See import results
+
+The import was successful:
+
+    >>> print browser.contents
+    <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+    ...Successfully processed 2 rows...
+    ...Batch processing finished...
+    ...File:...courses_zope.mgr.csv...
+
+Batch processing certificates
+=============================
+
+    >>> browser.open('http://localhost/app/datacenter')
+
+Prepare a CSV file for certificates:
+
+    >>> open('certificates.csv', 'wb').write(
+    ... """code,faculty_code,department_code,title,study_mode,start_level,end_level,application_category
+    ... CERT1,FAC1,DEP1,Certificate 1,pg_ft,999,999,basic
+    ... CERT2,FAC1,DEP1,Certificate 2,ug_ft,200,300,cest
+    ... """)
+
+Upload the file:
+
+    >>> import cStringIO
+    >>> browser.getLink('Upload data').click()
+    >>> filecontents = cStringIO.StringIO(
+    ...   open('certificates.csv', 'rb').read())
+    >>> filewidget = browser.getControl(name='uploadfile:file')
+    >>> filewidget.add_file(filecontents, 'text/plain', 'certificates.csv')
+    >>> browser.getControl(name='SUBMIT').click()
+
+Step 1: start batch processing:
+
+    >>> browser.getLink('Process data').click()
+    >>> button = lookup_submit_value(
+    ...   'select', 'certificates_zope.mgr.csv', browser)
+    >>> button.click()
+
+
+Step 2: select a processor and mode:
+
+    >>> importerselect = browser.getControl(name='importer')
+    >>> importerselect.getControl('Certificate Processor').selected = True
+    >>> modeselect = browser.getControl(name='mode')
+    >>> modeselect.getControl(value='create').selected = True
+    >>> browser.getControl('Proceed to step 3').click()
+
+Step 3: Fix headerlines
+
+We get informed that there are no problems with the current header:
+
+    >>> print browser.contents
+    <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+    ...
+    Header fields OK
+    ...
+
+The submit button is enabled:
+
+    >>> browser.getControl('Perform import').disabled
+    False
+
+    >>> browser.getControl('Perform import').click()
+
+Step 4: See import results
+
+The import was successful:
+
+    >>> print browser.contents
+    <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+    ...Successfully processed 2 rows...
+    ...Batch processing finished...
+    ...File:...certificates_zope.mgr.csv...
+
+Batch processing certificate courses
+====================================
+
+    >>> browser.open('http://localhost/app/datacenter')
+
+Prepare a CSV file for certificate courses:
+
+    >>> open('mycertcourses.csv', 'wb').write(
+    ... """course,faculty_code,department_code,certificate_code,level,mandatory
+    ... CRS1,FAC1,DEP1,CERT1,100,True
+    ... CRS2,FAC1,DEP1,CERT1,100,True
+    ... """)
+
+Upload the file:
+
+    >>> import cStringIO
+    >>> browser.getLink('Upload data').click()
+    >>> filecontents = cStringIO.StringIO(
+    ...   open('mycertcourses.csv', 'rb').read())
+    >>> filewidget = browser.getControl(name='uploadfile:file')
+    >>> filewidget.add_file(filecontents, 'text/plain', 'mycertcourses.csv')
+    >>> browser.getControl(name='SUBMIT').click()
+
+Step 1: start batch processing:
+
+    >>> browser.getLink('Process data').click()
+    >>> button = lookup_submit_value(
+    ...   'select', 'mycertcourses_zope.mgr.csv', browser)
+    >>> button.click()
+
+Step 2: select a processor and mode:
+
+    >>> importerselect = browser.getControl(name='importer')
+    >>> importerselect.getControl('CertificateCourse Processor').selected = True
+    >>> modeselect = browser.getControl(name='mode')
+    >>> modeselect.getControl(value='create').selected = True
+    >>> browser.getControl('Proceed to step 3').click()
+
+Step 3: Fix headerlines
+
+We get informed that there are no problems with the current header:
+
+    >>> print browser.contents
+    <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+    ...
+    Header fields OK
+    ...
+
+The submit button is enabled:
+
+    >>> browser.getControl('Perform import').disabled
+    False
+
+    >>> browser.getControl('Perform import').click()
+
+Step 4: See import results
+
+The import was successful:
+
+    >>> print browser.contents
+    <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+    ...Successfully processed 2 rows...
+    ...Batch processing finished...
+    ...File:...mycertcourses_zope.mgr.csv...
+
+Batch processing users
+======================
+
+    >>> browser.open('http://localhost/app/datacenter')
+
+Prepare a CSV file for users:
+
+    >>> open('users.csv', 'wb').write(
+    ... """name,title,public_name,email,phone,roles
+    ... uli,Uli Fouquet,Chief Developer,uli@abc.de,+49-234-567,[]
+    ... henrik,Henrik Bettermann,Admin,henrik@abc.de,+49-234-567,"['waeup.PortalManager', 'waeup.ImportManager']"
+    ... anne,Anne Palina,,anne@abc.de,+49-234-567,"['waeup.Nonsense']"
+    ... """)
+
+Upload the file:
+
+    >>> import cStringIO
+    >>> browser.getLink('Upload data').click()
+    >>> filecontents = cStringIO.StringIO(
+    ...   open('users.csv', 'rb').read())
+    >>> filewidget = browser.getControl(name='uploadfile:file')
+    >>> filewidget.add_file(filecontents, 'text/plain', 'users.csv')
+    >>> browser.getControl(name='SUBMIT').click()
+
+Step 1: start batch processing:
+
+    >>> browser.getLink('Process data').click()
+    >>> button = lookup_submit_value(
+    ...   'select', 'users_zope.mgr.csv', browser)
+    >>> button.click()
+
+Step 2: select a processor and mode:
+
+    >>> importerselect = browser.getControl(name='importer')
+    >>> importerselect.getControl('User Processor').selected = True
+    >>> modeselect = browser.getControl(name='mode')
+    >>> modeselect.getControl(value='create').selected = True
+    >>> browser.getControl('Proceed to step 3').click()
+
+Step 3: Fix headerlines
+
+We get informed that there are no problems with the current header:
+
+    >>> print browser.contents
+    <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+    ...
+    Header fields OK
+    ...
+
+The submit button is enabled:
+
+    >>> browser.getControl('Perform import').disabled
+    False
+
+    >>> browser.getControl('Perform import').click()
+
+Step 4: See import results
+
+The import was successful:
+
+    >>> print browser.contents
+    <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+    ...Successfully processed 2 rows...
+    ...Batch processing finished...
+    ...File:...users_zope.mgr.csv...
+
+User henrik has got the global roles:
+
+   >>> henrik = getRootFolder()['app']['users']['henrik']
+   >>> henrik.roles
+   ['waeup.PortalManager', 'waeup.AcademicsOfficer', 'waeup.ImportManager']
+
+Pending files
+=============
+
+When an error occurs during an import, two files are generated: a CSV
+file with finished files and a CSV file with pending data. Both are
+stored in the appropriate subdirectories in datacenter. We try to
+create faculties, from which one already exists.
+
+Go to datacenter page:
+
+    >>> browser.open('http://localhost/app/datacenter')
+
+Prepare a CSV file for faculties:
+
+    >>> open('newfaculties.csv', 'wb').write(
+    ... """code,title,title_prefix
+    ... FAC1,Faculty 1,faculty
+    ... FAC4,Faculty 4,school
+    ... FAC 5,Faculty 5,faculty
+    ... """)
+
+Upload the file:
+
+    >>> import cStringIO
+    >>> browser.getLink('Upload data').click()
+    >>> filecontents = cStringIO.StringIO(
+    ...   open('newfaculties.csv', 'rb').read())
+    >>> filewidget = browser.getControl(name='uploadfile:file')
+    >>> filewidget.add_file(filecontents, 'text/plain', 'newfaculties.csv')
+    >>> browser.getControl(name='SUBMIT').click()
+
+Since we now have a user with waeup.ImportManager role, an email has been sent:
+    >>> print browser.contents
+    <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+    ...
+    ...All import managers have been notified by email...
+    ...
+
+Step 1: start batch processing:
+
+    >>> browser.getLink('Process data').click()
+    >>> button = lookup_submit_value(
+    ...   'select', 'newfaculties_zope.mgr.csv', browser)
+    >>> button.click()
+
+Step 2: select a processor and mode:
+
+    >>> importerselect = browser.getControl(name='importer')
+    >>> importerselect.getControl('Faculty Processor').selected = True
+    >>> modeselect = browser.getControl(name='mode')
+    >>> modeselect.getControl(value='create').selected = True
+    >>> browser.getControl('Proceed to step 3').click()
+
+Step 3: Fix headerlines
+
+As there should be no problem with the headers, we can immediately
+perfom the import:
+
+    >>> browser.getControl('Perform import').click()
+
+Two lines could not be imported:
+
+    >>> print browser.contents
+    <!DOCTYPE html PUBLIC...
+    ...
+    ...Processing of 2 rows failed...
+    ...Successfully processed 1 rows...
+    ...
+
+Now there are two files as a result in datacenter storage's root and
+``finished`` dirs:
+
+    >>> pending_file = dc_path + '/newfaculties_zope.mgr.create.pending.csv'
+    >>> print open(pending_file).read()
+    title_prefix,code,title,--ERRORS--
+    faculty,FAC1,Faculty 1,This object already exists. Skipping.
+    faculty,FAC 5,Faculty 5,code: Invalid input
+
+    >>> finished_file = dc_path + '/finished/newfaculties_zope.mgr.create.finished.csv'
+    >>> print open(finished_file).read()
+    title_prefix,code,title
+    school,FAC4,Faculty 4
+
+The finished-file contains the dataset we could import, while the
+pending file contains the dataset that failed, appended by an error
+message.
+
+
+Fixing the pending file
+-----------------------
+
+We 'edit' the pending file (setting code to ``FAC5`` and title
+appropriately, and removing the --ERROR-- column) and finish the
+import this way:
+
+    >>> open(dc_path + '/newfaculties_zope.mgr.create.pending.csv', 'wb').write(
+    ... """title_prefix,--IGNORE--,code,title
+    ... faculty,,FAC5,Faculty 5
+    ... """)
+
+Step 1: start batch processing:
+
+    >>> browser.open('http://localhost/app/datacenter')
+    >>> browser.getLink('Process data').click()
+    >>> button = lookup_submit_value(
+    ...   'select', 'newfaculties_zope.mgr.create.pending.csv', browser)
+    >>> button.click()
+
+Step 2: select a processor and mode:
+
+    >>> importerselect = browser.getControl(name='importer')
+    >>> importerselect.getControl('Faculty Processor').selected = True
+    >>> modeselect = browser.getControl(name='mode')
+    >>> modeselect.getControl(value='create').selected = True
+    >>> browser.getControl('Proceed to step 3').click()
+
+Step 3/4: Fix headerlines and import:
+
+As there should be no problem with the headers, we can immediately
+perfom the import:
+
+    >>> browser.getControl('Perform import').click()
+
+This time everything should work:
+
+    >>> print browser.contents
+    <!DOCTYPE html PUBLIC...
+    ...
+    ...Successfully processed 1 rows...
+    ...
+
+Oh no, we forgot Anne Palina. Her user record was not imported because
+she has a non-existent role:
+
+    >>> sorted(os.listdir(dc_path))
+    ['deleted', 'finished', 'logs', 'unfinished', 'users_zope.mgr.create.pending.csv']
+
+    >>> os.listdir(dc_path + '/unfinished')
+    ['users_zope.mgr.csv']
+
+    >>> pending_file = dc_path + '/users_zope.mgr.create.pending.csv'
+    >>> print open(pending_file).read()
+    name,roles,title,public_name,phone,email,--ERRORS--
+    anne,['waeup.Nonsense'],Anne Palina,,+49-234-567,anne@abc.de,roles: invalid role
+
+There are many finished-files:
+
+    >>> sorted(os.listdir(dc_path + '/finished'))
+    ['certificates_zope.mgr.create.finished.csv', ...,
+    'users_zope.mgr.create.finished.csv']
+
+Processed (finished) Files
+==========================
+
+    >>> browser.open('http://localhost/app/datacenter/processed')
+    >>> 'download?filename=finished/certificates_zope.mgr.create.finished.csv' in browser.contents
+    True
+
+Log Files
+=========
+
+    >>> browser.open('http://localhost/app/datacenter/logs')
+    >>> 'datacenter.log' in browser.contents
+    True
+    >>> browser.getControl('Show', index=0).click()
+    >>> browser.getControl('Back', index=0).click()
+    >>> browser.getControl('Back to Data Center').click()
+    >>> 'Storage path:' in browser.contents
+    True
+
+
+Clean up:
+
+    >>> import shutil
+    >>> shutil.rmtree(dc_path)

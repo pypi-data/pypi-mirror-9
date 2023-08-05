@@ -1,0 +1,243 @@
+Breadcrumbs
+***********
+
+We use an adapter approach to get a flexible system of creating and
+retrieving breadcrumbs for certain views.
+
+
+How to get existing breadcrumbs
+===============================
+
+We create a university to check the breadcrumb functionality.
+
+    >>> from waeup.kofa.app import University
+    >>> root = getRootFolder()
+    >>> root['app'] = University()
+    >>> app = root['app']
+
+The quick way (if you have a viewname)
+--------------------------------------
+
+We can get an ordered list of breadcrumbs for a given context and
+viewname:
+
+    >>> from waeup.kofa.browser.breadcrumbs import getBreadcrumbList
+    >>> blist1 = getBreadcrumbList(app, 'index')
+    >>> blist1
+    [<waeup.kofa.browser.breadcrumbs.UniversityBreadcrumb object at 0x...>]
+
+A slightly more extensive list for the datacenter:
+
+    >>> blist2 = getBreadcrumbList(app['datacenter'], 'index')
+    >>> from pprint import pprint
+    >>> pprint(blist2)
+    [<waeup.kofa.browser.breadcrumbs.UniversityBreadcrumb object at 0x...>,
+     <waeup.kofa.browser.breadcrumbs.AdministrationBreadcrumb object at 0x...>,
+     <waeup.kofa.browser.breadcrumbs.DataCenterBreadcrumb object at 0x...>]
+
+We get a breadcrumb for university, administration area and data
+center in that order.
+
+Each breadcrumb provides a ``title``, ``context``, and ``viewname``
+attribute, so that views and page templates can easily create markup
+out of it:
+
+     >>> pprint([(x.title) for x in blist2])
+     [u'Home', u'Administration', u'Data Center']
+
+     >>> pprint([(x.context, x.viewname) for x in blist2])
+     [(<waeup.kofa.app.University object at 0x...>, 'index'),
+      (<waeup.kofa.app.University object at 0x...>, 'administration'),
+      (<waeup.kofa.datacenter.DataCenter object at 0x...>, 'index')]
+
+The administration area breadcrumb might be a surprise, as there is no
+equivalent object in the ZODB. In fact the administration area is only
+a certain view (the 'administration' view) on the university object.
+
+We will show below, how you can define breadcrumbs this way.
+
+As a rule of thumb you should know, that every breadcrumb is not only
+attached for a certain kind of object, but for a tuple of context
+object and a viewname.
+
+This way we can make sure, that there are different breadcrumb lists
+generated for instance for the administration view of University
+instances and the index view. While the first should look something
+like::
+
+  Home -> Administration
+
+we expect for the latter only::
+
+  Home
+
+
+Another quick way (if you have a complete view)
+-----------------------------------------------
+
+Another quick approach for use in viewlets, views and similar
+contexts, where you usually have a view available but not a viewname,
+is to use ``getBreadcrumbListForView``.
+
+We create a view (a page in this case, but pages are views) on the
+user administration index page:
+
+    >>> from zope.publisher.browser import TestRequest
+    >>> from zope.component import getMultiAdapter
+    >>> page = getMultiAdapter((app['users'], TestRequest()), name='index')
+
+Now we can get the breadcrumbs for this view:
+
+    >>> from waeup.kofa.browser.breadcrumbs import getBreadcrumbListForView
+    >>> blist3 = getBreadcrumbListForView(page)
+    >>> [x.title for x in blist3]
+    [u'Home', u'Administration', u'Portal Users']
+
+..note:: This works only for views created with grokcore.component
+         (i.e. Grok Views, Pages, etc.) but not for simple Zope3
+         views, as the viewname can not easily be extracted from the
+         view for the latter ones.
+
+
+Type-safe retrieval of breadcrumbs for a view
+---------------------------------------------
+
+If you want to make sure, that a view for which you want to get
+breadcrumbs is really a Grok view, then you can use the
+IBreadcrumbContainer adapter. This one adapts only grok views.
+
+The returned breadcrumb container supports iteration:
+
+    >>> from waeup.kofa.browser.interfaces import IBreadcrumbContainer
+    >>> mybccontainer = IBreadcrumbContainer(page)
+    >>> [x.title for x in mybccontainer]
+    [u'Home', u'Administration', u'Portal Users']
+
+It is, however, not a real Python list but only an iterable
+container. You can also get the real list of breadcrumbs:
+
+    >>> pprint(mybccontainer.getList())
+    [<...breadcrumbs.UniversityBreadcrumb object at 0x...>,
+     <...breadcrumbs.AdministrationBreadcrumb object at 0x...>,
+     <...breadcrumbs.UsersContainerBreadcrumb object at 0x...>]
+
+
+
+The general details
+-------------------
+
+Now we can get breadcrumbs for contexts and view names. For example a
+breadcrumb for the 'index' view of our University object:
+
+    >>> from zope.component import getAdapter
+    >>> from waeup.kofa.browser.interfaces import IBreadcrumb
+    >>> b1 = getAdapter(app, IBreadcrumb, 'index')
+    >>> b1
+    <waeup.kofa.browser.breadcrumbs.UniversityBreadcrumb object at 0x...>
+
+Breadcrumb objects provide a title:
+
+    >>> b1.title
+    u'Home'
+
+a parent (None for the app object):
+
+    >>> b1.parent is None
+    True
+
+and a viewname:
+
+    >>> b1.viewname
+    'index'
+
+Using a context and a viewname, one can easily compute a complete URL
+in views, viewlets, etc.
+
+    >>> b2 = getAdapter(app['datacenter'], IBreadcrumb, 'index')
+    >>> b2
+    <waeup.kofa.browser.breadcrumbs.DataCenterBreadcrumb object at 0x...>
+
+    >>> b2.title
+    u'Data Center'
+
+    >>> b2.viewname
+    'index'
+
+As the data center is not root of the hierarchy, it provides a
+non-trivial parent:
+
+    >>> b2.parent
+    (<waeup.kofa.app.University object at 0x...>, 'administration')
+
+This result denotes a new context object (the University instance we
+created above) and a view name ('administration').
+
+Normally, the view name would be 'index', but as some administrative
+components should look to the user as if they were grouped in a common
+subarea of the root (the administration area), we can also set a
+different view than the default as target.
+
+When we like to receive the breadcrumb for this parent, we can do so
+as above:
+
+    >>> context, viewname = b2.parent
+    >>> b3 = getAdapter(context, IBreadcrumb, viewname)
+    >>> b3
+    <waeup.kofa...breadcrumbs.AdministrationBreadcrumb object at 0x...>
+
+As you can see, we get an AdministrationBreadcrumb, although the
+context object, for which the breadcrumb was created is also the
+University instance as above:
+
+    >>> b3.context is b1.context
+    True
+
+This administration area now has still a parent, the front-page:
+
+    >>> context, viewname = b3.parent
+    >>> context, viewname
+    (<waeup.kofa.app.University object at 0x...>, 'index')
+
+We create last breadcrumb:
+
+    >>> b4 = getAdapter(context, IBreadcrumb, viewname)
+
+This is finally the last piece, the breadcrumb which links to the
+front page. It has no parent:
+
+    >>> b4.parent is None
+    True
+
+
+How to create new breadcrumbs
+=============================
+
+Breadcrumbs are looked up as named adapters. This means, you must
+create a named adapter with the following specifications:
+
+ * Derive your breadcrumb class from ``Breadcrumb`` class. This will
+   save you lots of work.
+
+ * The adapter context (``grok.context``) must be the object type you
+   want to provide a breadcrumb for. So, if you want to write a
+   Breadcrumb adapter for objects providing ``IMyFunnyType``, write::
+
+     grok.context(IMyFunnyType)
+
+ * The adapter name (``grok.name``) must be the same as the name of
+   the view, for which the breadcrumb component should be
+   registered. 
+
+   If you want to write a breadcrumb component for the 'index' view of
+   some content type and derive your class from Breadcrumb, then you
+   can skip this step as 'index' is the default name.
+
+ * Set a ``title`` attribute to give the text that should be
+   displayed. Use something like::
+
+     @property
+     def title(self):
+       return self.some_computed_title()
+
+   if you want computed titles.
+
