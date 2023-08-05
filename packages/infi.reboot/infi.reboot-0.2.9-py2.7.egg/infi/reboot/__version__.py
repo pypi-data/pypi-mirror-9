@@ -1,0 +1,10 @@
+__version__ = "0.2.9"
+__git_commiter_name__ = "Guy Rozendorn"
+__git_commiter_email__ = "guy@rzn.co.il"
+__git_branch__ = '(detached from v0.2.9)'
+__git_remote_tracking_branch__ = '(No remote tracking)'
+__git_remote_url__ = '(Not remote tracking)'
+__git_head_hash__ = '368b48ff1d7c7702824629b57857cb06a4c26a6b'
+__git_head_subject__ = 'Finished release v0.2.9.'
+__git_head_message__ = '* release/v0.2.9:\n  TRIVIAL added support for solaris\n  buildout.cfg: changed isolated python version to v2.7.6.21\n  buildout.cfg: changed isolated python version to v2.7.6.20\n  buildout.cfg: changed isolated python version to v2.7.6.19'
+__git_dirty_diff__ = ''
