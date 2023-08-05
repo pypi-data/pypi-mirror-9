@@ -1,0 +1,94 @@
+package xslt {
+    class mods_nonp_single as "MARC21slim2MODS3-4-NDK.xsl" <<X, Green>> {
+        Converts Aleph's non-periodical
+        non-multi-monograph metadata to
+        MODS.
+    }
+    class mods_nonp_multi as "MARC21toMultiMonographTitle.xsl" <<X, Green>> {
+        Converts Aleph's non-periodical
+        multi-monograph metadata to MODS.
+    }
+    class mods_per as "MARC21toPeriodicalTitle.xsl" <<X, Green>> {
+        Converts Aleph's periodical
+        metadata to MODS.
+    }
+}
+
+class xslt_transformer as "xslt_transformer.py" <<M, Red>> {
+    Used to transform Aleph's metadata to MODS.
+
+    oai_to_xml(marc_oai)
+    transform(xml, template)
+    transform_to_mods(marc_xml, uuid)
+}
+
+mods_nonp_single -d-> xslt_transformer: reads
+mods_nonp_multi .d.> xslt_transformer: reads
+mods_per .d.> xslt_transformer: reads
+
+class fn_composers as "fn_composers.py" <<M, Red>> {
+    Dynamically creates filenames.
+
+    original_fn(book_id, ebook_fn)
+    metadata_fn(book_id)
+    volume_fn(cnt)
+    checksum_fn(book_id)
+    info_fn(book_id)
+}
+
+class checksum_generator as "checksum_generator.py" <<M, Red>> {
+    Generates checksums for all files in SIP
+    package.
+
+    generate_checksums(directory, blacklist)
+    generate_hashfile(directory, blacklist)
+}
+
+class mods_postprocessor as "mods_postprocessor.py" <<M, Red>> {
+    Used to fix data after XSLT templates.
+
+    insert_tag(tag, before, root)
+    transform_content(tags, content_transformer)
+    postprocess_mods_volume(mods, uuid)
+}
+
+class settings as "settings.py" <<M, Red>> {
+    Project settings.
+
+    get_all_constants()
+    substitute_globals(config_dict)
+}
+
+class structures as "structures.py" <<M, Red>> {
+    AMQP communication structures.
+    ---
+    class ExportRequest
+    class TrackingRequest
+    class TrackingState
+    class TrackingResult
+}
+
+class ltp as "ltp.py" <<M, Red>> {
+    Creates SIP package for LTP.
+
+    create_ltp_package(aleph_record, book_id, ebook_fn, b64_data)
+}
+
+class init as "_​_init__.py" <<M, Red>> {
+    Handles AMQP communication.
+
+    reactToAMQPMessage(message, UUID)
+}
+
+settings -r-> ltp
+xslt_transformer --d-> ltp
+
+fn_composers -d-> ltp
+checksum_generator -d-> ltp
+
+ltp -d-> init
+structures -l-> init
+settings --> init
+
+mods_postprocessor -r-> xslt_transformer: fixes
+xslt_transformer --> mods_postprocessor

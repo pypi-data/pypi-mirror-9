@@ -1,0 +1,316 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>ltp.xslt_transformer &mdash; edeposit.amqp.ltp 0.9.2 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '0.9.2',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <link rel="top" title="edeposit.amqp.ltp 0.9.2 documentation" href="../../index.html" />
+    <link rel="up" title="ltp" href="../ltp.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../index.html">edeposit.amqp.ltp 0.9.2 documentation</a> &raquo;</li>
+          <li><a href="../index.html" >Module code</a> &raquo;</li>
+          <li><a href="../ltp.html" accesskey="U">ltp</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <h1>Source code for ltp.xslt_transformer</h1><div class="highlight"><pre>
+<span class="c">#! /usr/bin/env python</span>
+<span class="c"># -*- coding: utf-8 -*-</span>
+<span class="c">#</span>
+<span class="c"># Interpreter version: python 2.7</span>
+<span class="c">#</span>
+<span class="c"># Imports =====================================================================</span>
+<span class="kn">import</span> <span class="nn">os.path</span>
+<span class="kn">import</span> <span class="nn">StringIO</span>
+<span class="kn">import</span> <span class="nn">lxml.etree</span> <span class="kn">as</span> <span class="nn">ET</span>
+
+<span class="kn">import</span> <span class="nn">dhtmlparser</span>
+<span class="kn">from</span> <span class="nn">edeposit.amqp.aleph</span> <span class="kn">import</span> <span class="n">marcxml</span>
+
+<span class="kn">import</span> <span class="nn">mods_postprocessor</span>
+
+
+<span class="c"># Variables ===================================================================</span>
+<span class="n">XML_TEMPLATE</span> <span class="o">=</span> <span class="s">&quot;&quot;&quot;&lt;root&gt;</span>
+<span class="s">&lt;collection xmlns=&quot;http://www.loc.gov/MARC21/slim&quot;</span>
+<span class="s">            xmlns:xsi=&quot;http://www.w3.org/2001/XMLSchema-instance&quot;</span>
+<span class="s">            xsi:schemaLocation=&quot;http://www.loc.gov/MARC21/slim </span><span class="se">\</span>
+<span class="s">http://www.loc.gov/standards/marcxml/schema/MARC21slim.xsd&quot;&gt;</span>
+<span class="s">$CONTENT</span>
+<span class="s">&lt;/collection&gt;</span>
+<span class="s">&lt;/root&gt;</span>
+<span class="s">&quot;&quot;&quot;</span>
+
+
+<span class="c"># Functions &amp; objects =========================================================</span>
+<div class="viewcode-block" id="oai_to_xml"><a class="viewcode-back" href="../../api/ltp.xslt_transformer.html#ltp.xslt_transformer.oai_to_xml">[docs]</a><span class="k">def</span> <span class="nf">oai_to_xml</span><span class="p">(</span><span class="n">marc_oai</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Convert OAI to MARC XML.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        marc_oai (str): String with either OAI or MARC XML.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        str: String with MARC XML.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">record</span> <span class="o">=</span> <span class="n">marcxml</span><span class="o">.</span><span class="n">MARCXMLRecord</span><span class="p">(</span><span class="n">marc_oai</span><span class="p">)</span>
+    <span class="n">record</span><span class="o">.</span><span class="n">oai_marc</span> <span class="o">=</span> <span class="bp">False</span>
+
+    <span class="k">return</span> <span class="n">record</span><span class="o">.</span><span class="n">toXML</span><span class="p">()</span>
+
+</div>
+<div class="viewcode-block" id="_add_namespace"><a class="viewcode-back" href="../../api/ltp.xslt_transformer.html#ltp.xslt_transformer._add_namespace">[docs]</a><span class="k">def</span> <span class="nf">_add_namespace</span><span class="p">(</span><span class="n">marc_xml</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Add proper XML namespace to the `marc_xml` record.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        marc_xml (str): String representation of the XML record.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        str: XML with namespace.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c"># return marcxml</span>
+    <span class="n">dom</span> <span class="o">=</span> <span class="n">dhtmlparser</span><span class="o">.</span><span class="n">parseString</span><span class="p">(</span><span class="n">marc_xml</span><span class="p">)</span>
+    <span class="n">collections</span> <span class="o">=</span> <span class="n">dom</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s">&quot;collection&quot;</span><span class="p">)</span>
+
+    <span class="n">root</span> <span class="o">=</span> <span class="n">dom</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s">&quot;root&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">root</span><span class="p">:</span>
+        <span class="n">root</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">params</span> <span class="o">=</span> <span class="p">{}</span>
+
+    <span class="k">for</span> <span class="n">record</span> <span class="ow">in</span> <span class="n">dom</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s">&quot;record&quot;</span><span class="p">):</span>
+        <span class="n">record</span><span class="o">.</span><span class="n">params</span> <span class="o">=</span> <span class="p">{}</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">collections</span><span class="p">:</span>
+        <span class="n">record</span> <span class="o">=</span> <span class="n">dom</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s">&quot;record&quot;</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">return</span> <span class="n">XML_TEMPLATE</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s">&quot;$CONTENT&quot;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">record</span><span class="p">))</span>
+
+    <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">collections</span><span class="p">:</span>
+        <span class="n">col</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s">&quot;xmlns&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&quot;http://www.loc.gov/MARC21/slim&quot;</span>
+        <span class="n">col</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s">&quot;xmlns:xsi&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&quot;http://www.w3.org/2001/XMLSchema-instance&quot;</span>
+        <span class="n">col</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s">&quot;xsi:schemaLocation&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&quot;http://www.loc.gov/MARC21/slim &quot;</span> <span class="o">+</span> \
+                   <span class="s">&quot;http://www.loc.gov/standards/marcxml/schema/MARC21slim.xsd&quot;</span>
+
+    <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="n">dom</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="_read_marcxml"><a class="viewcode-back" href="../../api/ltp.xslt_transformer.html#ltp.xslt_transformer._read_marcxml">[docs]</a><span class="k">def</span> <span class="nf">_read_marcxml</span><span class="p">(</span><span class="n">xml</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Read MARC XML or OAI file, convert, add namespace and return XML in</span>
+<span class="sd">    required format with all necessities.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        xml (str): Filename or XML string. Don&#39;t use ``\\n`` in case of</span>
+<span class="sd">                   filename.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        obj: Required XML parsed with ``lxml.etree``.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c"># read file, if `xml` is valid file path</span>
+    <span class="n">marc_xml</span> <span class="o">=</span> <span class="n">xml</span>
+    <span class="k">if</span> <span class="s">&quot;</span><span class="se">\n</span><span class="s">&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">xml</span><span class="o">.</span><span class="n">strip</span><span class="p">():</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">xml</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">UserWarning</span><span class="p">(</span><span class="s">&quot;XML file &#39;</span><span class="si">%s</span><span class="s">&#39; doesn&#39;t exists!&quot;</span> <span class="o">%</span> <span class="n">xml</span><span class="p">)</span>
+
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">xml</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">marc_xml</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+
+    <span class="c"># process input file - convert it from possible OAI to MARC XML and add</span>
+    <span class="c"># required XML namespaces</span>
+    <span class="n">marc_xml</span> <span class="o">=</span> <span class="n">oai_to_xml</span><span class="p">(</span><span class="n">marc_xml</span><span class="p">)</span>
+    <span class="n">marc_xml</span> <span class="o">=</span> <span class="n">_add_namespace</span><span class="p">(</span><span class="n">marc_xml</span><span class="p">)</span>
+
+    <span class="n">file_obj</span> <span class="o">=</span> <span class="n">StringIO</span><span class="o">.</span><span class="n">StringIO</span><span class="p">(</span><span class="n">marc_xml</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">ET</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">file_obj</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="_read_template"><a class="viewcode-back" href="../../api/ltp.xslt_transformer.html#ltp.xslt_transformer._read_template">[docs]</a><span class="k">def</span> <span class="nf">_read_template</span><span class="p">(</span><span class="n">template</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Read XSLT template.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        template (str): Filename or XML string. Don&#39;t use ``\\n`` in case of</span>
+<span class="sd">                        filename.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        obj: Required XML parsed with ``lxml.etree``.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">template_xml</span> <span class="o">=</span> <span class="s">&quot;&quot;</span>
+    <span class="k">if</span> <span class="s">&quot;</span><span class="se">\n</span><span class="s">&quot;</span> <span class="ow">in</span> <span class="n">template</span><span class="o">.</span><span class="n">strip</span><span class="p">():</span>
+        <span class="n">template_xml</span> <span class="o">=</span> <span class="n">StringIO</span><span class="o">.</span><span class="n">StringIO</span><span class="p">(</span><span class="n">template</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">template</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">UserWarning</span><span class="p">(</span><span class="s">&quot;Template &#39;</span><span class="si">%s</span><span class="s">&#39; doesn&#39;t exists!&quot;</span> <span class="o">%</span> <span class="n">template</span><span class="p">)</span>
+
+        <span class="n">template_xml</span> <span class="o">=</span> <span class="nb">open</span><span class="p">(</span><span class="n">template</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">ET</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">template_xml</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="transform"><a class="viewcode-back" href="../../api/ltp.xslt_transformer.html#ltp.xslt_transformer.transform">[docs]</a><span class="k">def</span> <span class="nf">transform</span><span class="p">(</span><span class="n">xml</span><span class="p">,</span> <span class="n">template</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Transform `xml` using XSLT `template`.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        xml (str): Filename or XML string. Don&#39;t use ``\\n`` in case of</span>
+<span class="sd">                   filename.</span>
+<span class="sd">        template (str): Filename or XML string. Don&#39;t use ``\\n`` in case of</span>
+<span class="sd">                        filename.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        str: Transformed `xml` as string.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">transformer</span> <span class="o">=</span> <span class="n">ET</span><span class="o">.</span><span class="n">XSLT</span><span class="p">(</span>
+        <span class="n">_read_template</span><span class="p">(</span><span class="n">template</span><span class="p">)</span>
+    <span class="p">)</span>
+    <span class="n">newdom</span> <span class="o">=</span> <span class="n">transformer</span><span class="p">(</span>
+        <span class="n">_read_marcxml</span><span class="p">(</span><span class="n">xml</span><span class="p">)</span>
+    <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">ET</span><span class="o">.</span><span class="n">tostring</span><span class="p">(</span><span class="n">newdom</span><span class="p">,</span> <span class="n">pretty_print</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s">&quot;utf-8&quot;</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="transform_to_mods"><a class="viewcode-back" href="../../api/ltp.xslt_transformer.html#ltp.xslt_transformer.transform_to_mods">[docs]</a><span class="k">def</span> <span class="nf">transform_to_mods</span><span class="p">(</span><span class="n">marc_xml</span><span class="p">,</span> <span class="n">uuid</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Convert `marc_xml` to MODS data format.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        marc_xml (str): Filename or XML string. Don&#39;t use ``\\n`` in case of</span>
+<span class="sd">                        filename.</span>
+<span class="sd">        uuid (str): UUID string giving the package ID.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        list: Collection of transformed xml strings.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">dirname</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">__file__</span><span class="p">)</span>
+    <span class="n">mods_template</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">dirname</span><span class="p">,</span> <span class="s">&quot;xslt/MARC21slim2MODS3-4-NDK.xsl&quot;</span><span class="p">)</span>
+
+    <span class="n">transformed</span> <span class="o">=</span> <span class="n">transform</span><span class="p">(</span><span class="n">marc_xml</span><span class="p">,</span> <span class="n">mods_template</span><span class="p">)</span>
+
+    <span class="c"># return all mods tags as list</span>
+    <span class="n">mods</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">dom</span> <span class="o">=</span> <span class="n">dhtmlparser</span><span class="o">.</span><span class="n">parseString</span><span class="p">(</span><span class="n">transformed</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">dom</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s">&quot;mods:mods&quot;</span><span class="p">):</span>
+        <span class="n">mods</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="n">mods_postprocessor</span><span class="o">.</span><span class="n">postprocess_mods_volume</span><span class="p">(</span><span class="n">col</span><span class="p">,</span> <span class="n">uuid</span><span class="p">)</span>
+        <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">mods</span>
+
+
+<span class="c"># def transform_to_mods_multimonograph(marc_xml):</span>
+<span class="c">#     &quot;&quot;&quot;</span>
+<span class="c">#     Convert `marc_xml` to multimonograph MODS data format.</span>
+
+<span class="c">#     Args:</span>
+<span class="c">#         marc_xml (str): Filename or XML string. Don&#39;t use ``\\n`` in case of</span>
+<span class="c">#                         filename.</span>
+
+<span class="c">#     Returns:</span>
+<span class="c">#         str: Transformed xml as string.</span>
+<span class="c">#     &quot;&quot;&quot;</span>
+<span class="c">#     dirname = os.path.dirname(__file__)</span>
+<span class="c">#     mods_template = os.path.join(</span>
+<span class="c">#         dirname,</span>
+<span class="c">#         &quot;xslt/MARC21toMultiMonographTitle.xsl&quot;</span>
+<span class="c">#     )</span>
+
+<span class="c">#     return transform(marc_xml, mods_template)</span>
+
+
+<span class="c"># def transform_to_mods_periodical(marc_xml):</span>
+<span class="c">#     &quot;&quot;&quot;</span>
+<span class="c">#     Convert `marc_xml` to periodical MODS data format.</span>
+
+<span class="c">#     Args:</span>
+<span class="c">#         marc_xml (str): Filename or XML string. Don&#39;t use ``\\n`` in case of</span>
+<span class="c">#                         filename.</span>
+
+<span class="c">#     Returns:</span>
+<span class="c">#         str: Transformed xml as string.</span>
+<span class="c">#     &quot;&quot;&quot;</span>
+<span class="c">#     dirname = os.path.dirname(__file__)</span>
+<span class="c">#     mods_template = os.path.join(</span>
+<span class="c">#         dirname,</span>
+<span class="c">#         &quot;xslt/MARC21toPeriodicalTitle.xsl&quot;</span>
+<span class="c">#     )</span>
+
+<span class="c">#     return transform(marc_xml, mods_template)</span></div>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../index.html">edeposit.amqp.ltp 0.9.2 documentation</a> &raquo;</li>
+          <li><a href="../index.html" >Module code</a> &raquo;</li>
+          <li><a href="../ltp.html" >ltp</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2014 E-deposit team.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>
