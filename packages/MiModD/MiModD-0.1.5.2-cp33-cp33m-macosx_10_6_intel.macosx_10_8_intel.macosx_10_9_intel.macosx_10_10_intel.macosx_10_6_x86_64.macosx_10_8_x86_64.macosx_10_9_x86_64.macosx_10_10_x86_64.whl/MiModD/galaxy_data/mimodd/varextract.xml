@@ -1,0 +1,97 @@
+<tool id="extract_variants" name="Extract Variant Sites">
+  <description>from a BCF file</description>
+  <version_command>mimodd version -q</version_command>
+  <command> 
+	mimodd varextract "$ifile"
+	#if $len($sitesinfo)
+	    -p
+	    #for $source in $sitesinfo
+            "${source.pre_vcf}"
+	    #end for
+	#end if
+	--ofile "$output_vcf"
+	$keep_alts
+	--verbose
+  </command>
+
+  <inputs>
+      <param name="ifile" type="data" format="bcf" label="BCF input file" help="Use the Variant Calling tool to generate the input for this tool."/>
+      <repeat name="sitesinfo" title="include information from pre-calculated vcf file" default="0">
+	      <param name="pre_vcf" type="data" format="vcf" label="independently generated vcf file" />
+      </repeat>
+      <param name="keep_alts" type="boolean" label="keep all sites with alternate bases" truevalue="-a" falsevalue="" checked="false" help="If selected, the VCF output will include ALL sites for which non-reference bases have been observed, i.e., even those not considered allelic sites by the variant caller." />
+  </inputs>
+  <outputs>
+    <data name="output_vcf" format="vcf" label="Variants extracted with MiModd from ${on_string}"/>
+  </outputs>
+
+<help>
+.. class:: infomark
+
+   **What it does**
+
+The tool takes as input a BCF file like the ones produced by the *Variant Calling* tool, extracts just the variant sites from it and reports them in VCF format.
+
+If the BCF input file specifies multiple samples, sites are included if they qualify as variant sites in at least one sample.
+
+In a typical analysis workflow, you will use the tool's VCF output as input for the *VCF Filter* tool to cut down the often still impressive list of sites to a subset with relevance to your project.
+
+**Options:**
+
+1) By default, a variant site is considered to be a position in the genome for which a non-reference allele appears in the inferred genotype of any sample. 
+
+   You can select the *keep all sites with alternate bases* option, if instead you want to extract all sites, for which at least one non-reference base has been observed (whether resulting in a non-reference allele call or not). Using this option should rarely be necessary, but could be occassionally helpful for closer inspection of candidate genomic regions.
+ 
+2) During the process of variant extraction the tool can take into account genome positions specified in one or more independently generated VCF files. If such additional VCF input is provided, the tool output will contain the samples found in these files as additional samples and sites from the main BCF file will be included if they either qualify as variant sites in at least one sample specified in the BCF or if they are listed in any of the additional VCF files.
+
+   Optional VCF input can be particularly useful in one of the following situations:
+   
+   *scenario i* - you have prior information that leads you to think that certain genome positions are of special relevance for your project and, thus, you are interested in the statistics produced by the variant caller for these positions even if they are not considered variant sites. In this case you can use a minimal VCF file to guide the variant extraction process to include these positions. This minimal VCF file needs a minimal header:
+
+   ``##fileformat=VCFv4.2``
+
+   followed by positional information like in this example::
+     						     
+      #CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO
+      chrI	1222	.	.	.	.	.	.
+      chrI	2651	.	.	.	.	.	.
+      chrI	3659	.	.	.	.	.	.
+      chrI	3731	.	.	.	.	.	.
+      
+   , where columns are tab-separated and . serves as a placeholder for missing information.
+      
+   *scenario ii* - you have actual variant calls from an additional sample, but you do not have access to the original sequenced reads data (if you had, the recommended approach would be to align this data along with your other sequencing data or, at least, to perform the *Variant Calling* step together). 
+   
+   This situation is often encountered with published datasets. Assume you have obtained a list of known single nucleotide variants (SNVs) found in one particular strain of your favorite model organism and you would like to know which of these SNVs are present in the related strains you have sequenced. You have aligned the sequenced reads from your samples and have used the *Variant Calling* tool, which has generated a BCF file ready for variant extraction. If the SNV list for the previously sequenced strain is in VCF format already, you can now just plug it into the analysis process by specifying it in the tool interface as an *independently generated vcf file*. The resulting vcf output file will contain all SNV sites along with the variant sites found in the BCF alone. You can then proceed to the *VCF Filter* tool to look at the original SNV sites only or to investigate any other interesting subset of sites. If the SNV list is in some other format, you will have o convert it to VCF first. At a minimum, the file must have a ``##fileformat`` header line like the previous example and have the ``REF`` and ``ALT`` column filled in like so::
+   
+      #CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO
+      chrI	1897409	.	A	G	.	.	.
+      chrI	1897492	.	C	T	.	.	.
+      chrI	1897616	.	C	A	.	.	.
+      chrI	1897987	.	A	T	.	.	.
+      chrI	1898185	.	C	T	.	.	.
+      chrI	1898715	.	G	A	.	.	.
+      chrI	1898729	.	T	C	.	.	.
+      chrI	1900288	.	T	A	.	.	.
+      
+   , in which case the tool will assume that the corresponding sample is homozygous for each of the SNVs. If you need to distinguish between homozygous and heterozygous SNVs you will have to extend the format to include a format and a sample column with genotype (GT) information like in this example::
+   
+      #CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	sampleX
+      chrI	1897409	.	A	G	.	.	.	GT	1/1
+      chrI	1897492	.	C	T	.	.	.	GT	0/1
+      chrI	1897616	.	C	A	.	.	.	GT	0/1
+      chrI	1897987	.	A	T	.	.	.	GT	0/1
+      chrI	1898185	.	C	T	.	.	.	GT	0/1
+      chrI	1898715	.	G	A	.	.	.	GT	0/1
+      chrI	1898729	.	T	C	.	.	.	GT	0/1
+      chrI	1900288	.	T	A	.	.	.	GT	0/1
+      
+   , in which sampleX would be heterozygous for all SNVs except the first.
+
+   .. class:: warningmark
+   
+      If the optional VCF input contains INDEL calls, these will be ignored by the tool.
+
+   
+</help>
+</tool>

@@ -1,0 +1,202 @@
+<tool id="reheader" name="Reheader BAM file">
+
+  <description>From a BAM file generate a new file with the original header (if any) replaced or modified by that found in a second SAM file</description>
+  <version_command>mimodd version -q</version_command>
+  <command>    
+    #if ($str($rg.treat_rg) != "ignore" and $str($rg.rginfo.source) == "from_form") or $str($co.treat_co) != "ignore":
+      mimodd header 
+      #if $str($rg.treat_rg) != "ignore" and $str($rg.rginfo.source) == "from_form":
+        #for $rginfo in $rg.rginfo.rg
+      	  #if $str($rginfo.source_id):
+            --rg-id "${rginfo.source_id}"
+          #end if
+          #if $str($rginfo.rg_sm):
+      	    --rg-sm "${rginfo.rg_sm}"
+          #end if
+	      #if $str($rginfo.rg_cn):
+		    --rg-cn "${rginfo.rg_cn}"
+		  #else:
+		    --rg-cn ""
+	      #end if
+	      #if $str($rginfo.rg_ds):
+		    --rg-ds "${rginfo.rg_ds}"
+		  #else:
+		    --rg-ds ""
+	      #end if	
+	      #if $str($rginfo.rg_date):
+		    --rg-dt "${rginfo.rg_date}"
+		  #else:
+		    --rg-dt ""
+	      #end if
+	      #if $str($rginfo.rg_lb):
+		    --rg-lb "${rginfo.rg_lb}"
+		  #else:
+		    --rg-lb ""
+	      #end if
+	      #if $str($rginfo.rg_pl):
+		    --rg-pl "${rginfo.rg_pl}"
+		  #else:
+		    --rg-pl ""
+	      #end if
+	      #if $str($rginfo.rg_pi):
+		    --rg-pi "${rginfo.rg_pi}"
+		  #else:
+		    --rg-pi ""
+	      #end if
+	      #if $str($rginfo.rg_pu):
+		    --rg-pu "${rginfo.rg_pu}"
+		  #else:
+		    --rg-pu ""
+	      #end if
+	    #end for
+	  #end if
+	  #if $str($co.treat_co) != "ignore":
+	    --co
+	    #for $comment in $co.coinfo
+          #if $str($comment.line):
+	        "${comment.line}"
+	      #end if
+	    #end for
+	  #end if
+      | 
+    #end if
+    mimodd reheader "$inputfile" --sq ignore
+    --rg ${rg.treat_rg}
+    #if $str($rg.treat_rg) != "ignore":
+      #if $str($rg.rginfo.source) == "from_file":
+        "${rg.rginfo.data}"
+      #else:
+        - 
+      #end if
+      #for $rgmapping in $rg.rginfo.rg
+        #if $str($rgmapping.source_id) and $str($rgmapping.rg_id):
+          "$str($rgmapping.source_id)" : "$str($rgmapping.rg_id)" 
+        #end if
+      #end for     
+    #end if
+    
+    --co ${co.treat_co}
+    #if $str($co.treat_co) != "ignore":
+        -
+    #end if
+
+    #set $restr = ""
+    #for $rename in $rg_renaming
+      #set $restr = $restr + ($str($rename.from) and $str($rename.to) and '"' + $str($rename.from) + '" : "' + $str($rename.to) + '"')
+    #end for
+    #if $restr
+      --rgm $restr
+    #end if
+ 
+    #set $restr = ""
+    #for $rename in $sq_renaming
+      #set $restr = $restr + ($str($rename.from) and $str($rename.to) and '"' + $str($rename.from) + '" : "' + $str($rename.to) + '"')
+    #end for
+    #if $restr
+      --sqm $restr
+    #end if
+
+    -o "$output"  
+  </command>
+  
+  <macros>
+    <macro name="getreadgroupinfo">
+        <conditional name="rginfo">
+            <param name="source" type="select" label="source of new read-group information" help="">
+                <option value="from_file">existing SAM file</option>
+                <option value="from_form">input form</option>
+            </param>
+            <when value="from_file">
+                <param name="data" type="data" format="sam" label="read-group template file in SAM format" help="use the read group information found in this file" />
+              <repeat name="rg" title="custom read-group mapping" default="0" min="0" help="read-group information found in the input file, by default, gets updated / replaced with information from template file read-groups with matching IDs. Alternatively, you may specify explicit read-group mappings below.">
+                <param name="source_id" type="text" label="modify input file information for read-group ID (will create the read-group if it does not exist)" />
+                <param name="rg_id" type="text" label="with template file information for read-group ID" />
+              </repeat>
+            </when>
+            <when value="from_form">
+              <repeat name="rg" title="new read-group info" default="1" min="1">
+                <param name="source_id" type="text" label="read-group ID (will create the read-group if it does not exist)" help="required field" />
+                <param name="rg_id" type="hidden" value="" />
+                <param name="rg_sm" type="text" label="sample name" help="required field" />
+                <param name="rg_ds" type="text" label="description" />
+                <param name="rg_date" type="text" label="date (YY-MM-DD format) the run was produced" />
+                <param name="rg_cn" type="text" label="name of sequencing center" />
+                <param name="rg_lb" type="text" label="read-group library" />
+                <param name="rg_pl" type="text" label="platform/technology used to produce the reads" />
+                <param name="rg_pi" type="text" label="predicted median insert size" />
+                <param name="rg_pu" type="text" label="platform unit; unique identifier" />
+              </repeat>    
+            </when>
+        </conditional>
+    </macro>
+  </macros>
+  
+  <inputs>
+
+    <param name="inputfile" type="data" format="bam" label="input file in BAM format" help="the file to reheader." />
+
+    <conditional name="rg">
+        <param name="treat_rg" type="select" label="modify read-group information ?" help="Replace mode will ignore ALL existing read group information in the input file and use ONLY template information, Update mode will COPY existing input file information and UPDATE it with template information; choose No, ... to leave read-group information alone.">
+            <option value="ignore">No, do not change read-groups.</option>
+            <option value="update">Yes, update existing information</option>
+            <option value="replace">Yes, replace existing information</option>
+        </param>
+        <when value="update">
+            <expand macro="getreadgroupinfo" />
+        </when>
+        <when value="replace">
+            <expand macro="getreadgroupinfo" />
+        </when>
+    </conditional>
+       
+    <conditional name="co">
+        <param name="treat_co" type="select" label="modify comments in the input file ?" help="">
+            <option value="ignore">No, do not change comments.</option>
+            <option value="update">Yes, append new comments to existing ones</option>
+            <option value="replace">Yes, replace all existing comments</option>
+        </param>
+        <when value="update">
+            <repeat name="coinfo" title="comment line" default="0" min="0">
+                <param name="line" type="text" size="80" />
+            </repeat>
+        </when>
+        <when value="replace">
+            <repeat name="coinfo" title="comment line" default="0" min="0">
+                <param name="line" type="text" size="80" />
+            </repeat>
+        </when>
+    </conditional>
+
+    <repeat name="rg_renaming" title="rename read-group" default="0" min="0" help="Warning: changing read-group IDs may increase job runtime substantially.">
+        <param name="from" type="text" size="30" label="old name" help="as it appears in the current input file header"/>
+        <param name="to" type="text" size="30" label="new name" />
+    </repeat>
+    
+    <repeat name="sq_renaming" title="rename sequence" default="0" min="0" help="Warning: changing sequence names may increase job runtime substantially.">
+        <param name="from" type="text" size="30" label="old name" help="as it appears in the current input file header"/>
+        <param name="to" type="text" size="30" label="new name" />
+    </repeat>
+    
+  </inputs>
+  
+  <outputs>
+    <data name="output" format="bam" label="(Re)headered bam file from MiModd ${tool.name} on ${on_string}">
+    </data>
+  </outputs>
+
+<help>
+.. class:: infomark
+
+   **What it does**
+
+The tool generates a copy of the BAM input file with a modified header (i.e., metadata). 
+
+It can update or replace read-group information (i.e., information about the samples in the file), add or replace comment lines, and rename reference sequences declared in the header.
+
+The tool ensures that the resulting BAM file is valid and can be further processed by other MiModD tools and standard software like samtools. It aborts with an error message if a valid BAM file cannot be generated with the user-specified settings.
+ 
+The template information used to modify or replace the input file metadata is provided through forms or, in the case of read-group information, can be taken from an existing SAM file as can be generated, for example, with the *NGS Run Annotation* tool.
+
+</help>
+</tool>
+
