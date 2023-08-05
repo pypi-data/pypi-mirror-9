@@ -1,0 +1,11 @@
+uwsgi
+-r https://raw.githubusercontent.com/mapbox/rasterio/master/requirements.txt
+rasterio
+GeobricksCommon
+GeobricksDBMS
+GeobricksGISRaster
+GeobricksSpatialQuery
+GeobricksDistribution
+GeobricksGeostatistics
+GeobricksGeocoding
+GeobricksRESTEngine
