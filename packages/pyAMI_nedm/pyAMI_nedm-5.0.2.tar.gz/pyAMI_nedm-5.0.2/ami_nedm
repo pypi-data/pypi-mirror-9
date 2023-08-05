@@ -1,0 +1,97 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+from __future__ import (division, print_function, unicode_literals)
+#############################################################################
+# Author  : Jerome ODIER
+#
+# Email   : jerome.odier@cern.ch
+#           jerome.odier@lpsc.in2p3.fr
+#
+# Version : 1.X.X for pyAMI_nedm (2013-2015)
+#
+#############################################################################
+
+import sys, time, pyAMI.app, pyAMI_nedm.config, pyAMI_nedm.updater, pyAMI_nedm.exception
+
+#############################################################################
+# UPDATER                                                                   #
+#############################################################################
+
+def mode_update(client, args):
+	#####################################################################
+	#                                                                   #
+	#####################################################################
+
+	print('>>>> %s <<<<' % time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime()))
+
+	#####################################################################
+	#                                                                   #
+	#####################################################################
+
+	pyAMI_nedm.config.current_site_name = args['site']
+
+	#####################################################################
+	#                                                                   #
+	#####################################################################
+
+	is_ok = False
+
+	for nedm_site in pyAMI_nedm.config.nedm_sites:
+
+		if nedm_site['name'] == pyAMI_nedm.config.current_site_name:
+
+				pyAMI_nedm.config.current_site_path = nedm_site['path']
+
+				is_ok = True
+
+				break
+
+	if not is_ok:
+
+		try:
+			raise pyAMI_nedm.exception.NEDMException('error: site `%s` not valid !' % pyAMI_nedm.config.current_site_name)
+
+		except pyAMI_nedm.exception.NEDMException as e:
+			print(e)
+			return 1
+
+	#####################################################################
+	#                                                                   #
+	#####################################################################
+
+	updater = pyAMI_nedm.updater.NEDMUpdater(client)
+
+	if (args['prepare'] == False or updater.prepare() != False) and updater.update() != False:
+		return 0
+	else:
+		return 1
+
+#############################################################################
+# ENTRY POINT                                                               #
+#############################################################################
+
+def entry_point():
+	app = pyAMI.app.App('nedm', 'text')
+
+	#####################################################################
+
+	subparser = app.subparsers.add_parser('update', help = 'update runs')
+	subparser.set_defaults(func = mode_update)
+
+	subparser.add_argument('-s', '--site',
+			dest = 'site', help = 'site',
+				choices = [nedm_site['name'] for nedm_site in pyAMI_nedm.config.nedm_sites], default = pyAMI_nedm.config.current_site_name)
+
+        subparser.add_argument('-p', '--prepare',
+                        action = 'store_true', dest = 'prepare', help = 'prepare databases')
+
+	#####################################################################
+
+	return app.run()
+
+#############################################################################
+
+if __name__ == '__main__':
+	sys.exit(entry_point())
+
+#############################################################################
