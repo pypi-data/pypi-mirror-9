@@ -1,0 +1,824 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>Huey’s API &mdash; huey 0.4.3 documentation</title>
+    
+    <link rel="stylesheet" href="_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    './',
+        VERSION:     '0.4.3',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="top" title="huey 0.4.3 documentation" href="index.html" />
+    <link rel="prev" title="Using Huey with Django" href="django.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="django.html" title="Using Huey with Django"
+             accesskey="P">previous</a> |</li>
+        <li><a href="index.html">huey 0.4.3 documentation</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="huey-s-api">
+<span id="api"></span><h1>Huey&#8217;s API<a class="headerlink" href="#huey-s-api" title="Permalink to this headline">¶</a></h1>
+<p>Most end-users will interact with the API using the two decorators:</p>
+<ul class="simple">
+<li><a class="reference internal" href="#Huey.task" title="Huey.task"><tt class="xref py py-meth docutils literal"><span class="pre">Huey.task()</span></tt></a></li>
+<li><a class="reference internal" href="#Huey.periodic_task" title="Huey.periodic_task"><tt class="xref py py-meth docutils literal"><span class="pre">Huey.periodic_task()</span></tt></a></li>
+</ul>
+<p>The API documentation will follow the structure of the huey API, starting with
+the highest-level interfaces (the decorators) and eventually discussing the
+lowest-level interfaces, the <a class="reference internal" href="#BaseQueue" title="BaseQueue"><tt class="xref py py-class docutils literal"><span class="pre">BaseQueue</span></tt></a> and <a class="reference internal" href="#BaseDataStore" title="BaseDataStore"><tt class="xref py py-class docutils literal"><span class="pre">BaseDataStore</span></tt></a> objects.</p>
+<div class="section" id="function-decorators-and-helpers">
+<span id="function-decorators"></span><h2>Function decorators and helpers<a class="headerlink" href="#function-decorators-and-helpers" title="Permalink to this headline">¶</a></h2>
+<dl class="class">
+<dt id="Huey">
+<em class="property">class </em><tt class="descname">Huey</tt><big>(</big><em>queue</em><span class="optional">[</span>, <em>result_store=None</em><span class="optional">[</span>, <em>schedule=None</em><span class="optional">[</span>, <em>events=None</em><span class="optional">[</span>, <em>store_none=False</em><span class="optional">[</span>, <em>always_eager=False</em><span class="optional">]</span><span class="optional">]</span><span class="optional">]</span><span class="optional">]</span><span class="optional">]</span><big>)</big><a class="headerlink" href="#Huey" title="Permalink to this definition">¶</a></dt>
+<dd><p>Huey executes tasks by exposing function decorators that cause the function
+call to be enqueued for execution by the consumer.</p>
+<p>Typically your application will only need one Huey instance, but you can
+have as many as you like &#8211; the only caveat is that one consumer process
+must be executed for each Huey instance.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first last simple">
+<li><strong>queue</strong> &#8211; a queue instance, e.g. <a class="reference internal" href="#RedisQueue" title="RedisQueue"><tt class="xref py py-class docutils literal"><span class="pre">RedisQueue</span></tt></a>.</li>
+<li><strong>result_store</strong> &#8211; a place to store results and the task schedule,
+e.g. <a class="reference internal" href="#RedisDataStore" title="RedisDataStore"><tt class="xref py py-class docutils literal"><span class="pre">RedisDataStore</span></tt></a>.</li>
+<li><strong>schedule</strong> &#8211; scheduler implementation, e.g. an instance of <a class="reference internal" href="#RedisSchedule" title="RedisSchedule"><tt class="xref py py-class docutils literal"><span class="pre">RedisSchedule</span></tt></a>.</li>
+<li><strong>events</strong> &#8211; event emitter implementation, e.g. an instance of <tt class="xref py py-class docutils literal"><span class="pre">RedisEventEmitter</span></tt>.</li>
+<li><strong>store_none</strong> (<em>boolean</em>) &#8211; Flag to indicate whether tasks that return <tt class="docutils literal"><span class="pre">None</span></tt>
+should store their results in the result store.</li>
+<li><strong>always_eager</strong> &#8211; Useful for testing, this will execute all tasks
+immediately, without enqueueing them.</li>
+</ul>
+</td>
+</tr>
+</tbody>
+</table>
+<p>Example usage:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">huey.api</span> <span class="kn">import</span> <span class="n">Huey</span><span class="p">,</span> <span class="n">crontab</span>
+<span class="kn">from</span> <span class="nn">huey.backends.redis_backend</span> <span class="kn">import</span> <span class="n">RedisBlockingQueue</span><span class="p">,</span> <span class="n">RedisDataStore</span><span class="p">,</span>\
+    <span class="n">RedisSchedule</span><span class="p">,</span> <span class="n">RedisEventEmitter</span>
+
+<span class="n">queue</span> <span class="o">=</span> <span class="n">RedisBlockingQueue</span><span class="p">(</span><span class="s">&#39;my-app&#39;</span><span class="p">)</span>
+<span class="n">result_store</span> <span class="o">=</span> <span class="n">RedisDataStore</span><span class="p">(</span><span class="s">&#39;my-app&#39;</span><span class="p">)</span>
+<span class="n">schedule</span> <span class="o">=</span> <span class="n">RedisSchedule</span><span class="p">(</span><span class="s">&#39;my-app&#39;</span><span class="p">)</span>
+<span class="n">events</span> <span class="o">=</span> <span class="n">RedisEventEmitter</span><span class="p">(</span><span class="s">&#39;my-app&#39;</span><span class="p">)</span>
+<span class="n">huey</span> <span class="o">=</span> <span class="n">Huey</span><span class="p">(</span><span class="n">queue</span><span class="p">,</span> <span class="n">result_store</span><span class="p">,</span> <span class="n">schedule</span><span class="p">,</span> <span class="n">events</span><span class="p">)</span>
+
+<span class="c"># THIS IS EQUIVALENT TO ABOVE CODE:</span>
+<span class="c"># huey = RedisHuey(&#39;my-app&#39;)</span>
+
+<span class="nd">@huey.task</span><span class="p">()</span>
+<span class="k">def</span> <span class="nf">slow_function</span><span class="p">(</span><span class="n">some_arg</span><span class="p">):</span>
+    <span class="c"># ... do something ...</span>
+    <span class="k">return</span> <span class="n">some_arg</span>
+
+<span class="nd">@huey.periodic_task</span><span class="p">(</span><span class="n">crontab</span><span class="p">(</span><span class="n">minute</span><span class="o">=</span><span class="s">&#39;0&#39;</span><span class="p">,</span> <span class="n">hour</span><span class="o">=</span><span class="s">&#39;3&#39;</span><span class="p">))</span>
+<span class="k">def</span> <span class="nf">backup</span><span class="p">():</span>
+    <span class="c"># do a backup every day at 3am</span>
+    <span class="k">return</span>
+</pre></div>
+</div>
+<dl class="method">
+<dt id="Huey.task">
+<tt class="descname">task</tt><big>(</big><span class="optional">[</span><em>retries=0</em><span class="optional">[</span>, <em>retry_delay=0</em><span class="optional">[</span>, <em>retries_as_argument=False</em><span class="optional">]</span><span class="optional">]</span><span class="optional">]</span><big>)</big><a class="headerlink" href="#Huey.task" title="Permalink to this definition">¶</a></dt>
+<dd><p>Function decorator that marks the decorated function for processing by the
+consumer. Calls to the decorated function will do the following:</p>
+<ol class="arabic simple">
+<li>Serialize the function call into a message suitable for storing in the queue</li>
+<li>Enqueue the message for execution by the consumer</li>
+<li>If a <tt class="docutils literal"><span class="pre">result_store</span></tt> has been configured, return an <a class="reference internal" href="#AsyncData" title="AsyncData"><tt class="xref py py-class docutils literal"><span class="pre">AsyncData</span></tt></a>
+instance which can retrieve the result of the function, or <tt class="docutils literal"><span class="pre">None</span></tt> if not
+using a result store.</li>
+</ol>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">Huey can be configured to execute the function immediately by
+instantiating it with <tt class="docutils literal"><span class="pre">always_eager</span> <span class="pre">=</span> <span class="pre">True</span></tt> &#8211; this is useful for
+running in debug mode or when you do not wish to run the consumer.</p>
+</div>
+<p>Here is how you might use the <tt class="docutils literal"><span class="pre">task</span></tt> decorator:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="c"># assume that we&#39;ve created a huey object</span>
+<span class="kn">from</span> <span class="nn">huey</span> <span class="kn">import</span> <span class="n">RedisHuey</span>
+
+<span class="n">huey</span> <span class="o">=</span> <span class="n">RedisHuey</span><span class="p">()</span>
+
+<span class="nd">@huey.task</span><span class="p">()</span>
+<span class="k">def</span> <span class="nf">count_some_beans</span><span class="p">(</span><span class="n">num</span><span class="p">):</span>
+    <span class="c"># do some counting!</span>
+    <span class="k">return</span> <span class="s">&#39;Counted </span><span class="si">%s</span><span class="s"> beans&#39;</span> <span class="o">%</span> <span class="n">num</span>
+</pre></div>
+</div>
+<p>Now, whenever you call this function in your application, the actual processing
+will occur when the consumer dequeues the message and your application will
+continue along on its way.</p>
+<p>Without a result store:</p>
+<div class="highlight-pycon"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="n">res</span> <span class="o">=</span> <span class="n">count_some_beans</span><span class="p">(</span><span class="mi">1000000</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">res</span> <span class="ow">is</span> <span class="bp">None</span>
+<span class="go">True</span>
+</pre></div>
+</div>
+<p>With a result store:</p>
+<div class="highlight-pycon"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="n">res</span> <span class="o">=</span> <span class="n">count_some_beans</span><span class="p">(</span><span class="mi">1000000</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">res</span>
+<span class="go">&lt;huey.api.AsyncData object at 0xb7471a4c&gt;</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">res</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+<span class="go">&#39;Counted 1000000 beans&#39;</span>
+</pre></div>
+</div>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
+<li><strong>retries</strong> (<em>int</em>) &#8211; number of times to retry the task if an exception occurs</li>
+<li><strong>retry_delay</strong> (<em>int</em>) &#8211; number of seconds to wait between retries</li>
+<li><strong>retries_as_argument</strong> (<em>boolean</em>) &#8211; whether the number of retries should
+be passed in to the decorated function as an argument.</li>
+</ul>
+</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Return type:</th><td class="field-body"><p class="first last">decorated function</p>
+</td>
+</tr>
+</tbody>
+</table>
+<p>The return value of any calls to the decorated function depends on whether the invoker
+is configured with a <tt class="docutils literal"><span class="pre">result_store</span></tt>.  If a result store is configured, the
+decorated function will return an <a class="reference internal" href="#AsyncData" title="AsyncData"><tt class="xref py py-class docutils literal"><span class="pre">AsyncData</span></tt></a> object which can fetch the
+result of the call from the result store &#8211; otherwise it will simply
+return <tt class="docutils literal"><span class="pre">None</span></tt>.</p>
+<p>The <tt class="docutils literal"><span class="pre">task</span></tt> decorator also does one other important thing &#8211; it adds
+a special function <strong>onto</strong> the decorated function, which makes it possible
+to <em>schedule</em> the execution for a certain time in the future:</p>
+<dl class="function">
+<dt>
+<tt class="descname">{decorated func}.schedule(args=None, kwargs=None, eta=None, delay=None, convert_utc=True)</tt></dt>
+<dd><p>Use the special <tt class="docutils literal"><span class="pre">schedule</span></tt> function to schedule the execution of a
+queue task for a given time in the future:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="kn">import</span> <span class="nn">datetime</span>
+
+<span class="c"># get a datetime object representing one hour in the future</span>
+<span class="n">in_an_hour</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">()</span> <span class="o">+</span> <span class="n">datetime</span><span class="o">.</span><span class="n">timedelta</span><span class="p">(</span><span class="n">seconds</span><span class="o">=</span><span class="mi">3600</span><span class="p">)</span>
+
+<span class="c"># schedule &quot;count_some_beans&quot; to run in an hour</span>
+<span class="n">count_some_beans</span><span class="o">.</span><span class="n">schedule</span><span class="p">(</span><span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="mi">100000</span><span class="p">,),</span> <span class="n">eta</span><span class="o">=</span><span class="n">in_an_hour</span><span class="p">)</span>
+
+<span class="c"># another way of doing the same thing...</span>
+<span class="n">count_some_beans</span><span class="o">.</span><span class="n">schedule</span><span class="p">(</span><span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="mi">100000</span><span class="p">,),</span> <span class="n">delay</span><span class="o">=</span><span class="p">(</span><span class="mi">60</span> <span class="o">*</span> <span class="mi">60</span><span class="p">))</span>
+</pre></div>
+</div>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
+<li><strong>args</strong> &#8211; arguments to call the decorated function with</li>
+<li><strong>kwargs</strong> &#8211; keyword arguments to call the decorated function with</li>
+<li><strong>eta</strong> (<em>datetime</em>) &#8211; the time at which the function should be executed</li>
+<li><strong>delay</strong> (<em>int</em>) &#8211; number of seconds to wait before executing function</li>
+<li><strong>convert_utc</strong> &#8211; whether the <tt class="docutils literal"><span class="pre">eta</span></tt> should be converted from local
+time to UTC, defaults to <tt class="docutils literal"><span class="pre">True</span></tt></li>
+</ul>
+</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Return type:</th><td class="field-body"><p class="first last">like calls to the decorated function, will return an <a class="reference internal" href="#AsyncData" title="AsyncData"><tt class="xref py py-class docutils literal"><span class="pre">AsyncData</span></tt></a>
+object if a result store is configured, otherwise returns <tt class="docutils literal"><span class="pre">None</span></tt></p>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="attribute">
+<dt>
+<tt class="descname">{decorated func}.task_class</tt></dt>
+<dd><p>Store a reference to the task class for the decorated function.</p>
+<div class="highlight-pycon"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="n">count_some_beans</span><span class="o">.</span><span class="n">task_class</span>
+<span class="go">tasks.queuecmd_count_beans</span>
+</pre></div>
+</div>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="method">
+<dt id="Huey.periodic_task">
+<tt class="descname">periodic_task</tt><big>(</big><em>validate_datetime</em><big>)</big><a class="headerlink" href="#Huey.periodic_task" title="Permalink to this definition">¶</a></dt>
+<dd><p>Function decorator that marks the decorated function for processing by the
+consumer <em>at a specific interval</em>.  Calls to functions decorated with <tt class="docutils literal"><span class="pre">periodic_task</span></tt>
+will execute normally, unlike <a class="reference internal" href="#Huey.task" title="Huey.task"><tt class="xref py py-meth docutils literal"><span class="pre">task()</span></tt></a>, which enqueues tasks
+for execution by the consumer.  Rather, the <tt class="docutils literal"><span class="pre">periodic_task</span></tt> decorator
+serves to <strong>mark a function as needing to be executed periodically</strong> by the
+consumer.</p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">By default, the consumer will execute <tt class="docutils literal"><span class="pre">periodic_task</span></tt> functions. To
+disable this, run the consumer with <tt class="docutils literal"><span class="pre">-n</span></tt> or <tt class="docutils literal"><span class="pre">--no-periodic</span></tt>.</p>
+</div>
+<p>The <tt class="docutils literal"><span class="pre">validate_datetime</span></tt> parameter is a function which accepts a datetime
+object and returns a boolean value whether or not the decorated function
+should execute at that time or not.  The consumer will send a datetime to
+the function every minute, giving it the same granularity as the linux
+crontab, which it was designed to mimic.</p>
+<p>For simplicity, there is a special function <a class="reference internal" href="#crontab" title="crontab"><tt class="xref py py-func docutils literal"><span class="pre">crontab()</span></tt></a>, which can
+be used to quickly specify intervals at which a function should execute.  It
+is described below.</p>
+<p>Here is an example of how you might use the <tt class="docutils literal"><span class="pre">periodic_task</span></tt> decorator
+and the <tt class="docutils literal"><span class="pre">crontab</span></tt> helper:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">huey</span> <span class="kn">import</span> <span class="n">crontab</span>
+<span class="kn">from</span> <span class="nn">huey</span> <span class="kn">import</span> <span class="n">RedisHuey</span>
+
+<span class="n">huey</span> <span class="o">=</span> <span class="n">RedisHuey</span><span class="p">()</span>
+
+<span class="nd">@huey.periodic_task</span><span class="p">(</span><span class="n">crontab</span><span class="p">(</span><span class="n">minute</span><span class="o">=</span><span class="s">&#39;*/5&#39;</span><span class="p">))</span>
+<span class="k">def</span> <span class="nf">every_five_minutes</span><span class="p">():</span>
+    <span class="c"># this function gets executed every 5 minutes by the consumer</span>
+    <span class="k">print</span> <span class="s">&quot;It&#39;s been five minutes&quot;</span>
+</pre></div>
+</div>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">Because functions decorated with <tt class="docutils literal"><span class="pre">periodic_task</span></tt> are meant to be
+executed at intervals in isolation, they should not take any required
+parameters nor should they be expected to return a meaningful value.
+This is the same regardless of whether or not you are using a result store.</p>
+</div>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>validate_datetime</strong> &#8211; a callable which takes a <tt class="docutils literal"><span class="pre">datetime</span></tt> and returns
+a boolean whether the decorated function should execute at that time or not</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Return type:</th><td class="field-body">decorated function</td>
+</tr>
+</tbody>
+</table>
+<p>Like <a class="reference internal" href="#Huey.task" title="Huey.task"><tt class="xref py py-meth docutils literal"><span class="pre">task()</span></tt></a>, the periodic task decorator adds several helpers
+to the decorated function.  These helpers allow you to &#8220;revoke&#8221; and &#8220;restore&#8221; the
+periodic task, effectively enabling you to pause it or prevent its execution.</p>
+<dl class="function">
+<dt>
+<tt class="descname">{decorated_func}.revoke([revoke_until=None[, revoke_once=False]])</tt></dt>
+<dd><p>Prevent the given periodic task from executing.  When no parameters are
+provided the function will not execute again.</p>
+<p>This function can be called multiple times, but each call will overwrite
+the limitations of the previous.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first last simple">
+<li><strong>revoke_until</strong> (<em>datetime</em>) &#8211; Prevent the execution of the task until the
+given datetime.  If <tt class="docutils literal"><span class="pre">None</span></tt> it will prevent execution indefinitely.</li>
+<li><strong>revoke_once</strong> (<em>bool</em>) &#8211; If <tt class="docutils literal"><span class="pre">True</span></tt> will only prevent execution the next
+time it would normally execute.</li>
+</ul>
+</td>
+</tr>
+</tbody>
+</table>
+<div class="highlight-python"><div class="highlight"><pre><span class="c"># skip the next execution</span>
+<span class="n">every_five_minutes</span><span class="o">.</span><span class="n">revoke</span><span class="p">(</span><span class="n">revoke_once</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+
+<span class="c"># pause the command indefinitely</span>
+<span class="n">every_five_minutes</span><span class="o">.</span><span class="n">revoke</span><span class="p">()</span>
+
+<span class="c"># pause the command for 24 hours</span>
+<span class="n">every_five_minutes</span><span class="o">.</span><span class="n">revoke</span><span class="p">(</span><span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">()</span> <span class="o">+</span> <span class="n">datetime</span><span class="o">.</span><span class="n">timedelta</span><span class="p">(</span><span class="n">days</span><span class="o">=</span><span class="mi">1</span><span class="p">))</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="function">
+<dt>
+<tt class="descname">{decorated_func}.is_revoked([dt=None])</tt></dt>
+<dd><p>Check whether the given periodic task is revoked.  If <tt class="docutils literal"><span class="pre">dt</span></tt> is specified,
+it will check if the task is revoked for the given datetime.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>dt</strong> (<em>datetime</em>) &#8211; If provided, checks whether task is revoked at the
+given datetime</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="function">
+<dt>
+<tt class="descname">{decorated_func}.restore()</tt></dt>
+<dd><p>Clears any revoked status and run the task normally</p>
+</dd></dl>
+
+<p>If you want access to the underlying task class, it is stored as an attribute
+on the decorated function:</p>
+<dl class="attribute">
+<dt>
+<tt class="descname">{decorated_func}.task_class</tt></dt>
+<dd><p>Store a reference to the task class for the decorated function.</p>
+</dd></dl>
+
+</dd></dl>
+
+</dd></dl>
+
+<dl class="function">
+<dt id="crontab">
+<tt class="descname">crontab</tt><big>(</big><em>month='*'</em>, <em>day='*'</em>, <em>day_of_week='*'</em>, <em>hour='*'</em>, <em>minute='*'</em><big>)</big><a class="headerlink" href="#crontab" title="Permalink to this definition">¶</a></dt>
+<dd><p>Convert a &#8220;crontab&#8221;-style set of parameters into a test function that will
+return <tt class="docutils literal"><span class="pre">True</span></tt> when a given <tt class="docutils literal"><span class="pre">datetime</span></tt> matches the parameters set forth in
+the crontab.</p>
+<p>Acceptable inputs:</p>
+<ul class="simple">
+<li>&#8220;*&#8221; = every distinct value</li>
+<li>&#8220;*/n&#8221; = run every &#8220;n&#8221; times, i.e. hours=&#8217;*/4&#8217; == 0, 4, 8, 12, 16, 20</li>
+<li>&#8220;m-n&#8221; = run every time m..n</li>
+<li>&#8220;m,n&#8221; = run on m and n</li>
+</ul>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Return type:</th><td class="field-body">a test function that takes a <tt class="docutils literal"><span class="pre">datetime</span></tt> and returns a boolean</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+</div>
+<div class="section" id="asyncdata">
+<h2>AsyncData<a class="headerlink" href="#asyncdata" title="Permalink to this headline">¶</a></h2>
+<dl class="class">
+<dt id="AsyncData">
+<em class="property">class </em><tt class="descname">AsyncData</tt><big>(</big><em>huey</em>, <em>task</em><big>)</big><a class="headerlink" href="#AsyncData" title="Permalink to this definition">¶</a></dt>
+<dd><p>Although you will probably never instantiate an <tt class="docutils literal"><span class="pre">AsyncData</span></tt> object yourself,
+they are returned by any calls to <a class="reference internal" href="#Huey.task" title="Huey.task"><tt class="xref py py-meth docutils literal"><span class="pre">task()</span></tt></a> decorated functions
+(provided that &#8220;huey&#8221; is configured with a result store).  The <tt class="docutils literal"><span class="pre">AsyncData</span></tt>
+talks to the result store and is responsible for fetching results from tasks.
+Once the consumer finishes executing a task, the return value is placed in the
+result store, allowing the producer to retrieve it.</p>
+<p>Working with the <tt class="docutils literal"><span class="pre">AsyncData</span></tt> class is very simple:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span> <span class="nn">main</span> <span class="kn">import</span> <span class="n">count_some_beans</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">res</span> <span class="o">=</span> <span class="n">count_some_beans</span><span class="p">(</span><span class="mi">100</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">res</span>  <span class="c"># what is &quot;res&quot; ?</span>
+<span class="go">&lt;huey.queue.AsyncData object at 0xb7471a4c&gt;</span>
+
+<span class="gp">&gt;&gt;&gt; </span><span class="n">res</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>  <span class="c"># get the result of this task, assuming it executed</span>
+<span class="go">&#39;Counted 100 beans&#39;</span>
+</pre></div>
+</div>
+<p>What happens when data isn&#8217;t available yet?  Let&#8217;s assume the next call takes
+about a minute to calculate:</p>
+<div class="highlight-python"><pre>&gt;&gt;&gt; res = count_some_beans(10000000) # let's pretend this is slow
+&gt;&gt;&gt; res.get()  # data is not ready, so returns None
+
+&gt;&gt;&gt; res.get() is None  # data still not ready
+True
+
+&gt;&gt;&gt; res.get(blocking=True, timeout=5)  # block for 5 seconds
+Traceback (most recent call last):
+  File "&lt;stdin&gt;", line 1, in &lt;module&gt;
+  File "/home/charles/tmp/huey/src/huey/huey/queue.py", line 46, in get
+    raise DataStoreTimeout
+huey.exceptions.DataStoreTimeout
+
+&gt;&gt;&gt; res.get(blocking=True)  # no timeout, will block until it gets data
+'Counted 10000000 beans'</pre>
+</div>
+<dl class="method">
+<dt id="AsyncData.get">
+<tt class="descname">get</tt><big>(</big><span class="optional">[</span><em>blocking=False</em><span class="optional">[</span>, <em>timeout=None</em><span class="optional">[</span>, <em>backoff=1.15</em><span class="optional">[</span>, <em>max_delay=1.0</em><span class="optional">[</span>, <em>revoke_on_timeout=False</em><span class="optional">]</span><span class="optional">]</span><span class="optional">]</span><span class="optional">]</span><span class="optional">]</span><big>)</big><a class="headerlink" href="#AsyncData.get" title="Permalink to this definition">¶</a></dt>
+<dd><p>Attempt to retrieve the return value of a task.  By default, it will simply
+ask for the value, returning <tt class="docutils literal"><span class="pre">None</span></tt> if it is not ready yet.  If you want
+to wait for a value, you can specify <tt class="docutils literal"><span class="pre">blocking</span> <span class="pre">=</span> <span class="pre">True</span></tt> &#8211; this will loop,
+backing off up to the provided <tt class="docutils literal"><span class="pre">max_delay</span></tt> until the value is ready or
+until the <tt class="docutils literal"><span class="pre">timeout</span></tt> is reached.  If the <tt class="docutils literal"><span class="pre">timeout</span></tt> is reached before the
+result is ready, a <tt class="xref py py-class docutils literal"><span class="pre">DataStoreTimeout</span></tt> exception will be raised.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first last simple">
+<li><strong>blocking</strong> &#8211; boolean, whether to block while waiting for task result</li>
+<li><strong>timeout</strong> &#8211; number of seconds to block for (used with <cite>blocking=True</cite>)</li>
+<li><strong>backoff</strong> &#8211; amount to backoff delay each time no result is found</li>
+<li><strong>max_delay</strong> &#8211; maximum amount of time to wait between iterations when
+attempting to fetch result.</li>
+<li><strong>revoke_on_timeout</strong> (<em>bool</em>) &#8211; if a timeout occurs, revoke the task</li>
+</ul>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="AsyncData.revoke">
+<tt class="descname">revoke</tt><big>(</big><big>)</big><a class="headerlink" href="#AsyncData.revoke" title="Permalink to this definition">¶</a></dt>
+<dd><p>Revoke the given task.  Unless it is in the process of executing, it will
+be revoked and the task will not run.</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="n">in_an_hour</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">()</span> <span class="o">+</span> <span class="n">datetime</span><span class="o">.</span><span class="n">timedelta</span><span class="p">(</span><span class="n">seconds</span><span class="o">=</span><span class="mi">3600</span><span class="p">)</span>
+
+<span class="c"># run this command in an hour</span>
+<span class="n">res</span> <span class="o">=</span> <span class="n">count_some_beans</span><span class="o">.</span><span class="n">schedule</span><span class="p">(</span><span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="mi">100000</span><span class="p">,),</span> <span class="n">eta</span><span class="o">=</span><span class="n">in_an_hour</span><span class="p">)</span>
+
+<span class="c"># oh shoot, I changed my mind, do not run it after all</span>
+<span class="n">res</span><span class="o">.</span><span class="n">revoke</span><span class="p">()</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="method">
+<dt id="AsyncData.restore">
+<tt class="descname">restore</tt><big>(</big><big>)</big><a class="headerlink" href="#AsyncData.restore" title="Permalink to this definition">¶</a></dt>
+<dd><p>Restore the given task.  Unless it has already been skipped over, it
+will be restored and run as scheduled.</p>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="queues-and-datastores">
+<h2>Queues and DataStores<a class="headerlink" href="#queues-and-datastores" title="Permalink to this headline">¶</a></h2>
+<p>Huey communicates with two types of data stores &#8211; queues and datastores.  Thinking
+of them as python datatypes, a queue is sort of like a <tt class="docutils literal"><span class="pre">list</span></tt> and a datastore is
+sort of like a <tt class="docutils literal"><span class="pre">dict</span></tt>.  Queues are FIFOs that store tasks &#8211; producers put tasks
+in on one end and the consumer reads and executes tasks from the other.  DataStores
+are key-based stores that can store arbitrary results of tasks keyed by task id.
+DataStores can also be used to serialize task schedules so in the event your consumer
+goes down you can bring it back up and not lose any tasks that had been scheduled.</p>
+<p>Huey, like just about a zillion other projects, uses a &#8220;pluggable backend&#8221; approach,
+where the interface is defined on a couple classes <a class="reference internal" href="#BaseQueue" title="BaseQueue"><tt class="xref py py-class docutils literal"><span class="pre">BaseQueue</span></tt></a> and <a class="reference internal" href="#BaseDataStore" title="BaseDataStore"><tt class="xref py py-class docutils literal"><span class="pre">BaseDataStore</span></tt></a>,
+and you can write an implementation for any datastore you like.  The project ships
+with backends that talk to <a class="reference external" href="http://redis.io">redis</a>, a fast key-based datastore,
+but the sky&#8217;s the limit when it comes to what you want to interface with.  Below is
+an outline of the methods that must be implemented on each class.</p>
+<div class="section" id="base-classes">
+<h3>Base classes<a class="headerlink" href="#base-classes" title="Permalink to this headline">¶</a></h3>
+<dl class="class">
+<dt id="BaseQueue">
+<em class="property">class </em><tt class="descname">BaseQueue</tt><big>(</big><em>name</em>, <em>**connection</em><big>)</big><a class="headerlink" href="#BaseQueue" title="Permalink to this definition">¶</a></dt>
+<dd><p>Queue implementation &#8211; any connections that must be made should be created
+when instantiating this class.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first last simple">
+<li><strong>name</strong> &#8211; A string representation of the name for this queue</li>
+<li><strong>connection</strong> &#8211; Connection parameters for the queue</li>
+</ul>
+</td>
+</tr>
+</tbody>
+</table>
+<dl class="attribute">
+<dt>
+<tt class="descname">blocking = False</tt></dt>
+<dd><p>Whether the backend blocks when waiting for new results.  If set to <tt class="docutils literal"><span class="pre">False</span></tt>,
+the backend will be polled at intervals, if <tt class="docutils literal"><span class="pre">True</span></tt> it will read and wait.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="BaseQueue.write">
+<tt class="descname">write</tt><big>(</big><em>data</em><big>)</big><a class="headerlink" href="#BaseQueue.write" title="Permalink to this definition">¶</a></dt>
+<dd><p>Write data to the queue - has no return value.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>data</strong> &#8211; a string</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="BaseQueue.read">
+<tt class="descname">read</tt><big>(</big><big>)</big><a class="headerlink" href="#BaseQueue.read" title="Permalink to this definition">¶</a></dt>
+<dd><p>Read data from the queue, returning None if no data is available &#8211;
+an empty queue should not raise an Exception!</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Return type:</th><td class="field-body">a string message or <tt class="docutils literal"><span class="pre">None</span></tt> if no data is present</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="BaseQueue.remove">
+<tt class="descname">remove</tt><big>(</big><em>data</em><big>)</big><a class="headerlink" href="#BaseQueue.remove" title="Permalink to this definition">¶</a></dt>
+<dd><p>Remove all instances of given data from queue, returning number removed</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>data</strong> (<em>string</em>) &#8211; </td>
+</tr>
+<tr class="field-even field"><th class="field-name">Return type:</th><td class="field-body">number of instances removed</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="BaseQueue.flush">
+<tt class="descname">flush</tt><big>(</big><big>)</big><a class="headerlink" href="#BaseQueue.flush" title="Permalink to this definition">¶</a></dt>
+<dd><p>Optional: Delete everything in the queue &#8211; used by tests</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="BaseQueue.__len__">
+<tt class="descname">__len__</tt><big>(</big><big>)</big><a class="headerlink" href="#BaseQueue.__len__" title="Permalink to this definition">¶</a></dt>
+<dd><p>Optional: Return the number of items in the queue &#8211; used by tests</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="BaseDataStore">
+<em class="property">class </em><tt class="descname">BaseDataStore</tt><big>(</big><em>name</em>, <em>**connection</em><big>)</big><a class="headerlink" href="#BaseDataStore" title="Permalink to this definition">¶</a></dt>
+<dd><p>Data store implementation &#8211; any connections that must be made should be created
+when instantiating this class.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first last simple">
+<li><strong>name</strong> &#8211; A string representation of the name for this data store</li>
+<li><strong>connection</strong> &#8211; Connection parameters for the data store</li>
+</ul>
+</td>
+</tr>
+</tbody>
+</table>
+<dl class="method">
+<dt id="BaseDataStore.put">
+<tt class="descname">put</tt><big>(</big><em>key</em>, <em>value</em><big>)</big><a class="headerlink" href="#BaseDataStore.put" title="Permalink to this definition">¶</a></dt>
+<dd><p>Store the <tt class="docutils literal"><span class="pre">value</span></tt> using the <tt class="docutils literal"><span class="pre">key</span></tt> as the identifier</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="BaseDataStore.peek">
+<tt class="descname">peek</tt><big>(</big><em>key</em><big>)</big><a class="headerlink" href="#BaseDataStore.peek" title="Permalink to this definition">¶</a></dt>
+<dd><p>Retrieve the value stored at the given <tt class="docutils literal"><span class="pre">key</span></tt>, returns a special value
+<tt class="xref py py-class docutils literal"><span class="pre">EmptyData</span></tt> if nothing exists at the given key.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="BaseDataStore.get">
+<tt class="descname">get</tt><big>(</big><em>key</em><big>)</big><a class="headerlink" href="#BaseDataStore.get" title="Permalink to this definition">¶</a></dt>
+<dd><p>Retrieve the value stored at the given <tt class="docutils literal"><span class="pre">key</span></tt>, returns a special value
+<tt class="xref py py-class docutils literal"><span class="pre">EmptyData</span></tt> if no data exists at the given key.  This is to
+differentiate between &#8220;no data&#8221; and a stored <tt class="docutils literal"><span class="pre">None</span></tt> value.</p>
+<div class="admonition warning">
+<p class="first admonition-title">Warning</p>
+<p class="last">After a result is fetched it will be removed from the store!</p>
+</div>
+</dd></dl>
+
+<dl class="method">
+<dt id="BaseDataStore.flush">
+<tt class="descname">flush</tt><big>(</big><big>)</big><a class="headerlink" href="#BaseDataStore.flush" title="Permalink to this definition">¶</a></dt>
+<dd><p>Remove all keys</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="BaseSchedule">
+<em class="property">class </em><tt class="descname">BaseSchedule</tt><big>(</big><em>name</em>, <em>**connection</em><big>)</big><a class="headerlink" href="#BaseSchedule" title="Permalink to this definition">¶</a></dt>
+<dd><p>Schedule tasks, should be able to efficiently find tasks that are ready
+for execution.</p>
+<dl class="method">
+<dt id="BaseSchedule.add">
+<tt class="descname">add</tt><big>(</big><em>data</em>, <em>timestamp</em><big>)</big><a class="headerlink" href="#BaseSchedule.add" title="Permalink to this definition">¶</a></dt>
+<dd><p>Add the timestamped data (a serialized task) to the task schedule.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="BaseSchedule.read">
+<tt class="descname">read</tt><big>(</big><em>timestamp</em><big>)</big><a class="headerlink" href="#BaseSchedule.read" title="Permalink to this definition">¶</a></dt>
+<dd><p>Return all tasks that are ready for execution at the given timestamp.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="BaseSchedule.flush">
+<tt class="descname">flush</tt><big>(</big><big>)</big><a class="headerlink" href="#BaseSchedule.flush" title="Permalink to this definition">¶</a></dt>
+<dd><p>Remove all tasks from the schedule.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="BaseEventEmitter">
+<em class="property">class </em><tt class="descname">BaseEventEmitter</tt><big>(</big><em>channel</em>, <em>**connection</em><big>)</big><a class="headerlink" href="#BaseEventEmitter" title="Permalink to this definition">¶</a></dt>
+<dd><p>A send-and-forget event emitter that is used for sending real-time updates
+for tasks in the consumer.</p>
+<dl class="method">
+<dt id="BaseEventEmitter.emit">
+<tt class="descname">emit</tt><big>(</big><em>data</em><big>)</big><a class="headerlink" href="#BaseEventEmitter.emit" title="Permalink to this definition">¶</a></dt>
+<dd><p>Send the data on the specified channel.</p>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="redis-implementation">
+<h3>Redis implementation<a class="headerlink" href="#redis-implementation" title="Permalink to this headline">¶</a></h3>
+<p>All the following use the <a class="reference external" href="https://github.com/andymccurdy/redis-py">python redis driver</a>
+written by Andy McCurdy.</p>
+<dl class="class">
+<dt id="RedisQueue">
+<em class="property">class </em><tt class="descname">RedisQueue</tt><big>(</big><em>name</em>, <em>**connection</em><big>)</big><a class="headerlink" href="#RedisQueue" title="Permalink to this definition">¶</a></dt>
+<dd><p>Does a simple <tt class="docutils literal"><span class="pre">RPOP</span></tt> to pull messages from the queue, meaning that it polls.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first last simple">
+<li><strong>name</strong> &#8211; the name of the queue to use</li>
+<li><strong>connection</strong> &#8211; a list of values passed directly into the <tt class="docutils literal"><span class="pre">redis.Redis</span></tt> class</li>
+</ul>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="class">
+<dt id="RedisBlockingQueue">
+<em class="property">class </em><tt class="descname">RedisBlockingQueue</tt><big>(</big><em>name</em>, <em>**connection</em><big>)</big><a class="headerlink" href="#RedisBlockingQueue" title="Permalink to this definition">¶</a></dt>
+<dd><p>Does a <tt class="docutils literal"><span class="pre">BRPOP</span></tt> to pull messages from the queue, meaning that it blocks on reads.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first last simple">
+<li><strong>name</strong> &#8211; the name of the queue to use</li>
+<li><strong>connection</strong> &#8211; a list of values passed directly into the <tt class="docutils literal"><span class="pre">redis.Redis</span></tt> class</li>
+</ul>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="class">
+<dt id="RedisDataStore">
+<em class="property">class </em><tt class="descname">RedisDataStore</tt><big>(</big><em>name</em>, <em>**connection</em><big>)</big><a class="headerlink" href="#RedisDataStore" title="Permalink to this definition">¶</a></dt>
+<dd><p>Stores results in a redis hash using <tt class="docutils literal"><span class="pre">HSET</span></tt>, <tt class="docutils literal"><span class="pre">HGET</span></tt> and <tt class="docutils literal"><span class="pre">HDEL</span></tt></p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first last simple">
+<li><strong>name</strong> &#8211; the name of the data store to use</li>
+<li><strong>connection</strong> &#8211; a list of values passed directly into the <tt class="docutils literal"><span class="pre">redis.Redis</span></tt> class</li>
+</ul>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="class">
+<dt id="RedisSchedule">
+<em class="property">class </em><tt class="descname">RedisSchedule</tt><big>(</big><em>name</em>, <em>**connection</em><big>)</big><a class="headerlink" href="#RedisSchedule" title="Permalink to this definition">¶</a></dt>
+<dd><blockquote>
+<div><p>Uses sorted sets to efficiently manage a schedule of timestamped tasks.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">param name:</th><td class="field-body">the name of the data store to use</td>
+</tr>
+<tr class="field-even field"><th class="field-name" colspan="2">param connection:</th></tr>
+<tr class="field-even field"><td>&nbsp;</td><td class="field-body">a list of values passed directly into the <tt class="docutils literal"><span class="pre">redis.Redis</span></tt> class</td>
+</tr>
+</tbody>
+</table>
+</div></blockquote>
+<dl class="class">
+<dt id="RedisSchedule.RedisEventEmitter">
+<em class="property">class </em><tt class="descname">RedisEventEmitter</tt><big>(</big><em>channel</em>, <em>**connection</em><big>)</big><a class="headerlink" href="#RedisSchedule.RedisEventEmitter" title="Permalink to this definition">¶</a></dt>
+<dd><p>Uses Redis pubsub to emit json-serialized updates about tasks in real-time.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first last simple">
+<li><strong>channel</strong> &#8211; the channel to send messages on.</li>
+<li><strong>connection</strong> &#8211; values passed directly to the <tt class="docutils literal"><span class="pre">redis.Redis</span></tt> class.</li>
+</ul>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h3><a href="index.html">Table Of Contents</a></h3>
+  <ul>
+<li><a class="reference internal" href="#">Huey&#8217;s API</a><ul>
+<li><a class="reference internal" href="#function-decorators-and-helpers">Function decorators and helpers</a></li>
+<li><a class="reference internal" href="#asyncdata">AsyncData</a></li>
+<li><a class="reference internal" href="#queues-and-datastores">Queues and DataStores</a><ul>
+<li><a class="reference internal" href="#base-classes">Base classes</a></li>
+<li><a class="reference internal" href="#redis-implementation">Redis implementation</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="django.html"
+                        title="previous chapter">Using Huey with Django</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="_sources/api.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="django.html" title="Using Huey with Django"
+             >previous</a> |</li>
+        <li><a href="index.html">huey 0.4.3 documentation</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2013, charles leifer.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2b1.
+    </div>
+  </body>
+</html>
