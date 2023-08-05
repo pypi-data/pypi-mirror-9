@@ -1,0 +1,32 @@
+Ermes
+=====
+
+Introduction
+------------
+
+Ermes is a socks5 implementation for Python (3.X only), the usage is quite
+straightforward. ::
+
+    from ermes import Socks5Proxy, Socks5Error
+    import socket
+
+    proxy = Socks5Proxy(("the.host.of.proxy", 1080),
+        username="the username no more than 255 chars or None",
+        password="the password no more than 255 chars or None",
+        remote_dns=True)
+    sock = socket.socket()
+    # use proxy.connect(sock, address)
+    # instead of sock.connect(address),
+    proxy.connect(sock, ("the.remote.host", 80))
+
+    # just do anything like a usual socket with `sock`
+
+
+Limitations
+-----------
+
+- Authentication support is limited, only 0x00 (No auth) and 0x02
+  (username/password) is supported
+- Only command code 0x01 (TCP/IP stream) is supported
+- No IPv6 support
+- SOCKS5 only
