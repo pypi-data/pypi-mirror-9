@@ -1,0 +1,189 @@
+== bootstrap_env
+
+Experimental project to create a complete self contained virtualenv bootstrap file.
+See: [[https://github.com/pypa/packaging-problems/issues/55|packaging-problems issues 55]]
+
+=== info
+
+Since {{{virtualenv}}} v1.10 you a virtualenv bootstrap file is not runnable without the pip and setuptools wheel files.
+There must be created a {{{virtualenv_support}}} with the wheels.
+
+e.g.:
+{{{
+/bootstrap.py
+/virtualenv_support/
+        pip-1.5.6-py2.py3-none-any.whl
+        setuptools-3.6-py2.py3-none-any.whl
+}}}
+
+With this project this is not needed. The current solution embed {{{get_pip.py}}} into the bootstrap file
+and call it after env creation.
+
+There are also some helpers to parse pip requirement files and install packages after virtualenv creation. Look into "boot bootstrap_env" project below.
+
+
+=== the example
+
+The included {{{example}}} will create a {{{boot_example.py}}} bootstrap file. Running this looks like:
+{{{
+~ $ python2 boot_example.py ~/testenv
+The additional example extend_parser() code is called.
+The additional example adjust_options() code is called.
+New python executable in /home/jens/testenv/bin/python2
+Also creating executable in /home/jens/testenv/bin/python
+call to install pip with: '/home/jens/testenv/bin/python /path/to/bootstrap_env/boot_example.py --install-pip /home/jens/testenv'
+install pip from self contained 'get_pip.py'
+Downloading/unpacking pip
+  Downloading pip-1.5.6-py2.py3-none-any.whl (1.0MB): 1.0MB downloaded
+Downloading/unpacking setuptools
+  Downloading setuptools-6.0.2-py2.py3-none-any.whl (543kB): 543kB downloaded
+Installing collected packages: pip, setuptools
+Successfully installed pip setuptools
+Cleaning up...
+The additional example after_install() code is called.
+}}}
+
+
+
+The {{{example}}} hook code stored separated files in [[https://github.com/jedie/bootstrap_env/blob/master/example/|example]] directory looks like this:
+{{{
+def extend_parser(parser):
+    # --- CUT here ---
+    sys.stdout.write("The additional example extend_parser() code is called.\n")
+}}}
+{{{
+def adjust_options(options, args):
+    # --- CUT here ---
+    sys.stdout.write("The additional example adjust_options() code is called.\n")
+}}}
+{{{
+def after_install(options, home_dir):
+    # --- CUT here ---
+    sys.stdout.write("The additional example after_install() code is called.\n")
+}}}
+
+
+
+Creating the example bootstrap file looks like this:
+{{{
+/path/to/bootstrap_env/ $ python2 example.py
+Generate bootstrap file: 'boot_example.py'...
+Reade code from: 'example/extend_parser.py'...
+Reade code from: 'example/adjust_options.py'...
+Reade code from: 'example/after_install.py'...
+Reade code from: '/path/to/bootstrap_env/bootstrap_env/bootstrap_install_pip.py'...
+Request: 'https://raw.githubusercontent.com/pypa/pip/master/contrib/get-pip.py'...
+get-pip.py SHA256: 'd43dc33a5670d69dd14a9be1f2b2fa27ebf124ec1b212a47425331040f742a9b', ok.
+'boot_example.py' written.
+}}}
+
+
+
+After the first call, the requested {{{get-pip.py}}} file will be cached into the default temp
+and reused from there. So it is fast to generate it again:
+{{{
+/path/to/bootstrap_env/ $ python2 example.py
+Generate bootstrap file: 'boot_example.py'...
+Reade code from: 'example/extend_parser.py'...
+Reade code from: 'example/adjust_options.py'...
+Reade code from: 'example/after_install.py'...
+Reade code from: '/path/to/bootstrap_env/bootstrap_env/bootstrap_install_pip.py'...
+Use '/tmp/get-pip.py'
+get-pip.py SHA256: 'd43dc33a5670d69dd14a9be1f2b2fa27ebf124ec1b212a47425331040f742a9b', ok.
+'boot_example.py' written.
+}}}
+
+
+=== usage
+
+To create you own bootstrap file, is easy. Just copy the {{{example}}} or {{{boot bootstrap_env}}} code and change it for your needs.
+
+Projects that use bootstrap_env are:
+* [[https://github.com/jedie/PyLucid/tree/django-cms/bootstrap|PyLucid django-cms branch]]
+* [[https://github.com/DWLOAD/DwLoadServer/tree/master/bootstrap|DwLoadServer]]
+
+Missing project? Do you use it? Just send me a mail: {{{bootstrap_env AT jensdiemer DOT de}}} or use IRC/Jabber (see below)
+
+
+=== boot bootstrap_env
+
+To create a fresh virtualenv with {{{bootstrap_env}}} do the following:
+{{{
+# Download 'boot_bootstrap_env.py' from github:
+/home/FooBar$ wget https://raw.githubusercontent.com/jedie/bootstrap_env/master/boot_bootstrap_env.py
+
+# Create virtualenv and use read-only GIT:
+/home/FooBar$ python3 boot_bootstrap_env.py ~/bootstrap_env --install_type git_readonly
+}}}
+The created virtualenv is under {{{~/bootstrap_env/}}} ;)
+
+If you would like to use PyPi packages do this:
+{{{
+# Create virtualenv and use read-only GIT:
+/home/FooBar$ python3 boot_bootstrap_env.py ~/bootstrap_env --install_type pypi
+}}}
+
+The sourcecode of this is here: [[https://github.com/jedie/bootstrap_env/tree/master/boot_bootstrap_env|/boot_bootstrap_env/]]
+
+This also work under Windows.
+e.g:
+{{{
+C:\> C:\Python34\python.exe d:\downloads\boot_bootstrap_env.py --install_type=pypi d:\bootstrap_env
+}}}
+
+There is also a maybe helpful batch file: [[https://github.com/jedie/bootstrap_env/tree/master/boot_bootstrap_env.cmd|boot_bootstrap_env.cmd]]
+
+
+=== Request get_pip.py notes
+
+The script file [[https://github.com/jedie/bootstrap_env/blob/master/bootstrap_env/create_bootstrap.py|bootstrap_env/create_bootstrap.py]] will request {{{get_pip.py}}} from [[https://github.com/pypa/pip/blob/develop/contrib/get-pip.py]]
+It verify the content via SHA256 hash. This hash is hardcoded in {{{create_bootstrap.py}}}
+You will get a warning if a newer {{{get_pip.py}}} was commited. Looks like this:
+{{{
+Request: 'https://raw.githubusercontent.com/pypa/pip/ee6b739fb6e81ddaee64dc5bb686f7ec78ce3d78/contrib/get-pip.py'...
+Request: 'https://raw.githubusercontent.com/pypa/pip/master/contrib/get-pip.py'...
+WARNING: 'get-pip.py' master changed! Maybe a new version was commited?
+Please check:
+	https://github.com/pypa/pip/commits/develop/contrib/get-pip.py
+And report here:
+	https://github.com/jedie/bootstrap_env/issues
+get-pip.py SHA256: '0831b76e518a92a82487250fd18973062aa427e9bfab59a3e84d32f8d25b1679', ok.
+'../boot_bootstrap_env.py' written.
+}}}
+
+
+== History
+
+ * v0.4.2 - 07.02.2015 - Update to pip 6.0.8
+ * v0.4.1 - 29.01.2015 - Update for pip 6.0.7 and pin requested url.
+ * v0.4.0 - 28.01.2015 - Updates for pip 6.0.6 changes
+ * v0.3.5 - 28.01.2015 - Update SHA256 for {{{get-pip.py}}} v6.0.6
+ * v0.3.4 - 14.11.2014 - Bugfix: if {{{os.environ['SYSTEMROOT']}}} not exists.
+ * v0.3.3 - 14.11.2014 - Add version number into generated bootstrap file.
+ * v0.3.2 - 14.11.2014 - Add 'boot bootstrap_env' and bugfixes for running under Windows.
+ * v0.3.1 - 14.11.2014 - Bugfix for "error: no such option:" while pip install, if own optional options are used.
+ * v0.3.0 - 13.11.2014 - typo: rename all {{{bootstrip}}} to {{{bootstrap}}} ;)
+ * v0.2.0 - 09.10.2014 - add {{{prefix}}} and {{{suffix}}} argument to {{{generate_bootstrap()}}}
+ * v0.1.0 - 09.10.2014 - initial release
+
+
+== Links:
+
+| Forum               | [[http://forum.pylucid.org/]]
+| IRC                 | [[http://www.pylucid.org/permalink/304/irc-channel|#pylucid on freenode.net]]
+| Jabber              | pylucid@conference.jabber.org
+| PyPi                | [[https://pypi.python.org/pypi/bootstrap_env/]]
+| Github              | [[https://github.com/jedie/bootstrap_env]]
+
+Simmilar projects are:
+ * https://pypi.python.org/pypi/bootstrapper/
+
+Related pages:
+ * https://packaging.python.org
+ * https://virtualenv.pypa.io
+ * https://pip.pypa.io
+
+
+== donation
+
+* Send [[http://www.bitcoin.org/|Bitcoins]] to [[https://blockexplorer.com/address/1823RZ5Md1Q2X5aSXRC5LRPcYdveCiVX6F|1823RZ5Md1Q2X5aSXRC5LRPcYdveCiVX6F]]
