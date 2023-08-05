@@ -1,0 +1,54 @@
+sftpsyncer
+----------
+
+Synchronise files piecemeal back and forth between a local cache and a remote
+SFTP server.
+
+Use case
+========
+
+You have a client that sometimes needs to syncronise files to and
+from an SFTP server.
+
+* open() a file whether it's remote or local.
+  * If the file is available locally, use the local copy.
+  * If the local file doesn't exist, download it and then use the local copy.
+* add() files to an upload package, then push() to upload all locally queued
+  files.
+
+This model is simplistic, and will clobber any changes at the other end if
+a file with the same name exists. If you want to avoid that, you may be better
+off using Git or the like.
+
+How to use::
+
+    import sftpsyncer
+    from sftpsyncer import syncagent
+
+    sagent = syncagent(hostname="remote_sagenth.example.com", host_port="1222",
+                    username="theuser", key_path="/home/theuser/.sagenth/key",
+                    local_root="/tmp/cache", remote_root="/upload_target")
+
+    # upload local files
+
+    sagent.upload_queue.add("myfile.txt")
+    sagent.upload_queue.add("docs/readme.txt")
+
+    sagent.push()  # upload whether or not remote files exist
+
+    # auto-get remote files, reading from cache when available
+
+    fh1 = sagent.open("myfile.txt")  # file is already local, return local fh
+    fh2 = sagent.open("remote.txt")  # file is not local, transfer to local cache, return local fh
+
+    # exceptions
+
+    try:
+        fh3 = sagent.open("not_anywhere.txt")
+    except sftpsyncer.exceptions.FileNotFound as e:
+        print "File does not exist on local or remote"
+
+    try:
+        fh5 = sagent.open("ssh_server_unavailable.txt")
+    except sftpsyncer.exceptions.ConnectionError as e:
+        print "Remote SFTP service appears to be unavailable"
