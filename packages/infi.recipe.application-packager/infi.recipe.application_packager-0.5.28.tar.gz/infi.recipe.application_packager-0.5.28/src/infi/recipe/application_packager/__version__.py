@@ -1,0 +1,10 @@
+__version__ = "0.5.28"
+__git_commiter_name__ = "Guy Rozendorn"
+__git_commiter_email__ = "guy@rzn.co.il"
+__git_branch__ = '(detached from v0.5.28)'
+__git_remote_tracking_branch__ = '(No remote tracking)'
+__git_remote_url__ = '(Not remote tracking)'
+__git_head_hash__ = '27725421cb770eb6a9747c0888ee587fcda010cd'
+__git_head_subject__ = 'HOSTDEV-1957 in the post-pep-440 era, foo-2.0.0-pre8.tar.gz is parsed as 2.0.0rc8'
+__git_head_message__ = ''
+__git_dirty_diff__ = ''
