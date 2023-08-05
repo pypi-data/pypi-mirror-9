@@ -1,0 +1,200 @@
+{% extends "django_cradmin/base.django.html" %}
+{% load i18n %}
+
+{% block title %}{{ pagetitle|capfirst }}{% endblock title %}
+
+{% block content %}
+    {% if use_this_hidden_attribute %}
+        <div django-cradmin-use-this-hidden={{ use_this_hidden_attribute|safe }}></div>
+    {% endif %}
+    
+    {% block pageheader %}
+        <div class="page-header page-header-nomargin">
+            <div class="container-fluid">
+                {% if enable_search %}
+                    <div class="row">
+                        <div class="col-sm-8 col-md-9">
+                {% endif %}
+                {% block headingicon %}{% endblock headingicon %}
+                <h1>
+                    {% block heading %}
+                        {{ pagetitle|capfirst }}
+                    {% endblock heading %}
+                </h1>
+                {% if buttons %}
+                    <p>
+                        {% for button in buttons %}
+                            {{ button.render }}
+                        {% endfor %}
+                    </p>
+                {% endif %}
+                {% if enable_search %}
+                        </div>
+                        <div class="col-sm-4 col-md-3">
+                            <form class="form-inline cradmin-searchform" role="search" method="get"
+                                    action="{{ request.get_full_path }}">
+                                <div class="input-group">
+                                    {% for name, value in search_hidden_fields %}
+                                        <input type="hidden"
+                                               name="{{ name }}"
+                                               value="{{ value }}">
+                                    {% endfor %}
+
+                                    <input class="form-control" name="search" type="text"
+                                           placeholder="{% trans 'Search...' %}"
+                                           value="{{ current_search }}">
+                                    <span class="input-group-btn">
+                                        <button type="submit" class="btn btn-default">
+                                            <span class="sr-only">{% trans "Search" %}</span>
+                                            <span class="fa fa-search"></span>
+                                        </button>
+                                    </span>
+                                </div>
+                             </form>
+                        </div>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    {% endblock pageheader %}
+
+
+    {% if enable_previews %}
+        <div django-cradmin-page-preview-wrapper>
+            {% include "django_cradmin/pagepreview/includes/pagepreview-fullsize-iframe-wrapper.django.html" %}
+    {% endif %}
+
+    <div
+        {% if multiselect_actions %}
+            ng-controller="CradminMultiselectObjectTableViewController"
+            ng-init="
+                items={
+                    {% for row in table %}
+                        'item_{{ row.object.pk }}': false{% if not forloop.last %},{% endif %}
+                    {% endfor %}
+                };
+                actions={{ multiselect_actions }}
+            "
+        {% endif %}
+    >
+        <form class="django_cradmin_form" method="post"
+                {% if multiselect_actions %}
+                    {% comment %}
+                        What we put here does not really matter - it just needs
+                        to be a value so AngularJS does not prevent submit.
+                    {% endcomment %}
+                    action="{{ request.build_absolute_uri }}"
+                    django-cradmin-form-action="{% verbatim %}selectedAction.url{% endverbatim %}"
+                {% endif %}>
+
+            {% if multiselect_actions %}
+                {% comment %}
+                    NOTE: Used by the views handling the multiselect to distinguish
+                    between POST requests from this view, and within that view.
+                {% endcomment %}
+                <input type="hidden" name="is_the_multiselect_form" value="yes">
+            {% endif %}
+            {% csrf_token %}
+
+            <table id="objecttableview-table" class="table cradmin-table-fluid">
+                <thead>
+                    <tr>
+                        {% if multiselect_actions %}
+                            <th class="objecttableview-multiselectcolumn">
+                                <input type="checkbox"
+                                    ng-cloak
+                                    ng-checked="selectAllChecked"
+                                    ng-click="toggleAllCheckboxes()">
+                            </th>
+                        {% endif %}
+                        {% for column in columns %}
+                            <th class="{{ column.get_headercell_css_class }}"
+                                    style="{{ column.get_headercell_css_style }}">
+                                {% if column.is_sortable %}
+                                    <a class="objecttableview-flip-ordering-button"
+                                            href="{{ column.get_flip_ordering_url }}">
+                                        {{ column.get_header|capfirst }}
+                                        {% if column.orderinginfo.order_ascending %}
+                                            <span class="sr-only">- {% trans "Ordered ascending - Click to order descending" %}</span>
+                                        {% else %}
+                                            <span class="sr-only">- {% trans "Ordered descending - Click to order ascending" %}</span>
+                                        {% endif %}
+                                    </a>
+                                    {% if column.is_ordered %}
+                                        <span class="objecttableview-orderingmeta">
+                                            <a class="objecttableview-remove-ordering-button"
+                                                    href="{{ column.get_remove_ordering_url }}"
+                                                    title='{% trans "Do not order by this column" %}'>
+                                                <span class="fa fa-times"></span>
+                                            </a>
+                                            {% if multicolumn_ordering %}
+                                                <span class="objecttableview-orderingindex">
+                                                    <span class="sr-only"> - {% trans "Ordering priority" %}</span>
+                                                    {{ column.orderinginfo.orderingstringindex|add:1 }}
+                                                </span>
+                                            {% endif %}
+                                            <span class="objecttableview-orderingdirection">
+                                                {% if column.orderinginfo.order_ascending %}
+                                                    <span class="fa fa-caret-down"></span>
+                                                {% else %}
+                                                    <span class="fa fa-caret-up"></span>
+                                                {% endif %}
+                                            </span>
+                                        </span>
+                                    {% endif %}
+                                {% else %}
+                                    {{ column.get_header|capfirst }}
+                                {% endif %}
+                            </th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in table %}
+                        <tr
+                            {% if multiselect_actions %}
+                                ng-class="{'objecttableview-selected-row': items.item_{{ row.object.pk }} }"
+                            {% endif %}
+                        >
+                            {% if multiselect_actions %}
+                                <td class="objecttableview-multiselectcolumn">
+                                    <input type="checkbox"
+                                        name="selected_objects"
+                                        value="{{ row.object.pk }}"
+                                        ng-cloak
+                                        ng-checked="items.item_{{ row.object.pk }}"
+                                        ng-click="toggleCheckbox('item_{{ row.object.pk }}')">
+                                </td>
+                            {% endif %}
+                            {% for cell in row.cells %}
+                                <td>
+                                    {{ cell }}
+                                </td>
+                            {% endfor %}
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% include "django_cradmin/viewhelpers/includes/pager.django.html" with extra_querystring=pager_extra_querystring %}
+
+            {% if multiselect_actions %}
+                <div class="django_cradmin_submitrow objecttableview-multiselect-submitrow"
+                        ng-class="{django_cradmin_submitrow_hidden: numberOfSelected==0}">
+                    <select class="form-control"
+                            ng-model="selectedAction"
+                            ng-options="action.label for action in actions">
+                        <option value="">--- {% trans "Select an action" %} ---</option>
+                    </select>
+                    <button type="submit" class="btn btn-primary" ng-disabled="!selectedAction">
+                        {% trans "Go" %}
+                    </button>
+                </div>
+            {% endif %}
+        </form>
+    </div> {# END div with ng-controller="CradminMultiselectObjectTableViewController" #}
+
+    {% if enable_previews %}
+        </div>
+    {% endif %}
+
+{% endblock content %}
