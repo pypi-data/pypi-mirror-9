@@ -1,0 +1,133 @@
+<html metal:use-macro="main.macros['master']">
+  <body metal:fill-slot="body">
+    <div ng-controller="KanbanCtrl">
+        <div class="page-header">
+            <div class="pull-right" tal:content="structure actions.buttons(request)"></div>
+            <div class="pull-right online-users" ng-show="emails">
+              <span class="label">Online: </span>
+              <img ng-repeat="email in emails" height="30" width="30" alt="{{email}}" src="https://www.gravatar.com/avatar/{{gravatar(email)}}" />
+            </div>
+            <h3 tal:condition="request.model_name">
+                 <span tal:condition="request.model_id and hasattr(request.model_class, '__unicode__')"
+                       tal:replace="unicode(request.model_instance)"/>
+                 <span tal:condition="request.model_id and not hasattr(request.model_class, '__unicode__')"
+                       tal:replace="request.model_id"/>
+                 <span tal:condition="not request.model_id"
+                       tal:replace="unicode(request.model_class.label)"/>
+            </h3>
+            <button class="btn" ng-show="history.length>0" ng-click="isHistoryCollapsed = !isHistoryCollapsed">Toggle history</button>
+        </div>
+
+      <div class="row-fluid">
+       <div class="span12">
+         <ul class="kanban" ng-init="init('${request.model_instance.id}', '${request.authenticated_user.email}')">
+
+               <!-- Backlog -->
+               <li class="span2">
+                  <div class="thumbnail">
+                      <div class="header_name">
+                        Backlog
+                      </div>
+                      <div class="preloader" ng-show="backlog.loaded==false">
+                        <img src="${request.application_url}/fanstatic/por/por_kanban/img/loading.gif"/>
+                      </div>
+
+                      <div class="alert alert-block nobacklog" ng-show="backlog.loaded==true && backlog.tasks.length==0">
+                            <h4>Warning!</h4>
+                            Your query <code>${request.model_instance.backlog_query}</code>
+                            didn't return any tickets. Please check if there is no syntax error or a simple typo.
+                       </div>
+                       <input class="input-block-level" type="text" placeholder="Search backlog"
+                              ng-model="filters.name"
+                              ng-show="backlog.loaded==true && backlog.tasks.length>0">
+
+                       <ul class="task_pool" ng-model="backlog.tasks" tal:attributes="draggable">
+                         <li class="big_container {{getPriorityClass(task)}} media" id="{{task.id}}" 
+                                ng-repeat="task in backlog.tasks track by task.id"
+                                ng-controller="BacklogController"
+                                ng-model="backlog.tasks[$index]"
+                                ng-hide="isExcludedByFilter"
+                                ng-show="task.id">
+                                <div class="box_itm media-body">
+                               <div class="number pull-right">#{{task.ticket}}</div>
+                               <span class="project" style="{{getColor(task.project)}}" title="{{task.customer}}">{{task.project}}</span>
+                               <div class="ticket"><a target="_blank" href="{{task.url}}">{{task.summary}}</a></div>
+                               <div class="pull-right users">
+                                 <a href="javascript:void(0)">
+                                   <img class="media-object" tooltip="{{task.owner}}"
+                                      height="30" width="30" src="https://www.gravatar.com/avatar/{{gravatar(task.owner)}}">
+                                 </a>
+                               </div>
+                               <div ng-show="task.customerrequest">{{task.customerrequest}}</div>
+                               <div class="clearfix"></div>
+                            </div>
+                          </li>
+                   </ul>
+                 </div>
+              </li>
+              <!-- Backlog end -->
+
+              <!-- Columns -->
+              <li class="span2" ng-repeat="column in columns">
+              <div class="thumbnail">
+                    <div class="header_name">
+                      <button class="btn btn-mini btn-danger pull-right" title="Remove column" ng-disabled="column.tasks.length>0"
+                        ng-click="removeColumn($index)">
+                        <i class="icon-trash icon-white"></i>
+                      </button>
+                      <a xeditable tal:condition="draggable"
+                         data-ng-model="column.title"
+                         href="#" data-type="text" data-title="Enter column name">{{column.title}}</a>
+                       <div tal:condition="not draggable">{{column.title}}</div>
+                    </div>
+                    <div class="WIP {{column.tasks.length > column.wip && 'oversized'}}">WIP: 
+                      <a xeditable tal:condition="draggable"
+                         data-ng-model="column.wip"
+                         href="#" data-type="text" data-title="Enter column WIP">{{column.wip}}</a>
+                       <span tal:condition="not draggable">{{column.wip}}</span>
+                      </div>
+
+                      <ul class="task_pool" ng-model="column.tasks" tal:attributes="draggable">
+                        <li class="big_container {{getPriorityClass(task)}} media" id="{{task.id}}" 
+                              ng-repeat="task in column.tasks track by task.id"
+                              ng-model="columns[$parent.$index].tasks[$index]"
+                              ng-controller="TaskController"
+                              ng-show="task.id">
+                              <div class="box_itm media-body" animate-on-change="task.modified">
+                               <div class="number pull-right" tal:condition="not draggable">#{{task.ticket}}</div>
+                                <div class="btn-group pull-right" tal:condition="draggable">
+                                  <button class="btn btn-ticket dropdown-toggle" data-toggle="dropdown">
+                                    #{{task.ticket}}
+                                    <span class="caret"></span>
+                                  </button>
+                                  <ul class="dropdown-menu">
+                                    <li><a href="#" ng-click="removeTask($index)">
+                                      <i class="icon-trash"></i>
+                                      Remove ticket
+                                    </a></li>
+                                  </ul>
+                                </div>
+
+                              <span class="project" style="{{getColor(task.project)}}" title="{{task.customer}}">{{task.project}}</span>
+                              <div class="ticket"><a target="_blank" href="{{task.url}}">{{task.summary}}</a></div>
+                               <div class="pull-right users">
+                                 <a href="javascript:void(0)">
+                                   <img class="media-object" tooltip="{{task.owner}}"
+                                      height="30" width="30" src="https://www.gravatar.com/avatar/{{gravatar(task.owner)}}">
+                                 </a>
+                               </div>
+                              <div ng-show="task.customerrequest">{{task.customerrequest}}</div>
+                              <div class="clearfix"></div>
+                          </div>
+                        </li>
+                  </ul>
+                </div>
+            </li>
+
+            </ul>
+        </div>
+        </div>
+        </div>
+  </body>
+</html>
+
