@@ -1,0 +1,71 @@
+import random
+
+from pyblox.app_router import Router
+from pyblox import config
+
+from pyblox.middleware import (CSRFMiddleware, make_eval_exception,
+                                    make_error_middleware)
+
+from route_factory import make_routes
+from config_factory import make_config
+
+from beaker.middleware import SessionMiddleware
+from paste.cascade import Cascade
+from paste.registry import RegistryManager, make_registry_manager
+from paste.urlparser import StaticURLParser
+from paste.auth.cookie import make_auth_cookie
+from paste.config import ConfigMiddleware
+from paste.recursive import make_recursive_middleware
+from paste.deploy.converters import asbool
+
+from paste.errordocument import StatusBasedForward
+from paste.recursive import RecursiveMiddleware
+from urllib import urlencode
+
+
+def make_app(global_conf, static_files=True, **conf):
+    # Make app for paste app factory
+
+    app_config = make_config(global_conf, conf)
+    routes = make_routes()
+
+    app = Router(routes)
+
+    # CSRF Middleware
+    if asbool(app_config['csrf']):
+        app = CSRFMiddleware(app, app_config)
+
+    app = ConfigMiddleware(app, app_config)
+
+    # Session Middleware
+    app = SessionMiddleware(app, app_config)
+
+    # Your custom middleware goes here:
+    # app = SomeCoolMiddlewareOfMine(app, app_config)
+
+    # Establish the Registry for this application
+    app = make_registry_manager(app, app_config)
+
+    # Throw an exception to update request and forward to intended location.
+    app = make_recursive_middleware(app, app_config)
+
+    # Scans for REMOTE_USER and persists it across requests.  This middleware
+    # can be used for transient sessions as well.
+    app = make_auth_cookie(app, app_config,
+        secret="QWERTYUTREWQERTYIUYTREWQRTYUTREFDSGHJKFDAEWDFSGH")
+
+    # # Error Middleware
+    if asbool(app_config['debug']):
+        app = make_eval_exception(app, app_config)
+    else:
+        app = make_error_middleware(app, app_config)
+
+    if asbool(static_files):
+        # Serve static files
+        static_app = StaticURLParser(app_config['pyblox.paths']['static'])
+        app = Cascade([static_app, app])
+
+    app.config = app_config
+    config.push_process_config(app_config)
+
+    return app

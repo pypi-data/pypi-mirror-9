@@ -1,0 +1,291 @@
+/*
+    ${project} - Controllers
+*/
+
+String.prototype.capitalize = function() {
+    return this.charAt(0).toUpperCase() + this.slice(1);
+};
+
+app.controller('AppController', [
+    '$$scope',
+    '$$location',
+    '$$window',
+    'AppSession',
+    function ($$scope, $$location, $$window, AppSession) {
+        var INDEX_PATH = /^(\/|\/index[^\.]*.html)$$/;
+        $$scope.users = [];
+        $$scope.userCount = 0;
+        $$scope.breadcrumbs = [];
+
+        if (!$$location.path() || INDEX_PATH.test($$location.path())) {
+            $$location.path('/login').replace();
+        }
+
+        function initApp () {
+            AppSession.fetch()
+                .success(function (data) {
+                    re = new RegExp("/admin");
+                    if (re.test($$location.path()) && !data.is_authenticated) {
+                        $$window.location.href = data.url;
+                    }
+                })
+                .error(function(error) {
+                    // Safety
+                    $$window.location.href = data.url;
+                });
+
+            if ($$('#sidebar').length)
+                $$('#sidebar').sidebar();
+            var bc = $$location.path().split("/");
+            if (bc[bc.length-1] != 'dashboard') {
+                $$scope.breadcrumbs = Array({'url': bc[bc.length - 1], 'name': bc[bc.length - 1].capitalize()});
+            } else {
+                $$scope.breadcrumbs = [];
+            }
+        }
+
+        $$scope.setError = function (error) {
+            $$scope.error_message = error;
+        };
+
+        $$scope.isActive = function (path) {
+            re = new RegExp(path);
+            return re.test($$location.path());
+        };
+
+        $$scope.$$on('$$includeContentLoaded', function(event) {
+            console.log('AppController includes loaded...', event.targetScope);
+        });
+
+        $$scope.$$on('$$viewContentLoaded', function() {
+            initApp();
+            console.log('AppController views loaded...');
+        });
+    }
+]).controller('HomeController', [
+    '$$scope',
+    function ($$scope) {
+
+        $$scope.$$on('$$viewContentLoaded', function() {
+            console.log("Home Controller loaded...");
+        });
+
+    }
+]).controller('MarketingController', [
+    '$$scope',
+    function ($$scope) {
+
+        $$scope.$$on('$$includeContentLoaded', function() {
+            console.log("Marketing Controller Loaded.");
+        });
+
+    }
+]).controller('TestimonialController', [
+    '$$scope',
+    function ($$scope) {
+
+        $$scope.$$on('$$includeContentLoaded', function() {
+            console.log("Testimonial Controller Loaded.");
+        });
+
+    }
+]).controller('AboutController', [
+    '$$scope',
+    function ($$scope) {
+
+        $$scope.$$on('$$includeContentLoaded', function() {
+            $$('.carousel').carousel({interval: 5000});
+        });
+
+    }
+]).controller('ContactController', [
+    '$$scope',
+    '$$window',
+    'Contact',
+    function ($$scope, $$window, Contact) {
+        $$scope.sendContact = function (contact) {
+            Contact.send(contact)
+                .success(function (data) {
+                    $$window.location.href = data.url;
+                })
+                .error(function(data, status) {
+                    console.log("Server error. Sending to root page.");
+                    $$window.location.href = "/";
+                });
+        };
+
+        $$scope.$$on('$$viewContentLoaded', function() {
+            console.log("Controller loaded...");
+        });
+    }
+]);
+
+app.controller('LoginController', [
+    '$$scope',
+    '$$filter',
+    'User',
+    function ($$scope, $$filter, User) {
+        $$scope.error_message = null;
+
+        $$scope.logout = function () {
+              User.logout()
+                  .success(function(data) {
+                    window.location.href = data.url;
+                })
+        };
+
+        $$scope.login = function (user) {
+            User.login(user)
+                .success(function(data, status) {
+                    if (!data.is_error) {
+                        window.location.href = data.url;
+                    } else {
+                        $$scope.error_message = data.message;
+                    }
+                })
+                .error(function (error) {
+                    $$scope.error_message = error;
+                });
+        };
+
+        $$scope.$$on('$$viewContentLoaded', function() {
+            console.log("Login Controller loaded...");
+        });
+
+    }
+]).controller('DashboardController', [
+    '$$scope',
+    function ($$scope) {
+
+        $$scope.$$on('$$viewContentLoaded', function() {
+            console.log("Home Controller loaded...");
+        });
+
+    }
+]).controller('UserController', [
+    '$$rootScope',
+    '$$scope',
+    '$$filter',
+    'User',
+    'State',
+    'Group',
+    'notices',
+    '$$modal',
+    function ($$rootScope, $$scope, $$filter, User, State, Group, notices, $$modal) {
+        $$scope.userCount = 0;
+        $$scope.pageSize = 25;
+        $$scope.selectedPage = 1;
+
+        var userCreateModal, userEditModal = null;
+
+        function init() {
+            fetchUsers();
+            fetchGroups()
+        }
+
+        function fetchUsers() {
+            User.fetchAll()
+                .success(function(data, status) {
+                    $$scope.users = data;
+                    $$scope.status = status;
+                    $$scope.userCount = data.length;
+                })
+                .error(function (data, status) { // data is rarely useful and status code always undefined...
+                    $$scope.data = "Request failed";
+                    $$scope.status = status;
+                });
+        }
+
+        function fetchGroups() {
+            Group.fetchAll()
+                .success(function(data) {
+                    $$scope.groups = data;
+                })
+                .error(function (data) {
+                    $$scope.data = "Request failed";
+                    $$scope.status = status;
+                });
+        }
+
+        $$scope.states = State.fetchAll();
+
+        $$scope.getPageClass = function(page) {
+            return $$scope.selectedPage == page ? userListActiveClass : "";
+        };
+
+        $$scope.createUser = function (user) {
+            User.create(user)
+                .success(function (data) {
+                    notices.message(data.message, data.is_error);
+                    if (!data.is_error) {
+                        $$scope.users.push(user);
+                    }
+                })
+                .error(function(data, status) {
+                    notices.message("Failed to create user " + user.first_name + ' ' + user.last_name, true);
+                    $$scope.status = status;
+                });
+            userCreateModal.hide();
+        };
+
+        $$scope.updateUser = function (user) {
+            User.update(user)
+                .success(function (data, status) {
+                    if (!data.is_error) {
+                        for (var i = 0; i < $$scope.users.length; i++) {
+                            var aUser = $$scope.users[i];
+                            if (aUser.id === user.id) {
+                                $$scope.users.pop(i);
+                                break;
+                            }
+                        }
+                        $$scope.users.push(user);
+                        $$scope.status = status;
+                    }
+                    notices.message(data.message, data.is_error);
+                })
+                .error(function(data, status) {
+                    notices.message("Error updating user " + user.first_name + ' ' + user.last_name, true);
+                    $$scope.status = status;
+                });
+            if (userEditModal != null) {
+                userEditModal.hide();
+            }
+        };
+
+        $$scope.deleteUser = function (id) {
+            User.destroy(id)
+                .success(function () {
+                    for (var i = 0; i < $$scope.users.length; i++) {
+                        var user = $$scope.users[i];
+                        if (user.id === id) {
+                            $$scope.users.splice(i, 1);
+                            notices.message('Deleted user ' + ' ' + user.first_name + ' ' + user.last_name, false);
+                            break;
+                        }
+                    }
+                })
+                .error(function (data, status) {
+                    notices.message("Error deleting user.", true);
+                    $$scope.status = status;
+                });
+        };
+
+        $$scope.openCreateUser = function () {
+            userCreateModal = $$modal({scope: $$scope, template: '/views/admin/user-create.html',
+                title: 'Create User', show: true});
+
+        };
+
+        $$scope.selectUser = function (edit_user) {
+            $$scope.edit_user = edit_user;
+            userEditModal = $$modal({scope: $$scope, template: '/views/admin/user-edit.html',
+                title: 'Edit User', show: true});
+
+        };
+
+        $$scope.$$on('$$viewContentLoaded', function() {
+            init();
+        });
+    }
+]);
