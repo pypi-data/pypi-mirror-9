@@ -1,0 +1,6 @@
+CHANNEL_LOGGING = True
+CHANNEL_LOGGING_DIR = '/tmp/helga_channel_logs'
+CHANNEL_LOGGING_HIDE_CHANNELS = ['#foo']
+WEBHOOKS_CREDENTIALS = [('sduncan', 'sduncan')]
+ENABLED_WEBHOOKS = ['logger']
+COMMAND_ARGS_SHLEX = True
