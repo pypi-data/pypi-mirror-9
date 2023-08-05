@@ -1,0 +1,66 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+import logging
+import sys
+import os
+
+import baker
+from ejpiaj.parsers import yaml_parser, json_parser, xml_parser
+from ejpiaj.runner import console_runner
+
+PARSERS = {
+    'json': json_parser,
+    'yml': yaml_parser,
+    'xml': xml_parser,
+}
+
+
+@baker.command(
+    shortopts={
+        'debug': 'd',
+        'env': 'e',
+        'module': 'm',
+        'display_variables': 's',
+        'quiet': 'q',
+    },
+    params={
+        'env': 'initial variables',
+        'quiet': 'do not display any information',
+        'debug': 'run with debug mode',
+        'module': 'your module with custom extractors and assertions',
+        'display_variables': 'display extracted variables',
+    }
+)
+def test(filename, debug=False, module=None, display_variables=False,
+         quiet=False, env=None):
+    """
+    Run tests using yaml file
+    """
+    variables = env_line_to_dict(env) if env else {}
+    if module:
+        sys.path.append(os.getcwd())
+        __import__(module)
+
+    if debug:
+        logging.basicConfig(level=logging.DEBUG)
+
+    if filename:
+        # detect parser using filename extension, and use yml if not found
+        parser = PARSERS.get(filename.split('.')[-1], 'yml')
+        sys.exit(console_runner(
+            parser(filename), display_variables=display_variables,
+            quiet=quiet, variables=variables
+        ))
+
+def env_line_to_dict(line):
+    variables = {}
+    for var_line in line.split('&'):
+        split = var_line.split('=')
+        variables.update({split[0]:split[1]})
+
+    return variables
+
+
+if __name__ == '__main__':
+    baker.run()
