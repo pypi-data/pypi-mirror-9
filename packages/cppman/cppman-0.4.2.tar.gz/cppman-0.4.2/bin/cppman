@@ -1,0 +1,193 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+#
+# cppman.py
+#
+# Copyright (C) 2010 -  Wei-Ning Huang (AZ) <aitjcize@gmail.com>
+# All Rights reserved.
+#
+# This file is part of cppman.
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software Foundation,
+# Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+#
+
+import os
+import sys
+from optparse import OptionParser, make_option
+
+
+program = sys.argv[0]
+LANUCH_DIR = os.path.dirname(os.path.abspath(sys.path[0]))
+
+# If launched from source directory
+if program.startswith('./') or program.startswith('bin/'):
+    sys.path.insert(0, LANUCH_DIR)
+
+from cppman.main import Cppman
+from cppman.environ import config
+from cppman.util import update_mandb_path, update_man3_link
+
+program_name = sys.argv[0]
+program_version = '0.4.2'
+
+
+def version():
+    sys.stderr.write(
+        """%s Ver %s
+Copyright (C) 2010 Wei-Ning Huang
+License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>.
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.\n
+Written by Wei-Ning Huang (AZ) <aitjcize@gmail.com>."""
+        % (program_name, program_version))
+
+
+def main():
+    option_list = [
+        make_option('-s', '--source', action='store', dest='source',
+                    help="Select source, either 'cppreference.com' or "
+                         "'cplusplus.com'. Default is 'cplusplus.com'."),
+        make_option('-c', '--cache-all', action='store_true',
+                    dest='cache_all', default=False,
+                    help='cache all available man pages from cppreference.com '
+                         'and cplusplus.com o enable offline browsing'),
+        make_option('-C', '--clear-cache', action='store_true',
+                    dest='clear_cache', default=False,
+                    help='clear all cached files'),
+        make_option('-f', '--find-page', action='store', type='string',
+                    dest='keyword', default=None,
+                    help='find man page'),
+        make_option('-o', '--force-update', action='store_true',
+                    dest='force', default=False,
+                    help="force cppman to update existing cache when "
+                    "'--cache-all' or browsing man pages that were already "
+                    "cached"),
+        make_option('-m', '--use-mandb', action='store', dest='mandb',
+                    help="Accepts 'true' or 'false'. If true, cppman adds "
+                    "manpage path to mandb so that you can view C++ manpages "
+                    "with `man' command. The default value is 'false'."),
+        make_option('-p', '--pager', action='store', dest='pager',
+                    help="Select pager to use, accepts 'vim', 'less' or "
+                    "'system'. 'system' uses $PAGER environment as pager. "
+                    "The default value is 'system'."),
+        make_option('-r', '--rebuild-index', action='store_true',
+                    dest='rebuild_index', default=False,
+                    help='rebuild index database from cplusplus.com'),
+        make_option('-v', '--version', action='store_true', dest='version',
+                    default=False, help='show version information')
+    ]
+
+    parser = OptionParser(
+        usage='Usage: cppman [OPTION...] PAGE...', option_list=option_list)
+
+    options, args = parser.parse_args()
+
+    if options.version:
+        version()
+        sys.exit(0)
+
+    if options.cache_all:
+        cm = Cppman(options.force)
+        cm.cache_all()
+        sys.exit(0)
+
+    if options.clear_cache:
+        cm = Cppman()
+        cm.clear_cache()
+        sys.exit(0)
+
+    if options.keyword:
+        cm = Cppman()
+        cm.find(options.keyword)
+        sys.exit(0)
+
+    if options.source:
+        if options.source not in config.SOURCES:
+            raise Exception("invalid value `%s' for option `--source'" %
+                            options.source)
+        else:
+            config.Source = options.source
+            if config.UpdateManPath:
+                update_man3_link()
+            print "Source set to `%s'." % options.source
+            sys.exit(0)
+
+    if options.pager:
+        if options.pager not in config.PAGERS:
+            raise Exception("invalid value `%s' for option `--pager'" %
+                            options.pager)
+        else:
+            config.Pager = options.pager
+            print "Pager set to `%s'." % options.pager
+            sys.exit(0)
+
+    if options.mandb:
+        if options.mandb != 'true' and options.mandb != 'false':
+            raise Exception("invalid value `%s' for option `--use-mandb'" %
+                            options.mandb)
+        value = config.parse_bool(options.mandb)
+        if config.UpdateManPath ^ value:
+            config.UpdateManPath = value
+        if config.UpdateManPath:
+            update_mandb_path()
+            update_man3_link()
+        sys.exit(0)
+
+    if options.rebuild_index:
+        cm = Cppman()
+        cm.rebuild_index()
+        sys.exit(0)
+
+    if len(args) == 0:
+        print >> sys.stderr, 'What manual page do you want?'
+        sys.exit(1)
+
+    cm = Cppman(options.force)
+    for i in args:
+        if i != args[0]:
+            print '--CppMan-- next: %s(3) [ view (return) | skip (Ctrl-D) '\
+                  '| quit (Ctrl-C) ]' % i
+            # For some reason, if only one layer of try...except is used
+            # pressing CTRL-D CTRL-C, the second CTRL-C didn't catch by the
+            # try..except clause. As a workaround, I add another layer to catch
+            # the KeyboardInterrupt exception
+            # TODO: find out what happened
+            try:
+                try:
+                    raw_input()
+                except EOFError:
+                    continue
+                except KeyboardInterrupt:
+                    print '\n'
+                    break
+            except KeyboardInterrupt:
+                print '\n'
+                break
+        try:
+            pid = cm.man(i)
+        except RuntimeError, e:
+            print e
+            continue
+        else:
+            os.waitpid(pid, 0)
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (Exception, KeyboardInterrupt), e:
+        if type(e) == KeyboardInterrupt:
+            print '\nAborted.'
+        else:
+            print 'error:', e
