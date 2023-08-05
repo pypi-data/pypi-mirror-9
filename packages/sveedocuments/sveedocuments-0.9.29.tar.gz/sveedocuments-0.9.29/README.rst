@@ -1,0 +1,173 @@
+.. _Django: https://www.djangoproject.com/
+.. _Django internationalization system: https://docs.djangoproject.com/en/dev/topics/i18n/
+.. _South: http://south.readthedocs.org/en/latest/
+.. _rstview: http://pypi.python.org/pypi/rstview
+.. _autobreadcrumbs: http://pypi.python.org/pypi/autobreadcrumbs
+.. _docutils: http://docutils.sourceforge.net/
+.. _djangocodemirror: http://pypi.python.org/pypi/djangocodemirror
+.. _django-crispy-forms: https://github.com/maraujop/django-crispy-forms
+.. _django-assets: http://pypi.python.org/pypi/django-assets
+.. _crispy-forms-foundation: https://github.com/sveetch/crispy-forms-foundation
+.. _django-mptt: http://pypi.python.org/pypi/django-mptt
+.. _django-braces: https://github.com/brack3t/django-braces
+.. _ReStructuredText: http://docutils.sourceforge.net/rst.html
+.. _Pygments: http://pygments.org/
+.. _Foundation5: http://foundation.zurb.com/docs/
+.. _django-sendfile: https://github.com/johnsensible/django-sendfile
+
+Introduction
+============
+
+**Sveetchies-documents** is a Django application to manage text documents. It work almost like a Wiki.
+
+Features
+--------
+
+* Usage of the `ReStructuredText`_ docutils parser;
+* Templates builded with `Foundation5`_;
+* Rich editor `djangocodemirror`_;
+* Nice forms with `django-crispy-forms`_;
+* Usage of `autobreadcrumbs`_;
+* Optional usage of Assets bundles with `django-assets`_;
+* Usage of the Django cache system for Markup parser and renderer;
+* A management board ready to use in frontend;
+* Two kind of documents :
+
+  * Page : For full page documents with children pages in a sitemap tree;
+  * Insert : For documents to insert as fragment in your templates;
+
+* Simple collaborative way (History, authoring) for Pages;
+* Templatetags to use documents in your templates;
+* Internationalized (English and French for now);
+* Optional usage of `django-sendfile`_ for page's attachments when page are restricted to loggued users;
+
+Links
+-----
+
+* Download his `PyPi package <http://pypi.python.org/pypi/sveedocuments>`_;
+* Clone it on his `Github repository <https://github.com/sveetch/sveedocuments>`_;
+
+Requires
+--------
+
+* Django >= 1.5;
+* `docutils`_ >= 0.7;
+* `rstview`_ >= 0.2;
+* `autobreadcrumbs`_ >= 1.0;
+* `djangocodemirror`_ >= 0.9.4;
+* `django-mptt`_ >= 0.5.2;
+* `crispy-forms-foundation`_ >= 0.3.4;
+* `django-braces`_ >= 1.3.0;
+
+Optionnally :
+
+* `django-assets`_ to use Assets bundles instead of plain assets, you will have to load these bundles instead of raw asset files, perform this with overriding ``sveedocuments/assets_css.html`` and ``sveedocuments/assets_js.html`` in your project templates directory.
+* `South`_ to perform database migrations for next releases;
+
+Install
+=======
+
+Add it to your installed apps in your project settings : ::
+
+    INSTALLED_APPS = (
+        ...
+        'autobreadcrumbs',
+        'djangocodemirror',
+        'rstview',
+        'mptt',
+        'sveedocuments',
+        ...
+    )
+
+And add the `djangocodemirror`_ required settings : ::
+
+    DJANGOCODEMIRROR_USER_SETTINGS_COOKIE_NAME = "djangocodemirror_user_settings"
+    CODEMIRROR_SETTINGS = {
+        'sveetchies-documents-edit-page': {
+            'mode': 'rst',
+            'csrf': 'CSRFpass',
+            'preview_url': ('sveedocuments:preview',),
+            'quicksave_url': ('sveedocuments:page-quicksave',),
+            'quicksave_datas': 'DJANGOCODEMIRROR_OBJECT',
+            'lineWrapping': True,
+            'lineNumbers': True,
+            'search_enabled': True,
+            'settings_cookie': DJANGOCODEMIRROR_USER_SETTINGS_COOKIE_NAME,
+            'help_link': ('sveedocuments:help',),
+            'settings_url': ('sveedocuments:editor-settings', [], {}),
+        },
+        'sveetchies-documents-edit-insert': {
+            'mode': 'rst',
+            'csrf': 'CSRFpass',
+            'preview_url': ('sveedocuments:preview',),
+            'quicksave_url': ('sveedocuments:insert-quicksave',),
+            'quicksave_datas': 'DJANGOCODEMIRROR_OBJECT',
+            'lineWrapping': True,
+            'lineNumbers': True,
+            'search_enabled': True,
+            'settings_cookie': DJANGOCODEMIRROR_USER_SETTINGS_COOKIE_NAME,
+            'help_link': ('sveedocuments:help',),
+            'settings_url': ('sveedocuments:editor-settings', [], {}),
+        },
+    }
+    CODEMIRROR_SETTINGS['sveetchies-documents-add-page'] = CODEMIRROR_SETTINGS['sveetchies-documents-edit-page'].copy()
+    CODEMIRROR_SETTINGS['sveetchies-documents-add-page']['quicksave_url'] = None
+    CODEMIRROR_SETTINGS['sveetchies-documents-add-insert'] = CODEMIRROR_SETTINGS['sveetchies-documents-edit-insert'].copy()
+    CODEMIRROR_SETTINGS['sveetchies-documents-add-insert']['quicksave_url'] = None
+
+Also you can overrides app settings to change some behaviors, see ``sveedocuments.local_settings`` to see what you can override in your project settings like ``DOCUMENTS_PAGE_TEMPLATES`` to add new templates to use to build your pages or ``DOCUMENTS_PAGE_RESTRICTED`` to restrict pages viewing to be logged in.
+
+.. TODO::
+   Info about PROJECT_PATH required for attachments
+
+Optionnally if you plan to use `autobreadcrumbs`_,  register its *context processor* in settings :
+
+::
+
+    TEMPLATE_CONTEXT_PROCESSORS = (
+        ...
+        'autobreadcrumbs.context_processors.AutoBreadcrumbsContext',
+        ...
+    )
+
+
+Finally mount its urls into your main ``urls.py`` : ::
+
+    import autobreadcrumbs
+    autobreadcrumbs.autodiscover()
+    
+    urlpatterns = patterns('',
+        ...
+        (r'^documents/', include('sveedocuments.urls', namespace='sveedocuments')),
+        ...
+    )
+
+The first two lines are for the `autobreadcrumbs`_ *autodiscover* remove them if you don't plan to use it.
+
+Usage
+=====
+
+Permissions
+-----------
+
+sveedocuments make usage of Django permissions and groups.
+
+Actually you need to use the Django admin and be a staff user with the right permissions for managing permissions for your users.
+
+And so, you can add the needed permissions globally to all documents within each user accounts.
+
+* All users can see the sitemap and visible pages;
+* Users with ``sveedocuments.add_page`` permission can create new pages;
+* Users with ``sveedocuments.change_page`` permission can edit pages, add them new attachment item or delete them;
+* Users with ``sveedocuments.delete_page`` permission can create delete pages;
+
+Others Page's and Insert's model permissions have no roles on frontend.
+
+Signals
+-------
+
+sveedocuments use Django signals to send signals when a ``Page`` object or an ``Insert`` object is updated (when created or edited), you can listen to them to perform some tasks. These signals are :
+
+* ``sveedocuments.models.documents_page_update_signal`` for ``Page`` updates;
+* ``sveedocuments.models.documents_insert_update_signal`` for ``Insert`` updates;
+
