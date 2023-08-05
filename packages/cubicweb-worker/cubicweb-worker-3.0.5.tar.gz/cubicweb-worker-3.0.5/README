@@ -1,0 +1,74 @@
+Summary
+-------
+asynchronous workers in your instance
+
+
+How to use this cube
+--------------------
+
+Add the worker cube to the dependencies of your cube. In your schema,
+extend the cube's schema if necessary. Common extension often involve
+adding attributes and relations to the CWWorkerTask entity which will
+bear information pertaining to the task (data, relations to other
+entities in the database...).
+
+Then extend the CWWorker entity class. It is meant to have ``do_xxxx``
+methods, where ``xxxx`` matches the value of the operation attribute
+of CWWorkerTask entities. These methods are called with 2 arguments: a
+session and a task. You generally use the task to get additional
+parameters about what needs to be done. The method should return a
+Unicode string which will be used as a message in the transition
+information for the CWWorkerTask.
+
+Here is an example of a CWWorker method which will asynchronously
+delete an entity from the database, this is interesting in case the
+entity has many composite relations and its deletion will trigger
+lengthy chained deletions. The entity is at the end of an added
+CWWorkerTask relation called ``target``::
+
+    def do_delete_entity(self, session, task):
+        entity = task.target[0]
+        session.execute('DELETE Any X WHERE X eid %(eid)s', {'eid': entity.eid})
+        return _('Success')
+
+To trigger the deletion, all you need to do is to create a
+CWWorkerTask with the correct operation and target (which in this case
+may require overriding cubicweb.web.views.editforms.DeleteConfFormView
+and setting up a custom Controller)::
+
+ task = self._cw.create_entity('CWWorkerTask', 
+                               operation=u'delete_entity', 
+                               target=some_entity)
+
+
+
+Instance setup
+--------------
+
+You need to configure your instance to start the worker. This is done
+by setting ``long-transaction-worker`` to True in your instance
+configuration file (this is in the ``[WORKER]`` section). This will
+start a periodic task (you can also configure the period with
+``worker-polling-period``) which will look for pending tasks in the
+database. When a task is found, the worker will grab it and start
+working on it. The ``worker-max-load`` option sets the maximum number
+of tasks that can be run simultaneously by a worker. It defaults to 2
+and you may want to set it to 1, but setting higher values will
+degrade performances.
+
+You can setup your instance as usual and configure it with a worker,
+but the efficient way of doing things is to setup 2 instances (or
+more) sharing a common database. The first instance will have the
+``long-transaction-worker`` option set to False and will concentrate
+on web serving, and will create new ``CWWorkerTask``. The other
+instances can be repository only (i.e. ``cubicweb-ctl create -c
+repository -a somecube myworkerinstance``) and will have
+``long-transaction-worker`` set to True. That will ensure that the
+workers and the web serving processes are not fighting over Python's
+Global Interpreter Lock and provide maximum performance.
+
+Note about connections pool size: each task processed by a worker
+can use typically up to 3 connection from the pool. If you are running
+a worker in the same instance as the one which does web serving, you
+will probably need to set a larger ``connections-pool-size`` value
+than the default (4): 7 or 8 should be fine.
