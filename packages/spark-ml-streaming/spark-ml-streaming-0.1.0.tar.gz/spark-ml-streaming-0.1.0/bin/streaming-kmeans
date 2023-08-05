@@ -1,0 +1,65 @@
+#!/usr/bin/env python
+
+import time
+import subprocess
+import argparse
+
+from lightning import Lightning
+
+from mlstreaming import StreamingDemo
+from mlstreaming.util import findspark, findjar, baseargs
+
+def main():
+
+    # parse arguments
+    parser = argparse.ArgumentParser(description='Streaming KMeans demo.')
+    parser = baseargs(parser)
+    parser.add_argument('-nc', '--ncenters', type=int, default=3, required=False, 
+        help='Number of cluster centers')
+    parser.add_argument('-nd', '--ndims', type=int, default=2, required=False, 
+        help='Number of dimensions')
+    parser.add_argument('-rs', '--randomseed', type=int, default=None, required=False,
+        help='Random seed')
+    parser.add_argument('-sd', '--std', type=float, default=0.3, required=False,
+        help='Standard deviation of points')
+    parser.add_argument('-up', '--update', type=str, choices=('jump', 'drift', 'none'), default='drift', required=False,
+        help='Update behavior')
+    args = parser.parse_args()
+
+    # basic setup
+    sparkhome = findspark()
+    jar = findjar()
+    
+    # set up lightning
+    if args.lightning:
+        lgn = Lightning(args.lightning)
+        lgn.create_session('streaming-kmeans')
+        lgn.session.open()
+    else:
+        lgn = None
+
+    # setup the demo
+    s = StreamingDemo.make('kmeans', npoints=args.npoints, nbatches=args.nbatches)
+    s.setup('/Users/freemanj11/streamdemo/', overwrite=args.overwrite)
+    s.params(ncenters=args.ncenters, ndims=args.ndims, std=args.std, seed=args.randomseed, update=args.update)
+
+    # setup the spark job
+    sparkSubmit = sparkhome + "/bin/spark-submit"
+    sparkArgs = ["--class", "spark.mlstreaming.KMeans", jar]
+    demoArgs = [s.datain, s.dataout, str(args.batchtime), str(args.ncenters), str(args.ndims), str(args.halflife), str(args.timeunit)]
+    cmd = [sparkSubmit] + sparkArgs + demoArgs
+
+    try:
+        # start the spark job    
+        p = subprocess.Popen(cmd)
+        # wait for spark streaming to start up
+        time.sleep(4)
+        # start the demo
+        s.run(lgn)
+
+    finally:
+
+       p.kill()
+
+if __name__ == "__main__":
+    main()
