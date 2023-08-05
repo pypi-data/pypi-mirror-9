@@ -1,0 +1,111 @@
+#!/usr/bin/env python
+# This source file is part of Soundcloud-syncer.
+#
+# Soundcloud-syncer is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# Soundcloud-syncer is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License along with
+# Soundcloud-syncer. If not, see <http://www.gnu.org/licenses/gpl-3.0.html>.
+
+import os
+import re
+import sys
+import fnmatch
+import argparse
+import json
+
+from ssyncer.strack import strack, stag
+from ssyncer.sclient import sclient
+from ssyncer.serror import serror
+
+client = None
+
+def process_tag(track_id, filepath):
+    """ Retrieve track id on souncloud API and process tag on filepath"""
+    global client
+    if client is None:
+        client = sclient()
+
+    try:
+        track = strack(json.loads(client.get(client.TRACK_DATA % track_id).read().decode("utf-8")), client_id=client.client_id)
+    except serror as e:
+        print(e)
+        return False
+
+    print("Process tag for `%s` :id => %s" % (track.get("title"), track_id))
+    track.download_artwork(".")
+    tag = stag()
+    tag.load_id3(track)
+    tag.write_id3(filepath)
+
+def is_valid(filename):
+    """ Check if filename matches {id}-{permalink}.mp3 format """
+    if re.match("^[0-9]+-[0-9a-z\-]+\.mp3$", filename):
+        return True
+    return False
+
+def retrieve_id_from(filename):
+    """ Retrieve track ID from filename """
+    if is_valid(filename) == False:
+        print(serror("Invalid filename `%s` - Tagging skipped" % filename))
+        return False
+
+    return filename.split("-")[0]
+
+def main():
+    parser = argparse.ArgumentParser(description="Soundcloud Tagger")
+    parser.add_argument("target",
+                        type=str,
+                        help=""" File or directory where you want tag audio file.
+                        Filename format must be the same as generated from sc-syncer tool: {id}-{permalink}.mp3""")
+    parser.add_argument("-i",
+                        "--id",
+                        help="Specify track ID (only for a sinle file)",
+                        type=int)
+
+    args = parser.parse_args()
+
+    if os.path.isdir(args.target):
+        if (args.id):
+            print(serror("id option can't be used for an entire directory."))
+            return False
+
+        sys.stdout.write(
+            "Process tag for all mp3 files in %s? [Yn] " % args.target)
+        if (input().lower() != "y"):
+            print("Aborted!")
+            return False
+
+        errored = 0
+        success = 0
+        for root, dirnames, filenames in os.walk(args.target):
+            for filename in fnmatch.filter(filenames, '*.mp3'):
+                id = retrieve_id_from(filename)
+                if id == False:
+                    errored += 1
+                    continue
+
+                result = process_tag(filename.split("-")[0],
+                            os.path.join(root, filename))
+
+                if result == False:
+                    errored += 1
+                else:
+                    success += 1
+
+        print("Done. %s processed, %s in error." % (success, errored))
+
+    elif os.path.isfile(args.target) and args.target[-3:] == "mp3":
+        id = args.id if args.id else retrieve_id_from(os.path.basename(args.target))
+        if id:
+            process_tag(id, args.target)
+
+if __name__ == '__main__':
+    main()
