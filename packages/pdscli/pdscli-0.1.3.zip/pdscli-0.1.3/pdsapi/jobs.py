@@ -1,0 +1,50 @@
+# Copyright 2014 You Technology, Inc. or its affiliates. All Rights Reserved.
+# 
+# Licensed under the Apache License, Version 2.0 (the "License"). You
+# may not use this file except in compliance with the License. A copy of
+# the License is located at
+# 
+#     http://www.apache.org/licenses/LICENSE-2.0.html
+# 
+# or in the "license" file accompanying this file. This file is
+# distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF
+# ANY KIND, either express or implied. See the License for the specific
+# language governing permissions and limitations under the License.
+'''
+Created on Sep 18, 2014
+
+@author: sfitts
+'''
+from _io import UnsupportedOperation
+
+from pdsapi.resource import Resource
+
+
+class Jobs(Resource):
+    '''
+    classdocs
+    '''
+
+
+    RESOURCE_NAME = 'jobs'
+    
+
+    def __init__(self, session, locust_args = None):
+        super( Jobs, self ).__init__(session, 'jobs', locust_args)
+        
+    def extract_id(self, instance):
+        return instance['id']
+    
+    def extract_name(self, instance):
+        return 'N/A'
+    
+    def update(self, resource_id, instance):
+        raise UnsupportedOperation('Jobs cannot be updated.')
+            
+    @property
+    def default_sort(self):
+        return '+id'
+                
+    @property
+    def type(self):
+        return 'Answer Module Job'
