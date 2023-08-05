@@ -1,0 +1,40 @@
+#!/bin/bash
+
+set -eu
+set -o pipefail
+source $_LIB/die
+[ -n "$IMAGE_BLOCK_DEVICE" ] || die "Image block device not set"
+
+# Create 1 partition far enough up the disk to permit grub to be installed on
+# the MBR.
+sudo sfdisk $IMAGE_BLOCK_DEVICE << EOF
+1 - - *
+0 0;
+0 0;
+0 0;
+EOF
+
+sudo partprobe $IMAGE_BLOCK_DEVICE
+
+# To ensure no race conditions exist from calling partprobe
+sudo udevadm settle
+
+# If the partition isn't under /dev/loop*p1, create it with kpartx
+DM=
+if [ ! -e "${IMAGE_BLOCK_DEVICE}p1" ]; then
+    DM=${IMAGE_BLOCK_DEVICE/#\/dev/\/dev\/mapper}
+    # If running inside Docker, make our nodes manually, because udev will not be working.
+    if [ -f /.dockerenv ]; then
+        # kpartx cannot run in sync mode in docker.
+        sudo kpartx -av $TMP_IMAGE_PATH
+        sudo dmsetup --noudevsync mknodes
+    else
+        sudo kpartx -asv $TMP_IMAGE_PATH
+    fi
+fi
+
+if [ -n "$DM" ]; then
+    echo "IMAGE_BLOCK_DEVICE=${DM}p1"
+else
+    echo "IMAGE_BLOCK_DEVICE=${IMAGE_BLOCK_DEVICE}p1"
+fi
