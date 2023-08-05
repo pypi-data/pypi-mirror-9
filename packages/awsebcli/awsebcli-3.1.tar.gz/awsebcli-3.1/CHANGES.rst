@@ -1,0 +1,37 @@
+=========
+Changelog
+=========
+
+----------------
+3.1 (2015-02-17)
+----------------
+- Editor backup files (file.txt~) no longer included in application zip
+- Added commands for Saved Configurations (eb config --help)
+- Now receive alerts for an outdated cli and outdated environment platform.
+- Deploy now works in subdirectories.
+- Config now works in subdirectories.
+- Can now specify your own timeout period with "--timeout x"
+- Can now specify environment variables on environment create with "--envvars"
+- Can now get the latest platform version when you clone an environment. "eb clone"
+- Application Bundle uploads now show status
+- Large file uploads are now multi-threaded
+- Added warning on deploy if unstaged git changes exist
+- Can now swap environment CNAME's using "eb swap"
+- Exposed --vpc option on create
+- Added --no-verify-ssl option
+- Updated Botocore to 0.88.0
+
+-------------------
+3.0.11 (2015-02-09)
+-------------------
+- Fixed Zipping issue for Windows Containers
+
+-------------------
+3.0.10 (2014-11-24)
+-------------------
+- Fixed parsing error for uploads in a s3 bucket with auto-deletion policy
+- Fixed terminated environment issues
+- No longer uploads application if the application version already exists in s3
+- Default database username changed from admin to ebroot
+- Trim application version description if it is too long
+- Application version no longer includes git hash
