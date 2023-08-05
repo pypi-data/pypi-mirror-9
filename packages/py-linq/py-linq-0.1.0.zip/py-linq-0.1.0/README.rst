@@ -1,0 +1,5 @@
+=============
+py-enumerable
+=============
+
+Python package
