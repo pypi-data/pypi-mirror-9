@@ -1,0 +1,46 @@
+Picker - Django Assets Manager
+======
+Choose your javascript, css framework into your project.
+
+Installation
+------------
+1. Python package
+
+        pip install django-picker
+
+2. Add 'picker' to INSTALLED_APPS:
+
+        'picker',
+
+Setting
+------------
+1. Define PICKER_INSTALLED_APPS in settings.py
+
+        PICKER_INSTALLED_APPS = (
+            'jquery',
+        )
+
+Use in templates
+------------
+1. Define following tag in templates
+
+        {% load pickertags %}
+2. Define following tag inside body in templates
+
+        {% load pickertags %}
+        <html>
+            <body>
+                {% load_js %}
+            </body>
+        </html>
+        
+
+Usable list
+------------
+- jquery
+- bootstrap
+- bootstrap-theme
+- bootstrap-cosmo
+- less
+- ember
+- angularjs
