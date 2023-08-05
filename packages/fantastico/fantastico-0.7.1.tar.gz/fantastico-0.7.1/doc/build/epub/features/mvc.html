@@ -1,0 +1,703 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>Model View Controller</title>
+    
+    <link rel="stylesheet" href="../_static/epub.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/pygments.css" type="text/css" /> 
+  </head>
+  <body>
+
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="cors.html" title="CORS"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="routing_engine.html" title="Routing engine"
+             accesskey="P">previous</a> |</li>
+        <li><a href="../index.html">fantastico 0.7.0-b141 documentation</a> &raquo;</li>
+          <li><a href="features.html" accesskey="U">Fantastico features</a> &raquo;</li> 
+      </ul>
+    </div>
+
+    <div class="document">
+      <div class="documentwrapper">
+          <div class="body">
+            
+  <div class="section" id="model-view-controller">
+<h1>Model View Controller</h1>
+<p><strong>Fantastico</strong> framework provides quite a powerful model - view - controller implementation. Here you can find details about
+design decisions and how to benefit from it.</p>
+<div class="section" id="classic-approach">
+<h2>Classic approach</h2>
+<p>Usually when you want to work with models as understood by MVC pattern you have in many cases boiler plate code:</p>
+<ol class="arabic simple">
+<li>Write your model class (or entity)</li>
+<li>Write a repository that provides various methods for this model class.</li>
+<li>Write a facade that works with the repository.</li>
+<li>Write a web service / page that relies on the facade.</li>
+<li>Write one or multiple views.</li>
+</ol>
+<p>As this is usually a good in theory, in practice you will see that many methods from facade are converting a data transfer object
+to an entity and pass it down to repository.</p>
+</div>
+<div class="section" id="fantastico-approach">
+<h2>Fantastico approach</h2>
+<p><strong>Fantastico</strong> framework provides an alternative to this classic approach (you can still work in the old way if you really really
+want).</p>
+<dl class="class">
+<dt id="fantastico.mvc.controller_decorators.Controller">
+<em class="property">class </em><tt class="descclassname">fantastico.mvc.controller_decorators.</tt><tt class="descname">Controller</tt><big>(</big><em>url</em>, <em>method='GET'</em>, <em>models=None</em>, <em>**kwargs</em><big>)</big><a class="reference internal" href="../_modules/fantastico/mvc/controller_decorators.html#Controller"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This class provides a decorator for magically registering methods as route handlers. This is an extremely important
+piece of Fantastico framework because it simplifies the way you as developer can define mapping between a method that
+must be executed when an http request to an url is made:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="nd">@ControllerProvider</span><span class="p">()</span>
+<span class="k">class</span> <span class="nc">BlogsController</span><span class="p">(</span><span class="n">BaseController</span><span class="p">):</span>
+    <span class="nd">@Controller</span><span class="p">(</span><span class="n">url</span><span class="o">=</span><span class="s">&quot;/blogs/&quot;</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s">&quot;GET&quot;</span><span class="p">,</span>
+                <span class="n">models</span><span class="o">=</span><span class="p">{</span><span class="s">&quot;Blog&quot;</span><span class="p">:</span> <span class="s">&quot;fantastico.plugins.blog.models.blog.Blog&quot;</span><span class="p">])</span>
+    <span class="k">def</span> <span class="nf">list_blogs</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">):</span>
+        <span class="n">Blog</span> <span class="o">=</span> <span class="n">request</span><span class="o">.</span><span class="n">models</span><span class="o">.</span><span class="n">Blog</span>
+
+        <span class="n">blogs</span> <span class="o">=</span> <span class="n">Blog</span><span class="o">.</span><span class="n">get_records_paged</span><span class="p">(</span><span class="n">start_record</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">end_record</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span>
+                               <span class="n">sort_expr</span><span class="o">=</span><span class="p">[</span><span class="n">ModelSort</span><span class="p">(</span><span class="n">Blog</span><span class="o">.</span><span class="n">model_cls</span><span class="o">.</span><span class="n">create_date</span><span class="p">,</span> <span class="n">ModelSort</span><span class="o">.</span><span class="n">ASC</span><span class="p">,</span>
+                                          <span class="n">ModelSort</span><span class="p">(</span><span class="n">Blog</span><span class="o">.</span><span class="n">model_cls</span><span class="o">.</span><span class="n">title</span><span class="p">,</span> <span class="n">ModelSort</span><span class="o">.</span><span class="n">DESC</span><span class="p">)],</span>
+                               <span class="n">filter_expr</span><span class="o">=</span><span class="n">ModelFilterAnd</span><span class="p">(</span>
+                                               <span class="n">ModelFilter</span><span class="p">(</span><span class="n">Blog</span><span class="o">.</span><span class="n">model_cls</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">ModelFilter</span><span class="o">.</span><span class="n">GT</span><span class="p">),</span>
+                                               <span class="n">ModelFilter</span><span class="p">(</span><span class="n">Blog</span><span class="o">.</span><span class="n">model_cls</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="n">ModelFilter</span><span class="o">.</span><span class="n">LT</span><span class="p">))))</span>
+
+        <span class="c"># convert blogs to desired format. E.g: json.</span>
+
+        <span class="k">return</span> <span class="n">Response</span><span class="p">(</span><span class="n">blogs</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The above code assume the following:</p>
+<ol class="arabic simple">
+<li>As developer you created a model called blog (this is already mapped to some sort of storage).</li>
+<li>Fantastico framework generate the facade automatically (and you never have to know anything about underlining repository).</li>
+<li>Fantastico framework takes care of data conversion.</li>
+<li>As developer you create the method that knows how to handle <strong>/blog/</strong> url.</li>
+<li>Write your view.</li>
+</ol>
+<p>You can also map multiple routes for the same controller:</p>
+<p>Below you can find the design for MVC provided by <strong>Fantastico</strong> framework:</p>
+<img alt="../_images/mvc.png" src="../_images/mvc.png" />
+<dl class="attribute">
+<dt id="fantastico.mvc.controller_decorators.Controller.fn_handler">
+<tt class="descname">fn_handler</tt><a class="reference internal" href="../_modules/fantastico/mvc/controller_decorators.html#Controller.fn_handler"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This property retrieves the method which is executed by this controller.</p>
+</dd></dl>
+
+<dl class="classmethod">
+<dt id="fantastico.mvc.controller_decorators.Controller.get_registered_routes">
+<em class="property">classmethod </em><tt class="descname">get_registered_routes</tt><big>(</big><big>)</big><a class="reference internal" href="../_modules/fantastico/mvc/controller_decorators.html#Controller.get_registered_routes"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This class methods retrieve all registered routes through Controller decorator.</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="fantastico.mvc.controller_decorators.Controller.method">
+<tt class="descname">method</tt><a class="reference internal" href="../_modules/fantastico/mvc/controller_decorators.html#Controller.method"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This property retrieves the method(s) for which this controller can be invoked. Most of the time only one value is
+retrieved.</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="fantastico.mvc.controller_decorators.Controller.models">
+<tt class="descname">models</tt><a class="reference internal" href="../_modules/fantastico/mvc/controller_decorators.html#Controller.models"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This property retrieves all the models required by this controller in order to work correctly.</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="fantastico.mvc.controller_decorators.Controller.url">
+<tt class="descname">url</tt><a class="reference internal" href="../_modules/fantastico/mvc/controller_decorators.html#Controller.url"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This property retrieves the url used when registering this controller.</p>
+</dd></dl>
+
+</dd></dl>
+
+<p>If you want to find more details and use cases for controller read <a class="reference internal" href="#core-controller-section"><em>Controller</em></a> section.</p>
+</div>
+<div class="section" id="model">
+<h2>Model</h2>
+<p>A model is a very simple object that inherits <tt class="xref py py-class docutils literal"><span class="pre">fantastico.mvc.models.BaseModel</span></tt>.</p>
+<p>In order for models to work correctly and to be injected correctly into controller you must make sure you have
+a valid database configuration in your settings file. By default, <a class="reference internal" href="../get_started/settings.html#fantastico.settings.BasicSettings" title="fantastico.settings.BasicSettings"><tt class="xref py py-class docutils literal"><span class="pre">fantastico.settings.BasicSettings</span></tt></a> provides a usable
+database configuration.</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="c"># fantastico.settings.BasicSettings</span>
+<span class="nd">@property</span>
+<span class="k">def</span> <span class="nf">database_config</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">return</span> <span class="p">{</span><span class="s">&quot;drivername&quot;</span><span class="p">:</span> <span class="s">&quot;mysql+mysqldb&quot;</span><span class="p">,</span>
+            <span class="s">&quot;username&quot;</span><span class="p">:</span> <span class="s">&quot;fantastico&quot;</span><span class="p">,</span>
+            <span class="s">&quot;password&quot;</span><span class="p">:</span> <span class="s">&quot;12345&quot;</span><span class="p">,</span>
+            <span class="s">&quot;host&quot;</span><span class="p">:</span> <span class="s">&quot;localhost&quot;</span><span class="p">,</span>
+            <span class="s">&quot;port&quot;</span><span class="p">:</span> <span class="mi">3306</span><span class="p">,</span>
+            <span class="s">&quot;database&quot;</span><span class="p">:</span> <span class="s">&quot;fantastico&quot;</span><span class="p">,</span>
+            <span class="s">&quot;show_sql&quot;</span><span class="p">:</span> <span class="bp">True</span><span class="p">}</span>
+</pre></div>
+</div>
+<p>By default, each time a new build is generated for fantastico each environment is validated to ensure connectivity to configured
+database works.</p>
+<p>There are multiple ways in how a model is used but the easiest way is to use an autogenerated model facade:</p>
+<dl class="class">
+<dt id="fantastico.mvc.model_facade.ModelFacade">
+<em class="property">class </em><tt class="descclassname">fantastico.mvc.model_facade.</tt><tt class="descname">ModelFacade</tt><big>(</big><em>model_cls</em>, <em>session</em><big>)</big><a class="reference internal" href="../_modules/fantastico/mvc/model_facade.html#ModelFacade"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This class provides a generic model facade factory. In order to work <strong>Fantastico</strong> base model it is recommended
+to use autogenerated facade objects. A facade object is binded to a given model and given database session.</p>
+<dl class="method">
+<dt id="fantastico.mvc.model_facade.ModelFacade.count_records">
+<tt class="descname">count_records</tt><big>(</big><em>filter_expr=None</em><big>)</big><a class="reference internal" href="../_modules/fantastico/mvc/model_facade.html#ModelFacade.count_records"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This method is used for counting the number of records from underlining facade. In addition it applies the
+filter expressions specified (if any).</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="n">records</span> <span class="o">=</span> <span class="n">facade</span><span class="o">.</span><span class="n">count_records</span><span class="p">(</span>
+                           <span class="n">filter_expr</span><span class="o">=</span><span class="n">ModelFilterAnd</span><span class="p">(</span>
+                                           <span class="n">ModelFilter</span><span class="p">(</span><span class="n">Blog</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">ModelFilter</span><span class="o">.</span><span class="n">GT</span><span class="p">),</span>
+                                           <span class="n">ModelFilter</span><span class="p">(</span><span class="n">Blog</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="n">ModelFilter</span><span class="o">.</span><span class="n">LT</span><span class="p">)))</span>
+</pre></div>
+</div>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>filter_expr</strong> (<em>list</em>) &#8211; A list of <a class="reference internal" href="#fantastico.mvc.models.model_filter.ModelFilterAbstract" title="fantastico.mvc.models.model_filter.ModelFilterAbstract"><tt class="xref py py-class docutils literal"><span class="pre">fantastico.mvc.models.model_filter.ModelFilterAbstract</span></tt></a> which are applied in order.</td>
+</tr>
+<tr class="field-even field"><th class="field-name" colspan="2">Raises <a class="reference internal" href="exceptions.html#fantastico.exceptions.FantasticoDbError" title="fantastico.exceptions.FantasticoDbError">fantastico.exceptions.FantasticoDbError</a>:</th></tr>
+<tr class="field-even field"><td>&nbsp;</td><td class="field-body">This exception is raised whenever an exception occurs in retrieving
+desired dataset. The underlining session used is automatically rollbacked in order to guarantee data integrity.</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="fantastico.mvc.model_facade.ModelFacade.create">
+<tt class="descname">create</tt><big>(</big><em>model</em><big>)</big><a class="reference internal" href="../_modules/fantastico/mvc/model_facade.html#ModelFacade.create"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This method add the given model in the database.</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="k">class</span> <span class="nc">PersonModel</span><span class="p">(</span><span class="n">BASEMODEL</span><span class="p">):</span>
+    <span class="n">__tablename__</span> <span class="o">=</span> <span class="s">&quot;persons&quot;</span>
+
+    <span class="nb">id</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="s">&quot;id&quot;</span><span class="p">,</span> <span class="n">Integer</span><span class="p">,</span> <span class="n">autoincrement</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">primary_key</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+    <span class="n">first_name</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="s">&quot;first_name&quot;</span><span class="p">,</span> <span class="n">String</span><span class="p">(</span><span class="mi">50</span><span class="p">))</span>
+    <span class="n">last_name</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="s">&quot;last_name&quot;</span><span class="p">,</span> <span class="n">String</span><span class="p">(</span><span class="mi">50</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">first_name</span><span class="p">,</span> <span class="n">last_name</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">first_name</span> <span class="o">=</span> <span class="n">first_name</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">last_name</span> <span class="o">=</span> <span class="n">last_name</span>
+
+<span class="n">facade</span> <span class="o">=</span> <span class="n">ModelFacade</span><span class="p">(</span><span class="n">PersonModel</span><span class="p">,</span> <span class="n">fantastico</span><span class="o">.</span><span class="n">mvc</span><span class="o">.</span><span class="n">SESSION</span><span class="p">)</span>
+
+<span class="n">model</span> <span class="o">=</span> <span class="n">facade</span><span class="o">.</span><span class="n">new_model</span><span class="p">(</span><span class="s">&quot;John&quot;</span><span class="p">,</span> <span class="n">last_name</span><span class="o">=</span><span class="s">&quot;Doe&quot;</span><span class="p">)</span>
+<span class="n">facade</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+</pre></div>
+</div>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Returns:</th><td class="field-body">The newly generated primary key or the specified primary key (it might be a scalar value or a tuple).</td>
+</tr>
+<tr class="field-even field"><th class="field-name" colspan="2">Raises <a class="reference internal" href="exceptions.html#fantastico.exceptions.FantasticoDbError" title="fantastico.exceptions.FantasticoDbError">fantastico.exceptions.FantasticoDbError</a>:</th></tr>
+<tr class="field-even field"><td>&nbsp;</td><td class="field-body">Raised when an unhandled exception occurs. By default, session
+is rollback automatically so that other consumers can still work as expected.</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="fantastico.mvc.model_facade.ModelFacade.delete">
+<tt class="descname">delete</tt><big>(</big><em>model</em><big>)</big><a class="reference internal" href="../_modules/fantastico/mvc/model_facade.html#ModelFacade.delete"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This method deletes a given model from database. Below you can find a simple example of how to use this:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="k">class</span> <span class="nc">PersonModel</span><span class="p">(</span><span class="n">BASEMODEL</span><span class="p">):</span>
+    <span class="n">__tablename__</span> <span class="o">=</span> <span class="s">&quot;persons&quot;</span>
+
+    <span class="nb">id</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="s">&quot;id&quot;</span><span class="p">,</span> <span class="n">Integer</span><span class="p">,</span> <span class="n">autoincrement</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">primary_key</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+    <span class="n">first_name</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="s">&quot;first_name&quot;</span><span class="p">,</span> <span class="n">String</span><span class="p">(</span><span class="mi">50</span><span class="p">))</span>
+    <span class="n">last_name</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="s">&quot;last_name&quot;</span><span class="p">,</span> <span class="n">String</span><span class="p">(</span><span class="mi">50</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">first_name</span><span class="p">,</span> <span class="n">last_name</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">first_name</span> <span class="o">=</span> <span class="n">first_name</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">last_name</span> <span class="o">=</span> <span class="n">last_name</span>
+
+<span class="n">facade</span> <span class="o">=</span> <span class="n">ModelFacade</span><span class="p">(</span><span class="n">PersonModel</span><span class="p">,</span> <span class="n">fantastico</span><span class="o">.</span><span class="n">mvc</span><span class="o">.</span><span class="n">SESSION</span><span class="p">)</span>
+<span class="n">model</span> <span class="o">=</span> <span class="n">facade</span><span class="o">.</span><span class="n">find_by_pk</span><span class="p">({</span><span class="n">PersonModel</span><span class="o">.</span><span class="n">id</span><span class="p">:</span> <span class="mi">1</span><span class="p">})</span>
+<span class="n">facade</span><span class="o">.</span><span class="n">delete</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+</pre></div>
+</div>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name" colspan="2">Raises <a class="reference internal" href="exceptions.html#fantastico.exceptions.FantasticoDbError" title="fantastico.exceptions.FantasticoDbError">fantastico.exceptions.FantasticoDbError</a>:</th></tr>
+<tr class="field-odd field"><td>&nbsp;</td><td class="field-body">Raised when an unhandled exception occurs. By default, session
+is rollback automatically so that other consumers can still work as expected.</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="fantastico.mvc.model_facade.ModelFacade.find_by_pk">
+<tt class="descname">find_by_pk</tt><big>(</big><em>pk_values</em><big>)</big><a class="reference internal" href="../_modules/fantastico/mvc/model_facade.html#ModelFacade.find_by_pk"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This method returns the entity which matches the given primary key values.</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="k">class</span> <span class="nc">PersonModel</span><span class="p">(</span><span class="n">BASEMODEL</span><span class="p">):</span>
+    <span class="n">__tablename__</span> <span class="o">=</span> <span class="s">&quot;persons&quot;</span>
+
+    <span class="nb">id</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="s">&quot;id&quot;</span><span class="p">,</span> <span class="n">Integer</span><span class="p">,</span> <span class="n">autoincrement</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">primary_key</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+    <span class="n">first_name</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="s">&quot;first_name&quot;</span><span class="p">,</span> <span class="n">String</span><span class="p">(</span><span class="mi">50</span><span class="p">))</span>
+    <span class="n">last_name</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="s">&quot;last_name&quot;</span><span class="p">,</span> <span class="n">String</span><span class="p">(</span><span class="mi">50</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">first_name</span><span class="p">,</span> <span class="n">last_name</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">first_name</span> <span class="o">=</span> <span class="n">first_name</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">last_name</span> <span class="o">=</span> <span class="n">last_name</span>
+
+<span class="n">facade</span> <span class="o">=</span> <span class="n">ModelFacade</span><span class="p">(</span><span class="n">PersonModel</span><span class="p">,</span> <span class="n">fantastico</span><span class="o">.</span><span class="n">mvc</span><span class="o">.</span><span class="n">SESSION</span><span class="p">)</span>
+<span class="n">model</span> <span class="o">=</span> <span class="n">facade</span><span class="o">.</span><span class="n">find_by_pk</span><span class="p">({</span><span class="n">PersonModel</span><span class="o">.</span><span class="n">id</span><span class="p">:</span> <span class="mi">1</span><span class="p">})</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="method">
+<dt id="fantastico.mvc.model_facade.ModelFacade.get_records_paged">
+<tt class="descname">get_records_paged</tt><big>(</big><em>start_record</em>, <em>end_record</em>, <em>filter_expr=None</em>, <em>sort_expr=None</em><big>)</big><a class="reference internal" href="../_modules/fantastico/mvc/model_facade.html#ModelFacade.get_records_paged"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This method retrieves all records matching the given filters sorted by the given expression.</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="n">records</span> <span class="o">=</span> <span class="n">facade</span><span class="o">.</span><span class="n">get_records_paged</span><span class="p">(</span><span class="n">start_record</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">end_record</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span>
+                           <span class="n">sort_expr</span><span class="o">=</span><span class="p">[</span><span class="n">ModelSort</span><span class="p">(</span><span class="n">Blog</span><span class="o">.</span><span class="n">create_date</span><span class="p">,</span> <span class="n">ModelSort</span><span class="o">.</span><span class="n">ASC</span><span class="p">,</span>
+                                      <span class="n">ModelSort</span><span class="p">(</span><span class="n">Blog</span><span class="o">.</span><span class="n">title</span><span class="p">,</span> <span class="n">ModelSort</span><span class="o">.</span><span class="n">DESC</span><span class="p">)],</span>
+                           <span class="n">filter_expr</span><span class="o">=</span><span class="n">ModelFilterAnd</span><span class="p">(</span>
+                                           <span class="n">ModelFilter</span><span class="p">(</span><span class="n">Blog</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">ModelFilter</span><span class="o">.</span><span class="n">GT</span><span class="p">),</span>
+                                           <span class="n">ModelFilter</span><span class="p">(</span><span class="n">Blog</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="n">ModelFilter</span><span class="o">.</span><span class="n">LT</span><span class="p">))))</span>
+</pre></div>
+</div>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
+<li><strong>start_record</strong> (<em>int</em>) &#8211; A zero indexed integer that specifies the first record number.</li>
+<li><strong>end_record</strong> (<em>int</em>) &#8211; A zero indexed integer that specifies the last record number.</li>
+<li><strong>filter_expr</strong> (<em>list</em>) &#8211; A list of <a class="reference internal" href="#fantastico.mvc.models.model_filter.ModelFilterAbstract" title="fantastico.mvc.models.model_filter.ModelFilterAbstract"><tt class="xref py py-class docutils literal"><span class="pre">fantastico.mvc.models.model_filter.ModelFilterAbstract</span></tt></a> which are applied in order.</li>
+<li><strong>sort_expr</strong> (<em>list</em>) &#8211; A list of <a class="reference internal" href="#fantastico.mvc.models.model_sort.ModelSort" title="fantastico.mvc.models.model_sort.ModelSort"><tt class="xref py py-class docutils literal"><span class="pre">fantastico.mvc.models.model_sort.ModelSort</span></tt></a> which are applied in order.</li>
+</ul>
+</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first">A list of matching records strongly converted to underlining model.</p>
+</td>
+</tr>
+<tr class="field-odd field"><th class="field-name" colspan="2">Raises <a class="reference internal" href="exceptions.html#fantastico.exceptions.FantasticoDbError" title="fantastico.exceptions.FantasticoDbError">fantastico.exceptions.FantasticoDbError</a>:</th></tr>
+<tr class="field-odd field"><td>&nbsp;</td><td class="field-body"><p class="first last">This exception is raised whenever an exception occurs in retrieving
+desired dataset. The underlining session used is automatically rollbacked in order to guarantee data integrity.</p>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="fantastico.mvc.model_facade.ModelFacade.model_cls">
+<tt class="descname">model_cls</tt><a class="reference internal" href="../_modules/fantastico/mvc/model_facade.html#ModelFacade.model_cls"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This property holds the model based on which this facade is built.</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="fantastico.mvc.model_facade.ModelFacade.model_pk_cols">
+<tt class="descname">model_pk_cols</tt><a class="reference internal" href="../_modules/fantastico/mvc/model_facade.html#ModelFacade.model_pk_cols"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This property returns the model primary key columns as defined in the model cls.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="fantastico.mvc.model_facade.ModelFacade.new_model">
+<tt class="descname">new_model</tt><big>(</big><em>*args</em>, <em>**kwargs</em><big>)</big><a class="reference internal" href="../_modules/fantastico/mvc/model_facade.html#ModelFacade.new_model"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This method is used to obtain an instance of the underlining model. Below you can find a very simple example:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="k">class</span> <span class="nc">PersonModel</span><span class="p">(</span><span class="n">BASEMODEL</span><span class="p">):</span>
+    <span class="n">__tablename__</span> <span class="o">=</span> <span class="s">&quot;persons&quot;</span>
+
+    <span class="nb">id</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="s">&quot;id&quot;</span><span class="p">,</span> <span class="n">Integer</span><span class="p">,</span> <span class="n">autoincrement</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">primary_key</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+    <span class="n">first_name</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="s">&quot;first_name&quot;</span><span class="p">,</span> <span class="n">String</span><span class="p">(</span><span class="mi">50</span><span class="p">))</span>
+    <span class="n">last_name</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="s">&quot;last_name&quot;</span><span class="p">,</span> <span class="n">String</span><span class="p">(</span><span class="mi">50</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">first_name</span><span class="p">,</span> <span class="n">last_name</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">first_name</span> <span class="o">=</span> <span class="n">first_name</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">last_name</span> <span class="o">=</span> <span class="n">last_name</span>
+
+<span class="n">facade</span> <span class="o">=</span> <span class="n">ModelFacade</span><span class="p">(</span><span class="n">PersonModel</span><span class="p">,</span> <span class="n">fantastico</span><span class="o">.</span><span class="n">mvc</span><span class="o">.</span><span class="n">SESSION</span><span class="p">)</span>
+
+<span class="n">model</span> <span class="o">=</span> <span class="n">facade</span><span class="o">.</span><span class="n">new_model</span><span class="p">(</span><span class="s">&quot;John&quot;</span><span class="p">,</span> <span class="n">last_name</span><span class="o">=</span><span class="s">&quot;Doe&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
+<li><strong>args</strong> (<em>list</em>) &#8211; A list of positional arguments we want to pass to underlining model constructor.</li>
+<li><strong>kwargs</strong> (<em>dict</em>) &#8211; A dictionary containing named parameters we want to pass to underlining model constructor.</li>
+</ul>
+</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first last">A BASEMODEL instance if everything is ok.</p>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="fantastico.mvc.model_facade.ModelFacade.session">
+<tt class="descname">session</tt><a class="reference internal" href="../_modules/fantastico/mvc/model_facade.html#ModelFacade.session"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This property returns the current sqlalchemy session used to access database.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="fantastico.mvc.model_facade.ModelFacade.update">
+<tt class="descname">update</tt><big>(</big><em>model</em><big>)</big><a class="reference internal" href="../_modules/fantastico/mvc/model_facade.html#ModelFacade.update"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This method updates an existing model from the database based on primary key.</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="k">class</span> <span class="nc">PersonModel</span><span class="p">(</span><span class="n">BASEMODEL</span><span class="p">):</span>
+    <span class="n">__tablename__</span> <span class="o">=</span> <span class="s">&quot;persons&quot;</span>
+
+    <span class="nb">id</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="s">&quot;id&quot;</span><span class="p">,</span> <span class="n">Integer</span><span class="p">,</span> <span class="n">autoincrement</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">primary_key</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+    <span class="n">first_name</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="s">&quot;first_name&quot;</span><span class="p">,</span> <span class="n">String</span><span class="p">(</span><span class="mi">50</span><span class="p">))</span>
+    <span class="n">last_name</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="s">&quot;last_name&quot;</span><span class="p">,</span> <span class="n">String</span><span class="p">(</span><span class="mi">50</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">first_name</span><span class="p">,</span> <span class="n">last_name</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">first_name</span> <span class="o">=</span> <span class="n">first_name</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">last_name</span> <span class="o">=</span> <span class="n">last_name</span>
+
+<span class="n">facade</span> <span class="o">=</span> <span class="n">ModelFacade</span><span class="p">(</span><span class="n">PersonModel</span><span class="p">,</span> <span class="n">fantastico</span><span class="o">.</span><span class="n">mvc</span><span class="o">.</span><span class="n">SESSION</span><span class="p">)</span>
+
+<span class="n">model</span> <span class="o">=</span> <span class="n">facade</span><span class="o">.</span><span class="n">new_model</span><span class="p">(</span><span class="s">&quot;John&quot;</span><span class="p">,</span> <span class="n">last_name</span><span class="o">=</span><span class="s">&quot;Doe&quot;</span><span class="p">)</span>
+<span class="n">model</span><span class="o">.</span><span class="n">id</span> <span class="o">=</span> <span class="mi">5</span>
+<span class="n">facade</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+</pre></div>
+</div>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Raises:</th><td class="field-body"><ul class="first last simple">
+<li><a class="reference internal" href="exceptions.html#fantastico.exceptions.FantasticoDbNotFoundError" title="fantastico.exceptions.FantasticoDbNotFoundError"><strong>fantastico.exceptions.FantasticoDbNotFoundError</strong></a> &#8211; Raised when the given model does not exist in database.
+By default, session is rollback automatically so that other consumers can still work as expected.</li>
+<li><a class="reference internal" href="exceptions.html#fantastico.exceptions.FantasticoDbError" title="fantastico.exceptions.FantasticoDbError"><strong>fantastico.exceptions.FantasticoDbError</strong></a> &#8211; Raised when an unhandled exception occurs. By default, session
+is rollback automatically so that other consumers can still work as expected.</li>
+</ul>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+</dd></dl>
+
+<p>If you are using the <strong>Fantastico MVC</strong> support you don&#8217;t need to manually create a model facade instance because
+<a class="reference internal" href="#fantastico.mvc.controller_decorators.Controller" title="fantastico.mvc.controller_decorators.Controller"><tt class="xref py py-class docutils literal"><span class="pre">fantastico.mvc.controller_decorators.Controller</span></tt></a> injects defined models automatically.</p>
+</div>
+<div class="section" id="view">
+<h2>View</h2>
+<p>A view can be a simple html plain file or html + jinja2 enriched support. You can read more about <strong>Jinja2</strong>
+<a class="reference external" href="http://jinja.pocoo.org/docs/">here</a><span class="link-target"> [http://jinja.pocoo.org/docs/]</span>. Usually, if you need some logical block statements in your view (if, for, ...)
+it is easier to use jinja 2 template engine. The good news is that you can easily embed jinja 2 markup in your views
+and it will be rendered automatically.</p>
+</div>
+<div class="section" id="controller">
+<span id="core-controller-section"></span><h2>Controller</h2>
+<p>A controller is the <em>brain</em>; it actually combines a model execute some business logic and pass data to the desired view
+that needs to be rendered. In some cases you don&#8217;t really need view in order to provide the logic you want:</p>
+<blockquote>
+<div><ul class="simple">
+<li>A REST Web service.</li>
+<li>A RSS feed provider.</li>
+<li>A file download service</li>
+</ul>
+</div></blockquote>
+<p>Though writing REST services does not require a view, you can load external text templates that might be useful for assembling the
+response:</p>
+<blockquote>
+<div><ul class="simple">
+<li>An invoice generator service</li>
+<li>An xml file that must be filled with product data</li>
+<li>A <a class="reference external" href="http://en.wikipedia.org/wiki/VCard">vCard</a><span class="link-target"> [http://en.wikipedia.org/wiki/VCard]</span>. export service.</li>
+</ul>
+</div></blockquote>
+<p>If you want to read a small tutorial and to start coding very fast on Fantastico MVC read <a class="reference internal" href="../how_to/mvc_how_to.html"><em>MVC How to</em></a>. Controller
+API is documented <tt class="xref py py-class docutils literal"><span class="pre">fantastico.mvc.controller_decorator.Controller</span></tt>.</p>
+<dl class="class">
+<dt id="fantastico.mvc.controller_registrator.ControllerRouteLoader">
+<em class="property">class </em><tt class="descclassname">fantastico.mvc.controller_registrator.</tt><tt class="descname">ControllerRouteLoader</tt><big>(</big><em>settings_facade=&lt;class 'fantastico.settings.SettingsFacade'&gt;</em>, <em>scanned_folder=None</em>, <em>ignore_prefix=None</em><big>)</big><a class="reference internal" href="../_modules/fantastico/mvc/controller_registrator.html#ControllerRouteLoader"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This class provides a route loader that is capable of scanning the disk and registering only the routes that
+contain a controller decorator in them. This happens when <strong>Fantastico</strong> servers starts. In standard configuration
+it ignores tests subfolder as well as test_* / itest_* modules.</p>
+<dl class="method">
+<dt id="fantastico.mvc.controller_registrator.ControllerRouteLoader.load_routes">
+<tt class="descname">load_routes</tt><big>(</big><big>)</big><a class="reference internal" href="../_modules/fantastico/mvc/controller_registrator.html#ControllerRouteLoader.load_routes"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This method is used for loading all routes that are mapped through
+<a class="reference internal" href="#fantastico.mvc.controller_decorators.Controller" title="fantastico.mvc.controller_decorators.Controller"><tt class="xref py py-class docutils literal"><span class="pre">fantastico.mvc.controller_decorators.Controller</span></tt></a> decorator.</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="fantastico.mvc.controller_registrator.ControllerRouteLoader.scanned_folders">
+<tt class="descname">scanned_folders</tt><a class="reference internal" href="../_modules/fantastico/mvc/controller_registrator.html#ControllerRouteLoader.scanned_folders"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This property returns the currently scanned folder from where mvc routes are collected.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="fantastico.mvc.base_controller.BaseController">
+<em class="property">class </em><tt class="descclassname">fantastico.mvc.base_controller.</tt><tt class="descname">BaseController</tt><big>(</big><em>settings_facade</em><big>)</big><a class="reference internal" href="../_modules/fantastico/mvc/base_controller.html#BaseController"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This class provides common methods useful for every concrete controller. Even if no type checking is done in
+Fantastico it is recommended that every controller implementation inherits this class.</p>
+<dl class="attribute">
+<dt id="fantastico.mvc.base_controller.BaseController.curr_request">
+<tt class="descname">curr_request</tt><a class="reference internal" href="../_modules/fantastico/mvc/base_controller.html#BaseController.curr_request"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This property returns the current http request being processed.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="fantastico.mvc.base_controller.BaseController.get_component_folder">
+<tt class="descname">get_component_folder</tt><big>(</big><big>)</big><a class="reference internal" href="../_modules/fantastico/mvc/base_controller.html#BaseController.get_component_folder"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This method is used to retrieve the component folder name under which this controller is defined.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="fantastico.mvc.base_controller.BaseController.load_template">
+<tt class="descname">load_template</tt><big>(</big><em>tpl_name</em>, <em>model_data=None</em>, <em>get_template=&lt;function get_template at 0x1ff4408&gt;</em>, <em>enable_global_folder=False</em><big>)</big><a class="reference internal" href="../_modules/fantastico/mvc/base_controller.html#BaseController.load_template"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This method is responsible for loading a template from disk and render it using the given model data.</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="nd">@ControllerProvider</span><span class="p">()</span>
+<span class="k">class</span> <span class="nc">TestController</span><span class="p">(</span><span class="n">BaseController</span><span class="p">):</span>
+    <span class="nd">@Controller</span><span class="p">(</span><span class="n">url</span><span class="o">=</span><span class="s">&quot;/simple/test/hello&quot;</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s">&quot;GET&quot;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">say_hello</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">Response</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">load_template</span><span class="p">(</span><span class="s">&quot;/hello.html&quot;</span><span class="p">))</span>
+</pre></div>
+</div>
+<p>The above snippet will search for <strong>hello.html</strong> into component folder/views/.</p>
+</dd></dl>
+
+</dd></dl>
+
+<div class="section" id="available-filters">
+<h3>Available filters</h3>
+<dl class="class">
+<dt id="fantastico.mvc.models.model_filter.ModelFilterAbstract">
+<em class="property">class </em><tt class="descclassname">fantastico.mvc.models.model_filter.</tt><tt class="descname">ModelFilterAbstract</tt><a class="reference internal" href="../_modules/fantastico/mvc/models/model_filter.html#ModelFilterAbstract"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This is the base class that defines the contract a model filter must follow. A model filter is a class that decouples
+sqlalchemy framework from Fantastico MVC. This is required because in the future we might want to change the ORM that
+powers Fantastico without breaking all existing code.</p>
+<img alt="../_images/mvc_filters.png" src="../_images/mvc_filters.png" />
+<p>For seeing how to implement filters (probably you won&#8217;t need to do this) see some existing filters:</p>
+<blockquote>
+<div><ul class="simple">
+<li><a class="reference internal" href="#fantastico.mvc.models.model_filter.ModelFilter" title="fantastico.mvc.models.model_filter.ModelFilter"><tt class="xref py py-class docutils literal"><span class="pre">fantastico.mvc.models.model_filter.ModelFilter</span></tt></a></li>
+<li><a class="reference internal" href="#fantastico.mvc.models.model_filter_compound.ModelFilterCompound" title="fantastico.mvc.models.model_filter_compound.ModelFilterCompound"><tt class="xref py py-class docutils literal"><span class="pre">fantastico.mvc.models.model_filter_compound.ModelFilterCompound</span></tt></a></li>
+<li><a class="reference internal" href="#fantastico.mvc.models.model_filter_compound.ModelFilterAnd" title="fantastico.mvc.models.model_filter_compound.ModelFilterAnd"><tt class="xref py py-class docutils literal"><span class="pre">fantastico.mvc.models.model_filter_compound.ModelFilterAnd</span></tt></a></li>
+<li><a class="reference internal" href="#fantastico.mvc.models.model_filter_compound.ModelFilterOr" title="fantastico.mvc.models.model_filter_compound.ModelFilterOr"><tt class="xref py py-class docutils literal"><span class="pre">fantastico.mvc.models.model_filter_compound.ModelFilterOr</span></tt></a></li>
+</ul>
+</div></blockquote>
+<dl class="method">
+<dt id="fantastico.mvc.models.model_filter.ModelFilterAbstract.build">
+<tt class="descname">build</tt><big>(</big><em>query</em><big>)</big><a class="reference internal" href="../_modules/fantastico/mvc/models/model_filter.html#ModelFilterAbstract.build"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This method is used for appending the current filter to the query using sqlalchemy specific language.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="fantastico.mvc.models.model_filter.ModelFilterAbstract.get_expression">
+<tt class="descname">get_expression</tt><big>(</big><big>)</big><a class="reference internal" href="../_modules/fantastico/mvc/models/model_filter.html#ModelFilterAbstract.get_expression"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This method is used for retrieving native sqlalchemy expression held by this filter.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="fantastico.mvc.models.model_filter_compound.ModelFilterCompound">
+<em class="property">class </em><tt class="descclassname">fantastico.mvc.models.model_filter_compound.</tt><tt class="descname">ModelFilterCompound</tt><big>(</big><em>operation</em>, <em>*args</em><big>)</big><a class="reference internal" href="../_modules/fantastico/mvc/models/model_filter_compound.html#ModelFilterCompound"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This class provides the api for compounding ModelFilter objects into a specified sql alchemy operation.</p>
+<dl class="method">
+<dt id="fantastico.mvc.models.model_filter_compound.ModelFilterCompound.build">
+<tt class="descname">build</tt><big>(</big><em>query</em><big>)</big><a class="reference internal" href="../_modules/fantastico/mvc/models/model_filter_compound.html#ModelFilterCompound.build"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This method transform the current compound statement into an sql alchemy filter.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="fantastico.mvc.models.model_filter_compound.ModelFilterCompound.get_expression">
+<tt class="descname">get_expression</tt><big>(</big><big>)</big><a class="reference internal" href="../_modules/fantastico/mvc/models/model_filter_compound.html#ModelFilterCompound.get_expression"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This method transforms calculates sqlalchemy expression held by this filter.</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="fantastico.mvc.models.model_filter_compound.ModelFilterCompound.model_filters">
+<tt class="descname">model_filters</tt><a class="reference internal" href="../_modules/fantastico/mvc/models/model_filter_compound.html#ModelFilterCompound.model_filters"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This property returns all ModelFilter instances being compound.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="fantastico.mvc.models.model_filter.ModelFilter">
+<em class="property">class </em><tt class="descclassname">fantastico.mvc.models.model_filter.</tt><tt class="descname">ModelFilter</tt><big>(</big><em>column</em>, <em>ref_value</em>, <em>operation</em><big>)</big><a class="reference internal" href="../_modules/fantastico/mvc/models/model_filter.html#ModelFilter"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This class provides a model filter wrapper used to dynamically transform an operation to sql alchemy filter
+statements. You can see below how to use it:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="n">id_gt_filter</span> <span class="o">=</span> <span class="n">ModelFilter</span><span class="p">(</span><span class="n">PersonModel</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">ModelFilter</span><span class="o">.</span><span class="n">GT</span><span class="p">)</span>
+</pre></div>
+</div>
+<dl class="method">
+<dt id="fantastico.mvc.models.model_filter.ModelFilter.build">
+<tt class="descname">build</tt><big>(</big><em>query</em><big>)</big><a class="reference internal" href="../_modules/fantastico/mvc/models/model_filter.html#ModelFilter.build"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This method appends the current filter to a query object.</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="fantastico.mvc.models.model_filter.ModelFilter.column">
+<tt class="descname">column</tt><a class="reference internal" href="../_modules/fantastico/mvc/models/model_filter.html#ModelFilter.column"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This property holds the column used in the current filter.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="fantastico.mvc.models.model_filter.ModelFilter.get_expression">
+<tt class="descname">get_expression</tt><big>(</big><big>)</big><a class="reference internal" href="../_modules/fantastico/mvc/models/model_filter.html#ModelFilter.get_expression"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>Method used to return the underlining sqlalchemy exception held by this filter.</p>
+</dd></dl>
+
+<dl class="staticmethod">
+<dt id="fantastico.mvc.models.model_filter.ModelFilter.get_supported_operations">
+<em class="property">static </em><tt class="descname">get_supported_operations</tt><big>(</big><big>)</big><a class="reference internal" href="../_modules/fantastico/mvc/models/model_filter.html#ModelFilter.get_supported_operations"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This method returns all supported operations for model filter. For now only the following operations are supported:</p>
+<ul class="simple">
+<li>GT - greater than comparison</li>
+<li>GE - greater or equals than comparison</li>
+<li>EQ - equals comparison</li>
+<li>LE - less or equals than comparison</li>
+<li>LT - less than comparison</li>
+<li>LIKE - like comparison</li>
+<li>IN - in comparison.</li>
+</ul>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="fantastico.mvc.models.model_filter.ModelFilter.operation">
+<tt class="descname">operation</tt><a class="reference internal" href="../_modules/fantastico/mvc/models/model_filter.html#ModelFilter.operation"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This property holds the operation used in the current filter.</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="fantastico.mvc.models.model_filter.ModelFilter.ref_value">
+<tt class="descname">ref_value</tt><a class="reference internal" href="../_modules/fantastico/mvc/models/model_filter.html#ModelFilter.ref_value"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This property holds the reference value used in the current filter.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="fantastico.mvc.models.model_filter_compound.ModelFilterAnd">
+<em class="property">class </em><tt class="descclassname">fantastico.mvc.models.model_filter_compound.</tt><tt class="descname">ModelFilterAnd</tt><big>(</big><em>*args</em><big>)</big><a class="reference internal" href="../_modules/fantastico/mvc/models/model_filter_compound.html#ModelFilterAnd"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This class provides a compound filter that allows <strong>and</strong> conditions against models. Below you can find a simple example:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="n">id_gt_filter</span> <span class="o">=</span> <span class="n">ModelFilter</span><span class="p">(</span><span class="n">PersonModel</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">ModelFilter</span><span class="o">.</span><span class="n">GT</span><span class="p">)</span>
+<span class="n">id_lt_filter</span> <span class="o">=</span> <span class="n">ModelFilter</span><span class="p">(</span><span class="n">PersonModel</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="n">ModelFilter</span><span class="o">.</span><span class="n">LT</span><span class="p">)</span>
+<span class="n">name_like_filter</span> <span class="o">=</span> <span class="n">ModelFilter</span><span class="p">(</span><span class="n">PersonModel</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="s">&#39;</span><span class="si">%%</span><span class="s">john</span><span class="si">%%</span><span class="s">&#39;</span><span class="p">,</span> <span class="n">ModelFilter</span><span class="o">.</span><span class="n">LIKE</span><span class="p">)</span>
+
+<span class="n">complex_condition</span> <span class="o">=</span> <span class="n">ModelFilterAnd</span><span class="p">(</span><span class="n">id_gt_filter</span><span class="p">,</span> <span class="n">id_lt_filter</span><span class="p">,</span> <span class="n">name_like_filter</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="class">
+<dt id="fantastico.mvc.models.model_filter_compound.ModelFilterOr">
+<em class="property">class </em><tt class="descclassname">fantastico.mvc.models.model_filter_compound.</tt><tt class="descname">ModelFilterOr</tt><big>(</big><em>*args</em><big>)</big><a class="reference internal" href="../_modules/fantastico/mvc/models/model_filter_compound.html#ModelFilterOr"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This class provides a compound filter that allows <strong>or</strong> conditions against models. Below you can find a simple example:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="n">id_gt_filter</span> <span class="o">=</span> <span class="n">ModelFilter</span><span class="p">(</span><span class="n">PersonModel</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">ModelFilter</span><span class="o">.</span><span class="n">GT</span><span class="p">)</span>
+<span class="n">id_lt_filter</span> <span class="o">=</span> <span class="n">ModelFilter</span><span class="p">(</span><span class="n">PersonModel</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="n">ModelFilter</span><span class="o">.</span><span class="n">LT</span><span class="p">)</span>
+<span class="n">name_like_filter</span> <span class="o">=</span> <span class="n">ModelFilter</span><span class="p">(</span><span class="n">PersonModel</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="s">&#39;</span><span class="si">%%</span><span class="s">john</span><span class="si">%%</span><span class="s">&#39;</span><span class="p">,</span> <span class="n">ModelFilter</span><span class="o">.</span><span class="n">LIKE</span><span class="p">)</span>
+
+<span class="n">complex_condition</span> <span class="o">=</span> <span class="n">ModelFilterOr</span><span class="p">(</span><span class="n">id_gt_filter</span><span class="p">,</span> <span class="n">id_lt_filter</span><span class="p">,</span> <span class="n">name_like_filter</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="class">
+<dt id="fantastico.mvc.models.model_sort.ModelSort">
+<em class="property">class </em><tt class="descclassname">fantastico.mvc.models.model_sort.</tt><tt class="descname">ModelSort</tt><big>(</big><em>column</em>, <em>sort_dir=None</em><big>)</big><a class="reference internal" href="../_modules/fantastico/mvc/models/model_sort.html#ModelSort"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This class provides a filter that knows how to sort rows from a query result set. It is extremely easy to use:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="n">id_sort_asc</span> <span class="o">=</span> <span class="n">ModelSort</span><span class="p">(</span><span class="n">PersonModel</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="n">ModelSort</span><span class="o">.</span><span class="n">ASC</span><span class="p">)</span>
+</pre></div>
+</div>
+<dl class="method">
+<dt id="fantastico.mvc.models.model_sort.ModelSort.build">
+<tt class="descname">build</tt><big>(</big><em>query</em><big>)</big><a class="reference internal" href="../_modules/fantastico/mvc/models/model_sort.html#ModelSort.build"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This method appends sort_by clause to the given query.</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="fantastico.mvc.models.model_sort.ModelSort.column">
+<tt class="descname">column</tt><a class="reference internal" href="../_modules/fantastico/mvc/models/model_sort.html#ModelSort.column"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This property holds the column we are currently sorting.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="fantastico.mvc.models.model_sort.ModelSort.get_expression">
+<tt class="descname">get_expression</tt><big>(</big><big>)</big><a class="reference internal" href="../_modules/fantastico/mvc/models/model_sort.html#ModelSort.get_expression"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This method returns the sqlalchemy expression held by this filter.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="fantastico.mvc.models.model_sort.ModelSort.get_supported_sort_dirs">
+<tt class="descname">get_supported_sort_dirs</tt><big>(</big><big>)</big><a class="reference internal" href="../_modules/fantastico/mvc/models/model_sort.html#ModelSort.get_supported_sort_dirs"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This method returns all supported sort directions. Currently only ASC / DESC directions are supported.</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="fantastico.mvc.models.model_sort.ModelSort.sort_dir">
+<tt class="descname">sort_dir</tt><a class="reference internal" href="../_modules/fantastico/mvc/models/model_sort.html#ModelSort.sort_dir"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This property holds the sort direction we are currently using.</p>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+</div>
+<div class="section" id="database-session-management">
+<h2>Database session management</h2>
+<p>We all know database session management is painful and adds a lot of boiler plate code. In fantastico you don&#8217;t need
+to manage database session by yourself. There is a dedicated middleware which automatically ensures there is an
+active session ready to be used:</p>
+<dl class="class">
+<dt id="fantastico.middleware.model_session_middleware.ModelSessionMiddleware">
+<em class="property">class </em><tt class="descclassname">fantastico.middleware.model_session_middleware.</tt><tt class="descname">ModelSessionMiddleware</tt><big>(</big><em>app</em>, <em>settings_facade=&lt;class 'fantastico.settings.SettingsFacade'&gt;</em><big>)</big><a class="reference internal" href="../_modules/fantastico/middleware/model_session_middleware.html#ModelSessionMiddleware"><span class="viewcode-link">[source]</span></a></dt>
+<dd><p>This class is responsible for managing database connections across requests. It also takes care of
+connection data pools. By default, the middleware is automatically configured to open a connection. If
+you don&#8217;t need mvc (really improbable but still) you simply need to change your project active settings
+profile. You can read more on <a class="reference internal" href="../get_started/settings.html#fantastico.settings.BasicSettings" title="fantastico.settings.BasicSettings"><tt class="xref py py-class docutils literal"><span class="pre">fantastico.settings.BasicSettings</span></tt></a></p>
+</dd></dl>
+
+</div>
+</div>
+
+
+          </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+
+
+    <div class="footer">
+        &copy; Copyright 2013, Radu Viorel Cosnita.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2b1.
+    </div>
+
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-42788125-1', 'rcosnita.github.io');
+  ga('send', 'pageview');
+</script>
+
+  </body>
+</html>

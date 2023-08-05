@@ -1,0 +1,145 @@
+Fantastico framework
+====================
+
+Create the best pluggable, developer friendly content publishing framework for Python 3 developers.
+
+`Build status <http://jenkins.scrum-expert.ro:8080/job/fantastico-framework/badge/icon/>`_.
+
+Get started
+-----------
+
+The easiest way to get started using fantastico is to read our just in time generated documentation:
+
+* `HTML documentation <http://rcosnita.github.io/fantastico/html/>`_.
+* `Ebook friendly documentation <http://rcosnita.github.io/fantastico/epub/>`_.
+* `PDF documentation <http://rcosnita.github.io/fantastico/latex/fantastico.pdf>`_.
+
+Have fun.
+
+Changes
+=======
+
+Feedback
+--------
+
+I really hope you enjoy using Fantastico framework as much as we love developing it. Your feedback is highly appreciated
+so do not hesitate to get in touch with us (for support, feature requests, suggestions, or everything else is on your mind):
+`Provide feedback <https://docs.google.com/forms/d/1tKBopU3lfDB_w8F4h7Rl1Rn4uydAJq-nha09L_ptJck/edit?usp=sharing>`_
+
+Versions
+--------
+
+* v0.7.1 (stable)
+
+   * Added **/api/oauth/profile/me** for obtaining authenticated user profile information.
+   * Added **on_pre_create** / **on_pre_update** / **on_pre_delete events** for ROA. 
+   * Added **on_post_create** / **on_post_update** / **on_pre_delete events** for ROA.
+   * Added isoformat for json serialization of datetime fields.
+   * Fix bug for full recursive serialization of subresources when requested.
+   * Added support for nested filtering into roa resources (e.g filter=eq(submodel.<property_name>,1))
+   * Added support for nested ordering into roa resource (e.g order=asc(submodel.<property_name>))
+   * Bring validate_email code into fantastico so that each new installation of framework works as expected (cause by an incompatible python 3 validate_email package published on pypi).
+
+* v0.7.0 (stable)
+
+   * Added support for cross origin requests on ROA resources registry (/roa/resources).
+   * Added support for exception serialized responses CORS compatible requests.   
+   * Add CORS decorator for enabling CORS headers on custom controller routes.
+   * Add support for headers appended to each response (support for global CORS configurable headers).
+   * Fix cors for ROA fetch individual item.
+   * Fix @RequiredScopes attribute for MVC controllers (now it automatically validates the security context before invoking underline method).   
+   * Improve implicit grant handler so that it supports non redirect responses.
+
+* v0.6.0 (`Provide feedback <https://docs.google.com/forms/d/1tKBopU3lfDB_w8F4h7Rl1Rn4uydAJq-nha09L_ptJck/edit?usp=sharing>`_)
+
+   * Added implicit grant type implementation.
+   * Added security support for endpoints / controllers.
+   * Added Fantastico identity provider.
+   * Fix a bug in ROA APIs routes mapping.
+   * Added support for MVC Controllers into custom packages (not residing in components root folder).
+   * Added ROA resources dependent on user (integrated with OAuth2 access tokens).
+   * Added ROA resources OAuth2 authorization.
+   * !!!!! ROA ResourceValidator base class now adds two more methods for formatting resources and is backward incompatible with Fantastico version 0.5.1.
+   * !!!!! ROA ResourceValidator validate method has changed signature and is backware incompatible with Fantastico version 0.5.1.
+
+* v0.5.1 (`Provide feedback <https://docs.google.com/forms/d/1tKBopU3lfDB_w8F4h7Rl1Rn4uydAJq-nha09L_ptJck/edit?usp=sharing>`_)
+
+   * Add a tutorial for creating TODO application based on ROA. (`<http://rcosnita.github.io/fantastico/html/how_to/todo/index.html>`_)
+   * Deployed TODO web application on a public accessible server. (`<http://todo.fantastico.scrum-expert.ro/frontend/ui/index>`_)
+   * Fix roa discovery component fsdk syncdb bug on subsequent runs.
+   * Fix roa api cors support.
+
+* v0.5.0 (`Provide feedback <https://docs.google.com/forms/d/1tKBopU3lfDB_w8F4h7Rl1Rn4uydAJq-nha09L_ptJck/edit?usp=sharing>`_)
+
+   * Added specification for auto generated API for resources.
+   * Added OAUTH2 draft implementation details for Fantastico.
+   * Added Identity Provider draft specification.
+   * Added REST API Standard for ROA (Resource Oriented Architecture).
+   * Added REST filter parser implementation using fast ll grammar for ROA (Resource Oriented Architecture).
+   * Added auto generated APIs for resources (Resource Oriented Architecture).
+   * Improved routing loaders so that multiple methods can serve separate http verbs of a route.
+   * Added support for multiple routes mapped on the same controller.
+   * Fixed a bug in MySql connections pool (not recycling correctly after a long idle period).
+   * I changed thread local MySql connection strategy to request based.
+
+* v0.4.1 (`Provide feedback <https://docs.google.com/forms/d/1tKBopU3lfDB_w8F4h7Rl1Rn4uydAJq-nha09L_ptJck/edit?usp=sharing>`_)
+   * Fix a bug into analytics component sample data insert.
+   * Fix a bug into component rendering for no json responses coming for given url.
+
+* v0.4.0 (`Provide feedback <https://docs.google.com/forms/d/1tKBopU3lfDB_w8F4h7Rl1Rn4uydAJq-nha09L_ptJck/edit?usp=sharing>`_)
+   * Fantastico SDK commands display official link to command documentation.
+   * Fantastico SDK syncdb command.
+   * Standard detection of database tables module setup / data insert created.
+   * Multiple tracking codes extension integrated into fantastico contrib.
+   * Dynamic pages extension integrated into fantastico contrib.
+   * Direct feedback channel integrated into documentation (`Provide feedback <https://docs.google.com/forms/d/1tKBopU3lfDB_w8F4h7Rl1Rn4uydAJq-nha09L_ptJck/edit?usp=sharing>`_)
+
+* v0.3.0
+   * Fantastico SDK core is available.
+   * Fantastico SDK activate-extension command is available.
+   * Samples of how to activate extensions for an existing project are provided.
+
+* v0.2.2
+   * Update dynamic menu activation documentation.
+   * Fix a serious bug in engine management and too many sql connections opened.
+   * Fix a bug in db session close when an unexpected error occurs when opening the connection.
+   * Add extensive unit tests for db session management.
+
+* v0.2.1
+   * Fix packaging of pypi package. Now it is usable and contains rendering package as well as contrib package.
+
+* v0.2.0
+   * Framework documentation is tracked using Google Analytics
+   * Component reusage is done using {% component %} tag.
+   * Dynamic menu pluggable component can be used out of the box.
+   * MVC documentation improvements.
+   * Fix a bug in DB session management cache when configuration was changed at runtime.
+
+* v0.1.2
+   * Nginx config file now also maps www.<vhost_name>
+   * Redirect support from controllers
+   * Setup fantastico framework script does not override deployment files anymore
+
+* v0.1.1
+   * Favicon route handling.
+   * Deployment scripts error handling and root folder execution (rather than execution only for deployment subfolder).
+   * MVC how to article was changed to use get_records_paged instead of all_paged method (it used to be a bug in documentation).
+   * DB Session manager was changed from one singleton connection to connection / request.
+   * FantasticoIntegrationTestCase now has a property that holds os environment variable name for setting up Fantastico active config.
+
+* v0.1.0
+   * Built in router that can be easily extended.
+   * WebOb Request / Response architecture.
+   * Request context support for accessing various attributes (current language, current user and other attributes).
+   * Multiple project profiles support.
+   * Database simple configuration for multiple environments.
+   * Model - View - Controller support.
+   * Automatic model facade generator.
+   * Model facade injection into Controllers.
+   * Templating engine support for views (jinja2).
+   * Documentation generator for pdf / html / epub formats.
+   * Automatic framework packaging and deployment.
+   * Helper scripts for creating projects based on Fantastico.
+   * Easy rollout script for running Fantastico projects behind nginx.
+   * Rollout scenarios for deploying Fantastico projects on Amazon (AWS).
+   * How to sections for creating new projects and components using Fantastico.
