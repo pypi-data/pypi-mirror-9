@@ -1,0 +1,10 @@
+__version__ = "0.1.35"
+__git_commiter_name__ = "Guy Rozendorn"
+__git_commiter_email__ = "guy@rzn.co.il"
+__git_branch__ = '(detached from v0.1.35)'
+__git_remote_tracking_branch__ = '(No remote tracking)'
+__git_remote_url__ = '(Not remote tracking)'
+__git_head_hash__ = '6240741b8fae4cdce4f6dd69c22cd8f663f88703'
+__git_head_subject__ = 'Finished release v0.1.35.'
+__git_head_message__ = '* release/v0.1.35:\n  HOSTDEV-1811 making it really work on Solaris\n  HIP-1426 C-HBAAPI generator: refactoring HBA_WWN to support the case where the last octect is 0'
+__git_dirty_diff__ = ''
