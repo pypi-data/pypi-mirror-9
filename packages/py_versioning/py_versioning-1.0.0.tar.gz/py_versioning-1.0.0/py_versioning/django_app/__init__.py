@@ -1,0 +1,1 @@
+default_app_config = 'py_versioning.django_app.app.VersioningConfig'
