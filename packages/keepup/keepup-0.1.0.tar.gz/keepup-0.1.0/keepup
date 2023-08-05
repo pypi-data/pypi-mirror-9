@@ -1,0 +1,516 @@
+#!/usr/bin/env python3
+import npyscreen
+import threading
+import queue
+import time
+import sys
+import traceback
+import logging
+import datetime
+import subprocess
+import os
+import shlex
+import atexit
+from npyscreen.wgwidget import Widget
+
+__version__ = "0.1.0"
+
+class KUCommand(object):
+  def __init__(self):
+    self.cmd = None
+      
+  def match(self, args):
+    if self.cmd is None or len(self.cmd) == 0:
+      return False
+      
+    return True
+    
+  def run(self, app, args):
+    app.p("Command executed: %s %s" % (self.cmd, args))
+
+class QuitCommand(KUCommand):
+  def __init__(self):
+    self.cmd = 'quit'
+  def match(self, args):
+    return len(args) == 0
+  def run(self, app, args):
+    app.tasks = {}
+    for b in app.F.wMain.buffers:
+      b.safe_kill()
+    
+    app.F.editing = False
+    app.setNextForm(None)
+    app.switchForm(None)
+
+class ViewCommand(KUCommand):
+  def __init__(self):
+    self.cmd = 'view'
+  def match(self, args):
+    return len(args) < 2
+  def run(self, app, args):
+    buffers = app.F.wMain.buffers
+    
+    if len(args) == 0:
+      return "Available buffers: %s" % (', '.join(["%s%s" % (b.name, '*' if b == app.F.wMain._active_buffer else '') for b in buffers]),)
+    else:
+      args[0] = args[0].lower()
+      if not app.F.wMain.set_active_buffer(args[0]):
+        return 'Failed to set active buffer!'
+      else:
+        return 'Active buffer set to %s' % (args[0],)
+
+class ExceptionCommand(KUCommand):
+  def __init__(self):
+    self.cmd = 'exc'
+  def match(self, args):
+    return True
+  def run(self, app, args):
+    raise Exception(' '.join(args))
+      
+class WriteCommand(KUCommand):
+  def __init__(self):
+    self.cmd = 'write'
+  def match(self, args):
+    return True
+  def run(self, app, args):
+    if len(args) == 0:
+      out = "\n"
+    else:
+      out = "%s\n" % (' '.join(args),)
+    
+    # check the current view
+    if app.F.wMain._active_buffer is None or app.F.wMain._active_buffer.name == "keepup":
+      return "You must be on a task screen buffer!"
+    
+    proc = app.F.wMain._active_buffer.proc
+    if proc is None or proc.returncode is not None or proc.poll() is not None:
+      return "Process not running!"
+    
+    #app.F.wMain._active_buffer.log("STDIN: %s" % (out,), None)
+    proc.stdin.write(bytes(out, "utf-8"))
+    
+class KillCommand(KUCommand):
+  def __init__(self):
+    self.cmd = 'kill'
+  def match(self, args):
+    return len(args) == 0
+  def run(self, app, args):
+    if app.F.wMain._active_buffer is None or app.F.wMain._active_buffer.name == "keepup":
+      return "You must be on a task screen buffer!"
+    
+    proc = app.F.wMain._active_buffer.proc
+    if proc is None or proc.returncode is not None or proc.poll() is not None:
+      return "Process not running!"
+    
+    app.F.wMain._active_buffer.safe_kill()
+    
+class KUProcess(object):
+  def __init__(self, name, app, cmd, dir=None):
+    self.app = app
+    self.cmd = cmd
+    if dir is None:
+      self.dir = os.getcwd()
+    else:
+      self.dir = dir
+    self.name = name
+  
+  def start(self):
+    self._buf = KUScreenBuffer(self.name, self.app)
+     
+class KeepUpApp(npyscreen.NPSAppManaged):
+  threads = []
+  cmd_handlers = []
+  _status_change = 0
+  _status_timeout = 5
+    
+  def onStart(self):
+    self.F = KUMainForm(self)
+    self.F.wStatus1.value = "keepup v%s " % (__version__,)
+    self.registerForm("MAIN", self.F)
+    
+    self._buf = KUScreenBuffer("keepup", self)
+    
+    self.tasks = {}
+    self.load_upfile() # Initially load the Upfile
+    
+    # Start all the required threads
+    for t in self.threads:
+      t.start()
+    
+    self.F.display()
+  
+  def p(self, line, level=logging.INFO):
+    self._buf.log(line, level)
+  
+  def set_status(self, status):
+    if status is None or status == '':
+      return
+    self.F.wStatus2.value = "%s " % (status,)
+    self._status_change = time.time()
+  
+  def tick(self):
+    if time.time() - self._status_change >= self._status_timeout:
+      self.F.wStatus2.value = "%s " % (subprocess.check_output(["uptime",], universal_newlines=True).strip(),)
+    
+    if self.F.wMain._active_buffer is not None:
+      self.F.wStatus1.value = "keepup v%s [%s] " % (__version__, self.F.wMain._active_buffer.name)
+      
+  def register_cmd(self, handler):
+    if handler.cmd is None or len(handler.cmd.strip()) == 0:
+      return False
+    self.cmd_handlers.append(handler)
+    
+  def cmd(self, command, args):
+    for h in self.cmd_handlers:
+      if h.cmd == command:
+        if h.match(args):
+          try:
+            r = h.run(self, args)
+            if r is not None and not r:
+              # failed to execute
+              self.set_status("*** FAILED TO EXECUTE COMMAND HANDLER ***")
+            
+            self.set_status(r)
+            return True
+          except Exception as e:
+            self.set_status("*** EXCEPTION OCCURED WHILE EXECUTING COMMAND '%s' [%s] ***" % (command,type(h).__name__))
+            self._buf.logexc(e)
+            return True
+            
+    self.set_status('Unknown command \'%s\'' % (command,))
+  
+  def load_upfile(self):
+    p = os.path.abspath(os.getenv('UPFILE', 'Upfile'))
+    if not os.path.exists(p):
+      self.p("Unable to locate Upfile at %s" % (p,), logging.ERROR)
+      return
+    
+    to_remove = list(self.tasks.keys())
+    
+    with open(p, 'r') as fh:
+      for line in fh:
+        if line.startswith('#'):
+          continue
+        parts = line.split(':', 1)
+        if len(parts) != 2:
+          continue
+        
+        parts[0] = parts[0].lower()
+        
+        if parts[0] == 'keepup':
+          raise Exception("keepup is a reserved name and cannot be used as a task name!")
+        
+        if parts[0].startswith('@'):
+          # Directory method
+          if parts[0][1:] in self.tasks:
+            d = parts[1].strip()
+            if os.path.exists(d) and os.path.isdir(d):
+              self.tasks[parts[0][1:]]['path'] = d
+        elif not parts[0] in self.tasks:
+          self.tasks[parts[0]] = {'name': parts[0], 'cmd': shlex.split(parts[1].strip()), 'path': os.getcwd()}
+        else:
+          to_remove.remove(parts[0])
+          self.tasks[parts[0]]['cmd'] = shlex.split(parts[1].strip())
+    
+    for t in to_remove:
+      self.p("Abandoning task '%s'!" % (t,), logging.WARNING)
+      del self.tasks[t]
+  
+  def watch_pipe(self, pipe, buffer, level):
+    buffer.log("%s watch_pipe" % (threading.current_thread().name,), logging.DEBUG)
+    try:
+      for line in iter(pipe.readline, b''):
+        buffer.log(line.decode('utf-8', 'replace'), level)
+      pipe.close()
+    except Exception as e:
+      buffer.logexc(e)
+    buffer.log("%s broken pipe" % (threading.current_thread().name,), logging.CRITICAL)
+  
+  def launch_process(self, task):
+    name = task['name']
+    cmd = task['cmd']
+    path = task['path']
+    
+    env = os.environ.copy()
+    env['PYTHONUNBUFFERED'] = 'True'
+    
+    proc = subprocess.Popen(cmd, bufsize=0, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=path)
+    task['proc'] = proc
+    
+    # We want to watch the pipes
+    for buffer in self.F.wMain.buffers:
+      if buffer.name == name:
+        task['buffer'] = buffer
+        break
+    if not 'buffer' in task:
+      task['buffer'] = KUScreenBuffer(name, self)
+      
+    task['buffer'].proc = proc
+    
+    t_stdout = threading.Thread(target=self.watch_pipe, name="%s_stdout" % (name,), args=(proc.stdout, task['buffer'], logging.INFO))
+    t_stdout.daemon = True
+    t_stderr = threading.Thread(target=self.watch_pipe, name="%s_stderr" % (name,), args=(proc.stderr, task['buffer'], logging.ERROR))
+    t_stderr.daemon = True
+    
+    task['stdout_thread'] = t_stdout
+    task['stderr_thread'] = t_stderr
+    
+    t_stdout.start()
+    t_stderr.start()
+    
+    self.p("Started task '%s'" % (name,), logging.DEBUG)
+    
+  def check_process(self, task):
+    proc = task['proc']
+    rc = proc.returncode or proc.poll()
+    if rc is not None:
+      self.p("Task '%s' has terminated!" % (task['name'],), logging.ERROR)
+      del task['stdout_thread']
+      del task['stderr_thread']
+      del task['proc']
+  
+  def watchdog(self):
+    while True:
+      try:
+        # Load the newest copy of the Upfile
+        self.load_upfile()
+        
+        for t in self.tasks:
+          t = self.tasks[t]
+          if not 'proc' in t:
+            self.launch_process(t)
+          else:
+            self.check_process(t)
+        
+        for buf in self.F.wMain.buffers:
+          if buf.name == "keepup":
+            continue
+          
+          if buf.proc is not None:
+            if buf.proc.returncode is not None or buf.proc.poll() is not None:
+              # it ded
+              if not buf.name in self.tasks:
+                self.F.wMain.destroy_buffer(buf)
+          
+        time.sleep(5)
+      except Exception as e:
+        self._buf.logexc(e)
+
+class KUScreenBuffer(object):
+  MAX_BUFFER = 1000
+  def __init__(self, name, app):
+    self.app = app
+    self.name = name
+    self.lines = []
+    self.queue = queue.Queue()
+    self.app.F.wMain.add_buffer(self)
+    self.proc = None
+  
+  def log(self, line, level=logging.INFO):
+    self._put((str(line), level))
+  
+  def logexc(self, exception):
+    tb = (''.join(traceback.format_exception(type(exception), exception, None))).split('\n')
+    for t in tb:
+      if t.strip() == '':
+        continue
+      self.log(t, logging.ERROR)
+  
+  def _put(self, item, block=True, timeout=None):
+    return self.queue.put(item, block, timeout)
+  
+  def _fill_from_queue(self):
+    #self.log("%s _fill_from_queue" % (time.time(),), logging.DEBUG)
+    try:
+      while True:
+        obj = self.queue.get_nowait()
+        self.lines.append(obj)
+        if len(self.lines) > self.MAX_BUFFER*2:
+          self.lines = self.lines[-self.MAX_BUFFER:]
+    except queue.Empty:
+      #self.log("Queue empty!", logging.DEBUG)
+      pass
+  
+  def get_lines(self, n=MAX_BUFFER):
+    return self.lines[-n:]
+  
+  def safe_kill(self):
+    if self.proc is None or self.proc.returncode is not None or self.proc.poll() is not None:
+      return
+    
+    try:
+      self.app.p("Terminating task '%s'" % (self.name,), logging.ERROR)
+    except: pass
+    
+    self.proc.terminate()
+    try:
+      self.proc.wait(5)
+    except subprocess.TimeoutExpired:
+      try:
+        self.app.p("Killing task '%s'" % (self.name,), logging.CRITICAL)
+      except: pass
+      self.proc.kill()
+      self.proc.wait()
+    
+class KUActionController(npyscreen.ActionControllerSimple):
+  def create(self):
+    self.add_action('^.*', self.cmd, False)
+    
+  def cmd(self, command_line, widget_proxy, live):
+    if len(command_line.strip()) == 0:
+      return
+    cmd_p = command_line.lstrip(' :/!').split(" ")
+    if len(cmd_p) < 1:
+      return
+    
+    try:
+      self.parent.parentApp.cmd(cmd_p[0].lower(), cmd_p[1:])
+    except Exception as e:
+      raise e
+
+class KUProcessOutput(Widget):
+  def __init__(self, *args, **kwargs):
+    super(KUProcessOutput, self).__init__(editable=False, *args, **kwargs)
+    self.app = self.parent.parentApp
+    self.buffers = []
+    self._active_buffer = None
+    self._last_buffer = None
+  
+  def set_active_buffer(self, name):
+    for b in self.buffers:
+      if b.name == name:
+        self._active_buffer = b
+        self.update(True)
+        return True
+    return False
+  
+  def add_buffer(self, buff):
+    self.buffers.append(buff)
+    if self._active_buffer is None:
+      self._active_buffer = buff
+  
+  def destroy_buffer(self, buf):
+    if buf.name == "keepup":
+      return
+    
+    self.app.p("Destroyed buffer '%s'" % (buf.name,), logging.WARNING)
+    
+    self.buffers.remove(buf)
+    if self._active_buffer == buf and len(self.buffers) > 0:
+      self._active_buffer = self.buffers[0]
+    elif self._active_buffer == buf:
+      self._active_buffer = None
+      self.clear()
+  
+  def calculate_area_needed(self):
+    return (0,0)
+  
+  def fill_buffers(self):
+    for b in self.buffers:
+      b._fill_from_queue()
+  
+  def intersted_in_mouse_event(self, mouse_event):
+    return False
+  
+  def _format_level(self, level):
+    if level is None:
+      return ' %s   ' % (' '*8,)
+    name = logging.getLevelName(level)
+    return "[%s]  " % (name.center(8),)
+  
+  def _log_attr(self, msg, level):
+    if level is not None:
+      pair = logging.getLevelName(level)
+    else:
+      pair = 'DEFAULT'
+    
+    if level == logging.ERROR:
+      pair = 'DANGER'
+    elif level == logging.DEBUG:
+      pair = 'STANDOUT'
+  
+    pair = self.parent.theme_manager.findPair(self, pair)
+    
+    return self.make_attributes_list(msg, pair)
+  
+  def update(self, clear=True):
+    if self.hidden:
+      self.clear()
+      return True
+    
+    # Get the currently visible buffer
+    buf = self._active_buffer
+    if buf is None:
+      return True
+      
+    buf._fill_from_queue() # Force flushing the queue
+    
+    # We switched buffers, we have to clear the display
+    if buf != self._last_buffer:
+      self.clear()
+      self._last_buffer = buf
+    
+    lines = buf.get_lines(self.height)
+    for y in range(len(lines)):
+      l = lines[y]
+      
+      ll = self._format_level(l[1])
+      msg = "%s%s" % (ll, l[0])
+      msg = msg.ljust(self.width)
+      
+      self.add_line(self.rely + y, self.relx, msg, self._log_attr(msg, l[1]), self.width)
+
+class KUMainForm(npyscreen.FormMuttActiveTraditional):
+  ACTION_CONTROLLER = KUActionController
+  MAIN_WIDGET_CLASS = KUProcessOutput
+  COMMAND_WIDGET_CLASS = npyscreen.TextCommandBox
+  _last_update = 0
+  
+  def __init__(self, kapp, *args, **kwargs):
+    self.parentApp = kapp
+    super(KUMainForm, self).__init__(*args, **kwargs)
+  
+  def create(self, *args, **kwargs):
+    super(KUMainForm, self).create(*args, **kwargs)
+    self.keypress_timeout = 5
+  
+  def update_output(self, force=False):
+    if not force and time.time() - self._last_update <= 0.1:
+      return
+      
+    self.wMain.fill_buffers() # Pull from the Queues
+    self.wMain.update(False)
+    
+    self._resize()
+    self.parentApp.tick()
+    self._last_update = time.time()
+  
+  def while_waiting(self):
+    self.update_output()
+    
+  def adjust_widgets(self):
+    super(KUMainForm, self).adjust_widgets()
+    self.update_output()
+
+@atexit.register
+def clean_exit():
+  global kapp
+  for b in kapp.F.wMain.buffers:
+    b.safe_kill()
+    
+if __name__ == "__main__":
+  kapp = KeepUpApp()
+  
+  kapp.register_cmd(QuitCommand())
+  kapp.register_cmd(ExceptionCommand())
+  kapp.register_cmd(ViewCommand())
+  kapp.register_cmd(WriteCommand())
+  kapp.register_cmd(KillCommand())
+  
+  t = threading.Thread(target=kapp.watchdog)
+  t.daemon = True
+  kapp.threads.append(t)
+  
+  try:
+    kapp.run()
+  except KeyboardInterrupt: pass
