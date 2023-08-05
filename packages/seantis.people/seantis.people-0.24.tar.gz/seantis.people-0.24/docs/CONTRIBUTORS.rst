@@ -1,0 +1,5 @@
+
+Contributors
+------------
+
+- Denis Krienbühl [href]
