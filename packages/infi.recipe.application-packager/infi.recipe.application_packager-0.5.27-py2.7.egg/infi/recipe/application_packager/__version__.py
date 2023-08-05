@@ -1,0 +1,10 @@
+__version__ = "0.5.27"
+__git_commiter_name__ = "Guy Rozendorn"
+__git_commiter_email__ = "guy@rzn.co.il"
+__git_branch__ = '(detached from v0.5.27)'
+__git_remote_tracking_branch__ = '(No remote tracking)'
+__git_remote_url__ = '(Not remote tracking)'
+__git_head_hash__ = '5e7da7f44325978ea0641dd86d85b5a307be4864'
+__git_head_subject__ = 'HOSTDEV-1952 adding a setupegg.py workaround for numpy'
+__git_head_message__ = ''
+__git_dirty_diff__ = ''
