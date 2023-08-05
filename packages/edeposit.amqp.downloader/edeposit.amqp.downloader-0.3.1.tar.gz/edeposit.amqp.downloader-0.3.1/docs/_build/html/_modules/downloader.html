@@ -1,0 +1,201 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>downloader &mdash; edeposit.amqp.downloader 0.2.0 documentation</title>
+    
+    <link rel="stylesheet" href="../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../',
+        VERSION:     '0.2.0',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../_static/jquery.js"></script>
+    <script type="text/javascript" src="../_static/underscore.js"></script>
+    <script type="text/javascript" src="../_static/doctools.js"></script>
+    <link rel="top" title="edeposit.amqp.downloader 0.2.0 documentation" href="../index.html" />
+    <link rel="up" title="Module code" href="index.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../index.html">edeposit.amqp.downloader 0.2.0 documentation</a> &raquo;</li>
+          <li><a href="index.html" accesskey="U">Module code</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <h1>Source code for downloader</h1><div class="highlight"><pre>
+<span class="c">#! /usr/bin/env python</span>
+<span class="c"># -*- coding: utf-8 -*-</span>
+<span class="c">#</span>
+<span class="c"># Interpreter version: python 2.7</span>
+<span class="c">#</span>
+<span class="c"># Imports =====================================================================</span>
+<span class="kn">from</span> <span class="nn">base64</span> <span class="kn">import</span> <span class="n">b64encode</span>
+
+<span class="c"># requests</span>
+<span class="kn">from</span> <span class="nn">structures.requests</span> <span class="kn">import</span> <span class="n">Download</span>
+<span class="kn">from</span> <span class="nn">structures.requests</span> <span class="kn">import</span> <span class="n">ProgressDownload</span>
+<span class="kn">from</span> <span class="nn">structures.requests</span> <span class="kn">import</span> <span class="n">CheckExistence</span>
+
+<span class="c"># responses</span>
+<span class="kn">from</span> <span class="nn">structures.responses</span> <span class="kn">import</span> <span class="n">DownloadedFile</span>
+<span class="kn">from</span> <span class="nn">structures.responses</span> <span class="kn">import</span> <span class="n">Progress</span>
+<span class="kn">from</span> <span class="nn">structures.responses</span> <span class="kn">import</span> <span class="n">Exists</span>
+
+<span class="kn">import</span> <span class="nn">downloader</span>
+
+
+<span class="c"># Functions &amp; classes =========================================================</span>
+<div class="viewcode-block" id="get_progress_reporter"><a class="viewcode-back" href="../api/downloader.html#downloader.get_progress_reporter">[docs]</a><span class="k">def</span> <span class="nf">get_progress_reporter</span><span class="p">(</span><span class="n">send_back</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Construct progress reporter callback from `send_back` function.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        send_back (fn reference): Reference to function for sending messages</span>
+<span class="sd">                  back using AMQP.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        fn reference: Function taking 3 parameters as is required by \</span>
+<span class="sd">                      :func:`.progress_download`.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">progress_reporter_callback</span><span class="p">(</span><span class="n">step</span><span class="p">,</span> <span class="n">downloaded</span><span class="p">,</span> <span class="n">content_len</span><span class="p">):</span>
+        <span class="n">send_back</span><span class="p">(</span>
+            <span class="n">Progress</span><span class="p">(</span>
+                <span class="n">step</span><span class="o">=</span><span class="n">step</span><span class="p">,</span>
+                <span class="n">downloaded</span><span class="o">=</span><span class="n">downloaded</span><span class="p">,</span>
+                <span class="n">content_length</span><span class="o">=</span><span class="n">content_len</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">progress_reporter_callback</span>
+
+</div>
+<span class="k">def</span> <span class="nf">_instanceof</span><span class="p">(</span><span class="n">instance</span><span class="p">,</span> <span class="n">class_</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Check type by matching ``.__name__``.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="nb">type</span><span class="p">(</span><span class="n">instance</span><span class="p">)</span><span class="o">.</span><span class="n">__name__</span> <span class="o">==</span> <span class="n">class_</span><span class="o">.</span><span class="n">__name__</span>
+
+
+<div class="viewcode-block" id="reactToAMQPMessage"><a class="viewcode-back" href="../api/downloader.html#downloader.reactToAMQPMessage">[docs]</a><span class="k">def</span> <span class="nf">reactToAMQPMessage</span><span class="p">(</span><span class="n">message</span><span class="p">,</span> <span class="n">send_back</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    React to given (AMQP) message. `message` is usually expected to be</span>
+<span class="sd">    :py:func:`collections.namedtuple` structure filled with all necessary data.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        message (\*Request class): only :class:`.ConversionRequest` class is</span>
+<span class="sd">                                   supported right now</span>
+<span class="sd">        send_back (fn reference): Reference to function for responding. This is</span>
+<span class="sd">                  useful for progress monitoring for example. Function takes</span>
+<span class="sd">                  one parameter, which may be response structure/namedtuple, or</span>
+<span class="sd">                  string or whatever would be normally returned.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        ConversionResponse: response filled with data about conversion and\</span>
+<span class="sd">                            converted file.</span>
+
+<span class="sd">    Raises:</span>
+<span class="sd">        ValueError: if bad type of `message` structure is given.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">_instanceof</span><span class="p">(</span><span class="n">message</span><span class="p">,</span> <span class="n">Download</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">DownloadedFile</span><span class="p">(</span>
+            <span class="n">url</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">url</span><span class="p">,</span>
+            <span class="n">b64_data</span><span class="o">=</span><span class="n">b64encode</span><span class="p">(</span>
+                <span class="n">downloader</span><span class="o">.</span><span class="n">download</span><span class="p">(</span><span class="n">message</span><span class="o">.</span><span class="n">url</span><span class="p">)</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+    <span class="k">elif</span> <span class="n">_instanceof</span><span class="p">(</span><span class="n">message</span><span class="p">,</span> <span class="n">CheckExistence</span><span class="p">):</span>
+        <span class="n">exists</span> <span class="o">=</span> <span class="bp">True</span>
+
+        <span class="c"># not nice, but you would not believe, how many exceptions are there to</span>
+        <span class="c"># throw</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">headers</span> <span class="o">=</span> <span class="n">downloader</span><span class="o">.</span><span class="n">head_request</span><span class="p">(</span><span class="n">message</span><span class="o">.</span><span class="n">url</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="n">exists</span> <span class="o">=</span> <span class="bp">False</span>
+            <span class="n">headers</span> <span class="o">=</span> <span class="p">{}</span>
+
+        <span class="k">return</span> <span class="n">Exists</span><span class="p">(</span>
+            <span class="n">url</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">url</span><span class="p">,</span>
+            <span class="n">result</span><span class="o">=</span><span class="n">exists</span><span class="p">,</span>
+            <span class="n">headers</span><span class="o">=</span><span class="n">headers</span>
+        <span class="p">)</span>
+    <span class="k">elif</span> <span class="n">_instanceof</span><span class="p">(</span><span class="n">message</span><span class="p">,</span> <span class="n">ProgressDownload</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">DownloadedFile</span><span class="p">(</span>
+            <span class="n">url</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">url</span><span class="p">,</span>
+            <span class="n">b64_data</span><span class="o">=</span><span class="n">b64encode</span><span class="p">(</span>
+                <span class="n">downloader</span><span class="o">.</span><span class="n">progress_download</span><span class="p">(</span>
+                    <span class="n">url</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">url</span><span class="p">,</span>
+                    <span class="n">steps</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">steps</span><span class="p">,</span>
+                    <span class="n">callback</span><span class="o">=</span><span class="n">get_progress_reporter</span><span class="p">(</span><span class="n">send_back</span><span class="p">)</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+
+    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+        <span class="s">&quot;Unknown type of request: &#39;&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">message</span><span class="p">))</span> <span class="o">+</span> <span class="s">&quot;&#39;!&quot;</span>
+    <span class="p">)</span></div>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../index.html">edeposit.amqp.downloader 0.2.0 documentation</a> &raquo;</li>
+          <li><a href="index.html" >Module code</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2014 E-deposit team.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>
