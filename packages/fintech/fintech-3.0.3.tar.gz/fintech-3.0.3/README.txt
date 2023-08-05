@@ -1,0 +1,145 @@
+The Python FinTech package
+==========================
+
+This package contains all the functionality that is required to work with
+EBICS, SEPA and other financial technologies. The usage has been realised
+as simple as possible but also as flexible as necessary.
+
+Features
+--------
+
+- Obtain bank account statements (CAMT and MT940)
+- Create and submit SEPA credit transfers (pain.001)
+- Create and submit SEPA direct debits CORE, COR1, B2B (pain.008)
+- Mostly full SEPA support
+- Automatic calculation of the lead time based on holidays and cut-off times
+- Integrated mandate manager (beta)
+- Plausibility check of IBAN and BIC
+- Validation of payment orders against the SEPA Clearing Directory of the
+  German Central Bank
+- Bankcode/Account to IBAN converter according to the rules of the German
+  Central Bank
+- DATEV converter (KNE)
+
+The FinTech package provides you the possibility to manage all of your everyday
+commercial banking activities such as credit transfers, direct debits or the
+retrieval of bank account statements in a flexible and secure manner.
+
+All modules can be used free of charge. Only the unlicensed version of the
+EBICS module has few restrictions. The upload of SEPA documents is limited
+to a maximum of five transactions and bank account statements can not be
+retrieved for the last three days.
+
+EBICS example
+-------------
+
+.. sourcecode:: python
+    
+    import fintech
+    fintech.register()
+    from fintech.ebics import EbicsKeyRing, EbicsBank, EbicsUser, EbicsClient
+    
+    keyring = EbicsKeyRing(keys='~/mykeys', passphrase='mysecret')
+    bank = EbicsBank(keyring=keyring, hostid='MYBANK', url='https://www.mybank.de/ebics')
+    user = EbicsUser(keyring=keyring, partnerid='CUSTOMER123', userid='USER1')
+    # Create new keys for this user
+    user.create_keys(keyversion='A006', bitlength=2048)
+    
+    client = EbicsClient(bank, user)
+    # Send the public electronic signature key to the bank.
+    client.INI()
+    # Send the public authentication and encryption keys to the bank.
+    client.HIA()
+    
+    # Create an INI-letter which must be printed and sent to the bank.
+    user.create_ini_letter(bankname='MyBank AG', path='~/ini_letter.pdf')
+
+    # After the account has been activated the public bank keys
+    # must be downloaded and checked for consistency.
+    print client.HPB()
+    
+    # Finally the bank keys must be activated.
+    bank.activate_keys()
+    
+    # Download MT940 bank account statements
+    data = client.STA(
+        start='2014-02-01',
+        end='2014-02-07',
+        )
+
+
+Changelog
+---------
+
+v3.0.3 [2015-02-05]
+    - Fixed a bug in the XML to dictionary converter.
+    - Fixed a bug in the path handler of the EbicsKeyRing class.
+
+v3.0.2 [2015-01-29]
+    - Fixed a bug handling bank keys with a small bit-length.
+    - Added some tolerance to the MT940 parser and collect unknown structured
+      fields.
+
+v3.0.1 [2015-01-26]
+    - Renamed the package from *ebics* to *fintech* and the module *client* to
+      *ebics*.
+    - Splitted the functionality of the class *EbicsClient* into the classes
+      *EbicsClient*, *EbicsBank*, *EbicsUser* and *EbicsKeyRing*. Added the
+      new class factory *EbicsClientCompat* for backwards compatibility.
+    - Added basic support for EBICS protocol version 2.4 (H003).
+    - Added support for certificates.
+    - Added the order types FUL and FDL.
+    - Added a French and English version of the INI-letter.
+    - Added the order types PUB, HCA, HCS and H3K.
+    - Added a check of remote SSL certificates against trusted CAs.
+    - Fixed the broken functionality of distributed signatures.
+    - Added a much faster PBKDF2 implementation.
+    - Created a more tolerant MT940 parser.
+    - Changed the API of *SEPACreditTransfer* and *SEPADirectDebit* to be more
+      consistent and added support for different PAIN scheme versions.
+    - Several bug fixes.
+
+v2.1.2 [2014-10-26]
+    - Fixed some bugs regarding the distributed signature
+
+v2.1.1 [2014-10-26]
+    - Fixed a bug throwing an exception in an unregistered version of PyEBICS.
+    - Fixed bug of wrong *OrderParams* tag used by orders of the distributed
+      signature.
+
+v2.1.0 [2014-09-29]
+    - Added some functionality based on the SCL Directory, published by the
+      German Central Bank.
+
+v2.0.3 [2014-09-11]
+    - Fixed a bug refusing valid creditor ids.
+    - Added a test to check DATEV parameters for invalid arguments.
+
+v2.0.2 [2014-09-05]
+    - Fixed a bug in some EBICS requests (missing parameter tag).
+    - Fixed a bug in the MT940 parser.
+
+v2.0.1 [2014-08-18]
+    - Fixed a bug handling XML namespaces.
+    - Changed the behaviour of the flag *parsed* of some methods. Now a
+      structure of dictionaries is returned instead of an objectified XML
+      object.
+    - Changed the expected type of the *params* parameter. Now it must be
+      a dictionary instead of a list of tuples.
+    - Added support for distributed signatures (HVU, HVD, HVZ, HVT, HVE, HVS).
+
+v1.3.0 [2014-07-29]
+    - Fixed a few minor bugs.
+    - Made the package available for Windows.
+
+v1.2.0 [2014-05-23]
+    - Added new DATEV module.
+    - Fixed wrong XML position of UltmtCdtr node in SEPA documents.
+    - Changed the order of the (BANKCODE, ACCOUNT) tuple to (ACCOUNT, BANKCODE)
+      used by the Account initializer.
+
+v1.1.25 [2014-02-22]
+    - Minor bug fix of the module loader.
+
+v1.1.24 [2014-02-21]
+    - First public release.
