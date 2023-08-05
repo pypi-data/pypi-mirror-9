@@ -1,0 +1,228 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>django_openS3.storage &mdash; django_openS3 0.1.0 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '0.1.0',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <link rel="top" title="django_openS3 0.1.0 documentation" href="../../index.html" />
+    <link rel="up" title="Module code" href="../index.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../index.html">django_openS3 0.1.0 documentation</a> &raquo;</li>
+          <li><a href="../index.html" accesskey="U">Module code</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <h1>Source code for django_openS3.storage</h1><div class="highlight"><pre>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">A custom Storage interface for storing files to S3 via OpenS3</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">import</span> <span class="nn">datetime</span>
+<span class="kn">from</span> <span class="nn">django.conf</span> <span class="kn">import</span> <span class="n">settings</span>
+<span class="kn">from</span> <span class="nn">django.core.exceptions</span> <span class="kn">import</span> <span class="n">ImproperlyConfigured</span>
+<span class="kn">from</span> <span class="nn">django.core.files.base</span> <span class="kn">import</span> <span class="n">ContentFile</span>
+<span class="kn">from</span> <span class="nn">django.core.files.storage</span> <span class="kn">import</span> <span class="n">Storage</span>
+<span class="kn">from</span> <span class="nn">openS3</span> <span class="kn">import</span> <span class="n">OpenS3</span>
+<span class="kn">from</span> <span class="nn">openS3.constants</span> <span class="kn">import</span> <span class="n">AWS_DATETIME_FORMAT</span>
+<span class="kn">from</span> <span class="nn">openS3.utils</span> <span class="kn">import</span> <span class="n">S3IOError</span>
+<span class="kn">from</span> <span class="nn">django_openS3.constants</span> <span class="kn">import</span> <span class="n">S3_STATIC_DIR</span><span class="p">,</span> <span class="n">S3_MEDIA_DIR</span>
+
+
+<div class="viewcode-block" id="S3Storage"><a class="viewcode-back" href="../../storage.html#django_openS3.storage.S3Storage">[docs]</a><span class="k">class</span> <span class="nc">S3Storage</span><span class="p">(</span><span class="n">Storage</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A custom storage implementation for use with py3s3.</span>
+<span class="sd">    An instance of this class can be used to move a py3s3 file</span>
+<span class="sd">    up to or down from AWS.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name_prefix</span><span class="p">,</span> <span class="n">bucket</span><span class="p">,</span> <span class="n">aws_access_key</span><span class="p">,</span> <span class="n">aws_secret_key</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">name_prefix</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="k">if</span> <span class="n">name_prefix</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">name_prefix</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">3</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">ImproperlyConfigured</span><span class="p">(</span><span class="s">&#39;Given name prefix is too short. &#39;</span>
+                                           <span class="s">&#39;Given name prefix {}&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">name_prefix</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">name_prefix</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">!=</span> <span class="s">&#39;/&#39;</span> <span class="ow">or</span> <span class="n">name_prefix</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="s">&#39;/&#39;</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">ImproperlyConfigured</span><span class="p">(</span><span class="s">&#39;Given name prefix must start and end with a slash. &#39;</span>
+                                           <span class="s">&#39;Given name prefix {}&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">name_prefix</span><span class="p">))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">name_prefix</span> <span class="o">=</span> <span class="n">name_prefix</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">opener</span> <span class="o">=</span> <span class="n">OpenS3</span><span class="p">(</span><span class="n">bucket</span><span class="p">,</span> <span class="n">aws_access_key</span><span class="p">,</span> <span class="n">aws_secret_key</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_open</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s">&#39;rb&#39;</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Retrieves the specified file from storage.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_prepend_name_prefix</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">opener</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">mode</span><span class="p">)</span> <span class="k">as</span> <span class="n">fd</span><span class="p">:</span>
+            <span class="n">content</span> <span class="o">=</span> <span class="n">fd</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">ContentFile</span><span class="p">(</span><span class="n">content</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_save</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">content</span><span class="p">):</span>
+        <span class="n">name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_valid_name</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+        <span class="n">name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_prepend_name_prefix</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">opener</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="s">&#39;wb&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">fd</span><span class="p">:</span>
+            <span class="n">fd</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">content</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">decode</span><span class="p">())</span>
+        <span class="k">return</span> <span class="n">name</span>
+
+    <span class="k">def</span> <span class="nf">get_valid_name</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+        <span class="c"># TODO Implement this method in a AWS friendly way.</span>
+        <span class="c"># Don&#39;t use Django&#39;s get_valid_name as it strips slashes from the name.</span>
+        <span class="k">return</span> <span class="n">name</span>
+
+    <span class="k">def</span> <span class="nf">_prepend_name_prefix</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Return file name (ie. path) with the prefix directory prepended&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">name_prefix</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">name</span>
+        <span class="n">base</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">name_prefix</span>
+        <span class="k">if</span> <span class="n">name</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="s">&#39;/&#39;</span><span class="p">:</span>
+            <span class="n">name</span> <span class="o">=</span> <span class="n">name</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
+        <span class="k">return</span> <span class="n">base</span> <span class="o">+</span> <span class="n">name</span>
+
+<div class="viewcode-block" id="S3Storage.delete"><a class="viewcode-back" href="../../storage.html#django_openS3.storage.S3Storage.delete">[docs]</a>    <span class="k">def</span> <span class="nf">delete</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Deletes the specified file from the storage system.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_prepend_name_prefix</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">opener</span><span class="p">(</span><span class="n">name</span><span class="p">)</span> <span class="k">as</span> <span class="n">fd</span><span class="p">:</span>
+            <span class="n">fd</span><span class="o">.</span><span class="n">delete</span><span class="p">()</span>
+</div>
+<div class="viewcode-block" id="S3Storage.exists"><a class="viewcode-back" href="../../storage.html#django_openS3.storage.S3Storage.exists">[docs]</a>    <span class="k">def</span> <span class="nf">exists</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns True if a file referenced by the given name already exists in the</span>
+<span class="sd">        storage system, or False if the name is available for a new file.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_prepend_name_prefix</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">opener</span><span class="p">(</span><span class="n">name</span><span class="p">)</span> <span class="k">as</span> <span class="n">fd</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">fd</span><span class="o">.</span><span class="n">exists</span><span class="p">()</span>
+</div>
+<div class="viewcode-block" id="S3Storage.listdir"><a class="viewcode-back" href="../../storage.html#django_openS3.storage.S3Storage.listdir">[docs]</a>    <span class="k">def</span> <span class="nf">listdir</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Lists the contents of the specified path, returning a 2-tuple of lists;</span>
+<span class="sd">        the first item being directories, the second item being files.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">opener</span><span class="p">(</span><span class="n">path</span><span class="p">)</span> <span class="k">as</span> <span class="n">fd</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">fd</span><span class="o">.</span><span class="n">listdir</span><span class="p">()</span>
+</div>
+<div class="viewcode-block" id="S3Storage.size"><a class="viewcode-back" href="../../storage.html#django_openS3.storage.S3Storage.size">[docs]</a>    <span class="k">def</span> <span class="nf">size</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the total size, in bytes, of the file specified by name.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_prepend_name_prefix</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">opener</span><span class="p">(</span><span class="n">name</span><span class="p">)</span> <span class="k">as</span> <span class="n">fd</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">fd</span><span class="o">.</span><span class="n">size</span>
+</div>
+<div class="viewcode-block" id="S3Storage.url"><a class="viewcode-back" href="../../storage.html#django_openS3.storage.S3Storage.url">[docs]</a>    <span class="k">def</span> <span class="nf">url</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns an absolute URL where the file&#39;s contents can be accessed</span>
+<span class="sd">        directly by a Web browser.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_prepend_name_prefix</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">opener</span><span class="p">(</span><span class="n">name</span><span class="p">)</span><span class="o">.</span><span class="n">url</span>
+</div>
+<div class="viewcode-block" id="S3Storage.modified_time"><a class="viewcode-back" href="../../storage.html#django_openS3.storage.S3Storage.modified_time">[docs]</a>    <span class="k">def</span> <span class="nf">modified_time</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the last modified time (as datetime object) of the file</span>
+<span class="sd">        specified by name.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_prepend_name_prefix</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">opener</span><span class="p">(</span><span class="n">name</span><span class="p">)</span> <span class="k">as</span> <span class="n">fd</span><span class="p">:</span>
+            <span class="n">fd</span><span class="o">.</span><span class="n">exists</span><span class="p">()</span>  <span class="c"># Call .exists() to populate .response_headers</span>
+            <span class="n">response_headers</span> <span class="o">=</span> <span class="n">fd</span><span class="o">.</span><span class="n">response_headers</span>
+
+        <span class="k">if</span> <span class="s">&#39;Last-Modified&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">response_headers</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">S3IOError</span><span class="p">(</span><span class="s">&#39;&quot;Last-Modified&quot; header not found for S3 object {}&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">name</span><span class="p">))</span>
+        <span class="n">datetime_str</span> <span class="o">=</span> <span class="n">response_headers</span><span class="p">[</span><span class="s">&#39;Last-Modified&#39;</span><span class="p">]</span>
+        <span class="k">return</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">strptime</span><span class="p">(</span><span class="n">datetime_str</span><span class="p">,</span> <span class="n">AWS_DATETIME_FORMAT</span><span class="p">)</span>
+
+</div></div>
+<span class="k">class</span> <span class="nc">S3StaticStorage</span><span class="p">(</span><span class="n">S3Storage</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span>
+                 <span class="n">name_prefix</span><span class="o">=</span><span class="nb">getattr</span><span class="p">(</span><span class="n">settings</span><span class="p">,</span> <span class="s">&#39;S3_STATIC_DIR&#39;</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span> <span class="ow">or</span> <span class="n">S3_STATIC_DIR</span><span class="p">,</span>
+                 <span class="n">bucket</span><span class="o">=</span><span class="n">settings</span><span class="o">.</span><span class="n">AWS_STORAGE_BUCKET_NAME</span><span class="p">,</span>
+                 <span class="n">aws_access_key</span><span class="o">=</span><span class="n">settings</span><span class="o">.</span><span class="n">AWS_ACCESS_KEY_ID</span><span class="p">,</span>
+                 <span class="n">aws_secret_key</span><span class="o">=</span><span class="n">settings</span><span class="o">.</span><span class="n">AWS_SECRET_ACCESS_KEY</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="n">name_prefix</span><span class="p">,</span> <span class="n">bucket</span><span class="p">,</span> <span class="n">aws_access_key</span><span class="p">,</span> <span class="n">aws_secret_key</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">S3MediaStorage</span><span class="p">(</span><span class="n">S3Storage</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span>
+                 <span class="n">name_prefix</span><span class="o">=</span><span class="nb">getattr</span><span class="p">(</span><span class="n">settings</span><span class="p">,</span> <span class="s">&#39;S3_MEDIA_DIR&#39;</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span> <span class="ow">or</span> <span class="n">S3_MEDIA_DIR</span><span class="p">,</span>
+                 <span class="n">bucket</span><span class="o">=</span><span class="n">settings</span><span class="o">.</span><span class="n">AWS_STORAGE_BUCKET_NAME</span><span class="p">,</span>
+                 <span class="n">aws_access_key</span><span class="o">=</span><span class="n">settings</span><span class="o">.</span><span class="n">AWS_ACCESS_KEY_ID</span><span class="p">,</span>
+                 <span class="n">aws_secret_key</span><span class="o">=</span><span class="n">settings</span><span class="o">.</span><span class="n">AWS_SECRET_ACCESS_KEY</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="n">name_prefix</span><span class="p">,</span> <span class="n">bucket</span><span class="p">,</span> <span class="n">aws_access_key</span><span class="p">,</span> <span class="n">aws_secret_key</span><span class="p">)</span>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../index.html">django_openS3 0.1.0 documentation</a> &raquo;</li>
+          <li><a href="../index.html" >Module code</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2015, Paul Logston.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>
