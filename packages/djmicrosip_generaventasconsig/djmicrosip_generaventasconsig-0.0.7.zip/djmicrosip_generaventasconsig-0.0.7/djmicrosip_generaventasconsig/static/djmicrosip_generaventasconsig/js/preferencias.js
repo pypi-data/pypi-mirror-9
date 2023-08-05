@@ -1,0 +1,1 @@
+$('#id_ventas_cliente_text').addClass('form-control');
