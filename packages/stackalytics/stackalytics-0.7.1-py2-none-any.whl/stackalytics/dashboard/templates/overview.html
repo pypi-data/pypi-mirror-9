@@ -1,0 +1,229 @@
+{% extends "layout.html" %}
+{% import '_macros/activity_log.html' as activity_log %}
+{% import '_macros/contribution_summary.html' as contribution_summary %}
+{% import '_macros/user_profile.html' as user_profile %}
+{% import '_macros/module_details.html' as module_details %}
+
+{% set show_company_breakdown = (not company) and (not user_id) %}
+{% set show_engineer_breakdown = (not user_id) %}
+{% set show_bp_breakdown = (metric in ['bpd', 'bpc']) %}
+{% set show_module_breakdown = (not module) %}
+{% set show_user_activity = (user_id) %}
+{% set show_module_activity = (module) and (not user_id) %}
+{% set show_activity = (show_user_activity) or (show_module_activity) %}
+{% set show_contribution_on_left = (not user_id) and (module) %}
+{% set show_contribution_on_right = (user_id) or (company and not module) %}
+{% set show_user_profile = (user_id) %}
+{% set show_module_details = (module) %}
+{% set show_top_mentors_options = (metric == 'tm_marks') %}
+{% set show_review_ratio = (metric in ['marks', 'tm_marks']) %}
+
+{% macro show_report_links(module=None, company=None, user_id=None) -%}
+    {% if module %}
+        <div><b><a href="/report/reviews/{{ module }}/open" target="_blank">Show open reviews for {{ module_inst.module_group_name }}</a></b></div>
+        <div><b><a href="/report/contribution/{{ module }}/30" target="_blank">Contribution for the last 30 days in {{ module_inst.module_group_name }}</a></b></div>
+        <div><b><a href="/report/contribution/{{ module }}/90" target="_blank">Contribution for the last 90 days in {{ module_inst.module_group_name }}</a></b></div>
+        {% if module_inst.ci %}
+            <div><b><a href="/report/ci/{{ module }}/7" target="_blank">External CI status for {{ module_inst.module_group_name }} for the last 7 days</a></b></div>
+        {% endif %}
+    {% endif %}
+    {% if company %}
+        <div><b><a href="/report/companies/{{ company }}" target="_blank">Show activity report for {{ company_original }}</a></b></div>
+    {% endif %}
+    {% if user_id %}
+        <div><b><a href="/report/users/{{ user_id }}" target="_blank">Show activity report for {{ user_inst.user_name }}</a></b></div>
+    {% endif %}
+{%- endmacro %}
+
+{% block scripts %}
+<script type="text/javascript">
+
+    renderTimeline();
+
+    {% if show_company_breakdown %}
+    renderTableAndChart("/api/1.0/stats/companies", "company_container", "company_table", "company_chart", "company");
+    {% endif %}
+    {% if show_engineer_breakdown %}
+        {% if show_review_ratio %}
+        renderTableAndChart("/api/1.0/stats/engineers", "engineer_container", "engineer_table", "engineer_chart", "user_id",
+                ["index", "link", "mark_ratio", "metric"]);
+        {% else %}
+        renderTableAndChart("/api/1.0/stats/engineers", "engineer_container", "engineer_table", "engineer_chart", "user_id");
+        {% endif %}
+    {% endif %}
+    {% if show_bp_breakdown %}
+    renderTableAndChart("/api/1.0/stats/bp", "bp_container", "bp_table", "bp_chart", "name",
+            ["index", "link", "status", "date", "metric"]);
+    {% endif %}
+    {% if show_module_breakdown %}
+    renderTableAndChart("/api/1.0/stats/modules", "module_container", "module_table", "module_chart", "module");
+    {% endif %}
+
+</script>
+
+{% endblock %}
+
+{% block report_options %}
+    {% if show_top_mentors_options %}
+        <script type='text/javascript'>
+            $(document).ready(function () {
+                $('#review_nth').val('{{ review_nth }}');
+                $("#review_nth").select2();
+            });
+
+            function make_options() {
+                var options = getUrlVars();
+                options['review_nth'] = $('#review_nth').val();
+                return options;
+            }
+
+            function reload() {
+                window.location.search = $.map(make_options(),function (val, index) {
+                    return index + "=" + val;
+                }).join("&")
+            }
+
+            $(document).on('change', '#review_nth', function (evt) {
+                reload();
+            });
+        </script>
+        <div class="drop" style="margin-top: 1em;">
+            <label for="review_nth">Aggregate stats for first # reviews</label>
+            <select id="review_nth" name="review_nth"
+                    style="min-width: 140px;"
+                    data-placeholder="Select review #">
+                <option></option>
+                {% set review_number_options = [1, 2, 3, 4, 5, 10, 15] %}
+                {% for option in review_number_options %}
+                    <option value="{{ option }}">{{ option }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    {% endif %}
+{% endblock %}
+
+{% block left_frame %}
+
+    {% if show_company_breakdown %}
+    <div id="company_container">
+    <h2>Contribution by companies</h2>
+
+    <div id="company_chart" style="width: 100%; height: 350px; margin-bottom: 1em;"></div>
+
+    <table id="company_table" class="display">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Company</th>
+                <th>{{ metric_label }}</th>
+            </tr>
+        </thead>
+        <tbody>
+        </tbody>
+    </table>
+    <div class="spacer"></div>
+    </div>
+    {% endif %}
+
+    {% if show_engineer_breakdown %}
+    <div id="engineer_container">
+    <h2>Contribution by engineers</h2>
+
+    <div id="engineer_chart" style="width: 100%; height: 350px; margin-bottom: 1em;"></div>
+
+    <table id="engineer_table" class="display">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Engineer</th>
+                {% if show_review_ratio %}
+                    <th>-2|-1|+1|+2|A (+ ratio)</th>
+                {% endif %}
+                <th>{{ metric_label }}</th>
+            </tr>
+        </thead>
+        <tbody>
+        </tbody>
+    </table>
+    <div class="spacer"></div>
+    </div>
+    {% endif %}
+
+    {% if show_user_profile %}
+        {{ user_profile.show_user_profile(user_id=user_id) }}
+    {% endif %}
+    {% if show_user_activity %}
+        {{ activity_log.show_activity_log(gravatar_size=32, show_all=False) }}
+    {% endif %}
+
+    {% if show_contribution_on_left %}
+        {{ contribution_summary.show_contribution_summary(show_all=False) }}
+        {{ show_report_links(module, company, user_id) }}
+    {% endif %}
+
+{% endblock %}
+
+{% block right_frame %}
+
+    {% if show_module_breakdown %}
+    <div id="module_container">
+    <h2>Contribution by modules</h2>
+
+    <div id="module_chart" style="width: 100%; height: 350px; margin-bottom: 1em;"></div>
+
+    <table id="module_table" class="display">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Module</th>
+                <th>{{ metric_label }}</th>
+            </tr>
+        </thead>
+        <tbody>
+        </tbody>
+    </table>
+    <div class="spacer"></div>
+    </div>
+    {% endif %}
+
+    {% if show_module_details %}
+        {{ module_details.show_module_details(module=module) }}
+    {% endif %}
+
+    {% if show_bp_breakdown %}
+    <div id="bp_container">
+    <h2>Blueprint popularity</h2>
+
+    <div style="font-style: italic;">
+        This metric shows how many times a blueprint was mentioned in emails and commit messages.
+    </div>
+
+    <div id="bp_chart" style="width: 100%; height: 350px; margin-bottom: 1em;"></div>
+
+    <table id="bp_table" class="display">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Blueprint</th>
+                <th>Status</th>
+                <th>Date</th>
+                <th>Mentions</th>
+            </tr>
+        </thead>
+        <tbody>
+        </tbody>
+    </table>
+    <div class="spacer"></div>
+    </div>
+    {% endif %}
+
+    {% if show_contribution_on_right %}
+        {{ contribution_summary.show_contribution_summary(show_all=False) }}
+        {{ show_report_links(module, company, user_id) }}
+    {% endif %}
+
+    {% if show_module_activity %}
+        {{ activity_log.show_activity_log(gravatar_size=32, show_all=False) }}
+    {% endif %}
+
+{% endblock %}
