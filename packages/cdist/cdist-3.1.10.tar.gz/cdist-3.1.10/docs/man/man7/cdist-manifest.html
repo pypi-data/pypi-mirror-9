@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8" /><title>cdist-manifest(7)</title><link rel="stylesheet" type="text/css" href="docbook-xsl.css" /><meta name="generator" content="DocBook XSL Stylesheets V1.78.1" /></head><body><div xml:lang="en" class="article" lang="en"><div class="titlepage"><div><div><h2 class="title"><a id="idm140311972756048"></a>cdist-manifest(7)</h2></div><div><div class="author"><h3 class="author"><span class="firstname">Nico</span> <span class="surname">Schottelius</span></h3><code class="email">&lt;<a class="email" href="mailto:nico-cdist--@--schottelius.org">nico-cdist--@--schottelius.org</a>&gt;</code></div></div></div><hr /></div><div class="toc"><p><strong>Table of Contents</strong></p><dl class="toc"><dt><span class="section"><a href="#_name">1. NAME</a></span></dt><dt><span class="section"><a href="#_description">2. DESCRIPTION</a></span></dt><dt><span class="section"><a href="#_initial_and_type_manifests">3. INITIAL AND TYPE MANIFESTS</a></span></dt><dt><span class="section"><a href="#_define_state_in_the_initial_manifest">4. DEFINE STATE IN THE INITIAL MANIFEST</a></span></dt><dt><span class="section"><a href="#_splitting_up_the_initial_manifest">5. SPLITTING UP THE INITIAL MANIFEST</a></span></dt><dt><span class="section"><a href="#_dependencies">6. DEPENDENCIES</a></span></dt><dt><span class="section"><a href="#_create_dependencies_from_execution_order">7. CREATE DEPENDENCIES FROM EXECUTION ORDER</a></span></dt><dt><span class="section"><a href="#_overrides">8. OVERRIDES</a></span></dt><dt><span class="section"><a href="#_examples">9. EXAMPLES</a></span></dt><dt><span class="section"><a href="#_see_also">10. SEE ALSO</a></span></dt><dt><span class="section"><a href="#_copying">11. COPYING</a></span></dt></dl></div><div class="section"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a id="_name"></a>1. NAME</h2></div></div></div><p>cdist-manifest - (Re-)Use types</p></div><div class="section"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a id="_description"></a>2. DESCRIPTION</h2></div></div></div><p>Manifests are used to define which objects to create.
+Objects are instances of <span class="strong"><strong>types</strong></span>, like in object oriented programming languages.
+An object is represented by the combination of
+<span class="strong"><strong>type + slash + object name</strong></span>: <span class="strong"><strong>__file/etc/cdist-configured</strong></span> is an
+object of the type <span class="strong"><strong><span class="strong"><strong>__file</strong></span></strong></span> with the name <span class="strong"><strong><span class="strong"><strong>etc/cdist-configured</strong></span></strong></span>.</p><p>All available types can be found in the <span class="strong"><strong>cdist/conf/type/</strong></span> directory,
+use <span class="strong"><strong>ls cdist/conf/type</strong></span> to get the list of available types. If you have
+setup the MANPATH correctly, you can use <span class="strong"><strong>man cdist-reference</strong></span> to access
+the reference with pointers to the manpages.</p><p>Types in manifests are used like normal command line tools. Let’s have a look
+at an example:</p><pre class="screen"># Create object of type __package with the parameter state = absent
+__package apache2 --state absent
+
+# Same with the __directory type
+__directory /tmp/cdist --state present</pre><p>These two lines create objects, which will later be used to realise the
+configuration on the target host.</p><p>Manifests are executed locally as a shell script using <span class="strong"><strong>/bin/sh -e</strong></span>.
+The resulting objects are stored in an internal database.</p><p>The same object can be redefined in multiple different manifests as long as
+the parameters are exactly the same.</p><p>In general, manifests are used to define which types are used depending
+on given conditions.</p></div><div class="section"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a id="_initial_and_type_manifests"></a>3. INITIAL AND TYPE MANIFESTS</h2></div></div></div><p>Cdist knows about two types of manifests: The initial manifest and type
+manifests. The initial manifest is used to define, which configurations
+to apply to which hosts. The type manifests are used to create objects
+from types. More about manifests in types can be found in <a href="../man7/cdist-type.html">cdist-type(7)</a>.</p></div><div class="section"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a id="_define_state_in_the_initial_manifest"></a>4. DEFINE STATE IN THE INITIAL MANIFEST</h2></div></div></div><p>The <span class="strong"><strong>initial manifest</strong></span> is the entry point for cdist to find out, which
+<span class="strong"><strong>objects</strong></span> to configure on the selected host.
+Cdist expects the initial manifest at <span class="strong"><strong>cdist/conf/manifest/init</strong></span>.</p><p>Within this initial manifest you define, which objects should be
+created on which host. To distinguish between hosts, you can use the
+environment variable <span class="strong"><strong>__target_host</strong></span>. Let’s have a look at a simple
+example:</p><pre class="screen">__cdistmarker
+
+case "$__target_host" in
+   localhost)
+        __directory /home/services/kvm-vm --parents yes
+   ;;
+esac</pre><p>This manifest says: Independent of the host, always use the type
+<span class="strong"><strong><span class="strong"><strong>__cdistmarker</strong></span></strong></span>, which creates the file <span class="strong"><strong>/etc/cdist-configured</strong></span>,
+with the timestamp as content.
+The directory <span class="strong"><strong><span class="strong"><strong>/home/services/kvm-vm</strong></span></strong></span>, including all parent directories,
+is only created on the host <span class="strong"><strong><span class="strong"><strong>localhost</strong></span></strong></span>.</p><p>As you can see, there is no magic involved, the manifest is simple shell code that
+utilises cdist types. Every available type can be executed like a normal
+command.</p></div><div class="section"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a id="_splitting_up_the_initial_manifest"></a>5. SPLITTING UP THE INITIAL MANIFEST</h2></div></div></div><p>If you want to split up your initial manifest, you can create other shell
+scripts in <span class="strong"><strong>cdist/conf/manifest/</strong></span> and include them in <span class="strong"><strong>cdist/conf/manifest/init</strong></span>.
+Cdist provides the environment variable <span class="strong"><strong><span class="strong"><strong>__manifest</strong></span></strong></span> to reference
+the directory containing the initial manifest (see <a href="../man7/cdist-reference.html">cdist-reference(7)</a>).</p><p>The following example would include every file with a <span class="strong"><strong>.sh</strong></span> suffix:</p><pre class="screen"># Include *.sh
+for manifest in $__manifest/*.sh; do
+    # And source scripts into our shell environment
+    . "$manifest"
+done</pre></div><div class="section"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a id="_dependencies"></a>6. DEPENDENCIES</h2></div></div></div><p>If you want to describe that something requires something else, just
+setup the variable "require" to contain the requirements. Multiple
+requirements can be added white space separated.</p><pre class="screen"> 1 # No dependency
+ 2 __file /etc/cdist-configured
+ 3
+ 4 # Require above object
+ 5 require="__file/etc/cdist-configured" __link /tmp/cdist-testfile \
+ 6    --source /etc/cdist-configured  --type symbolic
+ 7
+ 8 # Require two objects
+ 9 require="__file/etc/cdist-configured __link/tmp/cdist-testfile" \
+10    __file /tmp/cdist-another-testfile</pre><p>Above the "require" variable is only set for the command that is
+immediately following it. Dependencies should always be declared that way.</p><p>On line 4 you can see that the instantion of a type "__link" object needs
+the object "__file/etc/cdist-configured" to be present, before it can proceed.</p><p>This also means that the "__link" command must make sure, that either
+"__file/etc/cdist-configured" allready is present, or, if it’s not, it needs
+to be created. The task of cdist is to make sure, that the dependency will be
+resolved appropriately and thus "__file/etc/cdist-configured" be created
+if necessary before "__link" proceeds (or to abort execution with an error).</p><p>If you really need to make all types depend on a common dependency, you can
+export the "require" variable as well. But then, if you need to add extra
+dependencies to a specific type, you have to make sure that you append these
+to the globally already defined one.</p><pre class="screen"># First of all, update the package index
+__package_update_index
+# Upgrade all the installed packages afterwards
+require="__package_update_index" __package_upgrade_all
+# Create a common dependency for all the next types so that they get to
+# be executed only after the package upgrade has finished
+export require="__package_upgrade_all"
+
+# Ensure that lighttpd is installed after we have upgraded all the packages
+__package lighttpd --state present
+# Ensure that munin is installed after lighttpd is present and after all
+# the packages are upgraded
+require="$require __package/lighttpd" __package munin --state present</pre><p>All objects that are created in a type manifest are automatically required
+from the type that is calling them. This is called "autorequirement" in
+cdist jargon.</p><p>You can find an more in depth description of the flow execution of manifests
+in <a href="../man7/cdist-stages.html">cdist-stages(7)</a> and of how types work in <a href="../man7/cdist-type.html">cdist-type(7)</a>.</p></div><div class="section"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a id="_create_dependencies_from_execution_order"></a>7. CREATE DEPENDENCIES FROM EXECUTION ORDER</h2></div></div></div><p>You can tell cdist to execute all types in the order in which they are created
+in the manifest by setting up the variable CDIST_ORDER_DEPENDENCY.
+When cdist sees that this variable is setup, the current created object
+automatically depends on the previously created object.</p><p>It essentially helps you to build up blocks of code that build upon each other
+(like first creating the directory xyz than the file below the directory).</p></div><div class="section"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a id="_overrides"></a>8. OVERRIDES</h2></div></div></div><p>In some special cases, you would like to create an already defined object
+with different parameters. In normal situations this leads to an error in cdist.
+If you whish, you can setup the environment variable CDIST_OVERRIDE
+(any value or even empty is ok) to tell cdist, that this object override is
+wanted and should be accepted.
+ATTENTION: Only use this feature if you are 100% sure in which order
+cdist encounters the affected objects, otherwhise this results
+in an undefined situation.</p><p>If CDIST_OVERRIDE and CDIST_ORDER_DEPENDENCY are set for an object,
+CDIST_ORDER_DEPENDENCY will be ignored, because adding a dependency in case of
+overrides would result in circular dependencies, which is an error.</p></div><div class="section"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a id="_examples"></a>9. EXAMPLES</h2></div></div></div><p>The initial manifest may for instance contain the following code:</p><pre class="screen"># Always create this file, so other sysadmins know cdist is used.
+__file /etc/cdist-configured
+
+case "$__target_host" in
+   my.server.name)
+      __directory /root/bin/
+      __file /etc/issue.net --source "$__manifest/issue.net
+   ;;
+esac</pre><p>The manifest of the type "nologin" may look like this:</p><pre class="screen">__file /etc/nologin --source "$__type/files/default.nologin"</pre><p>This example makes use of dependencies:</p><pre class="screen"># Ensure that lighttpd is installed
+__package lighttpd --state present
+# Ensure that munin makes use of lighttpd instead of the default webserver
+# package as decided by the package manager
+require="__package/lighttpd" __package munin --state present</pre><p>How to override objects:</p><pre class="screen"># for example in the inital manifest
+
+# create user account foobar with some hash for password
+__user foobar --password 'some_fancy_hash' --home /home/foobarexample
+
+# ... many statements and includes in the manifest later ...
+# somewhere in a conditionaly sourced manifest
+# (e.g. for example only sourced if a special application is on the target host)
+
+# this leads to an error ...
+__user foobar --password 'some_other_hash'
+
+# this tells cdist, that you know that this is an override and should be accepted
+CDIST_OVERRIDE=yes __user foobar --password 'some_other_hash'
+# it's only an override, means the parameter --home is not touched
+# and stays at the original value of /home/foobarexample</pre><p>Dependencies defined by execution order work as following:</p><pre class="screen"># Tells cdist to execute all types in the order in which they are created ...
+export CDIST_ORDER_DEPENDENCY=on
+__sample_type 1
+require="__some_type_somewhere/id" __sample_type 2
+__example_type 23
+# Now this types are executed in the creation order until the variable is unset
+unset CDIST_ORDER_DEPENDENCY
+# all now following types cdist makes the order ..
+__not_in_order_type 42
+
+# how it works :
+# this lines above are translated to:
+__sample_type 1
+require="__some_type_somewhere/id __sample_type/1" __sample_type 2
+require="__sample_type/2" __example_type 23
+__not_in_order_type 42</pre></div><div class="section"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a id="_see_also"></a>10. SEE ALSO</h2></div></div></div><div class="itemizedlist"><ul class="itemizedlist" style="list-style-type: disc; "><li class="listitem">
+<a href="../man7/cdist-tutorial.html">cdist-tutorial(7)</a>
+</li><li class="listitem">
+<a href="../man7/cdist-type.html">cdist-type(7)</a>
+</li></ul></div></div><div class="section"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a id="_copying"></a>11. COPYING</h2></div></div></div><p>Copyright (C) 2010-2014 Nico Schottelius. Free use of this software is
+granted under the terms of the GNU General Public License version 3 (GPLv3).</p></div></div></body></html>
