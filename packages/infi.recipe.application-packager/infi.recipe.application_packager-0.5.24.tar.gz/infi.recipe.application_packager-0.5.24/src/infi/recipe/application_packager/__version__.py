@@ -1,0 +1,10 @@
+__version__ = "0.5.24"
+__git_commiter_name__ = "Guy Rozendorn"
+__git_commiter_email__ = "guy@rzn.co.il"
+__git_branch__ = '(detached from v0.5.24)'
+__git_remote_tracking_branch__ = '(No remote tracking)'
+__git_remote_url__ = '(Not remote tracking)'
+__git_head_hash__ = 'dd65d9fc8abaad9db57e0999aae8646c16b336c0'
+__git_head_subject__ = 'Finished release v0.5.24.'
+__git_head_message__ = '* release/v0.5.24:\n  HIP-1385 fixing glob_in_dist_directory\n  HIP-1385 fixing ImportError\n  HIP-1385 rcedit compiled with vs2010, added the runtime DLLs\n  TRIVIAL fixing tests: gitdb-0.6.1.tar.gz\n  MANIFEST.in: adding rcedit.exe to package data\n  buildout.cfg: adding rcedit.exe to package data\n  HIP-1385 usee rcedit.exe to replace icon for all executables in project if add-remove-programs-icon is set in buildout.cfg\n  HIP-1385 sign the executables in infi.node_webkit\n  TRIVIAL README'
+__git_dirty_diff__ = ''
