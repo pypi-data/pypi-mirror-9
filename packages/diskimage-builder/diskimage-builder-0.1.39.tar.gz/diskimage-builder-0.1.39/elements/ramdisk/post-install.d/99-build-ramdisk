@@ -1,0 +1,46 @@
+#!/bin/bash
+
+set -eux
+set -o pipefail
+
+_LIB="/tmp/ramdisk-build"
+
+source $_LIB/common-defaults
+source $_LIB/img-defaults
+source $_LIB/ramdisk-defaults
+
+source $_LIB/common-functions
+source $_LIB/img-functions
+source $_LIB/ramdisk-functions
+
+KERNEL_VERSION=${DIB_KERNEL_VERSION:-$(find_kernel_version)}
+MODULE_DIR=$MODULE_ROOT/lib/modules/$KERNEL_VERSION
+FIRMWARE_DIR=$MODULE_ROOT/lib/firmware
+LIB_UDEV=$LIB_UDEV_ROOT/lib/udev
+INIT="$_LIB/scripts/init"
+FUNCTIONS_D="$_LIB/scripts/d"
+BUSYBOX=${BUSYBOX:-$(which busybox)}
+# NOTE(bnemec): IMAGE_ELEMENT is normally set in disk-image-create, but we're
+# not using that to build the image here.
+IMAGE_ELEMENT=
+
+mk_build_dir
+mkdir -p $TMP_BUILD_DIR/mnt
+export TMP_HOOKS_PATH=/tmp
+export TMP_MOUNT_PATH=$TMP_BUILD_DIR/mnt
+
+echo "building ramdisk in $TMP_MOUNT_PATH"
+
+create_ramdisk_base
+populate_lib
+populate_busybox
+populate_init
+populate_udev
+SCRIPT_HOME=/tmp/in_target.d/bin TMP_HOOKS_PATH=/tmp/in_target.d run_d ramdisk-install
+finalise_image
+save_image /tmp/ramdisk
+# In the past save_image did this for us. If EXIT handler is not
+# reset ramdisk image builds fail.
+trap EXIT
+cp /boot/vmlinuz-${KERNEL_VERSION} /tmp/kernel
+chmod o+r /tmp/kernel
