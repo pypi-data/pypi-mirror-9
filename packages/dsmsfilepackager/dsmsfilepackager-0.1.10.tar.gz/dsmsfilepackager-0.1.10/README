@@ -1,0 +1,57 @@
+dsmsfilepackager
+----------------
+
+Add select files or directories to a bundle of files, generate a manifest,
+and upload or download from an SFTP server. For use with DSMS.
+
+Please note that filepackages are not thread safe. It is up to you to ensure
+that only one process is manipulating a package at any point in time. For this
+reason, it's recommended that you use a uuid such as the Celery task ID to
+ensure each process has its own space.
+
+How to use when writing a new package::
+
+    from dsmsfilepackager.filepackage import DSMSFilePackage
+    import uuid
+
+    fpack = DSMSFilePackage(target_id=111, job_id=13244, uid=uuid.uuid4(),
+                            hostname="remote_sagenth.example.com",
+                            hostport="1222", username="theuser",
+                            priv_key="/home/theuser/.sagenth/key",
+                            local_root="/tmp/cache",
+                            remote_root="/upload_target")
+
+    # register in manifest
+    fpack.add("myfile.txt")
+    fpack.add_dir("docs/")
+
+    fpack.finish_and_upload()  # generate a manifest and upload
+
+Once package generation has finished, the files will be both locally at
+/tmp/cache/111/13244/[uuid], as well as on the FTP server under
+/upload_target/111/13244/[uuid].
+
+Now, other processes can either access the locally cached files if they're
+available, or they'll be fetched via SFTP and moved into the local cache if
+not.
+
+How to fetch a previously stored package::
+
+    # auto-get remote files, reading from cache when available
+
+    >>> fpack = filepackage.fetch(target_id=111, job_id=13244, uid=uuid.uuid4(),
+                                  host="remote_sagenth.example.com",
+                                  hostport="1222", username="theuser",
+                                  priv_key="/home/theuser/.sagenth/key",
+                                  local_root="/tmp/cache",
+                                  remote_root="/upload_target")
+    >>> print fpack.manifest.files
+    ["myfile.txt", "docs/readme.txt", "docs/2.py"]
+    >>> file_info = fpack.manifest.get("myfile.txt")
+    >>> file_info.size
+    1246
+    >>> file_info.sha256
+    "d8d5d29645ce8552646ad236244304892bb9e0df633e2603a1fa616682e1c431"
+    >>> file_info.type
+   "Python script, ASCII text executable"
+    >> fh = fpack.open("myfile.txt")  # will be made available locally 
