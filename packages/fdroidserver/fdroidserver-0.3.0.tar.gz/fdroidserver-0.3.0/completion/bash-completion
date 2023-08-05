@@ -1,0 +1,285 @@
+#!/bin/bash
+#
+# bash-completion - part of the FDroid server tools
+# Bash completion for the fdroid main tools
+#
+# Copyright (C) 2013, 2014 Daniel Martí <mvdan@mvdan.cc>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+# 'fdroid' is completed automatically, but aliases to it are not.
+# For instance, to alias 'fd' to 'fdroid' and have competion available:
+#
+#	alias fd='fdroid'
+#	complete -F _fdroid fd
+#
+# One can use completion on aliased subcommands as follows:
+#
+#	alias fbuild='fdroid build'
+#	complete -F _fdroid_build fbuild
+
+__fdroid_init() {
+	COMPREPLY=()
+	cur="${COMP_WORDS[COMP_CWORD]}"
+	prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+	(( $# >= 1 )) && __complete_${1}
+}
+
+__package() {
+	files=( metadata/*.txt )
+	files=( ${files[@]#metadata/} )
+	files=${files[@]%.txt}
+	COMPREPLY=( $( compgen -W "$files" -- $cur ) )
+}
+
+__apk_package() {
+	files=( ${1}/*.apk )
+	[ -f "${files[0]}" ] || return
+
+	files=( ${files[@]#*/} )
+	files=${files[@]%_*}
+	COMPREPLY=( $( compgen -W "$files" -- $cur ) )
+}
+
+__apk_vercode() {
+	local p=${cur:0:-1}
+
+	files=( ${1}/${p}_*.apk )
+	[ -f "${files[0]}" ] || return
+
+	files=( ${files[@]#*_} )
+	files=${files[@]%.apk}
+	COMPREPLY=( $( compgen -P "${p}:" -W "$files" -- $cur ) )
+}
+
+__vercode() {
+	local p v
+	echo $cur | IFS=':' read p v
+
+	COMPREPLY=( $( compgen -P "${p}:" -W "$( while read line; do
+		if [[ "$line" == "Build Version:"* ]]
+		then
+			line="${line#*,}"
+			printf "${line%%,*} "
+		elif [[ "$line" == "Build:"* ]]
+		then
+			line="${line#*,}"
+			printf "${line%%,*} "
+		fi
+		done < "metadata/${p}.txt" )" -- $cur ) )
+}
+
+__complete_options() {
+	case "${cur}" in
+		--*)
+			COMPREPLY=( $( compgen -W "${lopts}" -- $cur ) )
+			return 0;;
+		*)
+			COMPREPLY=( $( compgen -W "${opts} ${lopts}" -- $cur ) )
+			return 0;;
+	esac
+}
+
+__complete_build() {
+	opts="-h -v -q -l -s -t -f -a -w"
+
+	lopts="--help --verbose --quiet --latest --stop --test --server --resetserver
+ --on-server --skip-scan --no-tarball --force --all --wiki"
+	case "${cur}" in
+		-*)
+			__complete_options
+			return 0;;
+		*:*)
+			__vercode
+			return 0;;
+		*)
+			__package
+			return 0;;
+	esac
+}
+
+__complete_install() {
+	opts="-h -v -q"
+	lopts="--help --verbose --quiet --all"
+	case "${cur}" in
+		-*)
+			__complete_options
+			return 0;;
+		*:)
+			__apk_vercode repo
+			return 0;;
+		*)
+			__apk_package repo
+			return 0;;
+	esac
+}
+
+__complete_update() {
+	opts="-h -c -v -q -b -i -I -e -w"
+	lopts="--help --create-metadata --verbose --quiet --buildreport
+ --interactive --icons --editor --wiki --pretty --clean --delete-unknown"
+	case "${prev}" in
+		-e|--editor)
+			_filedir
+			return 0;;
+	esac
+	__complete_options
+}
+
+__complete_publish() {
+	opts="-h -v -q"
+	lopts="--help --verbose --quiet"
+	case "${cur}" in
+		-*)
+			__complete_options
+			return 0;;
+		*:)
+			__apk_vercode unsigned
+			return 0;;
+		*)
+			__apk_package unsigned
+			return 0;;
+	esac
+}
+
+__complete_checkupdates() {
+	opts="-h -v -q"
+	lopts="--help --verbose --quiet --auto --autoonly --commit --gplay"
+	case "${cur}" in
+		-*)
+			__complete_options
+			return 0;;
+		*)
+			__package
+			return 0;;
+	esac
+}
+
+__complete_import() {
+	opts="-h -u -s -r -q"
+	lopts="--help --url --subdir --repo --rev --quiet"
+	case "${prev}" in
+		-u|--url|-r|--repo|-s|--subdir|--rev) return 0;;
+	esac
+	__complete_options
+}
+
+__complete_readmeta() {
+	opts="-h -v -q"
+	lopts="--help --verbose --quiet"
+	__complete_options
+}
+
+__complete_rewritemeta() {
+	opts="-h -v -q"
+	lopts="--help --verbose --quiet"
+	case "${cur}" in
+		-*)
+			__complete_options
+			return 0;;
+		*)
+			__package
+			return 0;;
+	esac
+}
+
+__complete_lint() {
+	opts="-h -v -q -p"
+	lopts="--help --verbose --quiet --pedantic"
+	case "${cur}" in
+		-*)
+			__complete_options
+			return 0;;
+		*)
+			__package
+			return 0;;
+	esac
+}
+
+__complete_scanner() {
+	opts="-h -v -q"
+	lopts="--help --verbose --quiet --nosvn"
+	case "${cur}" in
+		-*)
+			__complete_options
+			return 0;;
+		*:)
+			__vercode
+			return 0;;
+		*)
+			__package
+			return 0;;
+	esac
+}
+
+__complete_verify() {
+	opts="-h -v -q -p"
+	lopts="--help --verbose --quiet"
+	case "${cur}" in
+		-*)
+			__complete_options
+			return 0;;
+		*:)
+			__vercode
+			return 0;;
+		*)
+			__package
+			return 0;;
+	esac
+}
+
+__complete_stats() {
+	opts="-h -v -q -d"
+	lopts="--help --verbose --quiet --download"
+	__complete_options
+}
+
+__complete_server() {
+	opts="-h -i -v -q"
+	lopts="--help --identity-file --verbose --quiet update"
+	__complete_options
+}
+
+__complete_init() {
+	opts="-h -v -q -d"
+	lopts="--help --verbose --quiet --distinguished-name --keystore
+ --repo-keyalias --android-home --no-prompt"
+	__complete_options
+}
+
+_fdroid() {
+	local cmd cmds
+	cmd=${COMP_WORDS[1]}
+	cmds=" build init install update publish checkupdates import \
+readmeta rewritemeta lint scanner verify stats server "
+
+	for c in $cmds; do eval "_fdroid_${c} () {
+		local cur prev opts lopts
+		__fdroid_init ${c};
+	}"; done
+
+	[[ $cmds == *\ $cmd\ * ]] && _fdroid_${cmd} || {
+		(($COMP_CWORD == 1)) && COMPREPLY=( $( compgen -W "${cmds}" -- $cmd ) )
+	}
+}
+
+_fd-commit() {
+	__package
+}
+
+complete -F _fdroid fdroid
+complete -F _fd-commit fd-commit
+
+return 0
