@@ -1,0 +1,266 @@
+Namespaces:
+  =: io.murano.resources
+  std: io.murano
+  sys: io.murano.system
+
+
+Name: Instance
+
+
+Properties:
+  name:
+    Contract: $.string().notNull()
+  flavor:
+    Contract: $.string().notNull()
+  image:
+    Contract: $.string().notNull()
+  keyname:
+    Contract: $.string()
+    Default: null
+
+  agent:
+    Contract: $.class(sys:Agent)
+    Usage: Runtime
+  ipAddresses:
+    Contract: [$.string()]
+    Usage: Out
+  networks:
+    Contract:
+      useEnvironmentNetwork: $.bool().notNull()
+      useFlatNetwork: $.bool().notNull()
+      customNetworks: [$.class(Network).notNull()]
+      primaryNetwork: $.class(Network).notOwned()
+    Default:
+      useEnvironmentNetwork: true
+      useFlatNetwork: false
+      customNetworks: []
+      primaryNetwork: null
+  assignFloatingIp:
+    Contract: $.bool().notNull()
+    Default: false
+  floatingIpAddress:
+    Contract: $.string()
+    Usage: Out
+  securityGroupName:
+    Contract: $.string()
+    Default: null
+  sharedIps:
+    Contract:
+      - $.class(std:SharedIp)
+    Usage: InOut  # as it is set in setSharedIps
+
+Methods:
+  initialize:
+    Body:
+      - $.environment: $.find(std:Environment).require()
+      - $.agent: new(sys:Agent, host => $)
+      - $.resources: new(sys:Resources)
+      - $.instanceTemplate: {}
+
+  # Called after the Instance template pieces are in place. It
+  # is at this stage alterations to the template should be made
+  prepareStackTemplate:
+    Arguments:
+      instanceTemplate:
+        Contract: {}
+    Body:
+      - Return: $instanceTemplate
+
+  setSharedIps:
+    Arguments:
+      ips:
+        Contract:
+          - $.class(std:SharedIp)
+    Body:
+      $.sharedIps: $ips
+
+  deploy:
+    Body:
+
+      - $securityGroupName: coalesce(
+            $.securityGroupName,
+            $.environment.securityGroupManager.defaultGroupName
+          )
+      - $.createDefaultInstanceSecurityGroupRules($securityGroupName)
+      - $.detectPrimaryNetwork()
+      - $.ensureSharedIpsDeployed()
+      - $.ensureNetworksDeployed()
+      - If: $.networks.useEnvironmentNetwork and $.environment.defaultNetworks.environment!=null
+        Then:
+          $.joinNet($.environment.defaultNetworks.environment, $securityGroupName)
+      - If: $.networks.useFlatNetwork and $.environment.defaultNetworks.flat!=null
+        Then:
+          $.joinNet($.environment.defaultNetworks.flat, $securityGroupName)
+      - $.networks.customNetworks.select($this.joinNet($, $securityGroupName))
+
+      - $preparedUserData: $.prepareUserData()
+      - $userData: $preparedUserData.data
+      - $userDataFormat: $preparedUserData.format
+      # Create MQ queue to communicate with the VM
+      - $.agent.prepare()
+      - $template:
+          resources:
+            $.name:
+              type: 'OS::Nova::Server'
+              properties:
+                flavor: $.flavor
+                image: $.image
+                user_data: $userData
+                user_data_format: $userDataFormat
+                key_name: $.keyname
+          outputs:
+            format('{0}-assigned-ips', $.name):
+              description: format('Network IPs assigned to {0} instance', $.name)
+              value:
+                get_attr: [ $.name, networks ]
+
+      - $.instanceTemplate: $.instanceTemplate.mergeWith($template)
+
+      # Any additional template preparation
+      - $.instanceTemplate: $.prepareStackTemplate($.instanceTemplate)
+      - $.environment.stack.updateTemplate($.instanceTemplate)
+      - $.environment.stack.push()
+      - $outputs: $.environment.stack.output()
+      # Changing this to use the .networks attribute instead of 'addresses'
+      - $.ipAddresses: $outputs.get(format('{0}-assigned-ips', $this.name)).values().flatten()
+      - $.floatingIpAddress: $outputs.get(format('{0}-FloatingIPaddress', $this.name))
+      - $.environment.instanceNotifier.trackCloudInstance($this)
+
+  detectPrimaryNetwork:
+    Body:
+      - $.primaryNetwork: null
+      - If: $.networks.primaryNetwork != null
+        Then:
+          - $.primaryNetwork: $.networks.primaryNetwork
+        Else:
+          - If: $.networks.useEnvironmentNetwork and $.environment.defaultNetworks.environment!=null
+            Then:
+              - $.primaryNetwork: $.environment.defaultNetworks.environment
+            Else:
+              - If: $.networks.useFlatNetwork and $.environment.defaultNetworks.flat!=null
+                Then:
+                  - $.primaryNetwork: $.environment.defaultNetworks.flat
+
+  ensureNetworksDeployed:
+    Body:
+      - If: $.networks.useEnvironmentNetwork and $.environment.defaultNetworks.environment!=null
+        Then:
+          - $.environment.defaultNetworks.environment.deploy()
+      - If: $.networks.useFlatNetwork and $.environment.defaultNetworks.flat!=null
+        Then:
+          - $.environment.defaultNetworks.flat.deploy()
+      - $.networks.customNetworks.pselect($.deploy())
+
+  ensureSharedIpsDeployed:
+    Body:
+      - $.sharedIps.pselect($.deploy())
+
+  joinNet:
+    Arguments:
+      - net:
+          Contract: $.class(Network).notNull()
+      - securityGroupName:
+          Contract: $.string()
+    Body:
+      - If: $net = $.primaryNetwork
+        Then:
+          - $primary: true
+        Else:
+          - $primary: false
+
+      - If: $primary and $.assignFloatingIp and not $.getAttr(fipAssigned, false)
+        Then:
+          - $assignFip: true
+
+        Else:
+          - $assignFip: false
+
+      - $portname: $.name + '-port-to-' + $net.id()
+      - $netRef: { get_resource: $net.getNetworkName() }
+      - $subnetRef: { get_resource: $net.getSubnetName() }
+      - $template:
+          resources:
+            $portname:
+              type: 'OS::Neutron::Port'
+              properties:
+                network_id: $netRef
+                fixed_ips:
+                  - subnet_id: $subnetRef
+                security_groups:
+                  - get_resource: $securityGroupName
+                replacement_policy: AUTO
+            $.name:
+              properties:
+                networks:
+                  - port:
+                      get_resource: $portname
+      - $.instanceTemplate: $.instanceTemplate.mergeWith($template)
+
+      - If: $primary
+        Then:
+          - For: sip
+            In: $.sharedIps
+            Do:
+              - $template:
+                  resources:
+                    $portname:
+                      properties:
+                        allowed_address_pairs:
+                          - ip_address: $sip.getSharedIpRef()
+              - $.instanceTemplate: $.instanceTemplate.mergeWith($template)
+
+      - If: $assignFip
+        Then:
+          - $extNetId: $net.getExternalNetId()
+          - If: $extNetId != null
+            Then:
+              - $fip_name: $.name + '-FloatingIP-' + $net.id()
+              - $template:
+                  resources:
+                    $fip_name:
+                      type: 'OS::Neutron::FloatingIP'
+                      properties:
+                        floating_network_id: $extNetId
+                    $.name + '-FloatingIpAssoc-' + $net.id():
+                      type: 'OS::Neutron::FloatingIPAssociation'
+                      properties:
+                        floatingip_id:
+                          get_resource: $fip_name
+                        port_id:
+                          get_resource: $portname
+                  outputs:
+                    $.name + '-FloatingIPaddress':
+                      value:
+                        get_attr: [$fip_name, floating_ip_address]
+                      description: Floating IP assigned
+              - If: $net.externalRouterId != null
+                Then:
+                  # (sjmc7) This is a workaround for https://bugs.launchpad.net/heat/+bug/1299259
+                  - $routerInterfaceName: $net.getRouterInterfaceName()
+                  - $template['resources'][$fip_name]['depends_on']: [$routerInterfaceName]
+              - $.instanceTemplate: $.instanceTemplate.mergeWith($template)
+              - $.setAttr(fipAssigned, true)
+
+  destroy:
+    # FIXME(smelikyan): All allocated resources should be cleaned-up on destroy
+    # Now no clean-up happens here cause we don't track all native resources
+    # that are allocated at the moment in descendants of Instance or other
+    # classes that may allocate resource dependent on OS::Nova:Server used
+    # as underlying implementation for Instance. This can cause
+    # resource leak when environment is updated. Resources are cleaned-up only
+    # when whole Environment is deleted (alongside with Heat stack deletion).
+    # https://bugs.launchpad.net/murano/+bug/1359998
+    Body:
+      - $.environment.instanceNotifier.untrackCloudInstance($this)
+
+  createDefaultInstanceSecurityGroupRules:
+    Arguments:
+      - groupName:
+          Contract: $.string().notNull()
+
+  prepareUserData:
+    Body:
+      Return:
+        data: null
+        # Valid values are HEAT_CFNTOOLS, RAW and SOFTWARE_CONFIG
+        format: HEAT_CFNTOOLS
