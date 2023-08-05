@@ -1,0 +1,387 @@
+<html xmlns="http://www.w3.org/1999/xhtml"
+      xmlns:metal="http://xml.zope.org/namespaces/metal"
+      xmlns:tal="http://xml.zope.org/namespaces/tal"
+      xmlns:i18n="http://xml.zope.org/namespaces/i18n"
+      i18n:domain="seantis.reservation"
+      tal:omit-tag="">
+  <head>
+  </head>
+
+  <body>
+
+    <tal:comment replace="nothing">
+    Common report controlbox.
+
+    Requires the presence of seantis.reservation.reports.GeneralReportParametersMixin
+    in the view object.
+    </tal:comment>
+
+    <metal:define define-macro="controlbox">
+      <div class="controlbox">
+          <div class="monthly-report-navigation">
+              <tal:comment replace="nothing">
+                Report specific nav-block entries
+              </tal:comment>
+              <metal:report-specific-nav-blocks define-slot="report-specific-nav-blocks">
+              </metal:report-specific-nav-blocks>
+
+              <tal:comment replace="nothing">
+                Common nav-block entries
+              </tal:comment>
+              <div class="nav-block">
+                  <h2 i18n:translate="">Resources</h2>
+                  <tal:block repeat="uuid view/sorted_resources">
+                      <label><input type="checkbox" class="resource-checkbox" tal:attributes="value uuid; checked python: view.show_resource(uuid) or None"><span tal:content="python: view.resource_title(uuid)"></span></label>
+                  </tal:block>
+              </div>
+              <div class="nav-block">
+                  <h2 i18n:translate="">Statuses</h2>
+                  <tal:block repeat="status view/statuses">
+                      <label><input type="checkbox" class="status-checkbox" tal:attributes="value python: status[0]; checked python: view.show_status(status[0]) or None"><span tal:content="python: status[1]"></span></label>
+                  </tal:block>
+              </div>
+
+              <div style="clear: both;"></div>
+          </div>
+        </div>
+    </metal:define>
+
+    <tal:comment replace="nothing">
+    Reservation block. Combines title, data and timespans block.
+    Needs the following variables:
+
+    reservations  -> list of reservations with the same token
+    show_actions  -> display links leading to different actions (default False)
+
+    only required if show_actions is true:
+      context      -> the resource the reservation belongs to
+      token        -> token of the reservation
+
+    optional:
+      title        -> title of the block
+    </tal:comment>
+
+    <metal:define define-macro="reservation-block"
+       tal:define="macro python: context.unrestrictedTraverse('@@seantis-reservation-macros')">
+
+      <tal:block define="
+        first_reservation python: reservations[0];
+        last_reservation python: reservations[-1];
+      ">
+        <div class="reservation">
+          <tal:block define="
+            title title | python: first_reservation.title;
+            status python: first_reservation.status;
+          ">
+            <metal:use use-macro="context/@@seantis-reservation-macros/reservation-title" />
+          </tal:block>
+
+          <div tal:repeat="reservation reservations" class="reservation-list" tal:define="show_actions show_actions | nothing">
+            <tal:block define="
+                data python: reservation.data;
+                timespans python: reservation.bound_timespans();
+                show_actions python: show_actions and reservation.status == 'approved';
+              ">
+                <metal:use use-macro="context/@@seantis-reservation-macros/reservation-data" />
+                <metal:use use-macro="context/@@seantis-reservation-macros/reservation-timespans" />
+
+                <div style="clear: both;"></div>
+            </tal:block>
+          </div>
+        </div>
+        <tal:block define="quota python: last_reservation.quota">
+          <div class="reservation-quota"
+            tal:attributes="data-reservation-quota quota"
+            tal:condition="python: quota > 1"
+          >
+            <tal:block
+              content="structure python: macro.utils.get_reservation_quota_statement(quota)"
+            />
+          </div>
+        </tal:block>
+      </tal:block>
+    </metal:define>
+
+    <tal:comment replace="nothing">
+    Reservation links block (approve, decline, revoke, print).
+    Needs the following following variables:
+
+    context -> the resource the reservation belongs to
+    token   -> token of the reservation
+    status  -> status of the reservation ('approved' or 'pending')
+    </tal:comment>
+
+    <metal:define define-macro="reservation-links" tal:define="macro python: context.unrestrictedTraverse('@@seantis-reservation-macros')">
+      <span class="reservation-urls">
+        <tal:block condition="python: status == 'approved'">
+          <a tal:attributes="href python: macro.revoke_all_url(token, context)"
+            class="reservation-action reservation-action-revoke">
+            ✗ <span i18n:translate="">Revoke</span>
+          </a>
+        </tal:block>
+
+        <tal:block condition="python: status == 'pending'">
+          <a tal:attributes="href python: macro.approve_all_url(token, context)"
+            class="reservation-action reservation-action-approve">
+            ✓ <span i18n:translate="">Approve</span>
+          </a>
+          <a tal:attributes="href python: macro.deny_all_url(token, context)"
+            class="reservation-action reservation-action-deny">
+            ✗ <span i18n:translate="">Deny</span>
+          </a>
+        </tal:block>
+
+        <a tal:attributes="href python: macro.print_all_url(token, context)"
+            class="reservation-action" i18n:translate="" data-no-overlay="true"
+            target="_blank">
+            Print
+        </a>
+      </span>
+    </metal:define>
+
+    <tal:comment replace="nothing">
+    Reservation title block. Needs the following variables:
+
+    title        -> title to display
+    show_actions -> displays links leading to different actions (default False)
+
+    only required if show_actions is true:
+      context      -> the resource the reservation belongs to
+      token        -> token of the reservation
+      status       -> 'approved' or 'pending'
+    </tal:comment>
+
+    <metal:define define-macro="reservation-title" tal:define="macro python: context.unrestrictedTraverse('@@seantis-reservation-macros')">
+      <div class="reservation-title">
+        <h3 tal:content="title"></h3>
+
+        <tal:block condition="show_actions | nothing">
+          <metal:use use-macro="context/@@seantis-reservation-macros/reservation-links" />
+        </tal:block>
+      </div>
+    </metal:define>
+
+    <tal:comment replace="nothing">
+    Reservation data block. Needs the following variables:
+
+    context -> the resource the reservation belongs to
+    token -> token of the reservation
+    data -> reservation data to display
+    show_actions -> displays links leading to different actions (default False)
+
+    </tal:comment>
+
+    <metal:define define-macro="reservation-data" tal:define="macro python: context.unrestrictedTraverse('@@seantis-reservation-macros')">
+      <div class="reservation-data">
+
+        <tal:block tal:condition="data" tal:repeat="key python: macro.sort_reservation_data(data)">
+          <tal:block tal:define="interface python: data[key]">
+            <div class="block-title" tal:content="python: interface['desc']"></div>
+
+            <div tal:repeat="value python: macro.sort_reservation_data_values(interface['values'])">
+              <span class="label" tal:content="python: value['desc']"></span>
+              <span tal:content="python: macro.display_reservation_data(value['value'])"></span>
+            </div>
+
+          </tal:block>
+        </tal:block>
+
+        <span tal:condition="show_actions | nothing" class="reservation-urls">
+          <a tal:condition="show_actions | nothing" tal:attributes="href python: macro.update_all_url(token, context)"
+            class="reservation-data-update" i18n:translate="">
+            &raquo; Edit Formdata
+          </a>
+        </span>
+      </div>
+    </metal:define>
+
+    <tal:comment replace="nothing">
+    Reservation timespans block. Needs the following variables:
+
+    timespans -> list of start/end/token/id tuples
+    show_actions -> True if actions should be shown
+
+    </tal:comment>
+
+    <metal:define define-macro="reservation-timespans" tal:define="macro python: context.unrestrictedTraverse('@@seantis-reservation-macros')">
+      <div class="reservation-timespans" >
+        <div class="block-title" i18n:translate="">Concerned Dates</div>
+          <div class="limitedList" style="max-height: 450px; min-width: 100%;">
+
+          <tal:block tal:repeat="timespan python: sorted(timespans)">
+              <tal:block tal:define="
+                display python: macro.utils.display_date(timespan.start, timespan.end);
+              ">
+                <tal:block condition="show_actions | nothing">
+                  <div class="timespan-actions">
+                    <div class="timespan-dates" tal:content="display" tal:attributes="data-timespan-id timespan/id"></div>
+                    <tal:block condition="repeat/timespan/first/id" define="show_change python: macro.is_changeable_timespan(timespans, timespan)">
+                      <a tal:condition="repeat/timespan/first/id" i18n:translate=""
+                         tal:attributes="
+                             href python: './revoke-reservation?token={}&id={}'.format(timespan.token, timespan.id);
+                             data-timespan-id timespan/id
+                         ">Revoke</a>
+                      <tal:block condition="show_change">
+                        /
+                        <a tal:condition="show_change" i18n:translate=""
+                         tal:attributes="
+                             href python: './change-reservation?token={}&id={}'.format(timespan.token, timespan.id);
+                             data-timespan-id timespan/id
+                         ">Change</a>
+                      </tal:block>
+                    </tal:block>
+                    <div class="visualClear" />
+                  </div>
+                </tal:block>
+                <tal:block condition="not:show_actions">
+                  <div class="timespan-dates" tal:content="display" tal:attributes="data-timespan-id timespan/id"></div>
+                </tal:block>
+              </tal:block>
+          </tal:block>
+
+          </div>
+        </div>
+    </metal:define>
+
+    <tal:comment replace="nothing">
+    Adds the tabs for the different resource views. Use this variable:
+
+    selected_view = ('calendar'|'search')
+    </tal:comment>
+
+    <metal:define define-macro="resource-tabs" tal:define="macro python: context.unrestrictedTraverse('@@seantis-reservation-macros')">
+      <ul class="formTabs resource-view-switch">
+        <li class="formTab firstFormTab">
+          <a id="fieldsetlegend-default" href="#fieldsetlegend-default"
+            tal:attributes="
+              class python: selected_view == 'calendar' and 'selected' or '';
+              href python: context.absolute_url() + '/view'
+            "
+          >
+            <span i18n:translate="">Calendar</span>
+          </a>
+        </li>
+        <li class="formTab lastFormTab">
+          <a id="fieldsetlegend-defaults"
+            tal:attributes="
+              class python: selected_view == 'search' and 'selected' or '';
+              href python: context.absolute_url() + '/search'
+            "
+          >
+            <span i18n:translate="search_noun">Search</span>
+          </a>
+        </li>
+      </ul>
+
+    </metal:define>
+
+    <tal:comment replace="nothing">
+    Renders a table of allocations. Expects the following:
+
+    allocations -> a list of allocations
+    show_checkboxes -> true if a column with checkboxes should be added
+                       (default is False)
+    start_time, end_time -> time to which the allocations should be limited
+                            if possible
+                            (default is None, see allocation.limit_timespan)
+    </tal:comment>
+
+    <metal:define define-macro="allocations-table" tal:define="macro python: context.unrestrictedTraverse('@@seantis-reservation-macros')">
+      <table class="allocations-table" tal:condition="allocations" tal:define="start start_time | nothing; end end_time | nothing">
+        <tal:block repeat="allocation python: macro.build_allocations_table(allocations, start, end)">
+          <tr tal:attributes="class python: allocation['is_first_of_date'] and 'new-day' or ''">
+            <td>
+              <div class="result-day" tal:content="allocation/date" tal:condition="allocation/is_first_of_date" />
+            </td>
+            <td tal:condition="show_checkboxes | nothing">
+              <input type="checkbox" name="allocation_id" tal:attributes="
+                value allocation/id;
+                checked python: 'unavailable' not in allocation['class'] and 'checked' or '';
+                disabled python: 'unavailable' in allocation['class'] and 'disabled' or '';
+                data-group allocation/group;
+              " />
+            </td>
+            <td>
+              <div
+                tal:attributes="
+                  class python: 'result-time {}'.format(allocation['class']);
+                  data-id allocation/id;
+                  data-group allocation/group;
+                "
+              >
+                <span tal:content="allocation/time" />
+                <span tal:content="allocation/text" />
+              </div>
+            </td>
+            <td class="result-hint">
+              <div tal:attributes="
+                data-group allocation/group;
+                class python: allocation['is_extra_result'] and 'is-extra-result' or '';" 
+                title="This allocation falls outside your search, but it is included because it belongs to a group that is part of your search and groups must be reserved together. Members of this group are highlighted when hovering." 
+                i18n:attributes="title">
+                &nbsp;
+              </div>
+            </td>
+          </tr>
+        </tal:block>
+      </table>
+    </metal:define>
+
+    <tal:comment replace="nothing">
+    Renders the not yet submitted reservations (your reservations).
+    Expects the following:
+
+    reservations -> a list of reservations from the database, ordered by token
+    show_links   -> True if links to resources should be shown.
+    show_actions -> True if the removal link should be shown.
+    </tal:comment>
+    <metal:define
+      define-macro="your-reservations"
+      tal:define="macro python: context.unrestrictedTraverse('@@seantis-reservation-macros')">
+
+      <tal:block define="your_reservations python: macro.build_your_reservations(reservations)"
+                 condition="your_reservations">
+        <ul class="dense">
+          <li tal:repeat="reservation your_reservations">
+            <div class="limitedList">
+
+              <div class="your-reservation-header" tal:condition="repeat/reservation/first/token">
+
+                <div class="your-reservation-title">
+                  <a tal:condition="show_links"
+                     tal:attributes="href reservation/url"
+                     tal:content="structure reservation/title"
+                  />
+
+                  <span tal:condition="not:show_links"
+                    tal:content="structure reservation/title"
+                  />
+                </div>
+
+                <div tal:condition="show_actions">
+                  |
+                  <a tal:attributes="href reservation/remove-url"
+                     class="remove-url">
+                    <span i18n:translate="">Remove</span>
+                  </a>
+                </div>
+                <div class="visualClear"/>
+              </div>
+
+              <div tal:content="structure reservation/time"></div>
+
+              <div tal:condition="reservation/quota"
+                   tal:content="structure reservation/quota"
+                   class="your-reservation-quota"
+              />
+            </div>
+
+          </li>
+
+        </ul>
+
+      </tal:block>
+    </metal:define>
+
+  </body>
+</html>
