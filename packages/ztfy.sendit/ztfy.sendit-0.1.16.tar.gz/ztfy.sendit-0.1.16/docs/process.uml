@@ -1,0 +1,93 @@
+
+
+Definitions
+===========
+
+Contributor : authenticated principal which can upload a new packet
+
+Packet: list of documents owned by a contributor and sent to one or more targets
+
+Target: principal to which a packet is send
+
+
+Roles list
+==========
+
+ztfy.SenditAdministrator
+	=> can manage application from a technical system point of view
+
+
+ztfy.SenditManager
+	=> can manage application from a functional point of view
+
+
+ztfy.SenditContributor
+	=> can upload new packets
+	=> can initialize new external users profiles
+
+
+ztfy.SenditGuest
+	=> can download packet's documents for which he's selected as target
+	=> can be affected to a person, a group or any principal
+
+
+Upload process
+==============
+
+@startuml
+
+group Application startup
+
+	actor Contributor
+	participant SenditApp
+	participant SenditProcess << (C,#ADD1B2) ZMQ Process >>
+
+	SenditApp -> SenditProcess: start()
+	activate SenditProcess
+	SenditApp <-- SenditProcess: << OK >>
+
+end
+
+
+group Missing target selection
+
+	Contributor -> SenditApp: add_profile()
+	actor Target
+	SenditApp -> Target: notify()
+	Contributor <-- SenditApp: << profile created >>
+
+end
+
+
+group Target activation
+
+	Target -> SenditApp: activate(new_password)
+	SenditApp -> SenditApp: check_activation()
+	SenditApp --> Target: << profile activated >>
+
+end
+
+
+group Upload process
+
+	Contributor -> SenditApp: upload()
+	Contributor <-- SenditApp: << packet created >>
+
+	SenditApp -> SenditProcess: send_packet()
+	SenditApp <-- SenditProcess: << OK >>
+	Contributor <-- SenditApp: << packet sent >>
+
+	SenditProcess -> ContentFilters: filter_content()
+	SenditProcess <-- ContentFilters: << filtered_content >>
+	SenditProcess --> Contributor: notify_on_error()
+	SenditProcess -> TargetFilters: filter_targets()
+	SenditProcess <-- TargetFilters: << filtered_targets >>
+	SenditProcess --> Contributor: notify_on_error()
+
+	SenditProcess -> SenditProcess: add_guest(target)
+	note left: Target is granted the "Guest" role on the packet.
+	SenditProcess -> Target: notify()
+
+end
+
+@enduml
