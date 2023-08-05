@@ -1,0 +1,481 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>Extending Alligator &mdash; Alligator 0.8.0-dev documentation</title>
+    
+    <link rel="stylesheet" href="_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    './',
+        VERSION:     '0.8.0-dev',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="top" title="Alligator 0.8.0-dev documentation" href="index.html" />
+    <link rel="next" title="Contributing" href="contributing.html" />
+    <link rel="prev" title="Best Practices" href="bestpractices.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="contributing.html" title="Contributing"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="bestpractices.html" title="Best Practices"
+             accesskey="P">previous</a> |</li>
+        <li><a href="index.html">Alligator 0.8.0-dev documentation</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="extending-alligator">
+<span id="extending"></span><h1>Extending Alligator<a class="headerlink" href="#extending-alligator" title="Permalink to this headline">¶</a></h1>
+<p>If you&#8217;ve read the <a class="reference internal" href="tutorial.html#tutorial"><em>Alligator Tutorial</em></a>, you&#8217;ve seen some basic usage of Alligator,
+which largely comes down to:</p>
+<ul class="simple">
+<li>create a <tt class="docutils literal"><span class="pre">Gator</span></tt> instance, ...</li>
+<li>use either <tt class="docutils literal"><span class="pre">gator.task(...)</span></tt> or <tt class="docutils literal"><span class="pre">gator.options(...)</span></tt> to enqueue the
+task, ...</li>
+<li>and then using either <tt class="docutils literal"><span class="pre">latergator.py</span></tt> or a custom script with a <tt class="docutils literal"><span class="pre">Worker</span></tt>
+to process the queue.</li>
+</ul>
+<p>While this is great in the common/simple case, there may be times where you
+need more complex things. Alligator was built for extension, so this document
+will outline ways you can get more out of it.</p>
+<div class="section" id="hook-methods">
+<h2>Hook Methods<a class="headerlink" href="#hook-methods" title="Permalink to this headline">¶</a></h2>
+<p>In addition to the task function itself, every task supports three optional
+hook functions:</p>
+<dl class="docutils">
+<dt><tt class="docutils literal"><span class="pre">on_start(task)</span></tt></dt>
+<dd>A function called when the task is first pulled off the queue but
+processing hasn&#8217;t started.</dd>
+<dt><tt class="docutils literal"><span class="pre">on_success(task,</span> <span class="pre">result)</span></tt></dt>
+<dd>A function called when the task completes successfully (no exceptions
+thrown). If the task function returns a value, it is passed to this
+function as well.</dd>
+<dt><tt class="docutils literal"><span class="pre">on_error(task,</span> <span class="pre">err)</span></tt></dt>
+<dd>A function called when the task fails during processing (an exception was
+raised). The exception is passed as well as the failed task.</dd>
+</dl>
+<p>All together, this lets you do more complex things without muddying the task
+function itself. For instance, the following code would log the start/completion
+of a task, increment a success count &amp; potentially extend the number of retries
+on error.</p>
+<div class="code python highlight-python"><div class="highlight"><pre><span class="kn">import</span> <span class="nn">logging</span>
+
+<span class="kn">from</span> <span class="nn">alligator</span> <span class="kn">import</span> <span class="n">Gator</span>
+<span class="kn">import</span> <span class="nn">requests</span>
+
+<span class="kn">from</span> <span class="nn">myapp.exceptions</span> <span class="kn">import</span> <span class="n">FeedUnavailable</span><span class="p">,</span> <span class="n">FeedNotFound</span>
+<span class="kn">from</span> <span class="nn">myapp.utils</span> <span class="kn">import</span> <span class="n">cache</span>
+
+
+<span class="n">log</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="n">__file__</span><span class="p">)</span>
+
+
+<span class="c"># This is the main task function.</span>
+<span class="k">def</span> <span class="nf">fetch_feeds</span><span class="p">(</span><span class="n">feeds</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">feed_url</span> <span class="ow">in</span> <span class="n">feeds</span><span class="p">:</span>
+        <span class="n">resp</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">feed_url</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">resp</span><span class="o">.</span><span class="n">status_code</span> <span class="o">==</span> <span class="mi">503</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">FeedUnavailable</span><span class="p">(</span><span class="n">feed_url</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">resp</span><span class="o">.</span><span class="n">status_code</span> <span class="o">!=</span> <span class="mi">200</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">FeedNotFound</span><span class="p">(</span><span class="n">feed_url</span><span class="p">)</span>
+
+        <span class="c"># Some other processing of the feed data</span>
+
+    <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="n">feeds</span><span class="p">)</span>
+
+
+<span class="c"># Hook functions</span>
+<span class="k">def</span> <span class="nf">log_start</span><span class="p">(</span><span class="n">task</span><span class="p">):</span>
+    <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&#39;Starting to import feeds via task {}...&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">task_id</span><span class="p">))</span>
+
+<span class="k">def</span> <span class="nf">log_success</span><span class="p">(</span><span class="n">task</span><span class="p">,</span> <span class="n">result</span><span class="p">):</span>
+    <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&#39;Finished importing {} feeds via task {}.&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
+        <span class="n">result</span><span class="p">,</span>
+        <span class="n">task</span><span class="o">.</span><span class="n">task_id</span>
+    <span class="p">))</span>
+    <span class="n">cache</span><span class="o">.</span><span class="n">incr</span><span class="p">(</span><span class="s">&#39;feeds_imported&#39;</span><span class="p">,</span> <span class="n">incr_by</span><span class="o">=</span><span class="n">result</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">maybe_retry_error</span><span class="p">(</span><span class="n">task</span><span class="p">,</span> <span class="n">err</span><span class="p">):</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">err</span><span class="p">,</span> <span class="n">FeedUnavailable</span><span class="p">):</span>
+        <span class="c"># Try again soon.</span>
+        <span class="n">task</span><span class="o">.</span><span class="n">retries</span> <span class="o">+=</span> <span class="mi">1</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">log</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s">&#39;Importing feed url {} failed.&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">err</span><span class="p">)))</span>
+
+
+<span class="c"># Now we can use those hooks.</span>
+<span class="k">with</span> <span class="n">gator</span><span class="o">.</span><span class="n">options</span><span class="p">(</span><span class="n">on_start</span><span class="o">=</span><span class="n">log_start</span><span class="p">,</span> <span class="n">on_success</span><span class="o">=</span><span class="n">log_success</span><span class="p">,</span> <span class="n">on_error</span><span class="o">=</span><span class="n">maybe_retry_error</span><span class="p">)</span> <span class="k">as</span> <span class="n">opts</span><span class="p">:</span>
+    <span class="n">opts</span><span class="o">.</span><span class="n">task</span><span class="p">(</span><span class="n">fetch_feeds</span><span class="p">,</span> <span class="p">[</span>
+        <span class="s">&#39;http://daringfireball.net/feeds/main&#39;</span><span class="p">,</span>
+        <span class="s">&#39;http://xkcd.com/rss.xml&#39;</span><span class="p">,</span>
+        <span class="s">&#39;http://www.reddit.com/r/DotA2/.rss&#39;</span><span class="p">,</span>
+    <span class="p">])</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="custom-task-classes">
+<h2>Custom Task Classes<a class="headerlink" href="#custom-task-classes" title="Permalink to this headline">¶</a></h2>
+<p>Sometimes, just the built-in arguments for <tt class="docutils literal"><span class="pre">Task</span></tt> (like <tt class="docutils literal"><span class="pre">retries</span></tt>,
+<tt class="docutils literal"><span class="pre">async</span></tt>, <tt class="docutils literal"><span class="pre">on_start</span></tt>/<tt class="docutils literal"><span class="pre">on_success</span></tt>/<tt class="docutils literal"><span class="pre">on_error</span></tt>) may not be enough. Or
+perhaps your hook methods will <em>always</em> be the same &amp; you don&#8217;t want to have to
+pass them all the time. Or perhaps you never need the hook methods, but are
+running into payload size restrictions by your preferred backend &amp; need some
+extra space.</p>
+<p>For this, you can create custom <tt class="docutils literal"><span class="pre">Task</span></tt> classes for use in place of the
+built-in one. Since that last restriction can be especially pertinent, let&#8217;s
+show how we&#8217;d handle getting more space in our payload.</p>
+<p>First, we need a <tt class="docutils literal"><span class="pre">Task</span></tt> subclass. You can create your own (as long as they
+follow the protocol), but subclassing is easier here.</p>
+<div class="code python highlight-python"><div class="highlight"><pre><span class="c"># myapp/skinnytask.py</span>
+<span class="kn">import</span> <span class="nn">bz2</span>
+
+<span class="kn">from</span> <span class="nn">alligator</span> <span class="kn">import</span> <span class="n">Task</span>
+
+
+<span class="k">class</span> <span class="nc">SkinnyTask</span><span class="p">(</span><span class="n">Task</span><span class="p">):</span>
+    <span class="c"># We&#39;re both going to ignore some keys (async, options) we don&#39;t care</span>
+    <span class="c"># about, as well as compress/decompress the payload.</span>
+    <span class="k">def</span> <span class="nf">serialize</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&#39;task_id&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">task_id</span><span class="p">,</span>
+            <span class="s">&#39;retries&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">retries</span><span class="p">,</span>
+            <span class="s">&#39;module&#39;</span><span class="p">:</span> <span class="n">determine_module</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">func</span><span class="p">),</span>
+            <span class="s">&#39;callable&#39;</span><span class="p">:</span> <span class="n">determine_name</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">func</span><span class="p">),</span>
+            <span class="s">&#39;args&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">func_args</span><span class="p">,</span>
+            <span class="s">&#39;kwargs&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">func_kwargs</span><span class="p">,</span>
+        <span class="p">}</span>
+        <span class="n">raw_json</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">bz2</span><span class="o">.</span><span class="n">compress</span><span class="p">(</span><span class="n">raw_json</span><span class="p">)</span>
+
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">deserialize</span><span class="p">(</span><span class="n">cls</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="n">raw_json</span> <span class="o">=</span> <span class="n">bz2</span><span class="o">.</span><span class="n">decompress</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+
+        <span class="n">task</span> <span class="o">=</span> <span class="n">cls</span><span class="p">(</span>
+            <span class="n">task_id</span><span class="o">=</span><span class="n">data</span><span class="p">[</span><span class="s">&#39;task_id&#39;</span><span class="p">],</span>
+            <span class="n">retries</span><span class="o">=</span><span class="n">data</span><span class="p">[</span><span class="s">&#39;retries&#39;</span><span class="p">],</span>
+            <span class="n">async</span><span class="o">=</span><span class="n">data</span><span class="p">[</span><span class="s">&#39;async&#39;</span><span class="p">]</span>
+        <span class="p">)</span>
+
+        <span class="n">func</span> <span class="o">=</span> <span class="n">import_attr</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="s">&#39;module&#39;</span><span class="p">],</span> <span class="n">data</span><span class="p">[</span><span class="s">&#39;callable&#39;</span><span class="p">])</span>
+        <span class="n">task</span><span class="o">.</span><span class="n">to_call</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="o">*</span><span class="n">data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;args&#39;</span><span class="p">,</span> <span class="p">[]),</span> <span class="o">**</span><span class="n">data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;kwargs&#39;</span><span class="p">,</span> <span class="p">{}))</span>
+        <span class="k">return</span> <span class="n">task</span>
+</pre></div>
+</div>
+<p>Now that we have our <tt class="docutils literal"><span class="pre">SkinnyTask</span></tt>, all we need is to use it. Each <tt class="docutils literal"><span class="pre">Gator</span></tt>
+instance supports a <tt class="docutils literal"><span class="pre">task_class=...</span></tt> keyword argument to replace the class
+used. So we&#8217;d do:</p>
+<div class="code python highlight-python"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">alligator</span> <span class="kn">import</span> <span class="n">Gator</span>
+
+<span class="kn">from</span> <span class="nn">myapp.skinnytask</span> <span class="kn">import</span> <span class="n">SkinnyTask</span>
+
+
+<span class="n">gator</span> <span class="o">=</span> <span class="n">Gator</span><span class="p">(</span><span class="s">&#39;redis://localhost:6379/0&#39;</span><span class="p">,</span> <span class="n">task_class</span><span class="o">=</span><span class="n">SkinnyTask</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Every call to <tt class="docutils literal"><span class="pre">gator.task(...)</span></tt> or <tt class="docutils literal"><span class="pre">gator.options(...)</span></tt> will now use our
+<tt class="docutils literal"><span class="pre">SkinnyTask</span></tt>.</p>
+<p>The last bit is that you can no longer use the included <tt class="docutils literal"><span class="pre">latergator.py</span></tt> script
+to process your queue. Instead, you&#8217;ll have to manually run a <tt class="docutils literal"><span class="pre">Worker</span></tt>.</p>
+<div class="code python highlight-python"><div class="highlight"><pre><span class="c"># myapp/skinnylatergator.py</span>
+<span class="kn">from</span> <span class="nn">alligator</span> <span class="kn">import</span> <span class="n">Gator</span><span class="p">,</span> <span class="n">Worker</span>
+
+<span class="kn">from</span> <span class="nn">myapp.skinnytask</span> <span class="kn">import</span> <span class="n">SkinnyTask</span>
+
+
+<span class="n">gator</span> <span class="o">=</span> <span class="n">Gator</span><span class="p">(</span><span class="s">&#39;redis://localhost:6379/0&#39;</span><span class="p">,</span> <span class="n">task_class</span><span class="o">=</span><span class="n">SkinnyTask</span><span class="p">)</span>
+<span class="c"># Now the worker will pick up the class as well.</span>
+<span class="n">worker</span> <span class="o">=</span> <span class="n">Worker</span><span class="p">(</span><span class="n">gator</span><span class="p">)</span>
+<span class="n">worker</span><span class="o">.</span><span class="n">run_forever</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="multiple-queues">
+<h2>Multiple Queues<a class="headerlink" href="#multiple-queues" title="Permalink to this headline">¶</a></h2>
+<p>If you have a high-volume site or the priority of tasks is important, the one
+main default queue (<tt class="docutils literal"><span class="pre">alligator.constants.ALL</span></tt>) may not work well.
+Fortunately, each <tt class="docutils literal"><span class="pre">Gator</span></tt> instance supports customizing the queue name it
+places tasks in.</p>
+<p>Let&#8217;s say that sending a notification email is way more important to use than
+creating thumbnails of photo uploads. We&#8217;ll create two <tt class="docutils literal"><span class="pre">Gator</span></tt> instances, one
+for each type of processing.</p>
+<div class="code python highlight-python"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">alligator</span> <span class="kn">import</span> <span class="n">Gator</span>
+
+<span class="n">redis_dsn</span> <span class="o">=</span> <span class="s">&#39;redis://localhost:&#39;</span>
+<span class="n">email_gator</span> <span class="o">=</span> <span class="n">Gator</span><span class="p">(</span><span class="n">redis_dsn</span><span class="p">,</span> <span class="n">queue_name</span><span class="o">=</span><span class="s">&#39;notifications&#39;</span><span class="p">)</span>
+<span class="n">image_gator</span> <span class="o">=</span> <span class="n">Gator</span><span class="p">(</span><span class="n">redis_dsn</span><span class="p">,</span> <span class="n">queue_name</span><span class="o">=</span><span class="s">&#39;images&#39;</span><span class="p">)</span>
+
+
+<span class="c"># Later...</span>
+<span class="n">email_gator</span><span class="o">.</span><span class="n">task</span><span class="p">(</span><span class="n">send_welcome_email</span><span class="p">,</span> <span class="n">request</span><span class="o">.</span><span class="n">user</span><span class="o">.</span><span class="n">pk</span><span class="p">)</span>
+<span class="c"># And elsewhere...</span>
+<span class="n">image_gator</span><span class="o">.</span><span class="n">task</span><span class="p">(</span><span class="n">create_thumbnail</span><span class="p">,</span> <span class="n">photo_path</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Now several large uploads won&#8217;t block the sending of emails later in the queue.
+You will however now need to run more <tt class="docutils literal"><span class="pre">Workers</span></tt>. Just like the &#8220;Custom Task
+Classes&#8221; section, your <tt class="docutils literal"><span class="pre">Worker</span></tt> instances will need either <tt class="docutils literal"><span class="pre">email_gator</span></tt> or
+<tt class="docutils literal"><span class="pre">image_gator</span></tt> passed to them.</p>
+<p>You could also fire up many <tt class="docutils literal"><span class="pre">email_gator</span></tt> workers (say 4) and just 1-2
+<tt class="docutils literal"><span class="pre">image_gator</span></tt> workers if the number of tasks justifies it.</p>
+</div>
+<div class="section" id="custom-backend-clients">
+<h2>Custom Backend Clients<a class="headerlink" href="#custom-backend-clients" title="Permalink to this headline">¶</a></h2>
+<p>As of the time of writing, Alligator supports the following clients:</p>
+<ul class="simple">
+<li>Locmem</li>
+<li>Redis</li>
+<li>Beanstalk</li>
+</ul>
+<p>However, if you have a different datastore or queue you&#8217;d like to use, you can
+write a custom backend <tt class="docutils literal"><span class="pre">Client</span></tt> to talk to that store. For example, let&#8217;s
+write a naive version based on SQLite using the <tt class="docutils literal"><span class="pre">sqlite3</span></tt> module included
+with Python.</p>
+<div class="admonition warning">
+<p class="first admonition-title">Warning</p>
+<p class="last">This code is simplistic for purposes of illustration. It&#8217;s not thread-safe
+nor particularly suited to large loads. It&#8217;s a demonstration of how you
+might approach things. Your Mileage May Vary.™</p>
+</div>
+<p>First, we need to create our custom <tt class="docutils literal"><span class="pre">Client</span></tt>. Where you put it doesn&#8217;t matter
+much, as long as it is importable.</p>
+<p>Each <tt class="docutils literal"><span class="pre">Client</span></tt> must have the following methods:</p>
+<ul class="simple">
+<li><tt class="docutils literal"><span class="pre">len</span></tt></li>
+<li><tt class="docutils literal"><span class="pre">drop_all</span></tt></li>
+<li><tt class="docutils literal"><span class="pre">push</span></tt></li>
+<li><tt class="docutils literal"><span class="pre">pop</span></tt></li>
+<li><tt class="docutils literal"><span class="pre">get</span></tt></li>
+</ul>
+<div class="code python highlight-python"><div class="highlight"><pre><span class="c"># myapp/sqlite_backend.py</span>
+<span class="kn">import</span> <span class="nn">sqlite3</span>
+
+
+<span class="k">class</span> <span class="nc">Client</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">conn_string</span><span class="p">):</span>
+        <span class="c"># This is actually the filepath to the DB file.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">conn_string</span> <span class="o">=</span> <span class="n">conn_string</span>
+        <span class="c"># Kill the &#39;sqlite://&#39; portion.</span>
+        <span class="n">path</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">conn_string</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s">&#39;://&#39;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">conn</span> <span class="o">=</span> <span class="n">sqlite3</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_run_query</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">query</span><span class="p">,</span> <span class="n">args</span><span class="p">):</span>
+        <span class="n">cur</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">conn</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">args</span><span class="p">:</span>
+            <span class="n">cur</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">query</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">cur</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">args</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">cur</span>
+
+    <span class="k">def</span> <span class="nf">len</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">queue_name</span><span class="p">):</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="s">&#39;SELECT COUNT(task_id) FROM `{}`&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">queue_name</span><span class="p">)</span>
+        <span class="n">cur</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_run_query</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="p">[])</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="n">cur</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">res</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">drop_all</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">queue_name</span><span class="p">):</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="s">&#39;DELETE FROM `{}`&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">queue_name</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_run_query</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="p">[])</span>
+
+    <span class="k">def</span> <span class="nf">push</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">queue_name</span><span class="p">,</span> <span class="n">task_id</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="s">&#39;INSERT INTO `{}` (task_id, data) VALUES (?, ?)&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
+            <span class="n">queue_name</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_run_query</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="p">[</span><span class="n">task_id</span><span class="p">,</span> <span class="n">data</span><span class="p">])</span>
+        <span class="k">return</span> <span class="n">task_id</span>
+
+    <span class="k">def</span> <span class="nf">pop</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">queue_name</span><span class="p">):</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="s">&#39;SELECT task_id, data FROM `{}` LIMIT 1&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">queue_name</span><span class="p">)</span>
+        <span class="n">cur</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_run_query</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="p">[])</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="n">cur</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()</span>
+
+        <span class="n">query</span> <span class="o">=</span> <span class="s">&#39;DELETE FROM `{}` WHERE task_id = ?&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">queue_name</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_run_query</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="p">[</span><span class="n">res</span><span class="p">[</span><span class="mi">0</span><span class="p">]])</span>
+
+        <span class="k">return</span> <span class="n">res</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">get</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">queue_name</span><span class="p">,</span> <span class="n">task_id</span><span class="p">):</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="s">&#39;SELECT task_id, data FROM `{}` WHERE task_id = ?&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
+            <span class="n">queue_name</span>
+        <span class="p">)</span>
+        <span class="n">cur</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_run_query</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="p">[</span><span class="n">task_id</span><span class="p">])</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="n">cur</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()</span>
+
+        <span class="n">query</span> <span class="o">=</span> <span class="s">&#39;DELETE FROM `{}` WHERE task_id = ?&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">queue_name</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_run_query</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="p">[</span><span class="n">task_id</span><span class="p">])</span>
+
+        <span class="k">return</span> <span class="n">res</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+</pre></div>
+</div>
+<p>Now using it is simple. We&#8217;ll make a <tt class="docutils literal"><span class="pre">Gator</span></tt> instance, passing our new class
+via the <tt class="docutils literal"><span class="pre">backend_class=...</span></tt> keyword argument.</p>
+<div class="code python highlight-python"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">alligator</span> <span class="kn">import</span> <span class="n">Gator</span>
+
+<span class="kn">from</span> <span class="nn">myapp.sqlite_backend</span> <span class="kn">import</span> <span class="n">Client</span> <span class="k">as</span> <span class="n">SQLiteClient</span>
+
+
+<span class="n">gator</span> <span class="o">=</span> <span class="n">Gator</span><span class="p">(</span><span class="s">&#39;sqlite:///tmp/myapp_queue.db&#39;</span><span class="p">,</span> <span class="n">backend_class</span><span class="o">=</span><span class="n">SQLiteClient</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>And use that <tt class="docutils literal"><span class="pre">Gator</span></tt> instance as normal!</p>
+</div>
+<div class="section" id="different-workers">
+<h2>Different Workers<a class="headerlink" href="#different-workers" title="Permalink to this headline">¶</a></h2>
+<p>The <tt class="docutils literal"><span class="pre">Worker</span></tt> class that ships with Alligator is somewhat opinionated &amp;
+simple-minded. It assumes it will be used from a command-line &amp; can print
+informational messages to <tt class="docutils literal"><span class="pre">STDOUT</span></tt>.</p>
+<p>However, this may not work for your purposes. To work around this, you can
+subclass <tt class="docutils literal"><span class="pre">Worker</span></tt> (or make your own entirely new one).</p>
+<p>For instance, let&#8217;s make <tt class="docutils literal"><span class="pre">Worker</span></tt> use <tt class="docutils literal"><span class="pre">logging</span></tt> instead of <tt class="docutils literal"><span class="pre">STDOUT</span></tt>.
+We&#8217;ll swap out all the methods that <tt class="docutils literal"><span class="pre">print(...)</span></tt> for methods that log instead.</p>
+<div class="code python highlight-python"><div class="highlight"><pre><span class="c"># myapp/logworkers.py</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+
+<span class="kn">from</span> <span class="nn">alligator</span> <span class="kn">import</span> <span class="n">Worker</span>
+
+
+<span class="n">log</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s">&#39;alligator.worker&#39;</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">LoggingWorker</span><span class="p">(</span><span class="n">Worker</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">starting</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">ident</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ident</span><span class="p">()</span>
+        <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&#39;{} starting &amp; consuming &quot;{}&quot;.&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">ident</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">to_consume</span><span class="p">))</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">max_tasks</span><span class="p">:</span>
+            <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&#39;{} will die after {} tasks.&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">ident</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">max_tasks</span><span class="p">))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&#39;{} will never die.&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">ident</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">stopping</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">ident</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ident</span><span class="p">()</span>
+        <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&#39;{} for &quot;{}&quot; shutting down. Consumed {} tasks.&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
+            <span class="n">ident</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">to_consume</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">tasks_complete</span>
+        <span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">result</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">result</span><span class="p">):</span>
+        <span class="c"># Because we don&#39;t usually care about the return values.</span>
+        <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>As with previous <tt class="docutils literal"><span class="pre">Worker</span></tt> customizations, you won&#8217;t be able to use
+<tt class="docutils literal"><span class="pre">latergator.py</span></tt> anymore. Instead, we&#8217;ll make a script.</p>
+<div class="code python highlight-python"><div class="highlight"><pre><span class="c"># myapp/logginggator.py</span>
+<span class="kn">from</span> <span class="nn">alligator</span> <span class="kn">import</span> <span class="n">Gator</span>
+
+<span class="kn">from</span> <span class="nn">myapp.logworkers</span> <span class="kn">import</span> <span class="n">LoggingWorker</span>
+
+
+<span class="n">gator</span> <span class="o">=</span> <span class="n">Gator</span><span class="p">(</span><span class="s">&#39;redis://localhost:6379/0&#39;</span><span class="p">)</span>
+<span class="n">worker</span> <span class="o">=</span> <span class="n">LoggingWorker</span><span class="p">(</span><span class="n">gator</span><span class="p">)</span>
+<span class="n">worker</span><span class="o">.</span><span class="n">run_forever</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>And now there&#8217;s no more nasty <tt class="docutils literal"><span class="pre">STDOUT</span></tt> messages!</p>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h3><a href="index.html">Table Of Contents</a></h3>
+  <ul>
+<li><a class="reference internal" href="#">Extending Alligator</a><ul>
+<li><a class="reference internal" href="#hook-methods">Hook Methods</a></li>
+<li><a class="reference internal" href="#custom-task-classes">Custom Task Classes</a></li>
+<li><a class="reference internal" href="#multiple-queues">Multiple Queues</a></li>
+<li><a class="reference internal" href="#custom-backend-clients">Custom Backend Clients</a></li>
+<li><a class="reference internal" href="#different-workers">Different Workers</a></li>
+</ul>
+</li>
+</ul>
+
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="bestpractices.html"
+                        title="previous chapter">Best Practices</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="contributing.html"
+                        title="next chapter">Contributing</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="_sources/extending.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="contributing.html" title="Contributing"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="bestpractices.html" title="Best Practices"
+             >previous</a> |</li>
+        <li><a href="index.html">Alligator 0.8.0-dev documentation</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2014-2015, Daniel Lindsley.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

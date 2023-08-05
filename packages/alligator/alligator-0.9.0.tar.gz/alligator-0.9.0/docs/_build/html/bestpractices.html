@@ -1,0 +1,266 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>Best Practices &mdash; Alligator 0.8.0-dev documentation</title>
+    
+    <link rel="stylesheet" href="_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    './',
+        VERSION:     '0.8.0-dev',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="top" title="Alligator 0.8.0-dev documentation" href="index.html" />
+    <link rel="next" title="Extending Alligator" href="extending.html" />
+    <link rel="prev" title="Alligator Tutorial" href="tutorial.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="extending.html" title="Extending Alligator"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="tutorial.html" title="Alligator Tutorial"
+             accesskey="P">previous</a> |</li>
+        <li><a href="index.html">Alligator 0.8.0-dev documentation</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="best-practices">
+<span id="bestpractices"></span><h1>Best Practices<a class="headerlink" href="#best-practices" title="Permalink to this headline">¶</a></h1>
+<p>Moving to offlining tasks requires some shifts in the way you develop your
+code. There are also some good tricks/ideas for integrating Alligator.</p>
+<p>If you have suggestions for other best practices, please submit a pull request
+at <a class="reference external" href="https://github.com/toastdriven/alligator/pulls">https://github.com/toastdriven/alligator/pulls</a>!</p>
+<div class="section" id="configure-one-gator">
+<h2>Configure One <tt class="docutils literal"><span class="pre">Gator</span></tt><a class="headerlink" href="#configure-one-gator" title="Permalink to this headline">¶</a></h2>
+<p>This is alluded to in the <a class="reference internal" href="tutorial.html#tutorial"><em>Alligator Tutorial</em></a>, but unless you have advanced needs,
+you&#8217;re probably best off configuring a <strong>single</strong> <tt class="docutils literal"><span class="pre">Gator</span></tt> instance in your
+code. Then you can import that instance wherever you need it.</p>
+<p>Generally speaking, you&#8217;ll want to create a new file for just this, though if
+you have a <tt class="docutils literal"><span class="pre">utils.py</span></tt> or other common file, you can add it there. For
+example:</p>
+<div class="code python highlight-python"><div class="highlight"><pre><span class="c"># Create a new file, like ``myapp/gator.py``</span>
+<span class="kn">from</span> <span class="nn">alligator</span> <span class="kn">import</span> <span class="n">Gator</span>
+
+<span class="n">gator</span> <span class="o">=</span> <span class="n">Gator</span><span class="p">(</span><span class="s">&#39;redis://localhost:6379/0&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Then your code elsewhere imports it:</p>
+<div class="code python highlight-python"><div class="highlight"><pre><span class="c"># ``myapp/views.py``</span>
+<span class="kn">from</span> <span class="nn">myapp.gator</span> <span class="kn">import</span> <span class="n">gator</span>
+
+<span class="c"># ...Later...</span>
+<span class="k">def</span> <span class="nf">previously_slow_view</span><span class="p">(</span><span class="n">request</span><span class="p">):</span>
+    <span class="n">gator</span><span class="o">.</span><span class="n">task</span><span class="p">(</span><span class="n">expensive_cache_rebuild</span><span class="p">,</span> <span class="n">user_id</span><span class="o">=</span><span class="n">request</span><span class="o">.</span><span class="n">user</span><span class="o">.</span><span class="n">pk</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>This helps <abbr title="Don't Repeat Yourself">DRY</abbr> up your code. It also helps you
+avoid having to change many files if you change backends or configuration.</p>
+</div>
+<div class="section" id="use-environment-variables-or-settings-for-the-gator-dsn">
+<h2>Use Environment Variables or Settings for the <tt class="docutils literal"><span class="pre">Gator</span></tt> DSN<a class="headerlink" href="#use-environment-variables-or-settings-for-the-gator-dsn" title="Permalink to this headline">¶</a></h2>
+<p>Instead of hard-coding the <abbr title="Data Source Name">DSN</abbr> for each <tt class="docutils literal"><span class="pre">Gator</span></tt>
+instance, you should rely on a configuration setting instead.</p>
+<p>If you&#8217;re using plain old Python or subscribe to the <a class="reference external" href="http://12factor.net/">Twelve-Factor App</a>,
+you might lean on environment variables set in the shell. For instance, the
+Alligator test suite does:</p>
+<div class="code python highlight-python"><div class="highlight"><pre><span class="kn">import</span> <span class="nn">os</span>
+
+<span class="kn">from</span> <span class="nn">alligator</span> <span class="kn">import</span> <span class="n">Gator</span>
+
+
+<span class="c"># Lean on the ENV variable.</span>
+<span class="n">gator</span> <span class="o">=</span> <span class="n">Gator</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s">&#39;ALLIGATOR_CONN&#39;</span><span class="p">])</span>
+</pre></div>
+</div>
+<p>Then when running your app, you could do the following in development, for
+ease of setup:</p>
+<div class="code bash highlight-python"><div class="highlight"><pre>$ export ALLIGATOR_CONN=locmem://
+$ python myapp.py
+</pre></div>
+</div>
+<p>But the following on production, for handling large loads:</p>
+<div class="code bash highlight-python"><div class="highlight"><pre>$ export ALLIGATOR_CONN=redis://some.dns.name.com:6379/0
+$ python myapp.py
+</pre></div>
+</div>
+<p>If you&#8217;re using something like <a class="reference external" href="http://djangoproject.com/">Django</a>, you could lean on <tt class="docutils literal"><span class="pre">settings</span></tt>
+instead, like:</p>
+<div class="code python highlight-python"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">alligator</span> <span class="kn">import</span> <span class="n">Gator</span>
+
+<span class="kn">from</span> <span class="nn">django.conf</span> <span class="kn">import</span> <span class="n">settings</span>
+
+
+<span class="c"># Lean on the settings variable.</span>
+<span class="n">gator</span> <span class="o">=</span> <span class="n">Gator</span><span class="p">(</span><span class="n">settings</span><span class="o">.</span><span class="n">ALLIGATOR_CONN</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>And have differing settings files for development vs. production.</p>
+</div>
+<div class="section" id="use-environment-variables-or-settings-for-task-async">
+<h2>Use Environment Variables or Settings for <tt class="docutils literal"><span class="pre">Task.async</span></tt><a class="headerlink" href="#use-environment-variables-or-settings-for-task-async" title="Permalink to this headline">¶</a></h2>
+<p>If you&#8217;re just using <tt class="docutils literal"><span class="pre">gator.task</span></tt> &amp; trying to write tests, you may have a
+hard time verifying behavior in an integration test (though you should be able
+to just unit test the task function).</p>
+<p>On the other hand, if you use the <tt class="docutils literal"><span class="pre">gator.options</span></tt> context manager &amp; supply
+an <tt class="docutils literal"><span class="pre">async=False</span></tt> execution option, integration tests become easy, as the
+expense of possibly accidentally committing that &amp; causing issues in production.</p>
+<p>The best approach is to use the <tt class="docutils literal"><span class="pre">gator.options</span></tt> context manager, but use
+an environment variable/setting to control if things run asynchronously.</p>
+<div class="code python highlight-python"><div class="highlight"><pre><span class="kn">import</span> <span class="nn">os</span>
+
+<span class="c"># Using the above tip of a single import...</span>
+<span class="kn">from</span> <span class="nn">myapp.gator</span> <span class="kn">import</span> <span class="n">gator</span>
+
+
+<span class="k">def</span> <span class="nf">some_view</span><span class="p">(</span><span class="n">request</span><span class="p">):</span>
+    <span class="k">with</span> <span class="n">gator</span><span class="o">.</span><span class="n">options</span><span class="p">(</span><span class="n">async</span><span class="o">=</span><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s">&#39;ALLIGATOR_ASYNC&#39;</span><span class="p">])</span> <span class="k">as</span> <span class="n">opts</span><span class="p">:</span>
+        <span class="n">opts</span><span class="o">.</span><span class="n">task</span><span class="p">(</span><span class="n">expensive_thing</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>This allows you to set <tt class="docutils literal"><span class="pre">export</span> <span class="pre">ALLIGATOR_ASYNC=False</span></tt> in development/testing
+(so the task runs right away in-process) but queues appropriately in
+production.</p>
+</div>
+<div class="section" id="simple-task-parameters">
+<h2>Simple Task Parameters<a class="headerlink" href="#simple-task-parameters" title="Permalink to this headline">¶</a></h2>
+<p>When creating task functions, you want to simplify the arguments passed to it,
+as well as removing as many assumptions as possible.</p>
+<p>You may be tempted to try to save queries by passing full objects or large lists
+of things as a parameter.</p>
+<p>However, you must remember that the task may run at a very different time
+(perhaps hours in the future if you&#8217;re overloaded) or on a completely different
+machine than the one scheduling the task. Data goes stale easily &amp; few things
+are as frustrating to debug as stale data being re-written over the top of new
+data.</p>
+<p>Where possible, do the following things:</p>
+<ul class="simple">
+<li>Pass primary keys or identifiers instead of rich objects</li>
+<li>Persist large collections in the database or elsewhere, then pass a lookup
+identifier to the task</li>
+<li>Use simple data types, as they serialize well &amp; result in smaller queue
+payloads, meaning faster scheduling &amp; consuming of tasks</li>
+</ul>
+</div>
+<div class="section" id="re-use-the-gator-options-context-manager">
+<h2>Re-use the <tt class="docutils literal"><span class="pre">Gator.options</span></tt> Context Manager<a class="headerlink" href="#re-use-the-gator-options-context-manager" title="Permalink to this headline">¶</a></h2>
+<p>All the examples in the Alligator docs show creating a single task within
+a <tt class="docutils literal"><span class="pre">gator.options(...)</span></tt> context manager. So you might be tempted to write code
+like:</p>
+<div class="code python highlight-python"><div class="highlight"><pre><span class="k">with</span> <span class="n">gator</span><span class="o">.</span><span class="n">options</span><span class="p">(</span><span class="n">retries</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span> <span class="k">as</span> <span class="n">opts</span><span class="p">:</span>
+    <span class="n">opts</span><span class="o">.</span><span class="n">task</span><span class="p">(</span><span class="n">send_mass_mail</span><span class="p">,</span> <span class="n">list_id</span><span class="p">)</span>
+
+<span class="k">with</span> <span class="n">gator</span><span class="o">.</span><span class="n">options</span><span class="p">(</span><span class="n">retries</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span> <span class="k">as</span> <span class="n">opts</span><span class="p">:</span>
+    <span class="n">opts</span><span class="o">.</span><span class="n">task</span><span class="p">(</span><span class="n">update_follow_counts</span><span class="p">,</span> <span class="n">request</span><span class="o">.</span><span class="n">user</span><span class="o">.</span><span class="n">pk</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>However, you can reuse that context manager to provide the same execution
+options to <strong>all</strong> tasks within the block. So we can clean up &amp; shorten our
+code to:</p>
+<div class="code python highlight-python"><div class="highlight"><pre><span class="k">with</span> <span class="n">gator</span><span class="o">.</span><span class="n">options</span><span class="p">(</span><span class="n">retries</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span> <span class="k">as</span> <span class="n">opts</span><span class="p">:</span>
+    <span class="n">opts</span><span class="o">.</span><span class="n">task</span><span class="p">(</span><span class="n">send_mass_mail</span><span class="p">,</span> <span class="n">list_id</span><span class="p">)</span>
+    <span class="n">opts</span><span class="o">.</span><span class="n">task</span><span class="p">(</span><span class="n">update_follow_counts</span><span class="p">,</span> <span class="n">request</span><span class="o">.</span><span class="n">user</span><span class="o">.</span><span class="n">pk</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Two unique tasks will still be created, but both will have the <tt class="docutils literal"><span class="pre">retries=3</span></tt>
+provided to better ensure they succeeed.</p>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h3><a href="index.html">Table Of Contents</a></h3>
+  <ul>
+<li><a class="reference internal" href="#">Best Practices</a><ul>
+<li><a class="reference internal" href="#configure-one-gator">Configure One <tt class="docutils literal"><span class="pre">Gator</span></tt></a></li>
+<li><a class="reference internal" href="#use-environment-variables-or-settings-for-the-gator-dsn">Use Environment Variables or Settings for the <tt class="docutils literal"><span class="pre">Gator</span></tt> DSN</a></li>
+<li><a class="reference internal" href="#use-environment-variables-or-settings-for-task-async">Use Environment Variables or Settings for <tt class="docutils literal"><span class="pre">Task.async</span></tt></a></li>
+<li><a class="reference internal" href="#simple-task-parameters">Simple Task Parameters</a></li>
+<li><a class="reference internal" href="#re-use-the-gator-options-context-manager">Re-use the <tt class="docutils literal"><span class="pre">Gator.options</span></tt> Context Manager</a></li>
+</ul>
+</li>
+</ul>
+
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="tutorial.html"
+                        title="previous chapter">Alligator Tutorial</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="extending.html"
+                        title="next chapter">Extending Alligator</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="_sources/bestpractices.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="extending.html" title="Extending Alligator"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="tutorial.html" title="Alligator Tutorial"
+             >previous</a> |</li>
+        <li><a href="index.html">Alligator 0.8.0-dev documentation</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2014-2015, Daniel Lindsley.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>
