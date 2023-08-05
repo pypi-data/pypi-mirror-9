@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% load sekizai_tags %}
+{% load threebot_tags %}
+
+{% block doctitle %}
+Logged {{ workflow }}
+{% endblock %}
+
+{% block content %}
+<div class="row">
+  <div class="col-sm-10">
+    <h2>
+      <span class="glyphicon workflow-{{ workflow_log.get_exit_code_display }}"></span>
+      Logged <a href="{{ workflow.get_absolute_url }}">{{ workflow }}</a>
+    </h2>
+  </div>
+
+  <div class="col-sm-2">
+    <div class="show-tooltip" style="margin: 0 auto 10px;" title="{% if workflow_log.exit_code == workflow_log.ERROR or not templates or not workflow_log.performed_on.is_accessible %}Looks like this Workflow has failed, the worker is not accessible or the Task order has changed. You can not replay this Log.{% else %}Run again with »this« settings.{% endif %}">
+      <a href="{% url 'core_workflow_replay' workflow.slug workflow_log.id %}" type="button" class="btn btn-success btn-lg btn-block {% if workflow_log.exit_code == workflow_log.ERROR or not templates or not workflow_log.performed_on.is_accessible %}disabled{% endif %}"><span class="glyphicon glyphicon-repeat"></span> Replay</a>
+    </div>
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-sm-12">
+    <ul class="list-inline">
+      <li></li><strong>Logged by:</strong> {{ workflow_log.performed_by }}</li>
+      <li><strong>Log Time:</strong> {{ workflow_log.date_created|date:"d.m.y H:i" }}</li>
+      <li><strong>Log worker:</strong> <a href="{{ workflow_log.performed_on.get_absolute_url }}">{{ workflow_log.performed_on }}</a></li>
+    </ul>
+  </div>
+</div>
+
+{% for wf_task, output in outputs %}
+<!-- Nav tabs -->
+<h4 style="padding-top:20px;"><span class="glyphicon workflow-{% if output.exit_code == 0 %}Success{% else %}Error{% endif %}"></span> {{ wf_task|rsplit:"_" }}</h4>
+<ul class="nav nav-tabs" role="tablist">
+  <li role="presentation" class="active"><a href="#{{ wf_task|lsplit:"_" }}_stdout" role="tab" data-toggle="tab">Console Output</a></li>
+  <li role="presentation"><a href="#{{ wf_task|lsplit:"_" }}_stderr" role="tab" data-toggle="tab">Error Stream</a></li>
+  <li role="presentation"><a href="#{{ wf_task|lsplit:"_" }}_html" role="tab" data-toggle="tab">Rendered HTML</a></li>
+  <li class="pull-right" title="the renderes script as send to the workers" role="presentation"><a href="#{{ wf_task|lsplit:"_" }}_script" role="tab" data-toggle="tab">Script</a></li>
+</ul>
+<div class="tab-content">
+  <div role="tabpanel" class="tab-pane active" id="{{ wf_task|lsplit:"_" }}_stdout">
+    <!-- Backwards combability -->
+    {% if output.output %}
+    <pre style="border-top: none; border-radius: 0; background-color:white; color:darkgreen; font-family: monospace;">{{ output.output|default:"---" }}</pre>
+    {% endif %}
+
+    {% if output.stdout %}
+    <pre style="border-top: none; border-radius: 0; background-color:white; color:black; padding:12px; font-family: monospace;">{{ output.stdout|default:"---" }}</pre>
+    {% comment %}
+    {% split_lines output.stdout as lines %}
+    <table>
+      <tr>
+        <td style="width: 14px;">
+          {% for line in lines %}{% if forloop.last %}{% else %}<pre id="line-{{forloop.counter}}" style="border: none; border-radius: 0; background-color:white; padding:0px; margin: 0; font-family: monospace;">{{ forloop.counter }}</pre>{% endif %}{% endfor %}
+        </td>
+        <td>
+          {% for line in lines %}<pre style="border: none; border-radius: 0; background-color:white; padding:0px; margin: 0; font-family: monospace;">{{ line }}</pre>{% endfor %}
+        </td>
+      </tr>
+    </table>
+    {% endcomment %}
+    {% endif %}
+  </div>
+
+  <div role="tabpanel" class="tab-pane" id="{{ wf_task|lsplit:"_" }}_stderr">
+    <pre style="border-top: none; border-radius: 0; background-color:white; color:red; padding:12px; font-family: monospace;">{{ output.stderr|default:"---" }}</pre>
+  </div>
+  <div role="tabpanel" class="tab-pane" id="{{ wf_task|lsplit:"_" }}_html">
+    <iframe class="col-sm-12" id="html-{{ k|slugify }}" src="{% url 'core_workflow_log_detail_render' workflow.slug workflow_log.id %}?task={{ wf_task }}&format=html"></iframe>
+  </div>
+  {% get_script_for_wf workflow_log wf_task|lsplit:"_" as script %}
+  <div role="tabpanel" class="tab-pane" id="{{ wf_task|lsplit:"_" }}_script">
+    <pre style="border-top: none; border-radius: 0; background-color:white; padding:12px; font-family: monospace;">{{ script }}</pre>
+  </div>
+</div>
+{% endfor %}
+
+{% addtoblock "js" %}
+<script type="text/javascript">
+$(function() {
+    $('.show-tooltip').tooltip({placement: 'bottom'});
+});
+
+var log_exit_code = '{{ workflow_log.exit_code|escapejs }}';
+if (log_exit_code == '2') {
+    setInterval(function() {
+          window.location.reload();
+        }, 5000);
+}
+
+{% for wf_task, output in outputs %}
+$('#{{ wf_task|lsplit:"_" }}_stdout a').click(function (e) {
+  e.preventDefault()
+  $(this).tab('show')
+});
+$('#{{ wf_task|lsplit:"_" }}_stderr a').click(function (e) {
+  e.preventDefault()
+  $(this).tab('show')
+});
+$('#{{ wf_task|lsplit:"_" }}_html a').click(function (e) {
+  e.preventDefault()
+  $(this).tab('show')
+});
+{% endfor %}
+</script>
+{% endaddtoblock "js" %}
+
+{% endblock %}
