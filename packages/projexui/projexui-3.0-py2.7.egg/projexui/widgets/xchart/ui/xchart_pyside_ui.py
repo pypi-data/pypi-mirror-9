@@ -1,0 +1,93 @@
+# -*- coding: utf-8 -*-
+
+# Form implementation generated from reading ui file 'c:\workspace\dev\projex\projexui\src\projexui\widgets\xchart\ui\xchart.ui'
+#
+# Created: Wed Dec 31 14:09:29 2014
+#      by: pyside-uic 0.2.15 running on PySide 1.2.2
+#
+# WARNING! All changes made in this file will be lost!
+
+from PySide import QtCore, QtGui
+
+class Ui_XChart(object):
+    def setupUi(self, XChart):
+        XChart.setObjectName("XChart")
+        XChart.resize(477, 372)
+        XChart.setFrameShape(QtGui.QFrame.StyledPanel)
+        XChart.setFrameShadow(QtGui.QFrame.Sunken)
+        self.gridLayout_2 = QtGui.QGridLayout(XChart)
+        self.gridLayout_2.setContentsMargins(6, 3, 6, 6)
+        self.gridLayout_2.setHorizontalSpacing(0)
+        self.gridLayout_2.setVerticalSpacing(3)
+        self.gridLayout_2.setObjectName("gridLayout_2")
+        self.uiToolbarHBOX = QtGui.QHBoxLayout()
+        self.uiToolbarHBOX.setSpacing(0)
+        self.uiToolbarHBOX.setObjectName("uiToolbarHBOX")
+        self.uiDatasetTBAR = QtGui.QToolBar(XChart)
+        sizePolicy = QtGui.QSizePolicy(QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Fixed)
+        sizePolicy.setHorizontalStretch(1)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.uiDatasetTBAR.sizePolicy().hasHeightForWidth())
+        self.uiDatasetTBAR.setSizePolicy(sizePolicy)
+        self.uiDatasetTBAR.setMinimumSize(QtCore.QSize(0, 32))
+        self.uiDatasetTBAR.setBaseSize(QtCore.QSize(0, 32))
+        self.uiDatasetTBAR.setIconSize(QtCore.QSize(10, 10))
+        self.uiDatasetTBAR.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
+        self.uiDatasetTBAR.setObjectName("uiDatasetTBAR")
+        self.uiToolbarHBOX.addWidget(self.uiDatasetTBAR)
+        spacerItem = QtGui.QSpacerItem(0, 6, QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Minimum)
+        self.uiToolbarHBOX.addItem(spacerItem)
+        self.uiTypeBTN = QtGui.QToolButton(XChart)
+        self.uiTypeBTN.setMinimumSize(QtCore.QSize(48, 32))
+        self.uiTypeBTN.setIconSize(QtCore.QSize(32, 32))
+        self.uiTypeBTN.setPopupMode(QtGui.QToolButton.MenuButtonPopup)
+        self.uiTypeBTN.setAutoRaise(True)
+        self.uiTypeBTN.setObjectName("uiTypeBTN")
+        self.uiToolbarHBOX.addWidget(self.uiTypeBTN)
+        self.gridLayout_2.addLayout(self.uiToolbarHBOX, 0, 0, 1, 1)
+        self.gridLayout = QtGui.QGridLayout()
+        self.gridLayout.setSpacing(0)
+        self.gridLayout.setObjectName("gridLayout")
+        self.uiXAxisVIEW = QtGui.QGraphicsView(XChart)
+        sizePolicy = QtGui.QSizePolicy(QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Preferred)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.uiXAxisVIEW.sizePolicy().hasHeightForWidth())
+        self.uiXAxisVIEW.setSizePolicy(sizePolicy)
+        self.uiXAxisVIEW.setMaximumSize(QtCore.QSize(16777215, 32))
+        self.uiXAxisVIEW.setFrameShape(QtGui.QFrame.NoFrame)
+        self.uiXAxisVIEW.setFrameShadow(QtGui.QFrame.Plain)
+        self.uiXAxisVIEW.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.uiXAxisVIEW.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.uiXAxisVIEW.setViewportUpdateMode(QtGui.QGraphicsView.FullViewportUpdate)
+        self.uiXAxisVIEW.setObjectName("uiXAxisVIEW")
+        self.gridLayout.addWidget(self.uiXAxisVIEW, 1, 1, 1, 1)
+        self.uiYAxisVIEW = QtGui.QGraphicsView(XChart)
+        sizePolicy = QtGui.QSizePolicy(QtGui.QSizePolicy.Preferred, QtGui.QSizePolicy.Expanding)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.uiYAxisVIEW.sizePolicy().hasHeightForWidth())
+        self.uiYAxisVIEW.setSizePolicy(sizePolicy)
+        self.uiYAxisVIEW.setMaximumSize(QtCore.QSize(48, 16777215))
+        self.uiYAxisVIEW.setFrameShape(QtGui.QFrame.NoFrame)
+        self.uiYAxisVIEW.setFrameShadow(QtGui.QFrame.Plain)
+        self.uiYAxisVIEW.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.uiYAxisVIEW.setViewportUpdateMode(QtGui.QGraphicsView.FullViewportUpdate)
+        self.uiYAxisVIEW.setObjectName("uiYAxisVIEW")
+        self.gridLayout.addWidget(self.uiYAxisVIEW, 0, 0, 1, 1)
+        self.uiChartVIEW = QtGui.QGraphicsView(XChart)
+        self.uiChartVIEW.setFrameShape(QtGui.QFrame.NoFrame)
+        self.uiChartVIEW.setFrameShadow(QtGui.QFrame.Plain)
+        self.uiChartVIEW.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.uiChartVIEW.setViewportUpdateMode(QtGui.QGraphicsView.FullViewportUpdate)
+        self.uiChartVIEW.setObjectName("uiChartVIEW")
+        self.gridLayout.addWidget(self.uiChartVIEW, 0, 1, 1, 1)
+        self.gridLayout_2.addLayout(self.gridLayout, 1, 0, 1, 1)
+
+        self.retranslateUi(XChart)
+        QtCore.QMetaObject.connectSlotsByName(XChart)
+
+    def retranslateUi(self, XChart):
+        XChart.setWindowTitle(QtGui.QApplication.translate("XChart", "Chart", None, QtGui.QApplication.UnicodeUTF8))
+        self.uiTypeBTN.setText(QtGui.QApplication.translate("XChart", "...", None, QtGui.QApplication.UnicodeUTF8))
+
