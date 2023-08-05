@@ -1,0 +1,55 @@
+#!/usr/bin/env python
+"""
+Show SNMP interface details
+"""
+
+import os
+
+from seine.snmp.script import SNMPScript,ScriptError
+from seine.snmp import SNMPError,SNMP_VERSIONS
+from seine.snmp.devices.network.interfaces import SNMPNetworkInterfaces
+
+DEFAULT_CACHE_PATH = os.path.expanduser('~/.snmp_interface_index.cache')
+
+script = SNMPScript(index_cache_path=DEFAULT_CACHE_PATH)
+script.add_argument('--octets',action='store_true',help='Show octet counters')
+script.add_argument('--packets',action='store_true',help='Show packet counters')
+script.add_argument('--summary',action='store_true',help='Show interface summary')
+script.add_argument('--update-indexes',action='store_true',help='Update device interface index cache')
+script.add_argument('interfaces',nargs='*',help='Interface names to query')
+try:
+    args = script.parse_args()
+except ScriptError,emsg:
+    script.exit(1,emsg)
+sni = SNMPNetworkInterfaces(**script.client_kwargs)
+names = sni.interface_names()
+
+if args.update_indexes:
+    sni.update_indexes()
+
+if not args.interfaces:
+    for index,details in names.items():
+        script.message(details['name'])
+
+for name in args.interfaces:
+    try:
+        n = name.lower()
+        index = filter(lambda x: n in [x['name'].lower(), x['description'].lower()], names.values() )[0]['index']
+    except IndexError:
+        script.message('No such interface name: %s' % name)
+        continue
+
+    script.message('\n' + names[index]['description'])
+    if not args.summary and args.octets:
+        counters = sni.interface_octet_counters(index)[index]
+        for k,v in counters.items():
+            script.message('%20s %s' % (k,v))
+    if not args.summary and args.packets:
+        counters = sni.interface_packet_counters(index)[index]
+        for k,v in counters.items():
+            script.message('%20s %s' % (k,v))
+    if args.summary:
+        details = sni.interface_details(index)
+        for k in sorted(filter(lambda x: x!='description', details.keys())):
+            script.message('%20s %s' % (k,details[k]))
+
