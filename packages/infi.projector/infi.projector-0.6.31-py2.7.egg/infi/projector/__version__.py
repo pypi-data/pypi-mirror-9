@@ -1,0 +1,10 @@
+__version__ = "0.6.31"
+__git_commiter_name__ = "Guy Rozendorn"
+__git_commiter_email__ = "guy@rzn.co.il"
+__git_branch__ = '(detached from v0.6.31)'
+__git_remote_tracking_branch__ = '(No remote tracking)'
+__git_remote_url__ = '(Not remote tracking)'
+__git_head_hash__ = '6a4e0bd38f8da20a24a60e57c8796e74d747a612'
+__git_head_subject__ = 'Finished release v0.6.31.'
+__git_head_message__ = '* release/v0.6.31:\n  HOSTDEV-1949 changes in freezes and post-releases\n  fix tests\n  HOSTDEV-1946 cleaning up setuptools from sys.path after exec'
+__git_dirty_diff__ = ''
