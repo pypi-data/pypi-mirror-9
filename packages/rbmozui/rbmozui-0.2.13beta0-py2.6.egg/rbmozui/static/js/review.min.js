@@ -1,0 +1,1 @@
+(function(){$(document).ready(function(){$("#new-navbar").insertBefore(".box.review-request");$("#new-navbar").show();$(".main .editable").inlineEditor("disable");$("#rbmozui-child-commits .editable").inlineEditor("enable");$('label[for="field_target_people"]').parent().parent().hide()})}).call(this);
