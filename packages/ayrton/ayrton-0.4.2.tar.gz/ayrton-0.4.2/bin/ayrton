@@ -1,0 +1,74 @@
+#! /usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+# (c) 2013 Marcos Dione <mdione@grulic.org.ar>
+
+# This file is part of ayrton.
+#
+# ayrton is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# ayrton is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with ayrton.  If not, see <http://www.gnu.org/licenses/>.
+
+# cannot be simpler :)
+import ayrton
+
+# well, actually, it can :)
+import argparse
+import sys
+import os.path
+import traceback
+
+parser= argparse.ArgumentParser (prog=os.path.split (sys.argv[0])[-1],
+                                 description='Python-based shell-like scripting language.')
+parser.add_argument ('-c', '--script', help='''If this option is present, the
+script is read from its argument.''')
+parser.add_argument ('-v', '--version', action='version',
+                     version="%%(prog)s v%s" % ayrton.__version__)
+# parser.add_argument ('-x', '--trace', help='enable execution tracing.')
+parser.add_argument ('file', nargs='?', help='''Name of the file from which the
+script is read.''')
+parser.add_argument ('argv', nargs='*', help='''Arguments to be passed to the
+script.''')
+
+script= None
+file= None
+args= sys.argv[1:]
+
+opts= parser.parse_args (args)
+
+# juggle the script and file parameters
+if opts.script is not None:
+    # prepend a fake script name
+    opts.argv.insert (0, '<script_from_command_line>')
+    if opts.file is not None:
+        # argparse gets confused with the script/file alternative
+        # and thinks the first argument for the script is actually a file
+        # so we readd it as the first argument
+        opts.argv.insert (1, opts.file)
+        del opts.file
+else:
+    # prepend file as argv[0]
+    opts.argv.insert (0, opts.file)
+
+try:
+    ayrton.run_file_or_script (**vars (opts))
+except Exception:
+    t, e, tb= sys.exc_info ()
+    # skip ayrton's stack
+    # TODO: if the script has a syntax error, the stack is shorter
+    if opts.script is not None:
+        for i in range (5):
+            tb= tb.tb_next
+    else:
+        for i in range (6):
+            tb= tb.tb_next
+    traceback.print_exception (t, e, tb)
