@@ -1,0 +1,63 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+from unittest2canopsis.daemon import run_daemon
+from argparse import ArgumentParser
+import json
+import sys
+import os
+
+
+if __name__ == '__main__':
+    parser = ArgumentParser(description='unittest connector for Canopsis')
+    parser.add_argument(
+        '-c', '--config',
+        nargs=1,
+        help='Path to configuration file (optionnal)'
+    )
+    parser.add_argument(
+        '-t', '--test',
+        nargs=1,
+        help='Path to test module'
+    )
+    parser.add_argument(
+        '-n', '--testname',
+        nargs=1,
+        help='Test name'
+    )
+    parser.add_argument(
+        '-a', '--amqp',
+        nargs=1,
+        help='AMQP url to send event (required if no config file provided'
+    )
+    args = parser.parse_args()
+
+    if args.config is None:
+        if args.test is None or args.testname is None or args.amqp is None:
+            parser.print_usage()
+            sys.exit(1)
+
+        test = os.path.expanduser(args.test[0])
+        testname = args.testname[0]
+        amqp = args.amqp[0]
+
+    else:
+        cfgpath = os.path.expanduser(args.config[0])
+
+        try:
+            with open(cfgpath) as f:
+                config = json.load(f)
+
+            test = os.path.expanduser(config['unittest2canopsis']['test'])
+            testname = config['unittest2canopsis']['testname']
+            amqp = config['unittest2canopsis']['amqp']
+
+        except IOError as err:
+            print('Impossible to open file {0}: {1}'.format(cfgpath, err))
+            sys.exit(1)
+
+        except (KeyError, ValueError) as err:
+            print('Impossible to parse config {0}: {1}'.format(cfgpath, err))
+            sys.exit(1)
+
+    run_daemon(test, testname, amqp)
