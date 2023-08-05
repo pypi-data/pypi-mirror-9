@@ -1,0 +1,153 @@
+% include('header.stpl',title='PaDRe: Edit subject %s, session %s' % (str(subject),session),new_tab='Edit Session')
+% extra_sidebar = ['''
+<h3>Instructions</h3>
+
+<h4>Incomplete:</h4>
+<p>Mark this checkbox if the dataset was not finished, and should not be 
+included in standard analyses (the dataset will still be saved on disk)</p>
+
+<h4>Label</h4>
+<p>Generic label for type of dataset (e.g., "anatomy" or "dti" or name of task. 
+Do not include any other qualifiers like "run1"</p>
+
+''']
+% include('sidebar.stpl',extra=extra_sidebar)
+
+<style>
+.appearing_box { display: none; }
+</style>
+
+<h2><a href='/edit_subject/{{subject}}'>Back to subject {{subject}}</a></h2>
+
+<link rel="stylesheet" type="text/css" href="/style/datepicker.css" />
+<link rel="stylesheet" href="//code.jquery.com/ui/1.11.2/themes/smoothness/jquery-ui.css">
+
+<script>
+  $(function() {
+    var availableTags = [
+    % for tag in tags:
+    "{{tag}}",
+    % end
+    ];
+    $( "#tags" ).autocomplete({
+      source: availableTags
+    });
+  });
+  </script>
+
+<form action='/save_subject/{{subject}}/{{session}}' method=POST enctype="multipart/form-data">
+	<input type='hidden' name='subject_id' value='{{subject}}'/>
+	<h3>Date: <input type="text" name="date" id="datepicker" value="{{subject._sessions[session]["date"]}}"/></h3>
+	<h3>Experiment: <select class='h1_textfield' name='experiment'>
+		<option value='none'
+		% if 'experiment' in subject._sessions[session] and subject._sessions[session]['experiment']==None:
+		selected
+		% end
+		>None</option>
+		% for experiment in experiments:
+		<option value='{{experiment}}'
+		% if 'experiment' in subject._sessions[session] and experiment==subject._sessions[session]["experiment"]:
+		selected
+		% end
+		>{{experiment}}</option>
+		% end
+		<option value='new'>New Experiment</option>
+	</select>
+	<input class="appearing_box" type="text" name="new_experiment_text" placeholder="New experiment..."/>
+	</h3>
+	<h3>Tags: 
+		% if 'tags' in subject._sessions[session]:
+		%     for tag in subject._sessions[session]['tags']:
+		<span class='pill'>{{tag}}</span>
+		<span class='pill delete'><a href='/delete_tag/{{subject}}/{{session}}/{{tag}}'>X</a></span>
+		%     end
+		% end
+	<input id="tags" type="text" name="new_tag" placeholder="Add tag..."/>
+	</h3>
+	<h3>Scan sheet: 
+	% if 'scan_sheet' in subject._sessions[session] and subject._sessions[session]['scan_sheet']!=None and subject._sessions[session]['scan_sheet']!='':
+	<a href='/view_file/{{subject}}/{{session}}/{{subject._sessions[session]['scan_sheet']}}'>{{subject._sessions[session]['scan_sheet']}}</a>
+	% end
+	<input type="file" name="scan_sheet"/></h3>
+	<h3>Session Notes:<br/>
+	<textarea cols=60 rows=5 name="notes">{{subject._sessions[session]['notes'] if 'notes' in subject._sessions[session] else ''}}</textarea></h3>
+	<h3>Move this session to subject: <input name='new_subject_id'/>
+	<h3><input type='checkbox' name='include'{{"checked='checked'" if 'include' not in subject._sessions[session] or subject._sessions[session]['include']==True else ""}}/>&nbsp;
+		Include this session?</h3>
+	<table width=300>
+		<tr>
+			<th>Complete?</th>
+			<th>Label</th>
+			<th>Filename</th>
+		</tr>
+		% for dset in sorted(subject.dsets(session=session,include_all=True),key=lambda d: str(d).split('-')[2] if len(str(d).split('-'))>2 else 0):
+		<tr>
+			<td style='text-align:center'><input type='checkbox' name='complete_{{dset.__str__(False)}}'
+				% if dset.complete:
+					checked='checked'	
+				%end
+			></td>
+			<td>
+				<select name='label_{{dset.__str__(False)}}'>
+					% for l in labels:
+					<option value='{{l}}'
+					% if l==dset.label:
+						selected="selected"
+					% end
+					>{{l}}</option>
+					% end
+					<option value="new">New Label</option>
+				</select>
+				<input class="appearing_box" type="text" name="label_{{dset.__str__(False)}}_new" placeholder="New label..."/>
+			</td>
+			<td style="white-space:nowrap;">
+				<a style='cursor:pointer' class='dset_link'>
+					{{dset.__str__(False)}}
+				</a>
+			</td>
+		</tr>
+		<tr style='display:none' id='meta'>
+			<td colspan=3>
+				<table>
+				<tr>
+					<th>name</th>
+					<th>type</th>
+					<th>meta data</th>
+				</tr>
+				% for meta in dset.meta:
+				<tr>
+					<td>{{meta}}</td>
+					<td>file</td>
+					<td><a href='/view_file/{{subject}}/{{session}}/{{dset.meta[meta]}}'>{{dset.meta[meta]}}</a></td>
+				</tr>
+				% end
+			</td>
+		</tr>
+		</table>
+		Add data: <select name="meta_type_{{dset.__str__(False)}}"><option>eprime</option><option>eprime-txt</option></select> <input name="add_meta_{{dset.__str__(False)}}" type=file /> <input type=submit value='Save'/>
+		% end
+	</table>
+<input type='submit' value='Save Changes'>
+</form>
+
+<script>
+$('.dset_link').click(function() {
+	$(this).parent().parent().next().toggle();
+});
+$('select').change(function() {
+	$('.appearing_box').each(function(k,v) {
+		var el = $(v);
+		if(el.prev().find('option:selected').val()!='new') {
+			el.hide()
+		}
+	});
+	if($(this).find('option:selected').val()=='new')
+		$(this).next('.appearing_box').show();	
+});
+$(function() {
+	$( "#datepicker" ).datepicker();
+});
+</script>
+
+
+% include('footer.stpl')
