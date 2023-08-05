@@ -1,0 +1,118 @@
+===============================================================================
+ Complementary Countermeasures for Detecting Scenic Face Spoofing Attacks
+===============================================================================
+
+This package combines motion and texture analysis based countermeasures to 2D facial spoofing attacks as described in the paper 'Complementary Countermeasures for Detecting Scenic Face Spoofing Attacks', International Conference on Biometrics, 2013. However, it is possible to fuse scores of any combination of countermeasures using the tools provided by this package.
+
+If you use this package and/or its results, please cite the following
+publications:
+
+1. The original paper with the fusion of countermesures explained in details::
+
+    @inproceedings{Komulainen_ICB_2013,
+      author = {Komulainen, Jukka and Anjos, Andr{\'{e}} and Marcel, S{\'{e}}bastien and Hadid, Abdenour and Pietik{\"a}inen, Matti},
+      month = Jun,
+      title = {Complementary Countermeasures for Detecting Scenic Face Spoofing Attacks},
+      journal = {International Conference on Biometrics 2013},
+      year = {2013},
+    }
+
+2. Bob as the core framework used to run the experiments::
+
+    @inproceedings{Anjos_ACMMM_2012,
+        author = {A. Anjos AND L. El Shafey AND R. Wallace AND M. G\"unther AND C. McCool AND S. Marcel},
+        title = {Bob: a free signal processing and machine learning toolbox for researchers},
+        year = {2012},
+        month = oct,
+        booktitle = {20th ACM Conference on Multimedia Systems (ACMMM), Nara, Japan},
+        publisher = {ACM Press},
+    }
+
+If you wish to report problems or improvements concerning this code, please
+contact the authors of the above mentioned papers.
+
+Raw data
+--------
+
+The data used in the paper is results obtained by two other satellite packages: ``antispoofing.motion`` and ``antispoofing.lbp``. These packages should be downloaded, installed and run **prior** to using the programs described in this package. Visit `the antispoofing.motion <http://pypi.python.org/pypi/antispoofing.motion>`_ and `the antispoofing.lbp <http://pypi.python.org/pypi/antispoofing.lbp>`_ pages for more information about how to use them.
+
+Of course, the package can be used for any other kind of scores that are saved in the same format as the two mentioned above.
+
+Installation
+------------
+
+.. note:: 
+
+  If you are reading this page through our GitHub portal and not through PyPI,
+  note **the development tip of the package may not be stable** or become
+  unstable in a matter of moments.
+
+  Go to `http://pypi.python.org/pypi/antispoofing.fusion
+  <http://pypi.python.org/pypi/antispoofing.fusion>`_ to download the latest
+  stable version of this package. Then, extract the .zip file to a folder of your choice.
+
+The ``antispoofing.fusion`` package is a satellite package of the free signal processing and machine learning library Bob_. This dependency has to be downloaded manually. This version of the package depends on Bob_ version 2 or greater. To install `packages of Bob <https://github.com/idiap/bob/wiki/Packages>`_, please read the `Installation Instructions <https://github.com/idiap/bob/wiki/Installation>`_. For Bob_ to be able to work properly, some dependent Bob packages are required to be installed. Please make sure that you have read the Dependencies for your operating system.
+
+The most simple solution is to download and extract ``antispoofing.fusion`` package, then to go to the console and write::
+
+  $ cd antispoofing.fusion
+  $ python bootstrap-buildout.py
+  $ bin/buildout
+
+This will download all required dependent Bob_ and other packages and install them locally. 
+
+User Guide
+----------
+
+It is assumed that you have followed the installation instructions for this package and got it installed. Furthermore, we assume that you have installed the two related packages and produced output scores for each frame using both `the antispoofing.motion <http://pypi.python.org/pypi/antispoofing.motion>`_ and `the antispoofing.lbp <http://pypi.python.org/pypi/antispoofing.lbp>`_ packages and that these scores sit on the directory ``./scores/``. If not, please create symbolic links to this directory.
+
+Finding Valid Output Scores 
+===========================
+
+The previously generated outputs do not contain a valid score for each video frame. The motion based countermeasure needs 20 video frames for analyzing the motion correlation between the face and the background, i.e. the method cannot produce scores for the first 19 frames. On the other hand, the LBP based countermeasure is able to produce an valid output score when a face is successfully detected and the face size is above 50x50 pixels. 
+
+Therefore, the frames, in which the both countermeasures have valid score (i.e. not NaN value), must be found before performing the fusion at score level. This process is performed using the script ``./bin/find_valid_frames.py`` and by giving the locations of all used output scores, e.g.:: 
+
+  $ ./bin/find_valid_frames.py -s scores/motion_lda scores/lbp_lda -e replay
+
+Combining the Valid Output Scores
+=================================
+
+The script ``fuse_scores.py`` performs the fusion of the any countermeasures at score level using some of the two different methods: sum of scores or logistic linear regression (LLR) with the selected score normalization scheme: minmax, zscore or without any normalization, e.g.:: 
+
+  $ ./bin/fuse_scores.py -s scores/motion_lda scores/lbp_lda -f SUM -n ZNorm -o scores/lda_sum_z
+  $ ./bin/fuse_scores.py -s scores/motion_lda scores/lbp_lda -f LLR -n None -o scores/lda_llr_raw
+
+Analyzing the Results of Fusion at Frame-level
+==============================================
+
+The performance of the individual countermeasures and their fusion can be dumped in to a file ``./results/frame_based/results.txt`` using the script ``frame_by_frame_analysis.py``::
+
+  $ ./bin/frame_by_frame_analysis.py -s scores/motion_lda scores/lbp_lda -f scores/lda_sum_z scores/lda_llr_raw -e replay
+  
+The ``results.txt`` shows the performance of each method at frame-level.
+
+Running the Time Analysis
+=========================
+
+The time analysis is the end of the processing chain, it fuses the scores of instantaneous scores for each method to give out a better estimation of attacks and real-accesses. To use it::
+
+  $ ./bin/time_analysis.py -s scores/motion_lda scores/lbp_lda -f scores/lda_sum_z scores/lda_llr_raw -e replay
+  
+The time evolution for each method can be found in directory ``./results/evolution/``. The folder also contains a PDF file in which you can find all methods in same figure.
+
+Mutual Error Analysis
+=====================
+
+The script ``venn.py`` performs mutual error analysis on the given countermeasures and outputs the results into a file ``./results/Venn&scatter/Venn.txt``::
+
+  $ ./bin/venn.py -s scores/motion_lda scores/lbp_lda -e replay 
+
+
+Problems
+--------
+
+In case of problems, please contact any of the authors of the paper.
+
+
+.. _Bob: http://www.idiap.ch/software/bob
