@@ -1,0 +1,197 @@
+---
+- name: debian
+  desc: On Debian systems, run security updates frequently with apt-get or pts:synaptic. pts:apticron can be used to remind you of pending security updates.
+  difficulty: 1
+  python: os.path.isfile('/etc/debian_version')
+
+- name: debian security archive
+  desc: Ensure the security archive is configured in APT
+  url: https://www.debian.org/doc/manuals/securing-debian-howto/ch4.en.html#s-security-update
+  risk: 3
+  difficulty: 2
+  depends_on: debian
+  bash: apt-cache policy | grep -q security
+
+- name: apt-get update
+  desc: The APT package index has not been updated in more than 7 days. Update it with with "apt-get update" or pts:synaptic
+  risk: 3
+  difficulty: 1
+  depends_on: debian
+  bash: find /var/cache/apt/pkgcache.bin -mtime +7 | grep -q pkgcache; exit $((1-$?))
+
+- name: apt-get security
+  desc: The are security updates to be installed. Perform an upgrade with "apt-get upgrade" or pts:synaptic
+  risk: 3
+  difficulty: 1
+  depends_on: debian
+  bash: apt-get -s dist-upgrade |grep "^Inst" |grep -q -i ':securi'; exit $((1-$?))
+
+- name: bios password
+  desc: Configure a password on the BIOS
+  url: https://www.debian.org/doc/manuals/securing-debian-howto/ch3.en.html#s-bios-passwd
+  risk: 2
+  difficulty: 3
+
+- name: boot sequence
+  desc: Configure the boot sequence in the BIOS to disable booting from removable devices
+  url: https://www.debian.org/doc/manuals/securing-debian-howto/ch3.en.html#s-bios-passwd
+  risk: 2
+  difficulty: 3
+
+- name: harden-tools
+  desc: Install the pts:harden-tools package
+  url: https://www.debian.org/doc/manuals/securing-debian-howto/ch-automatic-harden.en.html#s6.1
+  risk: 1
+  difficulty: 3
+  bash: dpkg -l harden-tools > /dev/null
+  depends_on: debian
+
+- name: harden-clients
+  desc: Install the pts:harden-clients package to prevent unsecure client applications from being installed
+  url: https://www.debian.org/doc/manuals/securing-debian-howto/ch-automatic-harden.en.html#s6.1
+  risk: 1
+  difficulty: 3
+  bash: dpkg -l harden-clients > /dev/null
+  depends_on: debian
+
+- name: sysrq
+  desc: Consider disabling the Magic SysRq key
+  url: https://www.debian.org/doc/manuals/securing-debian-howto/ch4.en.html#s-restrict-sysrq
+  risk: 1
+  difficulty: 4
+  depends_on: debian
+  bash: /sbin/sysctl kernel.sysrq | grep -q ' 0$'
+
+- name: bleachbit
+  desc: Use pts:bleachbit regularly to improve your privacy
+  url: http://bleachbit.sourceforge.net/
+  risk: 2
+  difficulty: 2
+
+- name: install vrms
+  desc: Install the pts:vrms application to detect non-free installed software
+  url: https://en.wikipedia.org/wiki/Vrms
+  risk: 2
+  difficulty: 1
+  python: not os.path.isfile('/usr/bin/vrms')
+
+- name: vrms
+  desc: The pts:vrms application detected non-free software on your system. Run "vrms" in a terminal to have a detailed report.
+  url: https://en.wikipedia.org/wiki/Vrms
+  risk: 2
+  difficulty: 2
+  # Return the check as active only if vrms is installed and it is returning any package name (ignore blank lines)
+  bash: test -f /usr/bin/vrms && /usr/bin/vrms -s | grep -q -e '[[:alnum:]]'; exit $((1-$?))
+
+- name: xscreensaver
+  desc: pts:xscreensaver is not running. Consider installing and running it to lock your screen when you are away.
+  risk: 1
+  difficulty: 1
+  bash: pgrep -c xscreensaver
+
+- name: iceweasel-firefox
+  desc: "Iceweasel or Firefox are installed. Consider using the Tor Browser for better security: pts:torbrowser-launcher"
+  risk: 2
+  bash: dpkg -l firefox iceweasel >/dev/null; exit $((1-$?))
+
+- name: NoScript
+  desc: Iceweasel or Firefox are installed. Use NoScript from the pts:xul-ext-noscript package to block potentially harmful JavaScript
+  risk: 3
+  difficulty: 2
+  bash: dpkg -l xul-ext-noscript > /dev/null
+  depends_on: iceweasel-firefox
+
+- name: Cookie Monster
+  desc: Iceweasel or Firefox are installed. Using Cookie Monster from the pts:xul-ext-cookie-monster package to filter cookies
+  risk: 3
+  difficulty: 2
+  bash: dpkg -l xul-ext-cookie-monster > /dev/null
+  depends_on: iceweasel-firefox
+
+- name: flashblock
+  desc: Iceweasel or Firefox are installed. Use flashblock from the pts:xul-ext-flashblock package to block potentially harmful Flash
+  risk: 3
+  difficulty: 2
+  bash: dpkg -l xul-ext-flashblock > /dev/null
+  depends_on: iceweasel-firefox
+
+- name: flashplugin
+  desc: The pts:flashplugin-nonfree package is installed. Keep in mind that the package cannot receive security updates from Debian
+  url: https://wiki.debian.org/FlashPlayer
+  risk: 3
+  difficulty: 2
+  bash: dpkg -l xul-ext-cookie-monster > /dev/null
+  depends_on: debian
+
+- name: firewire
+  desc: Fireware ports are vulnerable to physical attacks. Consider disabling them in the BIOS or by blacklisting the kernel modules.
+  url: https://security.stackexchange.com/questions/4098/how-to-disable-firewire-in-openbsd-linux-to-prevent-attacks-through-firewire
+  risk: 1
+  difficulty: 3
+  bash: lsmod | grep -q -e ohci1394 -e sbp2 -e dv1394 -e raw1394 -e video1394 -e firewire-ohci -e firewire-sbp2
+  depends_on: debian
+
+- name: calibre
+  desc: The Calibre application is installed. Keep in mind that installing Calibre plugins from the Internet can be dangerous.
+  risk: 1
+  difficulty: 1
+  bash: dpkg -l calibre >/dev/null; exit $((1-$?))
+  depends_on: debian
+
+- name: vim plugins
+  desc: There are Vim plugins installed in ~/.vim Keep in mind that they are not receiving security updates. If available, use packages from the Debian repositories
+  risk: 1
+  difficulty: 1
+  bash: find ~/.vim/ -name '*.vim' | egrep -q '.*'; exit $((1-$?))
+  depends_on: debian
+
+  bash: dpkg -l calibre >/dev/null; exit $((1-$?))
+
+- name: audit tools
+  desc: "A number of system auditing tools are available: pts:aide pts:checksecurity pts:chkrootkit pts:fcheck pts:integrit pts:rkhunter pts:samhain pts:tiger pts:tripwire pts:unhide"
+  difficulty: 3
+  depends_on: debian
+
+- name: pidgin otr
+  desc: pts:pidgin is installed without the pts:pidgin-otr package. Use Off-the-Record to protect the privacy of your instant messaging communications.
+  risk: 3
+  difficulty: 2
+  url: https://otr.cypherpunks.ca/
+  bash: dpkg -l pidgin >/dev/null && (dpkg -l pidgin-otr >/dev/null || exit 1)
+  depends_on: debian
+
+- name: irssi otr
+  desc: pts:irssi is installed without the pts:irssi-plugin-otr package. Use Off-the-Record to protect the privacy of your instant messaging communications.
+  risk: 3
+  difficulty: 2
+  url: https://otr.cypherpunks.ca/
+  bash: dpkg -l irssi >/dev/null && (dpkg -l irssi-plugin-otr >/dev/null || exit 1)
+  depends_on: debian
+
+- name: bitlbee otr
+  desc: pts:bitlbee is installed without the pts:bitlbee-plugin-otr package. Use Off-the-Record to protect the privacy of your instant messaging communications.
+  risk: 3
+  difficulty: 2
+  url: https://otr.cypherpunks.ca/
+  bash: dpkg -l bitlbee >/dev/null && (dpkg -l bitlbee-plugin-otr >/dev/null || exit 1)
+  depends_on: debian
+
+- name: swap
+  desc: A non-encrypted swap partition is in use. Encrypt your swap partitions, they are likely to contain sensitive data.
+  risk: 3
+  difficulty: 3
+  url: https://www.debian.org/doc/manuals/debian-reference/ch09.en.html#_encrypted_swap_partition_with_dm_crypt
+  bash: grep -q -e '^/dev/hd' -e '/dev/sd' /proc/swaps; exit $((1-$?))
+
+- name: macchanger
+  desc: Install pts:macchanger to improve privacy, especially when using public WiFi networks. Use "sudo dpkg-reconfigure macchanger" to enable automatic MAC address change on every interface.
+  risk: 2
+  difficulty: 2
+  url: https://github.com/alobbs/macchanger
+  bash: test -f /etc/default/macchanger && grep -q 'ENABLE_ON_POST_UP_DOWN=true' /etc/default/macchanger
+  depends_on: debian
+
+# TODO: BIOS, disk encryption, USB, HDMI
+# on shutdown: RAM, swap, gnupg password, ssh agent password, disk password (by unmounting it), /tmp, end OTR conversations
+# on suspend: wipe gnupg password, ssh agent password, end OTR conversations, start screensaver
+# See https://tails.boum.org/contribute/design/memory_erasure/
