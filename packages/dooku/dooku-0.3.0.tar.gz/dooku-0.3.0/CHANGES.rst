@@ -1,0 +1,33 @@
+Changelog
+=========
+
+Here you can see the list of changes between each Dooku release.
+
+
+Version 0.3.0
+-------------
+
+Released on January 9, 2015.
+
+- Add ``dooku.conf.Conf.from_json`` method that loads and updates a conf
+  instance with data from a given JSON file.
+- Add ``dooku.conf.Conf.from_yaml`` method that loads and updates a conf
+  instance with data from a given YAML file.
+- Do not install ``tests`` package (bugfix).
+
+
+Version 0.2.0
+-------------
+
+Released on November 7, 2014.
+
+- Use ``collections.MutableMapping`` as base class for ``dooku.conf.Conf``.
+- Add the changelog page to documentation.
+
+
+Version 0.1.0
+-------------
+
+Released on October 3, 2014.
+
+- First public release.
