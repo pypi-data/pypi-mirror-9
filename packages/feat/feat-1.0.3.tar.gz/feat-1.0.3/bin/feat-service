@@ -1,0 +1,575 @@
+#!/usr/bin/env python
+
+# -*- Mode: Python -*-
+# vi:si:et:sw=4:sts=4:ts=4
+
+# F3AT - Flumotion Asynchronous Autonomous Agent Toolkit
+# Copyright (C) 2010,2011 Flumotion Services, S.A.
+# All rights reserved.
+
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License along
+# with this program; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+
+# See "LICENSE.GPL" in the source distribution for more information.
+
+# Headers in this file shall remain intact.
+
+import commands
+import glob
+import optparse
+import os
+import sys
+import time
+import warnings
+
+from feat.web import security
+
+from feat.common import run, signal, text_helper, log, defer, error
+from feat.configure import configure
+from feat.gateway import client as gateway_client
+
+from feat.agencies.net import config
+
+
+def start(args):
+    debug = os.environ.get("FEAT_DEBUG", "3")
+    feat = os.path.join(configure.bindir, 'feat')
+    confile = os.path.join(configure.confdir, 'feat.ini')
+    cmd = "%s -C %s -d %s" % (feat, confile, debug)
+    localfile = os.path.join(configure.confdir, 'local.ini')
+    if os.path.exists(localfile):
+        # add local.ini if it exists
+        cmd += " -C " + localfile
+    cmd = " ".join([cmd] + args)
+    cmd += " >> %s 2>&1" % os.path.join(configure.logdir, 'feat-service.log')
+
+    logger.info("Starting feat")
+    logger.debug("Executing %s" % cmd)
+    status, output = commands.getstatusoutput(cmd)
+    if status != 0:
+        logger.error("Running command:\n%s\n failed with the "
+                     "exit code %d.", cmd, status)
+        return status
+
+    return _pidfile_wait(exists=True, timeout=5)
+
+
+def stop(sig=signal.SIGUSR1):
+    logger.info("Stopping feat")
+    rundir = configure.rundir
+    pid = run.get_pid(rundir)
+    if pid is None:
+        logger.error("PID file not found!")
+        return 1
+    if not run.signal_pid(pid, sig):
+        logger.error("Process with PID %d not found!", pid)
+        return 1
+    return _pidfile_wait(exists=False, timeout=30)
+
+
+def main(args):
+    usage = text_helper.format_block("""
+    Usage: feat-service {command} [extra_options]
+
+    Commands:
+    * start - Start the service
+    * stop - Stop the service violently, the agents will be migrated to
+             different hosts once the monitor agent running on the other
+             machine figures out they are gone.
+    * shutdown - Stop service in a gentle way, cleaning up the agents data.
+    * restart - Stop service gently and start it back.
+    * upgrade - Update the couchdb views, wait for the indexes to be ready
+                and restart the service.
+    * updateviews - Update the couchdb views and trigger rebuilding them.
+                    Do not touch the service.
+    * status - Checks if the service is running.
+    * clean - Cleans the log and rundir.
+    * hostclean - Cleans up descriptors of the agents running on the host.
+    * agentlist - List all statically configured agents.
+    * agentrestart - Restarts a statically configured agent.
+    * alertclean - Clean up the persistent nagios services.
+    * pushinitialdata - Populate the database with the initial data
+    * migrate - Run the migration script.
+    * cleandescriptors - Remove all agent descriptors from the database.
+    * indexviews - Trigger CouchDB to rebuild the views, wait until its done.
+    """)
+
+    logger.debug('Running command: %s', " ".join(sys.argv))
+
+    try:
+        command = args.pop(0)
+    except IndexError:
+        print usage
+        sys.exit(1)
+
+
+    if command == 'start':
+        rundir = configure.rundir
+        pid = run.get_pid(rundir)
+        if pid:
+            logger.error("Not starting feat because it seems to be running"
+                         " with pid: %s. "
+                         "Consider removing the pidfile", pid)
+            sys.exit(1)
+        sys.exit(start(args))
+
+    if command == 'stop':
+        sys.exit(stop(signal.SIGUSR1))
+
+    if command == 'shutdown':
+        sys.exit(stop(signal.SIGUSR2))
+
+    if command == 'restart':
+        stop(signal.SIGUSR2) # ignore the result of stop
+        sys.exit(start(args))
+
+    if command == 'status':
+        run.status(processName='', rundir=configure.rundir)
+        sys.exit(0)
+
+    if command == 'clean':
+        c = config.parse_service_config()
+        to_delete = []
+        to_delete.extend(glob.glob(os.path.join(c.agency.rundir, "*.log")))
+        to_delete.extend(glob.glob(os.path.join(c.agency.rundir, "*.sqlite3")))
+        to_delete.extend(glob.glob(os.path.join(c.agency.logdir, "*.log")))
+        to_delete.extend(glob.glob(os.path.join(c.agency.logdir, "*.sqlite3")))
+
+        # cleanup also the stale pidfile
+        pid = run.get_pid(configure.rundir)
+        if pid:
+            if not run.check_pid_running(pid):
+                logger.debug("Cleaning up stale pidfile.")
+                to_delete.append(
+                    run.get_pidpath(configure.rundir, run.PROCESS_TYPE))
+            else:
+                logger.debug("Not cleaning up pidfile because process is "
+                             "running with pid: %s", pid)
+
+        for name in set(to_delete):
+            logger.debug("Deleting %s", name)
+            try:
+                os.unlink(name)
+            except OSError:
+                pass
+        return
+
+    if command in ['hostclean', 'hostcleanup']:
+        from feat import applications
+
+        c = config.parse_service_config()
+
+        # parse extra options
+        parser = optparse.OptionParser()
+        parser.add_option('--hostname',
+                          help=('specify the hostname for which for perform '
+                                'the cleanup'),
+                          action='store', default=c.agency.full_hostname,
+                          type="str", metavar="HOSTNAME", dest='hostname')
+        parser.add_option('--dbname',
+                          help=('specify the name of database to perform '
+                                'the cleanup on'),
+                          action='store', default=c.db.name,
+                          type="str", metavar="NAME", dest='dbname')
+
+        opts, _ = parser.parse_args(args)
+
+        logger.info("Performing host cleanup for host %s", opts.hostname)
+        applications.load('feat.agents.application', 'feat')
+        from feat.utils import host_restart
+        from feat.database import tools
+
+        c.db.name = opts.dbname
+        with tools.dbscript(c.db) as d:
+            d.addCallback(host_restart.do_cleanup, opts.hostname)
+        return
+
+    if command == 'agentlist':
+        c = config.parse_service_config()
+        sp = security.ClientPolicy(
+            security.ClientContextFactory(p12_filename=c.gateway.client_p12))
+        client = gateway_client.Client(sp, logger=log.VoidLogKeeper())
+        sys.exit(_gateway_script(agent_list, client, c))
+
+
+    if command == 'agentrestart':
+        c = config.parse_service_config()
+        # for compatibility, still accept -n to pass the name
+        parser = optparse.OptionParser()
+        parser.add_option('-n', '--static-name',
+                          help='Name of static agent to restart',
+                          action='store',
+                          type="str", metavar="NAME", dest='static_name')
+
+        opts, args = parser.parse_args(args)
+        if not args:
+            if not opts.static_name:
+                logger.error("Please specify the name of a statically "
+                             "configured agent to restart.")
+                sys.exit(1)
+            args = [opts.static_name, ]
+            warnings.warn(
+                "The agent name is not optional.  Specify it as an argument.",
+                DeprecationWarning)
+
+        sp = security.ClientPolicy(
+            security.ClientContextFactory(p12_filename=c.gateway.client_p12))
+        client = gateway_client.Client(sp, logger=log.VoidLogKeeper())
+        sys.exit(_gateway_script(agent_restart, client, args[0], c))
+
+    if command == 'upgrade':
+        c = config.parse_service_config()
+
+        parser = _importing_parser(optparse.OptionParser())
+        opts, args = parser.parse_args(args)
+
+        from feat.database import tools
+        with tools.dbscript(c.db) as d:
+            d.addCallback(upgrade)
+
+        sys.exit(start(args))
+
+    if command == 'updateviews':
+        c = config.parse_service_config()
+
+        parser = _importing_parser(optparse.OptionParser())
+        opts, args = parser.parse_args(args)
+
+        @defer.inlineCallbacks
+        def body(connection):
+            tools.create_db(connection)
+            to_rotate = yield update_views(connection)
+            yield rotate_views(connection, to_rotate)
+
+        from feat.database import tools
+        context = tools.dbscript(c.db)
+        with context as d:
+            d.addCallback(body)
+        sys.exit(context.failed and 1 or 0)
+
+    if command == 'pushinitialdata':
+        c = config.parse_service_config()
+
+        parser = _importing_parser(optparse.OptionParser())
+        opts, args = parser.parse_args(args)
+
+        from feat.database import tools
+        context = tools.dbscript(c.db)
+        with context as d:
+            d.addCallback(tools.push_initial_data, overwrite=True)
+        sys.exit(context.failed and 1 or 0)
+
+    if command == 'migrate':
+        c = config.parse_service_config()
+
+        parser = _importing_parser(optparse.OptionParser())
+
+        opts, args = parser.parse_args(args)
+
+        from feat.database import tools
+        context = tools.dbscript(c.db)
+        with context as d:
+            d.addCallback(tools.migration_script)
+        sys.exit(context.failed and 1 or 0)
+
+    if command == 'alertclean':
+        c = config.parse_service_config()
+
+        # parse extra options
+        parser = optparse.OptionParser()
+        parser.add_option('--hostname',
+                          help=('specify the hostname for which for perform '
+                                'the cleanup'),
+                          action='store', type="str",
+                          metavar="HOSTNAME", dest='hostname')
+
+        opts, _ = parser.parse_args(args)
+
+        from feat.database import tools
+        from feat.utils import alert_cleanup
+
+        with tools.dbscript(c.db) as d:
+            d.addCallback(alert_cleanup.do_cleanup, opts.hostname)
+        return
+
+    if command == 'cleandescriptors':
+        c = config.parse_service_config()
+
+        parser = optparse.OptionParser()
+        parser.add_option('--dry', '-n',
+                          help="dry run, don't actually delete anything",
+                          default=False,
+                          action='store_true', dest='dry_run')
+
+        opts, _ = parser.parse_args(args)
+
+
+        from feat.database import tools
+        from feat.utils import host_restart
+        context = tools.dbscript(c.db)
+        with context as d:
+            d.addCallback(host_restart.clean_all_descriptors,
+                          dry_run=opts.dry_run)
+        sys.exit(context.failed and 1 or 0)
+
+    if command == 'indexviews':
+        c = config.parse_service_config()
+
+        parser = _importing_parser(optparse.OptionParser())
+        opts, args = parser.parse_args(args)
+
+        from feat.database import tools
+        context = tools.dbscript(c.db)
+
+        with context as d:
+            d.addCallback(index_views)
+        sys.exit(context.failed and 1 or 0)
+
+
+    logger.error("No such command, %s", command)
+    print usage
+    sys.exit(1)
+
+
+@defer.inlineCallbacks
+def index_views(connection):
+    from feat.database import tools, view
+
+    docs = view.generate_design_docs()
+    results = yield defer.DeferredList(
+        [tools.rebuild_view_index(connection, doc) for doc in docs])
+    for index, (successful, result) in enumerate(results):
+        if not successful:
+            error.handle_failure(
+                None, result,
+                'Failed triggering rebuild of view index of '
+                'the document %s', docs[index].doc_id)
+            defer.returnValue(result)
+
+
+@defer.inlineCallbacks
+def upgrade(connection):
+    from feat.database import tools
+
+    yield tools.create_db(connection)
+    to_rotate = yield update_views(connection)
+    stop(signal.SIGUSR2) # ignore the result of stop
+    yield tools.push_initial_data(connection,
+                                  overwrite=True,
+                                  push_design_docs=False)
+    yield rotate_views(connection, to_rotate)
+
+
+@defer.inlineCallbacks
+def update_views(connection):
+    from feat.database import view, tools, driver
+    from feat.database.interface import ConflictError
+
+    design_docs = view.generate_design_docs()
+    to_update = list()
+    new = list()
+    for design_doc in design_docs:
+        if design_doc.disable_reduce_limit:
+            db = connection.database
+            if isinstance(db, driver.Database):
+                import json
+                yield db.couchdb_call(
+                    db.couchdb.put,
+                    '/_config/query_server_config/reduce_limit',
+                    '"false"')
+
+        try:
+            design_doc = yield connection.save_document(design_doc)
+            logger.info("Pushed new design document: %s", design_doc.doc_id)
+            new.append(design_doc)
+            continue
+        except ConflictError:
+            fetched = yield connection.get_document(design_doc.doc_id)
+            if fetched.compare_content(design_doc):
+                logger.info("Design document: %s doesn't need an update",
+                            design_doc.doc_id)
+            else:
+                to_update.append((design_doc, fetched))
+
+    results = yield defer.DeferredList(
+        [update_design_doc(connection, doc)
+         for doc, _orig in to_update] +
+        [tools.rebuild_view_index(connection, doc)
+         for doc in new])
+
+    for success, result in results:
+        if not success:
+            defer.returnValue(result)
+
+    defer.returnValue(to_update)
+
+
+@defer.inlineCallbacks
+def rotate_views(connection, to_rotate):
+    from feat.database import update
+
+    for design_doc, original in to_rotate:
+        yield connection.copy_document(design_doc, original.doc_id,
+                                       original.rev)
+        logger.info("Copied %s -> %s", design_doc.doc_id, original.doc_id)
+        yield connection.update_document(design_doc.doc_id, update.delete)
+        logger.info("Deleted %s.", design_doc.doc_id)
+
+
+@defer.inlineCallbacks
+def update_design_doc(connection, design_doc):
+    from feat.database import tools
+
+    postfix = '-' + str(int(time.time()))
+    design_doc.doc_id += postfix
+    logger.info("Saving temporary document id: %s", design_doc.doc_id)
+    design_doc = yield connection.save_document(design_doc)
+    yield tools.rebuild_view_index(connection, design_doc)
+
+
+@defer.inlineCallbacks
+def agent_list(client, config):
+    hostname = config.agency.full_hostname
+    port = config.gateway.port
+
+    context = dict(hostname=hostname)
+    path = '/agents/%(hostname)s/static_agents' % context
+    status, static = yield client.get(hostname, port, path)
+    if status == 404:
+        logger.error(
+            "Got 404 response fetching info about static agents. "
+            "This most likely means that the Host Agent is not running.")
+        defer.returnValue(1)
+
+    for agent in static:
+        sys.stdout.write('%s\n' % agent)
+
+
+@defer.inlineCallbacks
+def agent_restart(client, static_name, config):
+    logger.info("I'm about to restart statically configured agent: %s",
+                static_name)
+    hostname = config.agency.full_hostname
+    port = config.gateway.port
+
+    context = dict(hostname=hostname, static_name=static_name)
+    path = '/agents/%(hostname)s/static_agents' % context
+    status, static = yield client.get(hostname, port, path)
+    if status == 404:
+        logger.error(
+            "Got 404 response fetching info about static agents. "
+            "This most likely means that the Host Agent is not running.")
+        defer.returnValue(1)
+    if static_name not in static:
+        logger.error(
+            "Host agent doesn't know about this static agent. Known static "
+            "agents are: '%s'", "', '".join(static.keys()))
+        defer.returnValue(1)
+
+    path = '/agents/%(hostname)s/static_agents/%(static_name)s' % context
+    status, info = yield client.get(hostname, port, path)
+    if 'running' not in info:
+        logger.error("Got wrong response from gateway location: %s"
+                     "%r", path, info)
+        defer.returnValue(1)
+
+    if info['running']:
+        agent_id = info['agent_id']
+        logger.info("Agent has ID: %s and will be shut down", agent_id)
+        shutdown = '/agents/%s/_shutdown' % (agent_id, )
+        status, r = yield client.delete(hostname, port, shutdown)
+        if r['type'] != 'deleted':
+            logger.error("Response for shutdown call: %r", r)
+    logger.info('About to start the agent %s.', static_name)
+    status, r = yield client.post(hostname, port, path + '/_start', force=True)
+    if status == 200 and isinstance(r, dict) and r.get('type') == 'done':
+        logger.info("Done")
+        defer.returnValue(0)
+    else:
+        logger.error("Got response starting agent: %r", r)
+        defer.returnValue(1)
+
+
+def _importing_parser(parser):
+    from feat.agencies.net.options import _load_module as load_module
+
+    parser.add_option('-i', '--import', help='import specified module',
+                      action='callback', callback=load_module,
+                      type="str", metavar="MODULE")
+    return parser
+
+
+def _gateway_script(method, client, *args, **kwargs):
+    from twisted.internet import reactor
+
+    def set_exitcode(res, context):
+        context['exitcode'] = res
+
+    def error_handler(fail):
+        error.handle_failure(None, fail,
+                             'Agent restart failed with: ')
+        context['exitcode'] = 1
+
+    context = dict()
+    d = defer.Deferred()
+    d.addCallback(method, *args, **kwargs)
+    d.addCallback(set_exitcode, context)
+    d.addErrback(error_handler)
+    d.addBoth(defer.drop_param, reactor.stop)
+    reactor.callWhenRunning(d.callback, client)
+    reactor.run()
+    return context['exitcode']
+
+
+def _pidfile_wait(exists, timeout):
+    elapsed = 0
+    seconds = 0
+    while _pidfile_exist() is not exists:
+        time.sleep(0.1)
+        elapsed += 0.1
+        if int(elapsed) > seconds:
+            seconds = int(elapsed)
+        if elapsed > timeout:
+            verb = 'appear' if exists else 'dissapear'
+            logger.error("Timeout waiting for the pidfile to %s.\n", verb)
+            return 1
+    return 0
+
+
+def _pidfile_exist():
+    return not not run.get_pid(configure.rundir)
+
+
+def _prepare_logging():
+    stderr = sys.stderr
+    path = os.path.join(configure.logdir, 'feat-service.log')
+    tee = log.init(path)
+    tee.add_keeper('console', log.Console(stderr, log.LogLevel.info))
+
+    return log.Logger(log.get_default())
+
+logger = _prepare_logging()
+
+
+if __name__ == '__main__':
+    try:
+        log.init(os.path.join(configure.logdir, 'feat-service.log'))
+        log.FluLogKeeper.set_debug('4')
+
+        main(sys.argv[1:])
+    except Exception as e:
+        error.handle_exception(
+            'feat-service', e,
+            "Fatal error running feat-service")
+        sys.exit(1)
