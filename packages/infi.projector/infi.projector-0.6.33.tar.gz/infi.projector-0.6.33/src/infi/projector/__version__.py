@@ -1,0 +1,10 @@
+__version__ = "0.6.33"
+__git_commiter_name__ = "Guy Rozendorn"
+__git_commiter_email__ = "guy@rzn.co.il"
+__git_branch__ = '(detached from v0.6.33)'
+__git_remote_tracking_branch__ = '(No remote tracking)'
+__git_remote_url__ = '(Not remote tracking)'
+__git_head_hash__ = '628c36acf6a2cc21e878b0670a1a67b931f311f4'
+__git_head_subject__ = 'HOSTDEV-1949 more options in requirements freeze'
+__git_head_message__ = ''
+__git_dirty_diff__ = ''
