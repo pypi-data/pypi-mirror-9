@@ -1,0 +1,10 @@
+__version__ = "0.5.26"
+__git_commiter_name__ = "Guy Rozendorn"
+__git_commiter_email__ = "guy@rzn.co.il"
+__git_branch__ = '(detached from v0.5.26)'
+__git_remote_tracking_branch__ = '(No remote tracking)'
+__git_remote_url__ = '(Not remote tracking)'
+__git_head_hash__ = 'b34a9b1ad96373d846a7ea6d630e5ebbae6ed38e'
+__git_head_subject__ = 'HIP-1385 no need to change the resource icon for node-webkit'
+__git_head_message__ = ''
+__git_dirty_diff__ = ''
