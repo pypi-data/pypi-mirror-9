@@ -1,0 +1,1252 @@
+===============================
+Plone transmogrifier blueprints
+===============================
+
+.. contents::
+
+This package contains several blueprints for collective.transmogrifier
+pipelines, commonly used to import content into a Plone site.
+
+Installation
+============
+
+See docs/INSTALL.rst for installation instructions.
+
+Credits
+=======
+
+Development sponsored by
+    Elkjøp Nordic AS
+    
+Design and development
+    `Martijn Pieters`_ at Jarn_
+    `Florian Schulze`_ at Jarn_
+    
+.. _Martijn Pieters: mailto:mj@jarn.com
+.. _Florian Schulze: mailto:fschulze@jarn.com
+.. _Jarn: http://www.jarn.com/
+
+Detailed Documentation
+======================
+
+ATSchema updater section
+------------------------
+
+An AT schema updater pipeline section is another important transmogrifier
+content import pipeline element. It updates field values for Archetypes
+objects based on their schema based on the items it processes. The AT schema
+updater section blueprint name is
+``plone.app.transmogrifier.atschemaupdater``. AT Schema updater sections
+operate on objects already present in the ZODB, be they created by a
+constructor or pre-existing objects.
+
+Schema updating needs at least 1 piece of information: the path to the object
+to update. To determine the path, the schema updater section inspects each
+item and looks for one key, as described below. Any item missing this piece of
+information will be skipped. Similarly, items with a path that doesn't exist
+or are not Archetypes objects will be skipped as well.
+
+For the object path, it'll look (in order) for
+``_plone.app.transmogrifier.atschemaupdater_[sectionname]_path``,
+``_plone.app.transmogrifier.atschemaupdater_path``, ``_[sectionname]_path``
+and ``_path``, where ``[sectionname]`` is replaced with the name given to the
+current section. This allows you to target the right section precisely if
+needed. Alternatively, you can specify what key to use for the path by
+specifying the ``path-key`` option, which should be a list of keys to try (one
+key per line, use a ``re:`` or ``regexp:`` prefix to specify regular
+expressions).
+
+Paths to objects are always interpreted as relative to the context. Any
+writable field who's id matches a key in the current item will be updated with
+the corresponding value, using the field's mutator.
+
+::
+
+    >>> import pprint
+    >>> atschema = """
+    ... [transmogrifier]
+    ... pipeline =
+    ...     schemasource
+    ...     schemaupdater
+    ...     printer
+    ...     
+    ... [schemasource]
+    ... blueprint = plone.app.transmogrifier.tests.schemasource
+    ... 
+    ... [schemaupdater]
+    ... blueprint = plone.app.transmogrifier.atschemaupdater
+    ... 
+    ... [printer]
+    ... blueprint = collective.transmogrifier.sections.logger
+    ... name = logger
+    ... """
+    >>> registerConfig(u'plone.app.transmogrifier.tests.atschema', atschema)
+
+    >>> transmogrifier(u'plone.app.transmogrifier.tests.atschema')
+    >>> print handler
+    logger INFO
+        {'_path': '/spam/eggs/foo',
+       'fieldnotchanged': 'nochange',
+       'fieldone': 'one value',
+       'fieldtwo': 2,
+       'fieldunicode': u'\xe5',
+       'nosuchfield': 'ignored'}
+    logger INFO
+        {'_path': 'not/existing/bar',
+       'fieldone': 'one value',
+       'title': 'Should not be updated, not an existing path'}
+    logger INFO
+      {'fieldone': 'one value', 'title': 'Should not be updated, no path'}
+    logger INFO
+        {'_path': '/spam/eggs/notatcontent',
+       'fieldtwo': 2,
+       'title': 'Should not be updated, not an AT base object'}
+    >>> pprint.pprint(plone.updated)
+    [('spam/eggs/foo', 'fieldone', 'one value-by-mutator'),
+     ('spam/eggs/foo', 'fieldtwo', 2)]
+
+
+Browser default section
+-----------------------
+
+A browser default pipeline section sets the default-page on a folder, and the
+layout template on content objects. They are the Transmogrifier equivalent of
+the ``display`` menu in Plone. The browser default section blueprint name is
+``plone.app.transmogrifier.browserdefault``. Browser default sections operate
+on objects already present in the ZODB, be they created by a constructor or 
+pre-existing objects.
+
+Setting the browser default needs at least 1 piece of information: the path to
+the object to modify. To determine the path, the browser default section
+inspects each item and looks for one key, as described below. Any item missing
+this piece of information will be skipped. Similarly, items with a path that
+doesn't exist or do not support the Plone ISelectableBrowserDefault interface
+will be skipped as well.
+
+For the object path, it'll look (in order) for
+``_plone.app.transmogrifier.browserdefault_[sectionname]_path``,
+``_plone.app.transmogrifier.browserdefault_path``, ``_[sectionname]_path``
+and ``_path``, where ``[sectionname]`` is replaced with the name given to the
+current section. This allows you to target the right section precisely if
+needed. Alternatively, you can specify what key to use for the path by
+specifying the ``path-key`` option, which should be a list of keys to try (one
+key per line, use a ``re:`` or ``regexp:`` prefix to specify regular
+expressions).
+
+Once an object has been located, the section will looks for defaultpage
+and layout keys. Like the path key, these can be specified in the source
+configuration, named by the ``default-page-key`` and ``layout-key`` options,
+respectively, and like the path key, the default keys the section looks for
+are the usual list of specific-to-generic keys based on blueprint and section
+names, from 
+``_plone.app.transmogrifier.browserdefault_[sectionname]_defaultpage`` and
+``_plone.app.transmogrifier.browserdefault_[sectionname]_layout`` down to
+``_defaultpage`` and ``_layout``.
+
+The defaultpage key will set the id of the default page that should be 
+presented when the content object is loaded, and the layout key will set the
+id of the layout to use for the content item.
+
+::
+
+    >>> import pprint
+    >>> browserdefault = """
+    ... [transmogrifier]
+    ... pipeline =
+    ...     browserdefaultsource
+    ...     browserdefault
+    ...     printer
+    ...     
+    ... [browserdefaultsource]
+    ... blueprint = plone.app.transmogrifier.tests.browserdefaultsource
+    ... 
+    ... [browserdefault]
+    ... blueprint = plone.app.transmogrifier.browserdefault
+    ... 
+    ... [printer]
+    ... blueprint = collective.transmogrifier.sections.logger
+    ... name = logger
+    ... """
+    >>> registerConfig(u'plone.app.transmogrifier.tests.browserdefault',
+    ...                browserdefault)
+    >>> transmogrifier(u'plone.app.transmogrifier.tests.browserdefault')
+    >>> print(handler)
+    logger INFO
+      {'_layout': 'spam', '_path': '/spam/eggs/foo'}
+    logger INFO
+      {'_defaultpage': 'eggs', '_path': '/spam/eggs/bar'}
+    logger INFO
+      {'_defaultpage': 'eggs', '_layout': 'spam', '_path': '/spam/eggs/baz'}
+    logger INFO
+        {'_layout': 'spam',
+       '_path': 'not/existing/bar',
+       'title': 'Should not be updated, not an existing path'}
+    logger INFO
+        {'_path': 'spam/eggs/incomplete',
+       'title': 'Should not be updated, no layout or defaultpage'}
+    logger INFO
+        {'_layout': '',
+       '_path': 'spam/eggs/emptylayout',
+       'title': 'Should not be updated, no layout or defaultpage'}
+    logger INFO
+        {'_defaultpage': '',
+       '_path': 'spam/eggs/emptydefaultpage',
+       'title': 'Should not be updated, no layout or defaultpage'}
+    >>> pprint.pprint(plone.updated)
+    [('spam/eggs/foo', 'layout', 'spam'),
+     ('spam/eggs/bar', 'defaultpage', 'eggs'),
+     ('spam/eggs/baz', 'layout', 'spam'),
+     ('spam/eggs/baz', 'defaultpage', 'eggs')]
+
+
+Criterion adder section
+-----------------------
+
+A criterion adder section is used to add criteria to collections. It's section
+blueprint name is ``plone.app.transmogrifier.criterionadder``. Criterion adder
+sections operate on objects already present in the ZODB, be they created by a
+constructor or pre-existing objects.
+
+Given a path, a criterion type and a field name, this section will look up
+a Collection at the given path, and add a criterion field, then alter the
+path of the item so further sections will act on the added criterion. For
+example, an item with keys ``_path=bar/baz``, ``_field=modified`` and
+``_criterion=ATFriendlyDateCriteria`` will result in a new date criterion
+added inside the bar/baz collection, and the item's path will be updated
+to ``bar/baz/crit__ATFriendlyDateCriteria_modified``.
+
+For the  path, criterion type and field keys, it'll look (in order) for
+``_plone.app.transmogrifier.atschemaupdater_[sectionname]_[key]``,
+``_plone.app.transmogrifier.atschemaupdater_[key]``, ``_[sectionname]_[key]``
+and ``_[key]``, where ``[sectionname]`` is replaced with the name given to the
+current section and ``[key]`` is ``path``, ``criterion`` and ``field``
+respectively. This allows you to target the right section precisely if
+needed. Alternatively, you can specify what key to use for these by
+specifying the ``path-key``, ``criterion-key`` and ``field-key`` options, 
+which should be a list of keys to try (one key per line, use a ``re:`` or
+``regexp:`` prefix to specify regular expressions).
+
+Paths to objects are always interpreted as relative to the context, and must
+resolve to IATTopic classes.
+
+::
+
+    >>> import pprint
+    >>> criteria = """
+    ... [transmogrifier]
+    ... pipeline =
+    ...     criteriasource
+    ...     criterionadder
+    ...     printer
+    ...     
+    ... [criteriasource]
+    ... blueprint = plone.app.transmogrifier.tests.criteriasource
+    ... 
+    ... [criterionadder]
+    ... blueprint = plone.app.transmogrifier.criterionadder
+    ... 
+    ... [printer]
+    ... blueprint = collective.transmogrifier.sections.logger
+    ... name = logger
+    ... """
+    >>> registerConfig(u'plone.app.transmogrifier.tests.criteria', criteria)
+    >>> transmogrifier(u'plone.app.transmogrifier.tests.criteria')
+    >>> print(handler)
+    logger INFO
+      {'_criterion': 'bar', '_field': 'baz', '_path': '/spam/eggs/foo/crit__baz_bar'}
+    logger INFO
+        {'_criterion': 'bar',
+       '_field': 'baz',
+       '_path': 'not/existing/bar',
+       'title': 'Should not be updated, not an existing path'}
+    logger INFO
+        {'_path': 'spam/eggs/incomplete',
+       'title': 'Should not be updated, no criterion or field'}
+    >>> pprint.pprint(plone.criteria)
+    [('spam/eggs/foo', 'baz', 'bar')]
+
+
+PathFixer section
+-----------------
+
+When importing contents from a old site into a new, the path to the Plone site
+root may have changed. This blueprint updates the old paths to match the new
+structrue by removing or appending strings from the right side of the path
+value.
+
+Blueprint name: ``plone.app.transmogrifier.pathfixer``
+
+Option path-key: The key for the path to the object.
+
+Option creation-key: The key for the creation date.
+
+Option modification-key: The key for the modification date.
+
+::
+
+    >>> import pprint
+    >>> pipeline = """
+    ... [transmogrifier]
+    ... pipeline =
+    ...     schemasource
+    ...     datesupdater
+    ...     logger
+    ...     
+    ... [schemasource]
+    ... blueprint = plone.app.transmogrifier.tests.schemasource
+    ... 
+    ... [datesupdater]
+    ... blueprint = plone.app.transmogrifier.datesupdater
+    ... path-key = _path
+    ... creation-key = creation_date
+    ... modification-key = modification_date
+    ... 
+    ... [logger]
+    ... blueprint = collective.transmogrifier.sections.logger
+    ... name = logger
+    ... """
+    >>> registerConfig(u'plone.app.transmogrifier.tests.datesupdater', pipeline)
+
+    >>> transmogrifier(u'plone.app.transmogrifier.tests.datesupdater')
+
+
+Print out the source structure::
+
+    >>> print handler
+    logger INFO
+        {'_path': '/spam/eggs/foo',
+       'creation_date': DateTime('2010/10/10 00:00:00 GMT+2'),
+       'modification_date': DateTime('2012/12/12 00:00:00 GMT+1')}
+    logger INFO
+        {'_path': '/spam/eggs/bar',
+       'creation_date': DateTime('2010/10/10 00:00:00 GMT+2')}
+    logger INFO
+        {'_path': '/spam/eggs/baz',
+       'modification_date': DateTime('2012/12/12 00:00:00 GMT+1')}
+    logger INFO
+        {'_path': 'not/existing/bar',
+       'creation_date': DateTime('2010/10/10 00:00:00 GMT+2'),
+       'modification_date': DateTime('2012/12/12 00:00:00 GMT+1')}
+    logger INFO
+        {'creation_date': DateTime('2010/10/10 00:00:00 GMT+2'),
+       'modification_date': DateTime('2012/12/12 00:00:00 GMT+1')}
+
+
+That was changed on the object::
+
+    >>> pprint.pprint(plone.updated)
+    [('spam/eggs/foo', 'creation_date', DateTime('2010/10/10 00:00:00 GMT+2')),
+     ('spam/eggs/foo', 'modification_date', DateTime('2012/12/12 00:00:00 GMT+1')),
+     ('spam/eggs/bar', 'creation_date', DateTime('2010/10/10 00:00:00 GMT+2')),
+     ('spam/eggs/baz', 'modification_date', DateTime('2012/12/12 00:00:00 GMT+1'))]
+
+
+
+Mime encapsulator section
+-------------------------
+
+A mime encapsulator section wraps arbitrary data in ``OFS.Image.File``
+objects, together with a MIME type. This wrapping is a pre-requisite for
+Archetypes image, file or text fields, which can only take such File objects.
+The mime encapsulator blueprint name is
+``plone.app.transmogrifier.mimeencapsulator``. 
+
+An encapsulator section needs 3 pieces of information: the key at which to
+find the data to encapsulate, the MIME type of this data, and the name of the
+field where the encapsulated data will be stored. The idea is that the data
+is copied from a "data key" (defaulting to ``_data`` and settable with the
+``data-key`` option), wrapped into a ``File`` object with a MIME type (read
+from the ``mimetype`` option, which contains a TALES expression), and then
+saved into the pipeline item dictionary under a new key, most likely
+corresponding to an Archetypes field name (read from the ``field`` option,
+which is also a TALES expression).
+
+The data key defaults to the series ``_[blueprintname]_[sectionname]_data``,
+``_[blueprintname]_data``, ``_[sectionname]_data`` and ``_data``, where 
+``[blueprintname]`` is ``plone.app.transmogrifier.mimeencapsulator`` and
+``[sectionname]`` is replaced with the name of the current section. You can
+override this by specifying the ``data-key`` option.
+
+You specify the mimetype with the ``mimetype`` option, which takes a TALES 
+expression.
+
+The ``field`` option, also a TALES expression, sets the output field name.
+
+Optionally, you can specify a ``condition`` option, again a TALES expression,
+that when evaluating to ``False``, causes the section to skip encapsulation
+for  that item.
+
+::
+
+    >>> encapsulator = """
+    ... [transmogrifier]
+    ... pipeline =
+    ...     source
+    ...     encapsulator
+    ...     conditionalencapsulator
+    ...     printer
+    ...
+    ... [source]
+    ... blueprint = plone.app.transmogrifier.tests.encapsulatorsource
+    ...
+    ... [encapsulator]
+    ... blueprint = plone.app.transmogrifier.mimeencapsulator
+    ... # Read the mimetype from the item
+    ... mimetype = item/_mimetype
+    ... field = string:datafield
+    ...
+    ... [conditionalencapsulator]
+    ... blueprint = plone.app.transmogrifier.mimeencapsulator
+    ... data-key = portrait
+    ... mimetype = python:item.get('_%s_mimetype' % key)
+    ... # replace the data in-place
+    ... field = key
+    ... condition = mimetype
+    ... 
+    ... [printer]
+    ... blueprint = plone.app.transmogrifier.tests.ofsfileprinter
+    ... """
+    >>> registerConfig(u'plone.app.transmogrifier.tests.encapsulator',
+    ...                encapsulator)
+    >>> transmogrifier(u'plone.app.transmogrifier.tests.encapsulator')
+    datafield: (application/x-test-data) foobarbaz
+    portrait: (image/jpeg) someportraitdata
+
+
+The ``field`` expression has access to the following:
+
+``item``
+    The current pipeline item
+
+``key``
+    The name of the matched data key
+
+``match``
+    If the key was matched by a regular expression, the match object, otherwise boolean True
+
+``transmogrifier``
+    The transmogrifier
+
+``name``
+    The name of the splitter section
+
+``options``
+    The splitter options
+
+``modules``
+    ``sys.modules``
+
+
+The ``mimetype`` expression has access to the same information as the ``field``
+expression, plus:
+
+``field``
+    The name of the field in which the encapsulated data will be stored.
+
+The ``condition`` expression has access to the same information as the
+``mimetype`` expression, plus:
+
+``mimetype``
+    The mimetype used to encapsulate the data.
+
+
+PathFixer section
+-----------------
+
+When importing contents from a old site into a new, the path to the Plone site
+root may have changed. This blueprint updates the old paths to match the new
+structrue by removing or appending strings from the right side of the path
+value.
+
+Blueprint name: ``plone.app.transmogrifier.pathfixer``
+
+Option path-key: The key of the item under which the path to be manipulated can
+                 be found. E.g. ``_path``. 
+
+Option stripstring: A string to strip from the path value.
+
+Option prependstring: A string to append to the path value.
+
+
+Look, here. Original path structure from
+plone.app.transmogrifier.tests.schemasource is::
+
+    /spam/eggs/foo
+    relative/path
+    /spam/eggs/another
+
+
+Now lets manipulate it::
+
+    >>> import pprint
+    >>> pipeline = """
+    ... [transmogrifier]
+    ... pipeline =
+    ...     schemasource
+    ...     pathfixer
+    ...     logger
+    ...     
+    ... [schemasource]
+    ... blueprint = plone.app.transmogrifier.tests.schemasource
+    ... 
+    ... [pathfixer]
+    ... blueprint = plone.app.transmogrifier.pathfixer
+    ... path-key = _path
+    ... stripstring = /spam/eggs/
+    ... prependstring = subfolder/
+    ... 
+    ... [logger]
+    ... blueprint = collective.transmogrifier.sections.logger
+    ... name = logger
+    ... key = _path
+    ... """
+    >>> registerConfig(u'plone.app.transmogrifier.tests.pathfixer', pipeline)
+
+    >>> transmogrifier(u'plone.app.transmogrifier.tests.pathfixer')
+    >>> print handler
+    logger INFO
+      subfolder/foo
+    logger INFO
+      subfolder/relative/path
+    logger INFO
+      subfolder/another
+
+
+
+Portal Transforms section
+-------------------------
+
+A portal transforms pipeline section lets you use Portal Transforms to
+transform item values. The portal transforms section blueprint name is
+``plone.app.transmogrifier.portaltransforms``.
+
+What values to transform is determined by the ``keys`` option, which takes a
+set of newline-separated key names. If a key name starts with ``re:`` or
+``regexp:`` it is treated as a regular expression instead.
+
+You can specify what transformation to apply in two ways. Firstly, you can
+directly specify a transformation by naming it with the ``transform`` option;
+the named transformation is run directly. Alternatively you can let the portal
+transforms tool figure out what transform to use by specifying ``target`` and
+an optional ``from`` mimetype. The portal transforms tool will select one or
+more transforms based on these mimetypes, and if no ``from`` option is given
+the original item value is used to determine one.
+
+Also optional is the ``condition`` option, which lets you specify a TALES
+expression that when evaluating to False will prevent any transformations from
+happening. The condition is evaluated for every matched key.
+
+::
+
+    >>> ptransforms = """
+    ... [transmogrifier]
+    ... pipeline =
+    ...     source
+    ...     transform-id
+    ...     transform-title
+    ...     transform-status
+    ...     printer
+    ... 
+    ... [source]
+    ... blueprint = collective.transmogrifier.sections.tests.samplesource
+    ... encoding = utf8
+    ... 
+    ... [transform-id]
+    ... blueprint = plone.app.transmogrifier.portaltransforms
+    ... transform = identity
+    ... keys = id
+    ...
+    ... [transform-title]
+    ... blueprint = plone.app.transmogrifier.portaltransforms
+    ... target = text/plain
+    ... keys = title
+    ... 
+    ... [transform-status]
+    ... blueprint = plone.app.transmogrifier.portaltransforms
+    ... from = text/plain
+    ... target = text/plain
+    ... keys = status
+    ... 
+    ... [printer]
+    ... blueprint = collective.transmogrifier.sections.logger
+    ... name = logger
+    ... """
+    >>> registerConfig(u'plone.app.transmogrifier.tests.ptransforms',
+    ...                ptransforms)
+
+    >>> transmogrifier(u'plone.app.transmogrifier.tests.ptransforms')
+    >>> print handler
+    logger INFO
+        {'id': "Transformed 'foo' using the identity transform",
+       'status': "Transformed '\\xe2\\x84\\x97' from text/plain to text/plain",
+       'title': "Transformed 'The Foo Fighters \\xe2\\x84\\x97' to text/plain"}
+    logger INFO
+        {'id': "Transformed 'bar' using the identity transform",
+       'status': "Transformed '\\xe2\\x84\\xa2' from text/plain to text/plain",
+       'title': "Transformed 'Brand Chocolate Bar \\xe2\\x84\\xa2' to text/plain"}
+    logger INFO
+        {'id': "Transformed 'monty-python' using the identity transform",
+       'status': "Transformed '\\xc2\\xa9' from text/plain to text/plain",
+       'title': 'Transformed "Monty Python\'s Flying Circus \\xc2\\xa9" to text/plain'}
+
+The ``condition`` expression has access to the following:
+
+``item``
+    The current pipeline item
+
+``key``
+    The name of the matched key
+
+``match``
+    If the key was matched by a regular expression, the match object, otherwise boolean True
+
+``transmogrifier``
+    The transmogrifier
+
+``name``
+    The name of the splitter section
+
+``options``
+    The splitter options
+
+``modules``
+    ``sys.modules``
+
+
+Redirector section
+------------------
+
+A redirector section uses `plone.app.redirector` to manage redirects and update
+paths in keys.
+
+::
+
+    >>> import pprint
+    >>> redirector = """
+    ... [transmogrifier]
+    ... pipeline =
+    ...     source
+    ...     clean-old-paths
+    ...     old-paths
+    ...     content-element
+    ...     redirect
+    ...     href
+    ...     logger
+    ... 
+    ... [source]
+    ... blueprint = collective.transmogrifier.sections.csvsource
+    ... filename = plone.app.transmogrifier:redirector.csv
+    ... 
+    ... [clean-old-paths]
+    ... blueprint = collective.transmogrifier.sections.manipulator
+    ... condition = not:item/_old_paths|nothing
+    ... delete = _old_paths
+    ... 
+    ... [old-paths]
+    ... blueprint = collective.transmogrifier.sections.inserter
+    ... key = string:_old_paths
+    ... condition = exists:item/_old_paths
+    ... value = python:item['_old_paths'].split('|')
+    ... 
+    ... [content-element]
+    ... blueprint = collective.transmogrifier.sections.inserter
+    ... key = string:_content_element
+    ... condition = item/remoteUrl
+    ... value = python:modules['xml.etree.ElementTree'].Element(\
+    ...     'a', dict(href=item['remoteUrl']))
+    ... 
+    ... [redirect]
+    ... blueprint = plone.app.transmogrifier.redirector
+    ... 
+    ... [href]
+    ... blueprint = collective.transmogrifier.sections.inserter
+    ... key = string:_content_element
+    ... condition = exists:item/_content_element
+    ... value = python:item['_content_element'].attrib['href']
+    ... 
+    ... [logger]
+    ... blueprint = collective.transmogrifier.sections.logger
+    ... name = logger
+    ... level = INFO
+    ... """
+    >>> registerConfig(
+    ...     u'plone.app.transmogrifier.tests.redirector', redirector)
+
+    >>> transmogrifier(u'plone.app.transmogrifier.tests.redirector')
+    >>> print handler
+    logger INFO
+      {'_old_paths': ['corge', 'waldo'], '_redirect_path': 'foo', 'remoteUrl': ''}
+    logger INFO
+      {'_redirect_path': 'foo', 'remoteUrl': ''}
+    logger INFO
+        {'_old_paths': ['corge/item-00', 'waldo/item-00'],
+       '_redirect_path': 'foo/item-00',
+       'remoteUrl': ''}
+    logger INFO
+        {'_content_element': 'foo/item-00',
+       '_old_paths': ['corge/grault', 'waldo/fred'],
+       '_redirect_path': 'foo/bar',
+       'remoteUrl': 'foo/item-00'}
+    logger INFO
+        {'_content_element': '/foo/item-00#fragment',
+       '_old_paths': ['corge/grault/item-01', 'waldo/fred/item-01'],
+       '_redirect_path': 'http://nohost/foo/bar/item-01',
+       'remoteUrl': '/foo/item-00#fragment'}
+    logger INFO
+      {'_redirect_path': '/foo/bar/qux', 'remoteUrl': ''}
+    logger INFO
+        {'_content_element': 'http://nohost/foo/bar/item-01',
+       '_redirect_path': '/foo/bar/qux/item-02',
+       'remoteUrl': 'http://nohost/foo/bar/item-01'}
+
+    >>> import pprint
+    >>> from zope.component import getUtility
+    >>> from plone.app.redirector.interfaces import IRedirectionStorage
+    >>> storage = getUtility(IRedirectionStorage)
+    >>> pprint.pprint(dict((path, storage.get(path)) for path in storage))
+    {'/plone/corge': '/plone/foo',
+     '/plone/corge/grault': '/plone/foo/bar',
+     '/plone/corge/grault/item-01': 'http://nohost/foo/bar/item-01',
+     '/plone/corge/item-00': '/plone/foo/item-00',
+     '/plone/waldo': '/plone/foo',
+     '/plone/waldo/fred': '/plone/foo/bar',
+     '/plone/waldo/fred/item-01': 'http://nohost/foo/bar/item-01',
+     '/plone/waldo/item-00': '/plone/foo/item-00'}
+
+
+Indexing section
+----------------
+
+A ReindexObject section allows you to reindex an existing object in the
+portal_catalog. ReindexObject sections operate on objects already present in the
+ZODB, be they created by a constructor or pre-existing objects.
+
+The ReindexObject blueprint name is ``plone.app.transmogrifier.reindexobject``.
+
+To determine the path, the ReindexObject section inspects each item and looks
+for a path key, as described below. Any item missing this key will be skipped.
+Similarly, items with a path that doesn't exist or are not referenceable
+(Archetypes) or do not inherit from CMFCatalogAware will be skipped as well.
+
+The object path will be found under the first key found among the following:
+
+* ``_plone.app.transmogrifier.reindexobject_[sectionname]_path``
+* ``_plone.app.transmogrifier.reindexobject_path``
+* ``_[sectionname]_path``
+* ``_path``
+
+where ``[sectionname]`` is replaced with the name given to the current section.
+This allows you to target the right section precisely if needed.
+
+Alternatively, you can specify what key to use for the path by specifying the
+``path-key`` option, which should be a list of keys to try (one key per line;
+use a ``re:`` or ``regexp:`` prefix to specify regular expressions).
+
+Paths to objects are always interpreted as relative to the context.
+
+::
+
+    >>> import pprint
+    >>> reindexobject = """
+    ... [transmogrifier]
+    ... pipeline =
+    ...     reindexobjectsource
+    ...     reindexobject
+    ...     printer
+    ...
+    ... [reindexobjectsource]
+    ... blueprint = plone.app.transmogrifier.tests.reindexobjectsource
+    ...
+    ... [reindexobject]
+    ... blueprint = plone.app.transmogrifier.reindexobject
+    ...
+    ... [printer]
+    ... blueprint = collective.transmogrifier.sections.logger
+    ... name = logger
+    ... """
+    >>> registerConfig(u'plone.app.transmogrifier.tests.reindexobject', reindexobject)
+
+    >>> transmogrifier(u'plone.app.transmogrifier.tests.reindexobject') 
+    >>> print(handler)
+    logger INFO
+      {'_path': '/spam/eggs/foo'}
+    logger INFO
+      {'_path': '/spam/eggs/bar'}
+    logger INFO
+      {'_path': '/spam/eggs/baz'}
+    logger INFO
+        {'_path': 'not/a/catalog/aware/content',
+       'title': 'Should not be reindexed, not a CMFCatalogAware content'}
+    logger INFO
+        {'_path': 'not/existing/bar',
+       'title': 'Should not be reindexed, not an existing path'}
+
+    >>> pprint.pprint(plone.reindexed)
+    [('spam/eggs/foo', 'reindexed'),
+     ('spam/eggs/bar', 'reindexed'),
+     ('spam/eggs/baz', 'reindexed')]
+
+
+UID updater section
+-------------------
+
+If an Archetypes content object is created in a pipeline, e.g. by the standard
+content constructor section, it will get a new UID. If you are importing
+content from another Plone site, and you have references (or links embedded
+in content using Plone's link-by-UID feature) to existing content, you may
+want to retain UIDs. The UID updater section allows you to set the UID on an
+existing object for this purpose.
+
+The UID updater blueprint name is ``plone.app.transmogrifier.uidupdater``.
+
+UID updating requires two pieces of information: the path to the object
+to update, and the new UID to set.
+
+To determine the path, the UID updater section inspects each item and looks
+for a path key, as described below. Any item missing this key will be skipped.
+Similarly, items with a path that doesn't exist or are not referenceable 
+(Archetypes) objects will be skipped.
+
+The object path will be found under the first key found among the following:
+
+* ``_plone.app.transmogrifier.atschemaupdater_[sectionname]_path``
+* ``_plone.app.transmogrifier.atschemaupdater_path``
+* ``_[sectionname]_path``
+* ``_path``
+
+where ``[sectionname]`` is replaced with the name given to the current
+section. This allows you to target the right section precisely if
+needed.
+
+Alternatively, you can specify what key to use for the path by specifying the
+``path-key`` option, which should be a list of keys to try (one key per line;
+use a ``re:`` or ``regexp:`` prefix to specify regular expressions).
+
+Paths to objects are always interpreted as relative to the context.
+
+Similarly, the UID to set must be a string under a given key. You can set the
+key with the ``uid-key`` option, which behaves much like ``path-key``. The
+default is to look under:
+
+* ``_plone.app.transmogrifier.atschemaupdater_[sectionname]_uid``
+* ``_plone.app.transmogrifier.atschemaupdater_uid``
+* ``_[sectionname]_uid``
+* ``_uid``
+
+If the UID key is missing, the item will be skipped.
+
+Below is an example of a standard updater. The test uid source produces
+items with two keys: a path under ``_path`` and a UID string under ``_uid``.
+
+::
+
+    >>> import pprint
+    >>> atschema = """
+    ... [transmogrifier]
+    ... pipeline =
+    ...     schemasource
+    ...     schemaupdater
+    ...     printer
+    ...     
+    ... [schemasource]
+    ... blueprint = plone.app.transmogrifier.tests.uidsource
+    ... 
+    ... [schemaupdater]
+    ... blueprint = plone.app.transmogrifier.uidupdater
+    ... 
+    ... [printer]
+    ... blueprint = collective.transmogrifier.sections.logger
+    ... name = logger
+    ... """
+    >>> registerConfig(u'plone.app.transmogrifier.tests.uid', atschema)
+    >>> transmogrifier(u'plone.app.transmogrifier.tests.uid')
+    >>> print(handler)
+    logger INFO
+      {'_path': '/spam/eggs/foo', '_uid': 'abc'}
+    logger INFO
+      {'_path': '/spam/eggs/bar', '_uid': 'xyz'}
+    logger INFO
+      {'_path': 'not/existing/bar', '_uid': 'def'}
+    logger INFO
+      {'_uid': 'geh'}
+    logger INFO
+      {'_path': '/spam/eggs/baz'}
+    logger INFO
+      {'_path': '/spam/notatcontent', '_uid': 'ijk'}
+    
+    >>> pprint.pprint(plone.uids_set)
+    [('spam/eggs/foo', 'abc')]
+
+
+URL Normalizer section
+----------------------
+
+A URLNormalizer section allows you to parse any piece of text into a url-safe
+string which is then assigned to a specified key. It uses plone.i18n.normalizer
+to perform the normalization. The url normalizer section blueprint name is
+``plone.app.transmogrifier.urlnormalizer``.
+
+The URL normalizer accepts the following optional keys -
+``source-key``: The name of the object key that you wish to normalize,
+``destination-key``: Where you want the normalized string to be stored,
+``locale``: if you want the normalizer to be aware of locale, use this.
+
+::
+
+    >>> import pprint
+    >>> urlnormalizer = """
+    ... [transmogrifier]
+    ... pipeline =
+    ...     urlnormalizersource
+    ...     urlnormalizer
+    ...     printer
+    ...     
+    ... [urlnormalizersource]
+    ... blueprint = plone.app.transmogrifier.tests.urlnormalizersource
+    ... 
+    ... [urlnormalizer]
+    ... blueprint = plone.app.transmogrifier.urlnormalizer
+    ... source-key = title
+    ... destination-key = string:id
+    ... locale = string:en
+    ... 
+    ... [printer]
+    ... blueprint = collective.transmogrifier.sections.logger
+    ... name = logger
+    ... """
+    >>> registerConfig(u'plone.app.transmogrifier.tests.urlnormalizer',
+    ...                urlnormalizer)
+    >>> transmogrifier(u'plone.app.transmogrifier.tests.urlnormalizer')
+    >>> print(handler)
+    logger INFO
+      {'id': 'mytitle', 'title': 'mytitle'}
+    logger INFO
+      {'id': 'is-this-a-title-of-any-sort', 'title': 'Is this a title of any sort?'}
+    logger INFO
+        {'id': 'put-some-br-1lly-v4lues-here-there',
+       'title': 'Put some <br /> $1llY V4LUES -- here&there'}
+    logger INFO
+        {'id': 'what-about-line-breaks-system',
+       'title': 'What about \r\n line breaks (system)'}
+    logger INFO
+      {'id': 'try-one-of-these-oh', 'title': 'Try one of these --------- oh'}
+    logger INFO
+      {'language': 'My language is de'}
+    logger INFO
+      {'language': 'my language is en'}
+
+As you can see, only items containing the specified source-key have been
+processed, the others have been ignored and yielded without change.
+
+Destination-key and locale accept TALES expressions, so for example you could
+set your destination-key based on your locale element, which is in turn derived
+from your source-key:
+
+::
+
+    >>> import pprint
+    >>> urlnormalizer = """
+    ... [transmogrifier]
+    ... pipeline =
+    ...     urlnormalizersource
+    ...     urlnormalizer
+    ...     printer
+    ...     
+    ... [urlnormalizersource]
+    ... blueprint = plone.app.transmogrifier.tests.urlnormalizersource
+    ... 
+    ... [urlnormalizer]
+    ... blueprint = plone.app.transmogrifier.urlnormalizer
+    ... source-key = language
+    ... locale = python:str(item.get('${urlnormalizer:source-key}', 'na')[-2:])
+    ... destination-key = ${urlnormalizer:locale}
+    ... 
+    ... [printer]
+    ... blueprint = collective.transmogrifier.sections.logger
+    ... name = logger
+    ... """
+    >>> registerConfig(u'plone.app.transmogrifier.tests.urlnormalizer2',
+    ...                urlnormalizer)
+
+    >>> handler.clear()
+    >>> transmogrifier(u'plone.app.transmogrifier.tests.urlnormalizer2')
+    >>> print(handler)
+    logger INFO
+      {'title': 'mytitle'}
+    logger INFO
+      {'title': 'Is this a title of any sort?'}
+    logger INFO
+      {'title': 'Put some <br /> $1llY V4LUES -- here&there'}
+    logger INFO
+      {'title': 'What about \r\n line breaks (system)'}
+    logger INFO
+      {'title': 'Try one of these --------- oh'}
+    logger INFO
+      {'de': 'my-language-is-de', 'language': 'My language is de'}
+    logger INFO
+      {'en': 'my-language-is-en', 'language': 'my language is en'}
+
+In this case only items containing the 'language' key have been processed, and
+the destination-key has been set to the same value as the locale was. This is
+more to illuminate the fact that the locale was set, rather than providing a
+sensible use-case for destination-key.
+
+If ZERO options are specified, the normalizer falls back to a set of default
+values as follows:
+``source-key``: title,
+``locale``: en,
+``destination-key``: _id
+
+::
+
+    >>> import pprint
+    >>> urlnormalizer = """
+    ... [transmogrifier]
+    ... pipeline =
+    ...     urlnormalizersource
+    ...     urlnormalizer
+    ...     printer
+    ...     
+    ... [urlnormalizersource]
+    ... blueprint = plone.app.transmogrifier.tests.urlnormalizersource
+    ... 
+    ... [urlnormalizer]
+    ... blueprint = plone.app.transmogrifier.urlnormalizer
+    ... 
+    ... [printer]
+    ... blueprint = collective.transmogrifier.sections.logger
+    ... name = logger
+    ... """
+    >>> registerConfig(u'plone.app.transmogrifier.tests.urlnormalizer3',
+    ...                urlnormalizer)
+
+    >>> handler.clear()
+    >>> transmogrifier(u'plone.app.transmogrifier.tests.urlnormalizer3')
+    >>> print(handler)
+    logger INFO
+      {'_id': 'mytitle', 'title': 'mytitle'}
+    logger INFO
+      {'_id': 'is-this-a-title-of-any-sort', 'title': 'Is this a title of any sort?'}
+    logger INFO
+        {'_id': 'put-some-br-1lly-v4lues-here-there',
+       'title': 'Put some <br /> $1llY V4LUES -- here&there'}
+    logger INFO
+        {'_id': 'what-about-line-breaks-system',
+       'title': 'What about \r\n line breaks (system)'}
+    logger INFO
+      {'_id': 'try-one-of-these-oh', 'title': 'Try one of these --------- oh'}
+    logger INFO
+      {'language': 'My language is de'}
+    logger INFO
+      {'language': 'my language is en'}
+
+In this case, the destination-key is set to a controller variable, like _path,
+as it is expected that the newly formed Id will in most cases be used further
+down the pipeline in constructing the full, final path to the new Plone object.
+
+It should be noted that this section can effectively transform *any* section of
+text and turn it into a normalized, web safe string (max 255 chars) This string
+does not necessarily need to be used for a URL.
+
+
+Disable / enable versioning sections
+------------------------------------
+
+It can be helpful to disable versioning during content construction to avoid
+storing incomplete versions in the content item's revision history.
+
+For example::
+
+    [transmogrifier]
+    pipeline =
+        schemasource
+        disable_versioning
+        constructor
+        enable_versioning
+        schemaupdater
+
+    [disable_versioning]
+    blueprint = plone.app.transmogrifier.versioning.disable
+
+    [constructor]
+    blueprint = collective.transmogrifier.sections.constructor
+
+    [enable_versioning]
+    blueprint = plone.app.transmogrifier.versioning.enable
+
+
+
+Workflow updater section
+------------------------
+
+A workflow updater pipeline section is another important transmogrifier content
+import pipeline element. It executes workflow transitions on Plone content
+based on the items it processes. The workflow updater section blueprint name is
+``plone.app.transmogrifier.workflowupdater``. Workflow updater sections operate
+on objects already present in the ZODB, be they created by a constructor or
+pre-existing objects.
+
+Workflow updating needs 2 pieces of information: the path to the object, and
+what transitions to execute. To determine these, the workflow updater section
+inspects each item and looks for two keys, as described below. Any item missing
+any of these two pieces will be skipped. Similarly, items with a path that
+doesn't exist will be skipped as well.
+
+For the object path, it'll look (in order) for
+``_plone.app.transmogrifier.atschemaupdater_[sectionname]_path``,
+``_plone.app.transmogrifier.atschemaupdater_path``, ``_[sectionname]_path`` and
+``_path``, where ``[sectionname]`` is replaced with the name given to the
+current section. This allows you to target the right section precisely if
+needed. Alternatively, you can specify what key to use for the path by
+specifying the ``path-key`` option, which should be a list of keys to try (one
+key per line, use a ``re:`` or ``regexp:`` prefix to specify regular
+expressions).
+
+For the transitions, use the ``transitions-key`` option (same interpretation
+as ``path-key``), defaulting to
+``_plone.app.transmogrifier.atschemaupdater_[sectionname]_transitions``,
+``_plone.app.transmogrifier.atschemaupdater_transitions``,
+``_[sectionname]_transitions`` and ``_transitions``.
+
+Unicode paths are encoded to ASCII. Paths to objects are always interpreted as
+relative to the context object. Transitions are specified as a sequence of
+transition names, or as a string specifying one transition, or a list of
+dictionaries containing 'action' as transition id, 'review_state' as state id
+and 'time' as a DateTime representing the transition time (if so, the worflow
+history will be updated with the provided date). Transitions are executed in
+order, failing transitions are silently ignored.
+
+::
+
+    >>> import pprint
+    >>> workflow = """
+    ... [transmogrifier]
+    ... pipeline =
+    ...     workflowsource
+    ...     workflowupdater
+    ...     printer
+    ...     
+    ... [workflowsource]
+    ... blueprint = plone.app.transmogrifier.tests.workflowsource
+    ... 
+    ... [workflowupdater]
+    ... blueprint = plone.app.transmogrifier.workflowupdater
+    ... 
+    ... [printer]
+    ... blueprint = collective.transmogrifier.sections.logger
+    ... name = logger
+    ... """
+    >>> registerConfig(u'plone.app.transmogrifier.tests.workflow',
+    ...                workflow)
+    >>> transmogrifier(u'plone.app.transmogrifier.tests.workflow')
+    >>> print(handler)
+    logger INFO
+      {'_path': '/spam/eggs/foo', '_transitions': 'spam'}
+    logger INFO
+      {'_path': '/spam/eggs/baz', '_transitions': ('spam', 'eggs')}
+    logger INFO
+        {'_path': 'not/existing/bar',
+       '_transitions': ('spam', 'eggs'),
+       'title': 'Should not be updated, not an existing path'}
+    logger INFO
+        {'_path': 'spam/eggs/incomplete',
+       'title': 'Should not be updated, no transitions'}
+    logger INFO
+        {'_path': '/spam/eggs/nosuchtransition',
+       '_transitions': ('nonsuch',),
+       'title': 'Should not be updated, no such transition'}
+    logger INFO
+        {'_path': '/spam/eggs/bla',
+       '_transitions': ({'action': 'spam',
+                         'review_state': 'spammed',
+                         'time': DateTime('2014/06/20 00:00:00 GMT+0')},)}
+
+    >>> pprint.pprint(plone.updated)
+    [('spam/eggs/foo', 'spam'),
+     ('spam/eggs/baz', 'spam'),
+     ('spam/eggs/baz', 'eggs'),
+     ('spam/eggs/bla', 'spam')]
+
+
+Changelog
+=========
+
+1.3 (2015-01-22)
+----------------
+
+- Ignore if workflow_history is not available on objects when running the
+  workflowupdater blueprint.
+  [thet]
+
+- Add datesupdater section to set creation_date and modification_date on
+  objects.
+  [thet]
+
+- Add pathfixer section to remove/prepend parts of the path.
+  [thet]
+
+- PEP 8.
+  [thet]
+
+- Fix uidsection for dexterity.
+  [shylux]
+
+- Allow to import transition date in the worflow history
+  [ebrehault]
+
+- Fix field accessor and mutator for updating schemaextended field values
+  with schemaupdater.
+  In some cases when using fields extended by schemaextender it defines
+  an accessor attribute which is not accessable. To cover all fields, its
+  better to access and mutate over the getAccessor and getMutator methods on
+  archetype fields.
+  [elioschmutz]
+
+- Add a section to manage `plone.app.redirector` and to use it to
+  update paths.
+  [rpatterson]
+
+- Support field accessor and mutator for updating field values with
+  schemaupdater.
+  [phgross]
+
+
+1.2 (2011-05-23)
+----------------
+
+- Sections to disable and enable versioning within the pipeline.
+  [elro]
+
+- Convert paths to strings.
+  [elro]
+
+- Add a 'verbose' option to reindexobject blueprint
+  that logs the object currently reindexed and number of objects reindexed.
+  [thomasdesvenain]
+
+- Check for CatalogAware base class when reindexing an object instead of
+  CMFCatalogAware because in Plone 4 folders do not inherit from
+  CMFCatalogAware.
+  [buchi]
+
+
+1.1 (2010-03-30)
+----------------
+
+- Added Indexing section. See reindexobject.rst.
+  [sylvainb]
+
+- Added UID updated section. See uidupdater.rst.
+  [optilude]
+
+- Fixed tests for Plone 4, in the same way that they were fixed in
+  collective.transmogrifier.
+  [optilude]
+
+
+1.0 (2009-08-09)
+----------------
+
+- Initial package.
+  [mj]
+
