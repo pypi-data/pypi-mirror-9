@@ -1,0 +1,16 @@
+.. image:: https://drone.io/bitbucket.org/eodolphi/json-resource/status.png
+   :target: https://drone.io/bitbucket.org/eodolphi/json-resource/latest
+
+
+
+JSON Resource
+=============
+
+JSON resources are `dict`, and `list`, etc. types. They behave
+like oridnary python dicts and lists, but have extra functionality from several
+json standards.
+
+Installation
+------------
+
+pip install json_resource
