@@ -1,0 +1,94 @@
+v 20110115 2
+C 9300 51500 1 0 0 kerr_oscillator-1.sym
+{
+T 9495 53795 5 8 0 0 0 0 1
+device=KerrOscillator
+T 11000 53000 5 8 1 1 0 0 1
+refdes=KO
+T 10400 50500 5 10 1 0 0 0 1
+Delta=Delta
+T 10400 50300 5 10 1 0 0 0 1
+delta=delta
+T 10400 51200 5 10 1 0 0 0 1
+kappa=kappa
+T 10400 51000 5 10 1 0 0 0 1
+gamma=gamma
+T 10400 50800 5 10 1 0 0 0 1
+eta=eta
+T 10400 50000 5 10 1 0 0 0 1
+chi=chi
+T 10400 49800 5 10 1 0 0 0 1
+chi_C=chi_C
+T 10400 49600 5 10 1 0 0 0 1
+phi_1=phi_1
+T 10400 49400 5 10 1 0 0 0 1
+phi_2=phi_2
+}
+C 7500 50900 1 0 0 beamsplitter-1.sym
+{
+T 9500 53000 5 10 0 0 0 0 1
+device=Beamsplitter
+T 9200 52600 5 10 1 1 0 0 1
+refdes=BS1
+}
+C 11800 50700 1 270 1 beamsplitter-1.sym
+{
+T 13900 52700 5 10 0 0 270 6 1
+device=Beamsplitter
+T 12800 51700 5 10 1 1 0 6 1
+refdes=BS2
+}
+C 7200 52000 1 0 0 input-1.sym
+{
+T 7200 52900 5 10 0 0 0 0 1
+device=IPAD
+T 7500 51600 5 10 1 1 0 0 1
+refdes=bias
+T 7500 51800 5 10 1 0 0 0 1
+pinseq=i1
+}
+C 14900 52400 1 180 0 output-1.sym
+{
+T 14900 51500 5 10 0 0 180 0 1
+device=OPAD
+T 14800 52800 5 10 1 1 180 0 1
+refdes=common
+T 14800 52600 5 10 1 0 180 0 1
+pinseq=o1
+}
+N 9000 53300 12600 53300 4
+N 13100 51500 9700 51500 4
+N 9500 52200 9900 52200 4
+N 12600 53300 12600 52800 4
+N 12600 52800 12300 52800 4
+N 9000 53300 9000 52700 4
+N 12600 52200 12300 52200 4
+N 9700 51500 9700 52800 4
+N 9700 52800 9900 52800 4
+N 13100 51500 13100 51700 4
+N 8100 52200 8500 52200 4
+N 14000 52200 13600 52200 4
+C 9200 50600 1 90 0 input-1.sym
+{
+T 8300 50600 5 10 0 0 90 0 1
+device=IPAD
+T 8600 51200 5 10 1 1 180 0 1
+refdes=differential
+T 8600 51000 5 10 1 0 180 0 1
+pinseq=i2
+}
+N 9000 51500 9000 51700 4
+C 12900 54200 1 270 0 output-1.sym
+{
+T 13800 54200 5 10 0 0 270 0 1
+device=OPAD
+T 13400 53800 5 10 1 1 0 0 1
+refdes=osc
+T 13400 53600 5 10 1 0 0 0 1
+pinseq=o2
+}
+N 13100 53300 13100 52700 4
+T 7100 54200 8 10 1 1 0 0 1
+params=Delta:real;chi:real;kappa:real;gamma:real;eta:real;delta:real;chi_C:real:0;phi_1:real:3.14159265359; phi_2:real:-3.14159265359
+T 7100 54500 8 10 1 1 0 0 1
+module-name=KerrOscillator2

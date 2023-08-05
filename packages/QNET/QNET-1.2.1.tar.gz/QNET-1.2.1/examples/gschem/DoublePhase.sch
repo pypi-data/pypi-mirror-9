@@ -1,0 +1,59 @@
+v 20110115 2
+C 29300 43100 1 0 0 phase-1.sym
+{
+T 30295 44595 5 8 0 0 0 0 1
+device=Phase
+T 30703 43185 5 8 1 1 0 0 1
+refdes=P1
+T 30000 43100 5 10 1 0 0 0 1
+phi=phi
+}
+C 32300 44600 1 180 0 phase-1.sym
+{
+T 31305 43105 5 8 0 0 180 0 1
+device=Phase
+T 30897 44515 5 8 1 1 180 0 1
+refdes=P2
+T 31000 44500 5 10 1 0 0 0 1
+phi=phi
+}
+C 29300 43400 1 0 0 input-1.sym
+{
+T 29300 44300 5 10 0 0 0 0 1
+device=IPAD
+T 29500 43700 5 10 1 1 180 0 1
+refdes=In1
+T 29500 43500 5 10 1 0 180 0 1
+pinseq=i1
+}
+C 32300 44300 1 180 0 input-1.sym
+{
+T 32300 43400 5 10 0 0 180 0 1
+device=IPAD
+T 32100 44200 5 10 1 1 0 0 1
+refdes=In2
+T 32100 44000 5 10 1 0 0 0 1
+pinseq=i2
+}
+C 29300 43900 1 0 0 output-1.sym
+{
+T 29300 44800 5 10 0 0 0 0 1
+device=OPAD
+T 29500 44300 5 10 1 1 180 0 1
+refdes=Out2
+T 29500 44100 5 10 1 0 180 0 1
+pinseq=o2
+}
+C 32300 43800 1 180 0 output-1.sym
+{
+T 32300 42900 5 10 0 0 180 0 1
+device=OPAD
+T 32100 43600 5 10 1 1 0 0 1
+refdes=Out1
+T 32100 43400 5 10 1 0 0 0 1
+pinseq=o1
+}
+T 30300 45300 8 10 1 1 0 0 1
+module-name=DoublePhase
+T 30400 45000 8 10 1 1 0 0 1
+params=phi:real
