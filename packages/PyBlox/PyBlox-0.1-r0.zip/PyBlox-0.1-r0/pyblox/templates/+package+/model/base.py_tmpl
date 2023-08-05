@@ -1,0 +1,109 @@
+from ${package}.model import db
+
+from json import loads, dumps
+from datetime import datetime
+
+from sqlalchemy.types import DateTime, Boolean
+from sqlalchemy import Column
+from sqlalchemy.types import UnicodeText
+
+__all__=['DatabaseMixin']
+
+
+class DatabaseMixin(object):
+    """Base class for DB Model
+
+    """
+    query = db.query_property()
+
+    def __eq__(self, other):
+        if isinstance(other, self):
+            return self.__class__.__name__
+        return False
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+    @classmethod
+    def create(cls, data):
+        '''
+        Factory Method
+
+        :param data:
+        :return:
+
+        '''
+        try:
+            self = cls()
+            if type(data) is not dict:
+                raise TypeError("You need to pass a dictionary for create.")
+            for k in self.__table__.columns._data.keys():
+                if k in data:
+                    if type(getattr(self, k)) == datetime:
+                        if len(data.get(k).split(":")) == 3:
+                            setattr(self, k, datetime.strptime(data.get(k), "%m/%d/%Y %H:%M:%S"))
+                        else:
+                            setattr(self, k, datetime.strptime(data.get(k), "%m/%d/%Y"))
+                    elif type(getattr(self, k)) == bool and type(data.get(k)) != bool:
+                        setattr(self, k, data.get(k) == 'true')
+                    elif hasattr(self, k):
+                        setattr(self, k, data.get(k))
+            if 'password' in data:
+                setattr(self, 'password', data.get('password'))
+        except:
+            return None
+        else:
+            return self
+
+    def update(self, data):
+        try:
+            if type(data) is not dict:
+                raise TypeError("You need to pass a dictionary for update.")
+            for k in self.__table__.columns._data.keys():
+                if k in data:
+                    if type(getattr(self, k)) == datetime:
+                        if len(data.get(k).split(":")) == 3:
+                            setattr(self, k, datetime.strptime(data.get(k), "%m/%d/%Y %H:%M:%S"))
+                        else:
+                            setattr(self, k, datetime.strptime(data.get(k), "%m/%d/%Y"))
+                    elif type(getattr(self, k)) == bool and type(data.get(k)) != bool:
+                        setattr(self, k, data.get(k) == 'true')
+                    elif hasattr(self, k):
+                        setattr(self, k, data.get(k))
+            if 'password' in data:
+                setattr(self, 'password', data.get('password'))
+        except:
+            return False
+        else:
+            return True
+
+    @classmethod
+    def all(cls):
+        return cls.query.all()
+
+    def todict(self):
+        """JSON PG Date object serializer, and whatever else is
+        needed for convenience...
+
+        """
+        def convert_datetime(val, long_date=False):
+            if long_date:
+                return val.strftime("%m/%d/%Y %H:%M:%S") if val else ""
+            return val.strftime("%m/%d/%Y") if val else ""
+
+        d = {}
+        for c in self.__table__.columns:
+            if c.name.startswith("_"): continue
+            if isinstance(c.type, DateTime):
+                value = convert_datetime(getattr(self, c.name))
+            else:
+                value = getattr(self, c.name)
+            d[c.name] = value
+        return d
+
+    def iterfunc(self):
+        """Returns an iterable that supports .next()
+        so we can do dict(cls_instance)
+
+        """
+        return self.todict()

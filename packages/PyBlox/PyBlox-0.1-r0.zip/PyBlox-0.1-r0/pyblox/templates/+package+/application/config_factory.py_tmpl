@@ -1,0 +1,40 @@
+import os
+import copy
+import logging
+import pyblox
+
+from genshi.template import TemplateLoader
+from sqlalchemy import engine_from_config
+from ${package}.model import init_model
+from ${package}.lib import helpers, app_globals
+from paste.deploy.converters import asbool
+from webhelpers.mimehelper import MIMETypes
+from pyblox.configuration import PyBloxConfig
+
+log = logging.getLogger(__name__)
+
+def make_config(global_conf, app_conf):
+    config = PyBloxConfig()
+
+    # App paths
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    paths = dict(root=root,
+        controllers=os.path.join(root, 'controllers'),
+        static=os.path.join(root, 'static'),
+        templates=[os.path.join(root, 'templates')])
+
+    # Initialize config with the defaults
+    config.init_defaults(global_conf, app_conf, package='${package}', paths=paths)
+    config['pyblox.app_globals'] = app_globals.Globals(config)
+    config['pyblox.h'] = helpers
+    config['pyblox.login_path'] = "/login"
+
+    # Setup cache immediately
+    import pyblox
+    pyblox.cache._push_object(config['pyblox.app_globals'].cache)
+
+    # Initialize the database connection
+    engine = engine_from_config(config, 'sqlalchemy.')
+    init_model(engine)
+
+    return config

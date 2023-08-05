@@ -1,0 +1,76 @@
+import os
+from hashlib import sha1
+import datetime
+from datetime import datetime
+from json import loads, dumps
+import sqlalchemy
+from sqlalchemy import engine_from_config
+from sqlalchemy import ForeignKey, Column, Table
+from sqlalchemy.types import Integer, DateTime, Boolean, Unicode, UnicodeText, Float
+from sqlalchemy.orm import relation, synonym, relationship, backref
+from sqlalchemy.orm import scoped_session, sessionmaker
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.associationproxy import association_proxy
+from sqlalchemy.sql import and_, or_, not_
+
+from ${package}.model import db, BaseDatabase
+from ${package}.application.config_factory import make_config
+
+
+def setup_app(command, conf, vars):
+    """Place any commands to setup app here"""
+
+    make_config(conf.global_conf, conf.local_conf)
+    engine = engine_from_config(conf, 'sqlalchemy.')
+
+    BaseDatabase.metadata.drop_all(engine)
+    BaseDatabase.metadata.create_all(engine)
+
+    insert_data(engine)
+
+def insert_data(engine):
+    db.configure(bind=engine)
+
+    def insert():
+        auth_group = Group(u'User', u'Regular user account.')
+        admin_group = Group(u'Admin', u'Administrative user account.')
+
+        admin_perm = Permission(u'admin')
+        auth_perm = Permission(u'auth')
+
+        auth_group.permissions.append(auth_perm)
+        admin_group.permissions.append(admin_perm)
+
+        # Add the objects to the db session
+        db.add_all([auth_group, admin_group])
+        db.flush()
+
+        company = Company(name="Acme Company", url="http://www.acmecompany.com")
+        db.add(company)
+        db.flush()
+
+        # Create the users and add some default relational data for
+        # illustrative purposes.
+        try:
+            first_name, last_name = u"${author}".split()[0], u"${author}".split()[1]
+        except:
+            first_name, last_name = u"Unknown", u"Unknown"
+
+        admin_user = User(first_name=first_name, last_name=last_name, username=u"${author_email}",
+            company_id=company.id)
+        admin_user.password = 'password'
+        admin_user.groups.append(admin_group)
+        db.add(admin_user)
+
+        regular_user = User(first_name=u'Johnny', last_name=u'Appleseed', username=u'jappleseed@appleseeds.com',
+            company_id=company.id)
+        regular_user.password = 'password'
+        regular_user.groups.append(auth_group)
+        db.add(regular_user)
+        db.commit()
+
+    insert()
+
+from ${package}.model.core import User, Group, Permission, ShippingAddress, Company
+# XXX: Your model imports here.

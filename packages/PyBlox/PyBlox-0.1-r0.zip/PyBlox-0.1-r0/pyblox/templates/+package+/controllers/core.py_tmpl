@@ -1,0 +1,130 @@
+import os
+import time
+import datetime as dt
+import logging
+import transaction
+
+from datetime import datetime
+
+import pyblox
+from pyblox import tmpl_context as c, session
+from pyblox.decorators import (xml, xml_render, html, html_render,
+    jsonify, authorize, credential, authenticated, redirect)
+
+from ${package}.model import db, User, Group
+from ${package}.lib.forms import UserForm, UserEditForm, validators
+from base import BaseController
+from simplejson import loads, dumps
+
+from sqlalchemy.types import DateTime
+
+log = logging.getLogger(__name__)
+
+
+class CoreController(BaseController):
+
+    @authorize(credential('admin'))
+    @jsonify
+    def groups(self, *args, **kwargs):
+        group_items = []
+
+        try:
+            for group in Group.query.all():
+                group_dict = group.todict()
+
+                group_items.append(group_dict)
+        except Exception as e:
+            log.error("Exception: {0}".format(e))
+            return []
+        else:
+            return group_items
+
+    @authorize(credential('admin'))
+    @jsonify
+    def users(self, *args, **kwargs):
+        user_items = []
+
+        try:
+            for user in User.query.all():
+                user_dict = user.todict()
+                user_dict.update({'permissions': user.permissions,
+                                  'name': user.full_name})
+
+                user_items.append(user_dict)
+            return user_items
+        except:
+            return []
+
+    @authorize(credential('admin'))
+    @jsonify
+    def create(self, *args, **kwargs):
+        schema = UserForm()
+        try:
+            data = schema.to_python(loads(self.request.body))
+            user = User.create(data)
+
+            assert user is not None, "User creation failed."
+
+            user.add_groups(
+                [group.name for group in Group.query.filter(Group.id.in_(data['group'])).all()]
+            )
+
+            db.add(user)
+            db.commit()
+
+        except validators.Invalid as e:
+            db.rollback()
+            return {'is_error': True, 'message': str(e)}
+        except Exception as e:
+            db.rollback()
+            return {'is_error': True, 'message': str(e)}
+        else:
+            return {'is_error': False,
+                    'message': 'Successfully created {0}'
+                        .format(data.get('username'), 'Unknown')}
+
+    @authorize(credential('admin'))
+    @jsonify
+    def update(self, *args, **kwargs):
+        schema = UserEditForm()
+        try:
+            data = schema.to_python(loads(self.request.body))
+            user = User.by_id(data.get('id', 0))
+
+            if user:
+                if not user.update(data):
+                    raise Exception("Failed to update user.")
+                db.commit()
+
+        except validators.Invalid as e:
+            db.rollback()
+            return {'is_error': True, 'message': str(e)}
+        except Exception as e:
+            db.rollback()
+            return {'is_error': True, 'message': str(e)}
+        else:
+            return {'is_error': False,
+                    'message': 'Successfully updated {0}'
+                        .format(data.get('username'), 'Unknown')}
+
+    @authorize(credential('admin'))
+    @jsonify
+    def delete(self, id, *args, **kwargs):
+        try:
+            user = User.by_id(id)
+            name = user.full_name
+            if user:
+                db.delete(user)
+                db.commit()
+            else:
+                raise Exception("User not found.")
+
+        except validators.Invalid as e:
+            db.rollback()
+            return {'is_error': True, 'message': str(e)}
+        except Exception as e:
+            db.rollback()
+            return {'is_error': True, 'message': str(e)}
+        else:
+            return {'is_error': False,
+                    'message': 'Successfully deleted {0}'.format(name)}
