@@ -1,0 +1,10 @@
+__version__ = "0.2.39"
+__git_commiter_name__ = "Guy Rozendorn"
+__git_commiter_email__ = "guy@rzn.co.il"
+__git_branch__ = '(detached from v0.2.39)'
+__git_remote_tracking_branch__ = '(No remote tracking)'
+__git_remote_url__ = '(Not remote tracking)'
+__git_head_hash__ = 'c77cc65c5f5b4f333d1457335a2770a508fdc6c9'
+__git_head_subject__ = 'Finished release v0.2.39.'
+__git_head_message__ = '* release/v0.2.39:\n  HIP-1421 adding defer function to nfi.storagemodel.base.gevent_wrapper and using it where needed\n  HIP-1420 fetch scsi vid/pid/model from devicemanager\n  HIP-1417 Disk.get_block_access_paths_for_partitions: a shorter way to get partition access paths\n  HIP-1419 overriding get_scsi_{vendor_id,product_id,revision}'
+__git_dirty_diff__ = ''
