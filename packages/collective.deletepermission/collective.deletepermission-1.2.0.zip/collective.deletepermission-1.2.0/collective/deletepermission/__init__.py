@@ -1,0 +1,1 @@
+import collective.deletepermission.cut_object
