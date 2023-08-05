@@ -1,0 +1,143 @@
+{% extends 'checkout/base.jinja' %}
+
+{% from '_helpers.jinja' import render_field, render_address %}
+
+{% set checkout_step = 2 %}
+{% set checkout_step_name = _('Shipping Address') %}
+
+
+{% block main %}
+<section class="checkout-container">
+  <div class="container">
+    <!--Delivery Address Selection -->
+    <div class="row">
+      <div class="delivery-address">
+        <div class="col-md-7 col-sm-7 col-xs-12">
+          <div class="address-container">
+            {% if not current_user.is_anonymous() and addresses %}
+            <h4><span class="underline">{{ _('Choose an existing Shipping Address') }}</span></h4>
+            <div class="row">
+              {% for address in addresses %}
+              <div class="col-md-6">
+                <div class="address">
+                <div class="address-card" data-address-id="{{ address.id }}">
+                {{ render_address(address, edit=False) }}
+                </div>
+                <form role="form" method="POST" autocomplete="off">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                  <input type="hidden" name="address" value="{{ address.id }}"/>
+                  <button type="submit" class="btn btn-warning btn-block">
+                    {{ _('Ship to this address') }}&nbsp;&nbsp;<i class="fa fa-angle-double-right"></i>
+                  </button>
+                </form> 
+                </div>             
+              </div>
+              {% if loop.index is divisibleby(2) %}
+              </div>
+              <div class="row">
+              {% endif %}
+              {% endfor %}
+            </div>
+
+            {#
+            <!-- On selecting address this input field will have id of selected address -->
+            <input type="hidden" class="form-control" name="address" id="address-id">
+            <div class="row">
+              <div class="col-md-6 pull-right">
+                <a href="checkout-step-three.html" class="btn btn-primary pull-right">{{ _('Proceed to Payment') }}&nbsp;&nbsp;<i class="fa fa-angle-double-right"></i></a>
+              </div>
+            </div>
+            #}
+
+            <div class="row center">
+              <div class="or"><span class="circle">{{ _('or') }}</span></div>
+            </div>
+            {% endif %}
+
+            <h4>
+              {% if addresses %}
+              <span class="underline">{{ _('Add a new address below') }}</span>
+              {% else %}
+              <span class="underline">{{ _('Enter your shipping address') }}</span>
+              {% endif %}
+            </h4>
+            <div class="row">
+              <div class="col-md-12 col-sm-12 col-xs-12">
+                <!-- Add new address form -->
+                <form role="form" method="POST" autocomplete="off">
+                  {{ address_form.hidden_tag() }}
+                  {{ render_field(address_form.name, required=required, class_="input-lg form-control") }}
+
+                  {{ render_field(address_form.street, placeholder=_("Street address, P.O. box, company name, c/o"), label_text= _('Address'), required=required, class_="input-lg form-control") }}
+                  {{ render_field(address_form.streetbis, placeholder=_("Apartment, suite, unit, building, floor, etc."), show_label=False, class_="input-lg form-control") }}
+                  <div class="row">
+                    <div class="col-md-6 col-sm-6">
+                      {{ render_field(address_form.city, required=required, class_="input-lg form-control") }}
+                    </div>
+                    <div class="col-md-6 col-sm-6">
+                      {{ render_field(address_form.zip, required=required, class_="input-lg form-control") }}
+                    </div>
+                    <div class="col-md-6 col-sm-6">
+                      {{ render_field(address_form.country, class_="input-lg form-control") }}
+                    </div>
+                    <div class="col-md-6 col-sm-6">
+                      <div class="form-group">
+                        <label for="subdivision">{{ _('State') }} *:</label>
+                        <select id="subdivision" name="subdivision" class="input-lg form-control">
+                        </select>
+                      </div>
+                    </div>
+                    <div class="col-md-12 col-sm-12">
+                        {{ render_field(address_form.phone, required=required, class_="input-lg form-control", type='tel') }}
+                    </div>
+                    <div class="col-md-12 col-sm-12">
+                      <button type="submit" class="btn btn-warning btn-lg btn-block" id="address-btn">
+                        {{ _('Continue to Delivery Options') }}&nbsp;&nbsp;<i class="fa fa-angle-double-right"></i>
+                      </button>
+                    </div>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-5 col-sm-5 col-xs-12">
+        <!-- Cart Summary -->
+        {{ cart_summary() }}
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock main %}
+
+{% block scripts %}
+{{ super() }}
+<script type="text/javascript" charset="utf-8">
+  $(document).ready(function(){
+  // Register on change event
+  
+  $("select#country").change(function(){
+    $("select#subdivision").html('');  // Clear subdivisions on change
+    $.getJSON("{{ url_for('nereid.website.subdivision_list') }}",
+      {country: $(this).val()}, function(data){
+      var options = '';
+      $.each(data.result, function(index, map){
+          options += '<option value="' + map.id + '" code="' + map.code + '">' + map.name + '</option>';
+      });
+      $("select#subdivision").html(options);
+      $("select#subdivision option[value='{{ address_form.subdivision.data }}']").attr('selected', true);
+    });
+  });
+
+ // Onload trigger the change as country comes packed with form
+  $("select#country").triggerHandler("change")
+});
+</script>
+{% endblock  scripts %}
+
+
+{% block ga_page_view %}
+    {{ google_analytics_add_product() }}
+    ga('ec:setAction', 'checkout', {'step': 2});
+{% endblock ga_page_view %}
