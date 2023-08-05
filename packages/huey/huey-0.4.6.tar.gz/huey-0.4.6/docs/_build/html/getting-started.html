@@ -1,0 +1,447 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>Getting Started &mdash; huey 0.4.3 documentation</title>
+    
+    <link rel="stylesheet" href="_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    './',
+        VERSION:     '0.4.3',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="top" title="huey 0.4.3 documentation" href="index.html" />
+    <link rel="next" title="Consuming Tasks" href="consumer.html" />
+    <link rel="prev" title="Upgrading" href="upgrading.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="consumer.html" title="Consuming Tasks"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="upgrading.html" title="Upgrading"
+             accesskey="P">previous</a> |</li>
+        <li><a href="index.html">huey 0.4.3 documentation</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="getting-started">
+<span id="id1"></span><h1>Getting Started<a class="headerlink" href="#getting-started" title="Permalink to this headline">¶</a></h1>
+<p>The goal of this document is to help you get running quickly and with as little
+fuss as possible.</p>
+<div class="section" id="general-guide">
+<span id="getting-started-python"></span><h2>General guide<a class="headerlink" href="#general-guide" title="Permalink to this headline">¶</a></h2>
+<p>There are three main components (or processes) to consider when running huey:</p>
+<ul class="simple">
+<li>the producer(s), i.e. a web application</li>
+<li>the consumer(s), which executes jobs placed into the queue</li>
+<li>the queue where tasks are stored, e.g. Redis</li>
+</ul>
+<p>These three processes are shown in the screenshots that follow. The left-hand pane
+shows the producer: a simple program that asks the user for input on how many
+&#8220;beans&#8221; to count.  In the top-right, the consumer is running.  It is doing the
+actual &#8220;computation&#8221;, for example printing the number of beans counted.  In the
+bottom-right is the queue, Redis in this example. We can see the tasks being
+enqueued (<tt class="docutils literal"><span class="pre">LPUSH</span></tt>) and read (<tt class="docutils literal"><span class="pre">BRPOP</span></tt>) from the database.</p>
+<img alt="_images/intro.png" src="_images/intro.png" />
+<div class="section" id="trying-it-out-yourself">
+<h3>Trying it out yourself<a class="headerlink" href="#trying-it-out-yourself" title="Permalink to this headline">¶</a></h3>
+<p>Assuming you&#8217;ve got <a class="reference internal" href="installation.html#installation"><em>huey installed</em></a>, let&#8217;s look at the code
+from this example.</p>
+<p>The first step is to configure your queue.  The consumer needs to be pointed at
+a <a class="reference internal" href="api.html#Huey" title="Huey"><tt class="xref py py-class docutils literal"><span class="pre">Huey</span></tt></a> instance, which specifies which backend to use.</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="c"># config.py</span>
+<span class="kn">from</span> <span class="nn">huey</span> <span class="kn">import</span> <span class="n">Huey</span>
+<span class="kn">from</span> <span class="nn">huey.backends.redis_backend</span> <span class="kn">import</span> <span class="n">RedisBlockingQueue</span>
+
+<span class="n">queue</span> <span class="o">=</span> <span class="n">RedisBlockingQueue</span><span class="p">(</span><span class="s">&#39;test-queue&#39;</span><span class="p">,</span> <span class="n">host</span><span class="o">=</span><span class="s">&#39;localhost&#39;</span><span class="p">,</span> <span class="n">port</span><span class="o">=</span><span class="mi">6379</span><span class="p">)</span>
+<span class="n">huey</span> <span class="o">=</span> <span class="n">Huey</span><span class="p">(</span><span class="n">queue</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The interesting parts of this configuration module are the <a class="reference internal" href="api.html#Huey" title="Huey"><tt class="xref py py-class docutils literal"><span class="pre">Huey</span></tt></a> object
+and the <a class="reference internal" href="api.html#RedisBlockingQueue" title="RedisBlockingQueue"><tt class="xref py py-class docutils literal"><span class="pre">RedisBlockingQueue</span></tt></a> object.  The <tt class="docutils literal"><span class="pre">queue</span></tt> is responsible for
+storing and retrieving messages, and the <tt class="docutils literal"><span class="pre">huey</span></tt> is used by your application
+code to coordinate function calls with a queue backend.  We&#8217;ll see how the <tt class="docutils literal"><span class="pre">huey</span></tt>
+is used when looking at the actual function responsible for counting beans:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="c"># tasks.py</span>
+<span class="kn">from</span> <span class="nn">config</span> <span class="kn">import</span> <span class="n">huey</span> <span class="c"># import the huey we instantiated in config.py</span>
+
+
+<span class="nd">@huey.task</span><span class="p">()</span>
+<span class="k">def</span> <span class="nf">count_beans</span><span class="p">(</span><span class="n">num</span><span class="p">):</span>
+    <span class="k">print</span> <span class="s">&#39;-- counted </span><span class="si">%s</span><span class="s"> beans --&#39;</span> <span class="o">%</span> <span class="n">num</span>
+</pre></div>
+</div>
+<p>The above example shows the API for writing &#8220;tasks&#8221; that are executed by the
+queue consumer &#8211; simply decorate the code you want executed by the consumer
+with the <a class="reference internal" href="api.html#Huey.task" title="Huey.task"><tt class="xref py py-meth docutils literal"><span class="pre">task()</span></tt></a> decorator and when it is called, the main
+process will return <em>immediately</em> after enqueueing the function call.</p>
+<p>The main executable is very simple.  It imports both the configuration <strong>and</strong>
+the tasks - this is to ensure that when we run the consumer by pointing it
+at the configuration, the tasks are also imported and loaded into memory.</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="c"># main.py</span>
+<span class="kn">from</span> <span class="nn">config</span> <span class="kn">import</span> <span class="n">huey</span>  <span class="c"># import our &quot;huey&quot; object</span>
+<span class="kn">from</span> <span class="nn">tasks</span> <span class="kn">import</span> <span class="n">count_beans</span>  <span class="c"># import our task</span>
+
+
+<span class="k">if</span> <span class="n">__name__</span> <span class="o">==</span> <span class="s">&#39;__main__&#39;</span><span class="p">:</span>
+    <span class="n">beans</span> <span class="o">=</span> <span class="nb">raw_input</span><span class="p">(</span><span class="s">&#39;How many beans? &#39;</span><span class="p">)</span>
+    <span class="n">count_beans</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">beans</span><span class="p">))</span>
+    <span class="k">print</span> <span class="s">&#39;Enqueued job to count </span><span class="si">%s</span><span class="s"> beans&#39;</span> <span class="o">%</span> <span class="n">beans</span>
+</pre></div>
+</div>
+<p>To run these scripts, follow these steps:</p>
+<ol class="arabic simple">
+<li>Ensure you have <a class="reference external" href="http://redis.io">Redis</a> running locally</li>
+<li>Ensure you have <a class="reference internal" href="installation.html#installation"><em>installed huey</em></a></li>
+<li>Start the consumer: <tt class="docutils literal"><span class="pre">huey_consumer.py</span> <span class="pre">main.huey</span></tt> (notice this is &#8220;main.huey&#8221;
+and not &#8220;config.huey&#8221;).</li>
+<li>Run the main program: <tt class="docutils literal"><span class="pre">python</span> <span class="pre">main.py</span></tt></li>
+</ol>
+</div>
+<div class="section" id="getting-results-from-jobs">
+<h3>Getting results from jobs<a class="headerlink" href="#getting-results-from-jobs" title="Permalink to this headline">¶</a></h3>
+<p>The above example illustrates a &#8220;send and forget&#8221; approach, but what if your
+application needs to do something with the results of a task?  To get results
+from your tasks, we&#8217;ll set up the <tt class="docutils literal"><span class="pre">RedisDataStore</span></tt> by adding the following
+lines to the <tt class="docutils literal"><span class="pre">config.py</span></tt> module:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">huey</span> <span class="kn">import</span> <span class="n">Huey</span>
+<span class="kn">from</span> <span class="nn">huey.backends.redis_backend</span> <span class="kn">import</span> <span class="n">RedisBlockingQueue</span>
+<span class="kn">from</span> <span class="nn">huey.backends.redis_backend</span> <span class="kn">import</span> <span class="n">RedisDataStore</span>  <span class="c"># ADD THIS LINE</span>
+
+
+<span class="n">queue</span> <span class="o">=</span> <span class="n">RedisBlockingQueue</span><span class="p">(</span><span class="s">&#39;test-queue&#39;</span><span class="p">,</span> <span class="n">host</span><span class="o">=</span><span class="s">&#39;localhost&#39;</span><span class="p">,</span> <span class="n">port</span><span class="o">=</span><span class="mi">6379</span><span class="p">)</span>
+<span class="n">result_store</span> <span class="o">=</span> <span class="n">RedisDataStore</span><span class="p">(</span><span class="s">&#39;results&#39;</span><span class="p">,</span> <span class="n">host</span><span class="o">=</span><span class="s">&#39;localhost&#39;</span><span class="p">,</span> <span class="n">port</span><span class="o">=</span><span class="mi">6379</span><span class="p">)</span>  <span class="c"># ADDED</span>
+
+<span class="n">huey</span> <span class="o">=</span> <span class="n">Huey</span><span class="p">(</span><span class="n">queue</span><span class="p">,</span> <span class="n">result_store</span><span class="o">=</span><span class="n">result_store</span><span class="p">)</span> <span class="c"># ADDED result store</span>
+</pre></div>
+</div>
+<p>We can actually shorten this code to:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">huey</span> <span class="kn">import</span> <span class="n">RedisHuey</span>
+
+<span class="n">huey</span> <span class="o">=</span> <span class="n">RedisHuey</span><span class="p">(</span><span class="s">&#39;test-queue&#39;</span><span class="p">,</span> <span class="n">host</span><span class="o">=</span><span class="s">&#39;localhost&#39;</span><span class="p">,</span> <span class="n">port</span><span class="o">=</span><span class="mi">6379</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>To better illustrate getting results, we&#8217;ll also modify the <tt class="docutils literal"><span class="pre">tasks.py</span></tt>
+module to return a string rather in addition to printing to stdout:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">config</span> <span class="kn">import</span> <span class="n">huey</span>
+
+
+<span class="nd">@huey.task</span><span class="p">()</span>
+<span class="k">def</span> <span class="nf">count_beans</span><span class="p">(</span><span class="n">num</span><span class="p">):</span>
+    <span class="k">print</span> <span class="s">&#39;-- counted </span><span class="si">%s</span><span class="s"> beans --&#39;</span> <span class="o">%</span> <span class="n">num</span>
+    <span class="k">return</span> <span class="s">&#39;Counted </span><span class="si">%s</span><span class="s"> beans&#39;</span> <span class="o">%</span> <span class="n">num</span>
+</pre></div>
+</div>
+<p>We&#8217;re ready to fire up the consumer.  Instead of simply executing the main
+program, though, we&#8217;ll start an interpreter and run the following:</p>
+<div class="highlight-pycon"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span> <span class="nn">main</span> <span class="kn">import</span> <span class="n">count_beans</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">res</span> <span class="o">=</span> <span class="n">count_beans</span><span class="p">(</span><span class="mi">100</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">res</span>  <span class="c"># what is &quot;res&quot; ?</span>
+<span class="go">&lt;huey.api.AsyncData object at 0xb7471a4c&gt;</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">res</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>  <span class="c"># get the result of this task</span>
+<span class="go">&#39;Counted 100 beans&#39;</span>
+</pre></div>
+</div>
+<p>Following the same layout as our last example, here is a screenshot of the three
+main processes at work:</p>
+<ol class="arabic simple">
+<li>Top-left, interpreter which produces a job then asks for the result</li>
+<li>Top-right, the consumer which runs the job and stores the result</li>
+<li>Bottom-right, the Redis database, which we can see is storing the results and
+then deleting them after they&#8217;ve been retrieved</li>
+</ol>
+<img alt="_images/results.png" src="_images/results.png" />
+</div>
+<div class="section" id="executing-tasks-in-the-future">
+<h3>Executing tasks in the future<a class="headerlink" href="#executing-tasks-in-the-future" title="Permalink to this headline">¶</a></h3>
+<p>It is often useful to enqueue a particular task to execute at some arbitrary time
+in the future, for example, mark a blog entry as published at a certain time.</p>
+<p>This is very simple to do with huey.  Returning to the interpreter session from
+the last section, let&#8217;s schedule a bean counting to happen one minute in the future
+and see how huey handles it.  Execute the following:</p>
+<div class="highlight-pycon"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="kn">import</span> <span class="nn">datetime</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">res</span> <span class="o">=</span> <span class="n">count_beans</span><span class="o">.</span><span class="n">schedule</span><span class="p">(</span><span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="mi">100</span><span class="p">,),</span> <span class="n">delay</span><span class="o">=</span><span class="mi">60</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">res</span>
+<span class="go">&lt;huey.api.AsyncData object at 0xb72915ec&gt;</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">res</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>  <span class="c"># this returns None, no data is ready</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">res</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>  <span class="c"># still no data...</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">res</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">blocking</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>  <span class="c"># ok, let&#39;s just block until its ready</span>
+<span class="go">&#39;Counted 100 beans&#39;</span>
+</pre></div>
+</div>
+<p>You can specify an &#8220;estimated time of arrival&#8221; as well using datetimes:</p>
+<div class="highlight-pycon"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="n">in_a_minute</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">()</span> <span class="o">+</span> <span class="n">datetime</span><span class="o">.</span><span class="n">timedelta</span><span class="p">(</span><span class="n">seconds</span><span class="o">=</span><span class="mi">60</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">res</span> <span class="o">=</span> <span class="n">count_beans</span><span class="o">.</span><span class="n">schedule</span><span class="p">(</span><span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="mi">100</span><span class="p">,),</span> <span class="n">eta</span><span class="o">=</span><span class="n">in_a_minute</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Looking at the redis output, we see the following (simplified for reability):</p>
+<div class="highlight-python"><pre>+1325563365.910640 "LPUSH" count_beans(100)
++1325563365.911912 "BRPOP" wait for next job
++1325563365.912435 "HSET" store 'Counted 100 beans'
++1325563366.393236 "HGET" retrieve result from task
++1325563366.393464 "HDEL" delete result after reading</pre>
+</div>
+<p>Here is a screenshot showing the same:</p>
+<img alt="_images/schedule.png" src="_images/schedule.png" />
+</div>
+<div class="section" id="retrying-tasks-that-fail">
+<h3>Retrying tasks that fail<a class="headerlink" href="#retrying-tasks-that-fail" title="Permalink to this headline">¶</a></h3>
+<p>Huey supports retrying tasks a finite number of times.  If an exception is raised
+during the execution of the task and <tt class="docutils literal"><span class="pre">retries</span></tt> have been specified, the task
+will be re-queued and tried again, up to the number of retries specified.</p>
+<p>Here is a task that will be retried 3 times and will blow up every time:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="c"># tasks.py</span>
+<span class="kn">from</span> <span class="nn">config</span> <span class="kn">import</span> <span class="n">huey</span>
+
+
+<span class="nd">@huey.task</span><span class="p">()</span>
+<span class="k">def</span> <span class="nf">count_beans</span><span class="p">(</span><span class="n">num</span><span class="p">):</span>
+    <span class="k">print</span> <span class="s">&#39;-- counted </span><span class="si">%s</span><span class="s"> beans --&#39;</span> <span class="o">%</span> <span class="n">num</span>
+    <span class="k">return</span> <span class="s">&#39;Counted </span><span class="si">%s</span><span class="s"> beans&#39;</span> <span class="o">%</span> <span class="n">num</span>
+
+<span class="nd">@huey.task</span><span class="p">(</span><span class="n">retries</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+<span class="k">def</span> <span class="nf">try_thrice</span><span class="p">():</span>
+    <span class="k">print</span> <span class="s">&#39;trying....&#39;</span>
+    <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span><span class="s">&#39;nope&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The console output shows our task being called in the main interpreter session,
+and then when the consumer picks it up and executes it we see it failing and being
+retried:</p>
+<img alt="_images/retry.png" src="_images/retry.png" />
+<p>Oftentimes it is a good idea to wait a certain amount of time between retries.
+You can specify a <em>delay</em> between retries, in seconds, which is the minimum time
+before the task will be retried.  Here we&#8217;ve modified the command to include a
+delay, and also to print the current time to show that its working.</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="c"># tasks.py</span>
+<span class="kn">from</span> <span class="nn">datetime</span> <span class="kn">import</span> <span class="n">datetime</span>
+
+<span class="kn">from</span> <span class="nn">config</span> <span class="kn">import</span> <span class="n">huey</span>
+
+<span class="nd">@huey.task</span><span class="p">(</span><span class="n">retries</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">retry_delay</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+<span class="k">def</span> <span class="nf">try_thrice</span><span class="p">():</span>
+    <span class="k">print</span> <span class="s">&#39;trying....</span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">()</span>
+    <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span><span class="s">&#39;nope&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The console output below shows the task being retried, but in between retries I&#8217;ve
+also &#8220;counted some beans&#8221; &#8211; that gets executed normally, in between retries.</p>
+<img alt="_images/retry-delay.png" src="_images/retry-delay.png" />
+</div>
+<div class="section" id="executing-tasks-at-regular-intervals">
+<h3>Executing tasks at regular intervals<a class="headerlink" href="#executing-tasks-at-regular-intervals" title="Permalink to this headline">¶</a></h3>
+<p>The final usage pattern supported by huey is the execution of tasks at regular
+intervals.  This is modeled after <tt class="docutils literal"><span class="pre">crontab</span></tt> behavior, and even follows similar
+syntax.  Tasks run at regular intervals and should not return meaningful results, nor
+should they accept any parameters.</p>
+<p>Let&#8217;s add a new task that prints the time every minute &#8211; we&#8217;ll use this to
+test that the consumer is executing the tasks on schedule.</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="c"># tasks.py</span>
+<span class="kn">from</span> <span class="nn">datetime</span> <span class="kn">import</span> <span class="n">datetime</span>
+<span class="kn">from</span> <span class="nn">huey</span> <span class="kn">import</span> <span class="n">crontab</span>
+
+<span class="kn">from</span> <span class="nn">config</span> <span class="kn">import</span> <span class="n">huey</span>
+
+<span class="nd">@huey.periodic_task</span><span class="p">(</span><span class="n">crontab</span><span class="p">(</span><span class="n">minute</span><span class="o">=</span><span class="s">&#39;*&#39;</span><span class="p">))</span>
+<span class="k">def</span> <span class="nf">print_time</span><span class="p">():</span>
+    <span class="k">print</span> <span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>Now, when we run the consumer it will start printing the time every minute:</p>
+<img alt="_images/crontab.png" src="_images/crontab.png" />
+</div>
+</div>
+<div class="section" id="preventing-tasks-from-executing">
+<h2>Preventing tasks from executing<a class="headerlink" href="#preventing-tasks-from-executing" title="Permalink to this headline">¶</a></h2>
+<p>It is possible to prevent tasks from executing.  This applies to normal tasks,
+tasks scheduled in the future, and periodic tasks.</p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">In order to &#8220;revoke&#8221; tasks you will need to specify a <tt class="docutils literal"><span class="pre">result_store</span></tt>
+when instantiating your <a class="reference internal" href="api.html#Huey" title="Huey"><tt class="xref py py-class docutils literal"><span class="pre">Huey</span></tt></a> object.</p>
+</div>
+<div class="section" id="canceling-a-normal-task-or-one-scheduled-in-the-future">
+<h3>Canceling a normal task or one scheduled in the future<a class="headerlink" href="#canceling-a-normal-task-or-one-scheduled-in-the-future" title="Permalink to this headline">¶</a></h3>
+<p>You can cancel a normal task provided the task has not started execution by
+the consumer:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="c"># count some beans</span>
+<span class="n">res</span> <span class="o">=</span> <span class="n">count_beans</span><span class="p">(</span><span class="mi">10000000</span><span class="p">)</span>
+
+<span class="c"># provided the command has not started executing yet, you can</span>
+<span class="c"># cancel it by calling revoke() on the AsyncData object</span>
+<span class="n">res</span><span class="o">.</span><span class="n">revoke</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>The same applies to tasks that are scheduled in the future:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="n">res</span> <span class="o">=</span> <span class="n">count_beans</span><span class="o">.</span><span class="n">schedule</span><span class="p">(</span><span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="mi">100000</span><span class="p">,),</span> <span class="n">eta</span><span class="o">=</span><span class="n">in_the_future</span><span class="p">)</span>
+<span class="n">res</span><span class="o">.</span><span class="n">revoke</span><span class="p">()</span>
+
+<span class="c"># and you can actually change your mind and restore it, provided</span>
+<span class="c"># it has not already been &quot;skipped&quot; by the consumer</span>
+<span class="n">res</span><span class="o">.</span><span class="n">restore</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="canceling-tasks-that-execute-periodically">
+<h3>Canceling tasks that execute periodically<a class="headerlink" href="#canceling-tasks-that-execute-periodically" title="Permalink to this headline">¶</a></h3>
+<p>When we start dealing with periodic tasks, the options for revoking get
+a bit more interesting.</p>
+<p>We&#8217;ll be using the print time command as an example:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="nd">@huey.task</span><span class="p">(</span><span class="n">crontab</span><span class="p">(</span><span class="n">minute</span><span class="o">=</span><span class="s">&#39;*&#39;</span><span class="p">))</span>
+<span class="k">def</span> <span class="nf">print_time</span><span class="p">():</span>
+    <span class="k">print</span> <span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>We can prevent a periodic task from executing on the next go-round:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="c"># only prevent it from running once</span>
+<span class="n">print_time</span><span class="o">.</span><span class="n">revoke</span><span class="p">(</span><span class="n">revoke_once</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Since the above task executes every minute, what we will see is that the
+output will skip the next minute and then resume normally.</p>
+<p>We can prevent a task from executing until a certain time:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="c"># prevent printing time for 10 minutes</span>
+<span class="n">now</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">utcnow</span><span class="p">()</span>
+<span class="n">in_10</span> <span class="o">=</span> <span class="n">now</span> <span class="o">+</span> <span class="n">datetime</span><span class="o">.</span><span class="n">timedelta</span><span class="p">(</span><span class="n">seconds</span><span class="o">=</span><span class="mi">600</span><span class="p">)</span>
+
+<span class="n">print_time</span><span class="o">.</span><span class="n">revoke</span><span class="p">(</span><span class="n">revoke_until</span><span class="o">=</span><span class="n">in_10</span><span class="p">)</span>
+</pre></div>
+</div>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">Remember to use UTC if the consumer is using UTC.</p>
+</div>
+<p>Finally, we can prevent the task from running indefinitely:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="c"># will not print time until we call revoke() again with</span>
+<span class="c"># different parameters or restore the task</span>
+<span class="n">print_time</span><span class="o">.</span><span class="n">revoke</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>At any time we can restore the task and it will resume normal
+execution:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="n">print_time</span><span class="o">.</span><span class="n">restore</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="reading-more">
+<h3>Reading more<a class="headerlink" href="#reading-more" title="Permalink to this headline">¶</a></h3>
+<p>That sums up the basic usage patterns of huey.  Below are links for details
+on other aspects of the API:</p>
+<ul class="simple">
+<li><a class="reference internal" href="api.html#Huey" title="Huey"><tt class="xref py py-class docutils literal"><span class="pre">Huey</span></tt></a> - responsible for coordinating executable tasks and queue backends</li>
+<li><a class="reference internal" href="api.html#Huey.task" title="Huey.task"><tt class="xref py py-meth docutils literal"><span class="pre">task()</span></tt></a> - decorator to indicate an executable task</li>
+<li><a class="reference internal" href="api.html#Huey.periodic_task" title="Huey.periodic_task"><tt class="xref py py-meth docutils literal"><span class="pre">periodic_task()</span></tt></a> - decorator to indicate a task that executes at periodic intervals</li>
+<li><a class="reference internal" href="api.html#crontab" title="crontab"><tt class="xref py py-func docutils literal"><span class="pre">crontab()</span></tt></a> - a function for defining what intervals to execute a periodic command</li>
+<li><a class="reference internal" href="api.html#BaseQueue" title="BaseQueue"><tt class="xref py py-class docutils literal"><span class="pre">BaseQueue</span></tt></a> - the queue interface and writing your own backends</li>
+<li><a class="reference internal" href="api.html#BaseDataStore" title="BaseDataStore"><tt class="xref py py-class docutils literal"><span class="pre">BaseDataStore</span></tt></a> - the simple data store used for results and schedule serialization</li>
+</ul>
+<p>Also check out the <a class="reference internal" href="consumer.html#consuming-tasks"><em>notes on running the consumer</em></a>.</p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">If you&#8217;re using Django, check out the <a class="reference internal" href="django.html#django"><em>django integration</em></a>.</p>
+</div>
+</div>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h3><a href="index.html">Table Of Contents</a></h3>
+  <ul>
+<li><a class="reference internal" href="#">Getting Started</a><ul>
+<li><a class="reference internal" href="#general-guide">General guide</a><ul>
+<li><a class="reference internal" href="#trying-it-out-yourself">Trying it out yourself</a></li>
+<li><a class="reference internal" href="#getting-results-from-jobs">Getting results from jobs</a></li>
+<li><a class="reference internal" href="#executing-tasks-in-the-future">Executing tasks in the future</a></li>
+<li><a class="reference internal" href="#retrying-tasks-that-fail">Retrying tasks that fail</a></li>
+<li><a class="reference internal" href="#executing-tasks-at-regular-intervals">Executing tasks at regular intervals</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#preventing-tasks-from-executing">Preventing tasks from executing</a><ul>
+<li><a class="reference internal" href="#canceling-a-normal-task-or-one-scheduled-in-the-future">Canceling a normal task or one scheduled in the future</a></li>
+<li><a class="reference internal" href="#canceling-tasks-that-execute-periodically">Canceling tasks that execute periodically</a></li>
+<li><a class="reference internal" href="#reading-more">Reading more</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="upgrading.html"
+                        title="previous chapter">Upgrading</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="consumer.html"
+                        title="next chapter">Consuming Tasks</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="_sources/getting-started.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="consumer.html" title="Consuming Tasks"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="upgrading.html" title="Upgrading"
+             >previous</a> |</li>
+        <li><a href="index.html">huey 0.4.3 documentation</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2013, charles leifer.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2b1.
+    </div>
+  </body>
+</html>

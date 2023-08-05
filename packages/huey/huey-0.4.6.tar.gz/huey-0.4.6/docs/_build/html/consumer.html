@@ -1,0 +1,298 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>Consuming Tasks &mdash; huey 0.4.3 documentation</title>
+    
+    <link rel="stylesheet" href="_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    './',
+        VERSION:     '0.4.3',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="top" title="huey 0.4.3 documentation" href="index.html" />
+    <link rel="next" title="Understanding how tasks are imported" href="imports.html" />
+    <link rel="prev" title="Getting Started" href="getting-started.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="imports.html" title="Understanding how tasks are imported"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="getting-started.html" title="Getting Started"
+             accesskey="P">previous</a> |</li>
+        <li><a href="index.html">huey 0.4.3 documentation</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="consuming-tasks">
+<span id="id1"></span><h1>Consuming Tasks<a class="headerlink" href="#consuming-tasks" title="Permalink to this headline">¶</a></h1>
+<p>To run the consumer, simply point it at the &#8220;import path&#8221; to your application&#8217;s
+<a class="reference internal" href="api.html#Huey" title="Huey"><tt class="xref py py-class docutils literal"><span class="pre">Huey</span></tt></a> instance.  For example, here is how I run it on my blog:</p>
+<div class="highlight-bash"><div class="highlight"><pre>huey_consumer.py blog.main.huey --logfile<span class="o">=</span>../logs/huey.log
+</pre></div>
+</div>
+<p>The concept of the &#8220;import path&#8221; has been the source of a few questions, but its
+actually quite simple.  It is simply the dotted-path you might use if you were
+to try and import the &#8220;huey&#8221; object in the interactive interpreter:</p>
+<div class="highlight-pycon"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span> <span class="nn">blog.main</span> <span class="kn">import</span> <span class="n">huey</span>
+</pre></div>
+</div>
+<p>You may run into trouble though when &#8220;blog&#8221; is not on your python-path. To
+work around this:</p>
+<ol class="arabic simple">
+<li>Manually specify your pythonpath: <tt class="docutils literal"><span class="pre">PYTHONPATH=/some/dir/:$PYTHONPATH</span> <span class="pre">huey_consumer.py</span> <span class="pre">blog.main.huey</span></tt>.</li>
+<li>Run <tt class="docutils literal"><span class="pre">huey_consumer.py</span></tt> from the directory your config module is in.  I use
+supervisord to manage my huey process, so I set the <tt class="docutils literal"><span class="pre">directory</span></tt> to the root
+of my site.</li>
+<li>Create a wrapper and hack <tt class="docutils literal"><span class="pre">sys.path</span></tt>.</li>
+</ol>
+<div class="section" id="options-for-the-consumer">
+<h2>Options for the consumer<a class="headerlink" href="#options-for-the-consumer" title="Permalink to this headline">¶</a></h2>
+<p>The following table lists the options available for the consumer as well as
+their default values.</p>
+<dl class="docutils">
+<dt><tt class="docutils literal"><span class="pre">-l</span></tt>, <tt class="docutils literal"><span class="pre">--logfile</span></tt></dt>
+<dd>Path to file used for logging.  When a file is specified, by default Huey
+will use a rotating file handler (1MB / chunk) with a maximum of 3 backups.
+You can attach your own handler (<tt class="docutils literal"><span class="pre">huey.logger</span></tt>) as well.  The default
+loglevel is <tt class="docutils literal"><span class="pre">INFO</span></tt>.</dd>
+<dt><tt class="docutils literal"><span class="pre">-v</span></tt>, <tt class="docutils literal"><span class="pre">--verbose</span></tt></dt>
+<dd><blockquote class="first">
+<div>Verbose logging (equates to <tt class="docutils literal"><span class="pre">DEBUG</span></tt> level).  If no logfile is specified
+and verbose is set, then the consumer will log to the console.  <strong>This is
+very useful for testing/debugging.</strong></div></blockquote>
+<dl class="last docutils">
+<dt><tt class="docutils literal"><span class="pre">-q</span></tt>, <tt class="docutils literal"><span class="pre">--quiet</span></tt></dt>
+<dd>Only log errors. The default loglevel for the consumer is <tt class="docutils literal"><span class="pre">INFO</span></tt>.</dd>
+</dl>
+</dd>
+<dt><tt class="docutils literal"><span class="pre">-w</span></tt>, <tt class="docutils literal"><span class="pre">--workers</span></tt></dt>
+<dd>Number of worker threads, the default is <tt class="docutils literal"><span class="pre">1</span></tt> thread but for applications
+that have many I/O bound tasks, increasing this number may lead to greater
+throughput.</dd>
+<dt><tt class="docutils literal"><span class="pre">-p</span></tt>, <tt class="docutils literal"><span class="pre">--periodic</span></tt></dt>
+<dd>Indicate that this consumer process should start a thread dedicated to
+enqueueing &#8220;periodic&#8221; tasks (crontab-like functionality).  This defaults
+to <tt class="docutils literal"><span class="pre">True</span></tt>, so should not need to be specified in practice.</dd>
+<dt><tt class="docutils literal"><span class="pre">-n</span></tt>, <tt class="docutils literal"><span class="pre">--no-periodic</span></tt></dt>
+<dd>Indicate that this consumer process should <em>not</em> enqueue periodic tasks.</dd>
+<dt><tt class="docutils literal"><span class="pre">-d</span></tt>, <tt class="docutils literal"><span class="pre">--delay</span></tt></dt>
+<dd>When using a &#8220;polling&#8221;-type queue backend, the amount of time to wait
+between polling the backend.  Default is 0.1 seconds.</dd>
+<dt><tt class="docutils literal"><span class="pre">-m</span></tt>, <tt class="docutils literal"><span class="pre">--max-delay</span></tt></dt>
+<dd>The maximum amount of time to wait between polling, if using weighted
+backoff.  Default is 10 seconds.</dd>
+<dt><tt class="docutils literal"><span class="pre">-b</span></tt>, <tt class="docutils literal"><span class="pre">--backoff</span></tt></dt>
+<dd>The amount to back-off when polling for results.  Must be greater than
+one.  Default is 1.15.</dd>
+<dt><tt class="docutils literal"><span class="pre">-u</span></tt>, <tt class="docutils literal"><span class="pre">--utc</span></tt></dt>
+<dd>Indicates that the consumer should use UTC time for all tasks, crontabs
+and scheduling.  Default is True, so in practice you should not need to
+specify this option.</dd>
+<dt><tt class="docutils literal"><span class="pre">--localtime</span></tt></dt>
+<dd>Indicates that the consumer should use localtime for all tasks, crontabs
+and scheduling.  Default is False.</dd>
+</dl>
+<div class="section" id="examples">
+<h3>Examples<a class="headerlink" href="#examples" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>Running the consumer with 8 threads, a logfile for errors only, and a very
+short polling interval:</p>
+<div class="highlight-bash"><div class="highlight"><pre>huey_consumer.py my.app.huey -l /var/log/app.huey.log -w 8 -b 1.1 -m 1.0
+</pre></div>
+</div>
+</div></blockquote>
+<p>Running single-threaded without a crontab and logging to stdout:</p>
+<div class="highlight-bash"><div class="highlight"><pre>huey_consumer.py my.app.huey -v -n
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="consumer-internals">
+<h2>Consumer Internals<a class="headerlink" href="#consumer-internals" title="Permalink to this headline">¶</a></h2>
+<p>The consumer is composed of 3 types of threads:</p>
+<ul class="simple">
+<li>Worker threads</li>
+<li>Scheduler</li>
+<li>Periodic task scheduler (optional)</li>
+</ul>
+<p>These threads coordinate the receipt, execution and scheduling of various
+tasks.  What happens when you call a decorated function in your application?</p>
+<ol class="arabic simple">
+<li>You call a function &#8211; huey has decorated it, which triggers a message being
+put into the queue.  At this point your application returns.  If you are using
+a &#8220;data store&#8221;, then you will be return an <a class="reference internal" href="api.html#AsyncData" title="AsyncData"><tt class="xref py py-class docutils literal"><span class="pre">AsyncData</span></tt></a> object.</li>
+<li>In a separate process, the consumer will be listening for new messages &#8211;
+one of the worker threads will pull down the message.  If your backend supports
+blocking, it will block until a new message is available, otherwise it will
+poll.</li>
+<li>The worker looks at the message and checks to see if it can be
+run (i.e., was this message &#8220;revoked&#8221;?  Is it scheduled to actually run
+later?).  If it is revoked, the message is thrown out.  If it is scheduled
+to run later, it gets added to the schedule.  Otherwise, it is executed.</li>
+<li>The worker thread executes the task.  If the task finishes, any results are
+published to the result store (if one is configured).  If the task fails and
+can be retried, it is either enqueued or added to the schedule (which happens
+if a delay is specified between retries).</li>
+</ol>
+<p>While all this is going on, the Scheduler thread is continually looking at
+its schedule to see if any commands are ready to be executed.  If a command
+is ready to run, it is enqueued and will be processed by the Message receiver
+thread.</p>
+<p>Similarly, the Periodic task thread will run every minute to see if there are
+any regularly-scheduled tasks to run at that time.  Those tasks will be enqueued
+and processed by the Message receiver thread.</p>
+<p>When the consumer is shut-down (SIGTERM) it will save the schedule and finish
+any jobs that are currently being worked on.</p>
+</div>
+<div class="section" id="consumer-event-emitter">
+<h2>Consumer Event Emitter<a class="headerlink" href="#consumer-event-emitter" title="Permalink to this headline">¶</a></h2>
+<p>If you specify a <tt class="xref py py-class docutils literal"><span class="pre">RedisEventEmitter</span></tt> when setting up your <a class="reference internal" href="api.html#Huey" title="Huey"><tt class="xref py py-class docutils literal"><span class="pre">Huey</span></tt></a>
+instance (or if you choose to use <tt class="xref py py-class docutils literal"><span class="pre">RedisHuey</span></tt>), the consumer will publish
+real-time events about the status of various tasks.  You can subscribe to these
+events in your own application.</p>
+<p>When an event is emitted, the following information is provided (serialized as
+JSON):</p>
+<ul>
+<li><p class="first"><tt class="docutils literal"><span class="pre">status</span></tt>: a String indicating what type of event this is.</p>
+</li>
+<li><p class="first"><tt class="docutils literal"><span class="pre">id</span></tt>: the UUID of the task.</p>
+</li>
+<li><p class="first"><tt class="docutils literal"><span class="pre">task</span></tt>: a user-friendly name indicating what type of task this is.</p>
+</li>
+<li><p class="first"><tt class="docutils literal"><span class="pre">retries</span></tt>: how many retries the task has remaining.</p>
+</li>
+<li><p class="first"><tt class="docutils literal"><span class="pre">retry_delay</span></tt>: how long to sleep before retrying the task in event of failure.</p>
+</li>
+<li><dl class="first docutils">
+<dt><tt class="docutils literal"><span class="pre">execute_time</span></tt>: A unix timestamp indicating when the task is scheduled to</dt>
+<dd><p class="first last">execute (this may be <tt class="docutils literal"><span class="pre">None</span></tt>).</p>
+</dd>
+</dl>
+</li>
+<li><p class="first"><tt class="docutils literal"><span class="pre">error</span></tt>: A boolean value indicating if there was an error.</p>
+</li>
+<li><p class="first"><tt class="docutils literal"><span class="pre">traceback</span></tt>: A string traceback of the error, if one occurred.</p>
+</li>
+</ul>
+<p>The following events are emitted by the consumer:</p>
+<ul>
+<li><p class="first"><tt class="docutils literal"><span class="pre">enqueued</span></tt>: sent when a task is enqueued.</p>
+</li>
+<li><dl class="first docutils">
+<dt><tt class="docutils literal"><span class="pre">scheduled</span></tt>: sent when a task is added to the schedule for execution in</dt>
+<dd><p class="first last">the future.</p>
+</dd>
+</dl>
+</li>
+<li><p class="first"><tt class="docutils literal"><span class="pre">revoked</span></tt>: sent when a task is not executed because it has been revoked.</p>
+</li>
+<li><p class="first"><tt class="docutils literal"><span class="pre">started</span></tt>: sent when a worker thread begins executing a task.</p>
+</li>
+<li><dl class="first docutils">
+<dt><tt class="docutils literal"><span class="pre">finished</span></tt>: sent when a worker thread finishes executing a task and has</dt>
+<dd><p class="first last">stored the result.</p>
+</dd>
+</dl>
+</li>
+<li><p class="first"><tt class="docutils literal"><span class="pre">error</span></tt>: sent when an exception occurs while executing a task.</p>
+</li>
+<li><p class="first"><tt class="docutils literal"><span class="pre">retrying</span></tt>: sent when retrying a task that failed.</p>
+</li>
+</ul>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h3><a href="index.html">Table Of Contents</a></h3>
+  <ul>
+<li><a class="reference internal" href="#">Consuming Tasks</a><ul>
+<li><a class="reference internal" href="#options-for-the-consumer">Options for the consumer</a><ul>
+<li><a class="reference internal" href="#examples">Examples</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#consumer-internals">Consumer Internals</a></li>
+<li><a class="reference internal" href="#consumer-event-emitter">Consumer Event Emitter</a></li>
+</ul>
+</li>
+</ul>
+
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="getting-started.html"
+                        title="previous chapter">Getting Started</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="imports.html"
+                        title="next chapter">Understanding how tasks are imported</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="_sources/consumer.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="imports.html" title="Understanding how tasks are imported"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="getting-started.html" title="Getting Started"
+             >previous</a> |</li>
+        <li><a href="index.html">huey 0.4.3 documentation</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2013, charles leifer.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2b1.
+    </div>
+  </body>
+</html>
