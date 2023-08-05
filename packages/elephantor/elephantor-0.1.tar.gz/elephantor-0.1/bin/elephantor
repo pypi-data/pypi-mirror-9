@@ -1,0 +1,221 @@
+#!/usr/bin/env python
+
+import sys
+import os
+import subprocess
+import argparse
+import re
+import datetime
+
+try:
+	if os.path.exists('/etc/elephantor/config.py'):
+		sys.path.append('/etc/elephantor')
+	from config import *
+except:
+	print "Config file does not exist"
+	sys.exit(1)
+
+def get_proto():
+	if len(BACKUP_BACKEND['dir'].strip()) == 0:
+		BACKUP_BACKEND['dir'] = '/'
+
+	extra = ''
+	if BACKUP_BACKEND['type'] == 'file':
+		proto = 'file://'
+
+		if not os.path.exists(BACKUP_BACKEND['dir']):
+			print "Backup dir does not exist"
+			sys.exit(1)
+	elif BACKUP_BACKEND['type'] == 'ftp':
+		if not len(BACKUP_BACKEND['host'].strip()) == 0:
+			if not len(BACKUP_BACKEND['user'].strip()) == 0:
+				proto = 'ftp://%s@%s' % (
+					BACKUP_BACKEND['user'],
+					BACKUP_BACKEND['host'])
+			else:
+				proto = 'ftp://%s' % (BACKUP_BACKEND['host'])
+
+			if not len(BACKUP_BACKEND['password'].strip()) == 0:
+				extra = 'FTP_PASSWORD="%s"' % (BACKUP_BACKEND['password'])
+		else:
+			print "You must specify a ftp host"
+			sys.exit(1)
+
+	return proto, extra
+
+def do_backup():
+	bkp_dirs_list = ''
+	for bdir in INPUT_DIR:
+		bdir = os.path.join(INPUT_DIR_ROOT, bdir)
+		if len(bkp_dirs_list) == 0:
+			bkp_dirs_list = str(bdir)
+		else:
+			bkp_dirs_list += "\n" + str(bdir)
+
+	tmp_bkplist = '/tmp/bkplist'
+	try:
+		bkp_dirs_list_file = open(tmp_bkplist, 'w')
+		bkp_dirs_list_file.write(bkp_dirs_list)
+		bkp_dirs_list_file.close()
+	except Exception, e:
+		print "Unable to generate temporary directories list"
+		if DEBUG:
+			print str(e)
+		sys.exit(1)
+
+	src = "--include-globbing-filelist %s --exclude '**' %s" % (
+		tmp_bkplist,
+		INPUT_DIR_ROOT)
+
+	proto, extra = get_proto()
+
+	cmd = "PASSPHRASE='%s' %s duplicity incr --full-if-older-than %s %s %s%s" % (
+		PASSPHRASE,
+		extra,
+		BACKUP_BACKEND['periodicity'],
+		src,
+		proto,
+		BACKUP_BACKEND['dir'])
+	if DEBUG:
+		print "DEBUG: CMD: " + cmd
+
+	rc = subprocess.call(cmd, shell=True)
+
+def do_list(time=None):
+	proto, extra = get_proto()
+
+	options = ''
+	if time:
+		options = '--time %s' % (time)
+
+	cmd = "PASSPHRASE='%s' %s duplicity list-current-files %s %s%s 2> /dev/null" % (
+		PASSPHRASE,
+		extra,
+		options,
+		proto,
+		BACKUP_BACKEND['dir'])
+	if DEBUG:
+		print "DEBUG: CMD: " + cmd
+
+	rc = subprocess.call(cmd, shell=True)
+
+def do_restore(dst, files=None, time=None):
+	proto, extra = get_proto()
+
+	ls_files = ''
+	if files:
+		if os.path.exists(files):
+			try:
+				rst_dirs_list_file = open(files, 'r')
+				for line in rst_dirs_list_file:
+					if len(line.strip()) != 0:
+						if len(ls_files) == 0:
+							ls_files = '--file-to-restore ' + line
+						else:
+							ls_files += ',' + line
+				rst_dirs_list_file.close()
+			except Exception, e:
+				print "Unable to generate temporary directories list"
+				sys.exit(1)
+		else:
+			ls_files = '--file-to-restore ' + files
+
+	if time:
+		cmd = "PASSPHRASE='%s' %s duplicity restore %s --time %s %s%s %s" % (
+			PASSPHRASE,
+			extra,
+			ls_files,
+			time,
+			proto,
+			BACKUP_BACKEND['dir'],
+			dst)
+	else:
+		cmd = "PASSPHRASE='%s' %s duplicity restore %s %s%s %s" % (
+			PASSPHRASE,
+			extra,
+			ls_files,
+			proto,
+			BACKUP_BACKEND['dir'],
+			dst)
+
+	if DEBUG:
+		print "DEBUG: CMD: " + cmd
+
+	rc = subprocess.call(cmd, shell=True)
+
+def do_status(verbose=True):
+	proto, extra = get_proto()
+
+	if verbose:
+		cmd = "PASSPHRASE='%s' %s duplicity collection-status %s%s" % (
+			PASSPHRASE,
+			extra,
+			proto,
+			BACKUP_BACKEND['dir'])
+	else:
+		cmd = "PASSPHRASE='%s' %s duplicity collection-status %s%s | grep -E 'Incr|Full|Int'" % (
+			PASSPHRASE,
+			extra,
+			proto,
+			BACKUP_BACKEND['dir'])
+	if DEBUG:
+		print "DEBUG: CMD: " + cmd
+
+	rc = subprocess.call(cmd, shell=True)
+
+def parse_time(time):
+	if not time:
+		return None
+
+	if re.match('^[0-9]{4}-[0-9]{2}-[0-9]{2}$', time):
+		return time
+	elif re.match('^[0-9]{2}-[0-9]{2}-[0-9]{4}$', time):
+		return time
+	elif re.match('^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}', time):
+		dt = datetime.datetime.strptime(time, '%Y-%m-%d %H:%M')
+		return dt.strftime('%Y-%m-%dT%H:%M:00%z')
+	elif re.match('^[0-9]{2}-[0-9]{2}-[0-9]{4} [0-9]{2}:[0-9]{2}', time):
+		dt = datetime.datetime.strptime(time, '%d-%m-%Y %H:%M')
+		return dt.strftime('%Y-%m-%dT%H:%M:00%z')
+	else:
+		raise ValueError('Date is not valide')
+
+if __name__ == "__main__":
+	parser = argparse.ArgumentParser(
+		prog='backup',
+		description='Duplicity frontend for easier backup system')
+	parser.add_argument(
+		'method',
+		choices=['backup', 'restore', 'list', 'status'])
+	parser.add_argument(
+		'-t', '--time',
+		type=str,
+		help='Select the date of the backup (format yyyy-mm-dd or yyyy-mm-dd H:M)')
+	parser.add_argument(
+		'-f', '--file',
+		type=str,
+		help='Directory or file to restore. It can also be a path to a file which contains a list of files or directories to restore')
+	parser.add_argument(
+		'-d', '--dst',
+		type=str,
+		help='Destination directory of the restore (or pwd if it\'s empty)')
+	args = parser.parse_args()
+
+	if not BACKUP_BACKEND['type'] in ['file', 'ftp']:
+		print "Backend de sauvegarde non supporte"
+		sys.exit(1)
+
+	try:
+		args.time = parse_time(args.time)
+	except Exception, e:
+		print str(e)
+		sys.exit(1)
+
+	if args.method == 'backup':
+		do_backup()
+	elif args.method == 'restore':
+		do_restore(files=args.file, dst=args.dst, time=args.time)
+	elif args.method == 'list':
+		do_list(time=args.time)
+	elif args.method == 'status':
+		do_status()
