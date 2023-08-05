@@ -1,0 +1,116 @@
+diff -U 4 -N -r zinnia/admin/entry.py zinnia_patch/admin/entry.py
+--- zinnia/admin/entry.py   2013-09-10 22:19:42.897479915 +0200
++++ zinnia/admin/entry.py   2013-09-10 21:48:27.336230712 +0200
+@@ -13,8 +13,9 @@
+ from django.template.response import TemplateResponse
+ from django.utils.translation import ungettext_lazy
+ from django.utils.translation import ugettext_lazy as _
+ from django.contrib.staticfiles.storage import staticfiles_storage
++from django.conf import settings as project_settings
+ 
+ from zinnia import settings
+ from zinnia.managers import HIDDEN
+ from zinnia.managers import PUBLISHED
+@@ -332,8 +333,11 @@
+             '',
+             url(r'^autocomplete_tags/$',
+                 self.admin_site.admin_view(self.autocomplete_tags),
+                 name='zinnia_entry_autocomplete_tags'),
++            url(r'^ckeditor/$',
++                self.admin_site.admin_view(self.ckeditor),
++                name='zinnia_entry_ckeditor'),
+             url(r'^wymeditor/$',
+                 self.admin_site.admin_view(self.wymeditor),
+                 name='zinnia_entry_wymeditor'),
+             url(r'^markitup/$',
+@@ -349,8 +353,26 @@
+         return TemplateResponse(
+             request, 'admin/zinnia/entry/autocomplete_tags.js',
+             mimetype='application/javascript')
+ 
++    def ckeditor(self, request):
++        """View for serving the config of WYMEditor"""
++        import json
++        
++        language = get_language().split('-')[0]
++        
++        return TemplateResponse(
++            request, 'admin/zinnia/entry/ckeditor.js',
++            {
++                'name': "content",
++                'language': language,
++                'settings': language.join(json.dumps(project_settings.CKEDITOR_SETTINGS).split("{{ language }}")),
++                'STATIC_URL': project_settings.STATIC_URL,
++                'installed_plugins': {},
++                'plugin_pk': None,
++            },
++            'application/javascript')
++
+     def wymeditor(self, request):
+         """View for serving the config of WYMEditor"""
+         return TemplateResponse(
+             request, 'admin/zinnia/entry/wymeditor.js',
+@@ -391,8 +413,23 @@
+                 js=(static_url('js/wymeditor/jquery.wymeditor.pack.js'),
+                     static_url('js/wymeditor/plugins/hovertools/'
+                                'jquery.wymeditor.hovertools.js'),
+                     reverse('admin:zinnia_entry_wymeditor')))
++        elif settings.WYSIWYG == 'ckeditor':
++            media += Media(
++                css={
++                    'all': (
++                        staticfiles_storage.url('css/cms.ckeditor.css'),
++                        staticfiles_storage.url('ckeditor/editor.css'),
++                    )
++                },
++                js=(
++                    staticfiles_storage.url('ckeditor/ckeditor.js'),
++                    staticfiles_storage.url('js/cms.ckeditor.js'),
++                    staticfiles_storage.url('filebrowser/js/FB_CKEditor.js'),
++                    reverse('admin:zinnia_entry_ckeditor')
++                )
++            )
+         elif settings.WYSIWYG == 'tinymce':
+             from tinymce.widgets import TinyMCE
+             media += TinyMCE().media + Media(
+                 js=(reverse('tinymce-js', args=('admin/zinnia/entry',)),))
+diff -U 4 -N -r zinnia/templates/admin/zinnia/entry/ckeditor.js zinnia_patch/templates/admin/zinnia/entry/ckeditor.js
+--- zinnia/templates/admin/zinnia/entry/ckeditor.js 1970-01-01 01:00:00.000000000 +0100
++++ zinnia/templates/admin/zinnia/entry/ckeditor.js 2013-09-10 04:00:40.338711549 +0200
+@@ -0,0 +1,36 @@
++{% load i18n %}
++$(document).ready(function() {
++    // get the container id
++    var container = 'id_{{ name }}';
++    var prefixPos = container.indexOf('-__prefix__');
++    if (prefixPos != - 1) {
++        // in case the textarea is in an inline, we need to perform some replacements
++        var name = container.substring(0, prefixPos);
++        var replacement = $('#' + name + "-TOTAL_FORMS").val();
++        container = container.replace('__prefix__', replacement);
++    }
++
++    // initialize ckeditor only if the container exists
++    if ($('#'+container).length > 0) {
++        CMS.CKEditor.init(container, {{ settings|safe }}, {
++            'static_url': '{{ STATIC_URL }}',
++            'page': '{{ plugin_pk }}',
++            'lang': {
++                'toolbar': '{% filter escapejs %}{% trans "CMS Plugins" %}{% endfilter %}',
++                'add': '{% filter escapejs %}{% trans "Add CMS Plugin" %}{% endfilter %}',
++                'edit': '{% filter escapejs %}{% trans "Edit CMS Plugin" %}{% endfilter %}',
++                'aria': '{% filter escapejs %}{% trans "CMS Plugins" %}{% endfilter %}'
++            },
++            'plugins': [
++                {% regroup installed_plugins by module as module_list %}
++                {% for module in module_list %}
++                    { group: '{% filter escapejs %}{% if module.grouper %}{{ module.grouper|capfirst }}{% else %}{% trans "Standard Plugins" %}{% endif %}{% endfilter %}', items: [
++                        {% for plugin in module.list %}
++                            { 'title': '{% filter escapejs %}{{ plugin.name }}{% endfilter %}', 'type': '{% filter escapejs %}{{ plugin.value }}{% endfilter %}' }{% if not forloop.las %},{% endif %}
++                        {% endfor %}
++                    ]}{% if not forloop.las %},{% endif %}
++                {% endfor %}
++            ]
++        });
++    }
++});
