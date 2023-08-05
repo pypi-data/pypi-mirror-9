@@ -1,0 +1,1 @@
+#define NUPIC_CORE_VERSION "4424626e3d6ca40e31fcaa35a93ae9592c3e6bed"
