@@ -1,0 +1,65 @@
+#!/usr/bin/python
+
+# A simple ZMQ broker for relaying cubicweb-vcsfile refresh
+# notifications to a cubicweb instance
+
+import sys
+import logging
+import logging.handlers
+
+import zmq
+
+logger = logging.getLogger('vcsfile-notif')
+logger.setLevel(logging.INFO)
+
+handler = logging.handlers.SysLogHandler(
+        address='/dev/log',
+        facility=logging.handlers.SysLogHandler.LOG_DAEMON)
+formatter = logging.Formatter('%(name)s[%(process)d]: %(message)s')
+handler.setFormatter(formatter)
+logger.addHandler(handler)
+
+def mainloop(pull_url, pub_url):
+
+    context = zmq.Context()
+    pull_sock = context.socket(zmq.PULL)
+    pub_sock = context.socket(zmq.PUB)
+    pull_sock.bind(pull_url)
+    pub_sock.bind(pub_url)
+
+    while True:
+        msg = pull_sock.recv()
+        logger.info("%s %s", "notif", repr(msg))
+        pub_sock.send_multipart(['vcsfile-repo-notif', msg])
+
+if __name__ == '__main__':
+    import os
+    import optparse
+
+    p = optparse.OptionParser(description=('A simple ZMQ-based broker to manage '
+                              'VCSFile notifications. It is used to notify a '
+                              'CubicWeb instance when new commits have been done '
+                              'in a Mercurial repository, using the ZMQ-based '
+                              'notification bus of CubicWeb.'))
+
+    default_pub = os.environ.get('HG_NOTIF_PUB_URL', 'tcp://*:5557')
+    p.add_option('-p', '--pub-url', dest='puburl',
+                 default=default_pub,
+                 help=('The ZMQ URL on which the publisher will be bound to '
+                       '(defaults to tcp://*:5557 or $HG_NOTIF_PUB_URL)'))
+
+    default_pull = os.environ.get('HG_NOTIF_PULL_URL', 'tcp://127.0.0.1:5556')
+    p.add_option('-l', '--pull-url', dest='pullurl',
+                 default=default_pull,
+                 help=('The ZMQ URL on which the pull-socket waiting for notifications'
+                       'will be bound to (defaults to tcp://127.0.0.1:5556 or '
+                       '$HG_NOTIF_PULL_URL)'),
+                 )
+
+    opts, args = p.parse_args()
+    try:
+        mainloop(opts.pullurl, opts.puburl)
+    except Exception as exc:
+        logger.exception('fatal error %s', exc)
+        raise SystemExit(1)
+
