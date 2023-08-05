@@ -1,0 +1,689 @@
+.\" Man page generated from reStructuredText.
+.
+.TH MEDIC  "" "" ""
+.SH NAME
+medic \- a command-line tool to manage a mirror of MEDLINE
+.
+.nr rst2man-indent-level 0
+.
+.de1 rstReportMargin
+\\$1 \\n[an-margin]
+level \\n[rst2man-indent-level]
+level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
+-
+\\n[rst2man-indent0]
+\\n[rst2man-indent1]
+\\n[rst2man-indent2]
+..
+.de1 INDENT
+.\" .rstReportMargin pre:
+. RS \\$1
+. nr rst2man-indent\\n[rst2man-indent-level] \\n[an-margin]
+. nr rst2man-indent-level +1
+.\" .rstReportMargin post:
+..
+.de UNINDENT
+. RE
+.\" indent \\n[an-margin]
+.\" old: \\n[rst2man-indent\\n[rst2man-indent-level]]
+.nr rst2man-indent-level -1
+.\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
+.in \\n[rst2man-indent\\n[rst2man-indent-level]]u
+..
+.sp
+The Swiss Army knife to parse \fI\%MEDLINE\fP XML files or
+download eUtils\(aq \fI\%PubMed\fP XML records,
+bootstrapping a local MEDLINE/PubMed database,
+updating and/or deleting the records, and
+writing the contents of selected PMIDs into flat\-files.
+A more in\-depth tutorial for this tool is part of my \fI\%blog\fP\&.
+\fI\%[image: DOI:10.5281/zendo.9968/https://zenodo.org/badge/4016/fnl/medic.png]
+\fP
+.sp
+DOI:10.5281/zendo.9968
+.SH SYNOPSIS
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+medic [options] CMD FILE|PMID...
+
+man medic
+medic \-\-help
+medic \-\-output /tmp parse baseline/medline*.xml.gz
+medic \-\-update parse update/medline*.xml.gz
+medic \-\-info delete delete.txt
+medic \-\-url sqlite:///tmp.db insert pubmed.xml
+medic \-\-pmid\-lists update pmids_to_fetch_online.txt
+medic \-\-all update medline13n1000.xml
+medic \-\-format html write 1028734 1298474 > out.html
+medic \-\-logfile log.txt write pmid_list.txt
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.SH SETUP
+.sp
+If you are \fBnot\fP using \fBpip install medic\fP, install all
+dependencies/requirements:
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+pip install sqlalchemy
+# only if using python3 < 3.2:
+pip install argparse
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+Install the \fBDB driver\fP you prefer to use (supported are PostgreSQL
+and SQLite, with the latter part of the Python StdLib):
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+pip install psycopg2
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+Create the PostgreSQL database:
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+createdb medline
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+If you are fine working with SQLite, you only need to use the path to the
+SQLite DB file in the URL option (that will implicitly "create" the DB):
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+medic insert \-\-url sqlite:///tmp.db 123456
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+To \fIcreate the tables in an empty DB\fP, you can just "try" to fetch a record:
+As the DB is empty, this will not write anything, but SQL Alchemy will create
+the tables for you in the DB:
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+medic write 123 # for PostgreSQL
+medic \-\-url sqlite:///tmp.db write 123 # for SQLite
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.SH DESCRIPTION
+.sp
+\fBmedic [options] COMMAND PMID|FILE...\fP
+.sp
+The \fB\-\-url URL\fP option represents the DSN of the database and might
+be needed (default: \fBpostgresql://localhost/medline\fP); For example:
+.INDENT 0.0
+.TP
+.B PostgreSQL
+\fBpostgresql://host//dbname\fP
+.TP
+.B SQLite DB
+\fBsqlite:////absolute/path/to/foo.db\fP or
+\fBsqlite:///relative/path/to/foo.db\fP
+.UNINDENT
+.sp
+The five \fBCOMMAND\fP arguments:
+.INDENT 0.0
+.TP
+.B \fBinsert\fP
+Create records in the DB by parsing MEDLINE XML files or
+by downloading PubMed XML from NCBI eUtils for a list of PMIDs.
+The insert fails if the record already exists in the DB.
+.TP
+.B \fBwrite\fP *
+Write records as \fI\%MEDLINE\fP files to a directory, each file named as
+"<pmid>.txt". Alternatively, just the TIAB (title and abstract) plain\-text
+can be output, and finally, a single file in TSV or HTML format can be
+generated (see option \fB\-\-format\fP).
+If the requested PMID does not exist in the DB, the command does not fail,
+but the relevant file, row, or element will not have been written.
+.TP
+.B \fBupdate\fP
+Insert or update records in the DB (instead of creating them); note that
+if a record exists, but is added with \fBcreate\fP, this would throw an
+\fIIntegrityError\fP\&. If you are not sure if the records are in the DB or
+not, use \fBupdate\fP (N.B. that \fBupdate\fP is slower).
+.TP
+.B \fBdelete\fP *
+Delete records from the DB for a list of PMIDs (using \fB\-\-pmid\-lists\fP)
+.TP
+.B \fBparse\fP
+Does not interact with the DB, but rather creates ".tab" files for each
+table that later can be used to load a database, particularly useful when
+bootstrapping a large collection.
+.UNINDENT
+.sp
+* Note that \fBwrite\fP and \fBdelete\fP can only use PMID lists (option
+\fB\-\-pmid\-lists\fP), so for these two commands, that option is always active
+(implicitly).
+.sp
+For example, to download two PubMed records by PMID and update them in
+the DB:
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+medic update 100000 123456
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+Add a single MEDLINE or PubMed XML file to the database:
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+medic insert pudmed.xml
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+Note that if the suffix ".gz" is present, the parser automatically
+decompresses the XML file(s) first. This feature \fIonly\fP works with
+GNU\-zipped files and the ".gz" suffix must be present.
+.sp
+Export a few records from the database as HTML (to "articles.html"):
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+medic write \-\-format html \-\-output articles.html 292837491 128374 213487
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+Write the content of the entire database (in MEDLINE format, to STDOUT):
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+medic write ALL
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+Therefore, command line arguments are treated as follows:
+.INDENT 0.0
+.TP
+.B integer values
+are always treated as PMIDs to download PubMed XML data
+.TP
+.B all other values
+are always treated as MEDLINE XML files to parse
+\fBunless\fP you use the option \fB\-\-pmid\-lists\fP
+.TP
+.B files ending in ".gz"
+are treated as gzipped MEDLINE XML files
+.UNINDENT
+.SH REQUIREMENTS
+.INDENT 0.0
+.IP \(bu 2
+Python 3.2+
+.IP \(bu 2
+SQL Alchemy 0.8+
+.IP \(bu 2
+PostgreSQL 8.4+ or SQLite 3.7+
+.UNINDENT
+.sp
+\fINote\fP that while any DB supported by SQL Alchemy should work, all other DBs
+are \fBuntested\fP\&.
+.SH LOADING MEDLINE
+.sp
+Please be aware that the MEDLINE distribution \fBis not unique\fP, meaning that
+it contains a few records multiple times (see the section about
+\fBVersion IDs\fP).
+.sp
+Parsing and loading the baseline into a PostgreSQL DB on the same machine:
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+medic parse baseline/medline14n*.xml.gz
+
+for table in citations abstracts authors chemicals databases \e
+descriptors identifiers keywords publication_types qualifiers sections;
+  do psql medline \-c "COPY $table FROM \(aq\(gapwd\(ga/${table}.tab\(aq;";
+done
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+For the update files, you need to go \fIone\-by\-one\fP, adding each one \fIin order\fP,
+and using the flag \fB\-\-update\fP when parsing the XML. After parsing an XML file
+and \fIbefore\fP loading the dump, run \fBmedic delete delete.txt\fP to get rid of
+all entities that will be updated or should be removed (PMIDs listed as
+\fBDeleteCitation\fPs):
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+# parse a MEDLINE update file:
+medic \-\-update parse medline14n1234.xml.gz
+
+# delete its updated and DeleteCitation records:
+medic delete delete.txt
+
+# load (COPY) all tables for that MEDLINE file:
+for table in citations abstracts authors chemicals databases \e
+descriptors identifiers keywords publication_types qualifiers sections;
+  do psql medline \-c "COPY $table FROM \(aq\(gapwd\(ga/${table}.tab\(aq;";
+done
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+Alternatively \- simpler but slower \- you can just \fBupdate\fP from the XML
+directly:
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+medic update medline14n1234.xml.gz
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.SH VERSION IDS
+.sp
+MEDLINE has began to use versions to allow publishers to add multiple citations
+for the same PMID. This only occurs with 71 articles from one journal,
+"PLOS Curr", in the 2013 baseline, creating a total of 149 non\-unique records.
+.sp
+As this is the only journal and as there may only be one record per PMID in the
+database, alternative versions are currently being ignored. In other words, if
+a MedlineCitation has a VersionID value other than "1", those records can be
+skipped to avoid DB errors from non\-unique records.
+.sp
+For example, in the 2013 baseline, PMID 20029614 is present ten times in the
+baseline, each version at a different stage of revision. Because it is the
+first entry (in the order they appear in the baseline files) without a
+\fBVersionID\fP or a version of "1" that is the relevant record, \fBmedic\fP by
+default filters citations with other versions than "1". If you do want to
+process other versions of a citation, use the option \fB\-\-all\fP\&.
+.sp
+To summarize, \fImedic\fP by default \fBremoves\fP alternate citations.
+.SH DATABASE TABLES
+.INDENT 0.0
+.TP
+.B Citation (citations)
+\fBpmid\fP:BIGINT, \fIstatus\fP:ENUM(state), \fItitle\fP:TEXT, \fIjournal\fP:VARCHAR(256),
+\fIpub_date\fP:VARCHAR(256), issue:VARCHAR(256), pagination:VARCHAR(256),
+\fIcreated\fP:DATE, completed:DATE, revised:DATE, modified:DATE
+.TP
+.B Abstract (abstracts)
+\fBpmid\fP:FK(Citation), \fBsource\fP:ENUM(type), copyright:TEXT
+.TP
+.B Section (sections)
+\fBpmid\fP:FK(Citation), \fBsource\fP:ENUM(type), \fBseq\fP:SMALLINT,
+\fIname\fP:ENUM(section), label:VARCHAR(256), \fIcontent\fP:TEXT, \fItruncated\fP:BOOLEAN
+.TP
+.B Author (authors)
+\fBpmid\fP:FK(Citation), \fBpos\fP:SMALLINT, \fIname\fP:TEXT,
+initials:VARCHAR(128), forename:VARCHAR(128), suffix:VARCHAR(128),
+.TP
+.B PublicationType (publication_types)
+\fBpmid\fP:FK(Citation), \fBvalue\fP:VARCHAR(256)
+.TP
+.B Descriptor (descriptors)
+\fBpmid\fP:FK(Citation), \fBnum\fP:SMALLINT, major:BOOL, \fIname\fP:TEXT
+.TP
+.B Qualifier (qualifiers)
+\fBpmid\fP:FK(Descriptor), \fBnum\fP:FK(Descriptor), \fBsub\fP:SMALLINT,
+major:BOOL, \fIname\fP:TEXT
+.TP
+.B Identifier (identifiers)
+\fBpmid\fP:FK(Citation), \fBnamespace\fP:VARCHAR(32), \fIvalue\fP:VARCHAR(256)
+.TP
+.B Database (databases)
+\fBpmid\fP:FK(Citation), \fBname\fP:VARCHAR(32), \fBaccession\fP:VARCHAR(256)
+.TP
+.B Chemical (chemicals)
+\fBpmid\fP:FK(Citation), \fBidx\fP:VARCHAR(32), uid:VARCHAR(256),
+\fIname\fP:VARCHAR(256)
+.TP
+.B Keyword (keywords)
+\fBpmid\fP:FK(Citation), \fBowner\fP:ENUM(owner), \fBcnt\fP:SMALLINT,
+major:BOOL, \fIvalue\fP:TEXT
+.UNINDENT
+.INDENT 0.0
+.IP \(bu 2
+\fBbold\fP (Composite) Primary Key
+.IP \(bu 2
+\fIitalic\fP NOT NULL (Strings that may not be NULL are also never empty.)
+.UNINDENT
+.SH SUPPORTED XML ELEMENTS
+.SS Entities
+.INDENT 0.0
+.IP \(bu 2
+MedlineCitation and ArticleTitle (\fBCitation\fP and \fBIdentifier\fP)
+.IP \(bu 2
+Abstract and OtherAbstract (\fBAbstract\fP and \fBSection\fP)
+.IP \(bu 2
+Author (\fBAuthor\fP)
+.IP \(bu 2
+Chemical (\fBChemical\fP)
+.IP \(bu 2
+DataBank (\fBDatabase\fP)
+.IP \(bu 2
+Keyword (\fBKeyword\fP)
+.IP \(bu 2
+MeshHeading (\fBDescriptor\fP and \fBQualifier\fP)
+.IP \(bu 2
+PublicationType (\fBPublicationType\fP)
+.IP \(bu 2
+DeleteCitation (for deleting records when parsing updates)
+.UNINDENT
+.SS Fields/Values
+.INDENT 0.0
+.IP \(bu 2
+Abstract (with "NLM" as \fBAbstract.source\fP)
+.IP \(bu 2
+AbstractText (\fBSection.name\fP "Abstract" or the \fINlmCategory\fP, \fBSection.content\fP with \fILabel\fP as \fBSection.label\fP)
+.IP \(bu 2
+AccessionNumber (\fBDatabase.accession\fP)
+.IP \(bu 2
+ArticleId (\fBIdentifier.value\fP with \fIIdType\fP as \fBIdentifier.namesapce\fP; only available in online PubMed XML)
+.IP \(bu 2
+ArticleTitle (\fBCitation.title\fP; if empty, use the VernacularTitle or set to "UNKNOWN")
+.IP \(bu 2
+CollectiveName (\fBAuthor.name\fP)
+.IP \(bu 2
+CopyrightInformation (\fBAbstract.copyright\fP)
+.IP \(bu 2
+DataBankName (\fBDatabase.name\fP)
+.IP \(bu 2
+DateCompleted (\fBCitation.completed\fP)
+.IP \(bu 2
+DateCreated (\fBCitation.created\fP)
+.IP \(bu 2
+DateRevised (\fBCitation.revised\fP)
+.IP \(bu 2
+DescriptorName (\fBDescriptor.name\fP with \fIMajorTopicYN\fP as \fBDescriptor.major\fP)
+.IP \(bu 2
+ELocationID (\fBIdentifier.value\fP with \fIEIdType\fP as \fBIdentifier.namespace\fP)
+.IP \(bu 2
+ForeName (\fBAuthor.forename\fP)
+.IP \(bu 2
+Initials (\fBAuthor.initials\fP)
+.IP \(bu 2
+Issue (\fBCitation.issue\fP)
+.IP \(bu 2
+Keyword (\fBKeyword.value\fP with \fIOwner\fP as \fBKeyword.owner\fP and \fIMajorTopicYN\fP as \fBKeyword.major\fP)
+.IP \(bu 2
+LastName (\fBAuthor.name\fP)
+.IP \(bu 2
+MedlineCitation (with \fIStatus\fP as \fBCitation.status\fP)
+.IP \(bu 2
+MedlineTA (\fBCitation.journal\fP)
+.IP \(bu 2
+NameOfSubstance (\fBChemical.name\fP)
+.IP \(bu 2
+MedlinePgn (\fBCitation.pagination\fP)
+.IP \(bu 2
+OtherAbstract (with \fIType\fP as \fBAbstract.source\fP)
+.IP \(bu 2
+OtherID (\fBIdentifier.value\fP iff \fISource\fP is "PMC" with \fBIdentifier.namespace\fP as "pmc")
+.IP \(bu 2
+PMID (\fBCitation.pmid\fP)
+.IP \(bu 2
+PubDate (\fBCitation.pub_date\fP)
+.IP \(bu 2
+PublicationType (\fBPublicationType.value\fP)
+.IP \(bu 2
+QualifierName (\fBQualifier.name\fP with \fIMajorTopicYN\fP as \fBQualifier.major\fP)
+.IP \(bu 2
+RegistryNumber (\fBChemical.uid\fP)
+.IP \(bu 2
+Suffix (\fBAuthor.suffix\fP)
+.IP \(bu 2
+VernacularTitle (\fBCitation.title\fP if AbstractTitle is empty)
+.IP \(bu 2
+Volume (\fBCitation.issue\fP)
+.UNINDENT
+.SH VERSION HISTORY
+.INDENT 0.0
+.TP
+.B 2.3.0
+.INDENT 7.0
+.IP \(bu 2
+Added special argument "ALL" to write/delete all records.
+.UNINDENT
+.TP
+.B 2.2.0
+.INDENT 7.0
+.IP \(bu 2
+Ensured compatibility with the MEDLINE DTD updates for 2015 and cleaned some
+code pieces.
+Includes a fix for the bad (long) keyword in PMID 25114415 (with a carriage
+return).
+.IP \(bu 2
+A column was added to the ORM, resulting in backwards incompatible change:
+From this version on, the trailing string "\fB(ABSTRACT TRUNCATED AT xxx
+WORDS)\fP" is stripped from AbstractText and instead the flag \fBtruncated\fP
+has be added to table \fBsections\fP and is set if the string was present (but
+has been removed); To migrate your Postgres database, please run:
+.INDENT 2.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+ALTER TABLE sections ADD "truncated" boolean NOT NULL DEFAULT \(aqfalse\(aq;
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+Note that for one case this produces a Section with just one whitespace
+character, because the original content was only the "ABSTRACT TRUNCATED..."
+message.
+.IP \(bu 2
+MEDLINE formatted output is now written to STDOUT or a single file, because
+it makes selecting specific fields with grep very easy. Records are
+separated with an empty line.
+.UNINDENT
+.TP
+.B 2.1.7
+.INDENT 7.0
+.IP \(bu 2
+Work\-around for the limit of SQLite that only lets you use 999 variables per
+query.
+.IP \(bu 2
+Corrected the outdated VernacularTitle documentation in this document.
+.UNINDENT
+.TP
+.B 2.1.6
+.INDENT 7.0
+.IP \(bu 2
+Work\-around for parsing citations that have an empty ArticleTitle element
+(which they shouldn\(aqt, according to the DTD): Either use the VernacularTitle
+(e.g., PMID 22536004), or otherwise set the title to "UNKNOWN" (the empty
+string is not a valid title) and log a warning.
+.IP \(bu 2
+Work\-around for non\-unique PublicationType entries (e.g., PMID 10500000):
+drop non\-unique PublicationTypes (with the same PMID and value).
+.IP \(bu 2
+Corrected left\-over "Medline" entity names in this document to "Citation".
+.UNINDENT
+.TP
+.B 2.1.5
+.INDENT 7.0
+.IP \(bu 2
+Added page_size=MAX and synchronous=OFF pragmas for SQLite DBs (hat\-tip to
+Jason)
+.UNINDENT
+.TP
+.B 2.1.4
+.INDENT 7.0
+.IP \(bu 2
+A MEDLINE issue found by Jason: PMID 24073073 has an empty keyword and
+keyword list that should not be there; Medic prevents adding improper data
+to the DB by raising an AssertionError.
+To deal with such cases, medic now ensures each keyword is non\-empty before
+attempting to generate a database entry and drops empty (i.e.,
+whitespace\-only) keyword data.
+.UNINDENT
+.TP
+.B 2.1.3
+.INDENT 7.0
+.IP \(bu 2
+Jason Hennessey changed the (absolute) path of medic\(aqs man\-page, set to
+\fB/usr/local/share/man\fP in the setup script, to a relative location
+(\fBshare/man\fP) to avoid issues when installing medic in a virtualenv
+.UNINDENT
+.TP
+.B 2.1.2
+.INDENT 7.0
+.IP \(bu 2
+fixed a bug where SQLite did not find the implicit FK\->PK reference
+(thanks to Jason Hennessey for reporting the issue)
+.UNINDENT
+.TP
+.B 2.1.1
+.INDENT 7.0
+.IP \(bu 2
+added SQLite temporary DB example URL to help output
+.IP \(bu 2
+refactored HTML output code
+.UNINDENT
+.TP
+.B 2.1.0
+.INDENT 7.0
+.IP \(bu 2
+DB schema change from: \fBrecords() \-> sections(content)\fP
+to: \fBcitations(title) \-> abstracts(copyright) \-> sections(content)\fP
+.IP \(bu 2
+name change: the entity/table Medline/records is now called
+Citation/citations
+.IP \(bu 2
+title and copyright text is no longer stored in Section/sections
+.IP \(bu 2
+added a new Abstract/abstracts entity/table with a \fBcopyright\fP attribute
+(formerly stored in \fBsections.content\fP with \fBname\fP = \(aqCopyright\(aq)
+.IP \(bu 2
+added a new \fBcitations.title\fP attribute
+(formerly stored in \fBsections.content\fP with \fBname\fP = \(aqTitle\(aq)
+.IP \(bu 2
+added a new \fBsource\fP primary\-key attribute to Section and Abstract
+(set to either \(aqNLM\(aq for regular Abstract elements or to
+the value of the OtherAbstract Type attribute for other abstracts)
+.IP \(bu 2
+skipping "Abstract available from the publisher."\-only abstracts
+.UNINDENT
+.TP
+.B 2.0.2
+.INDENT 7.0
+.IP \(bu 2
+made the use of \fB\-\-pmid\-lists\fP for \fBdelete\fP and \fBwrite\fP implicit
+.IP \(bu 2
+added instructions to bootstrap the tables in a PostgreSQL DB
+.IP \(bu 2
+minor improvements to this manual
+.IP \(bu 2
+fixed a bug when inserting/updating from MEDLINE XML files
+.UNINDENT
+.TP
+.B 2.0.1
+.INDENT 7.0
+.IP \(bu 2
+fixed a bug that lead to skipping of abstracts
+(thanks to Chris Roeder for detecting the issue)
+.UNINDENT
+.TP
+.B 2.0.0
+.INDENT 7.0
+.IP \(bu 2
+added Keywords and PublicationTypes
+.IP \(bu 2
+added MEDLINE publication date, volume, issue, and pagination support
+.IP \(bu 2
+added MEDLINE output format and made it the default
+.IP \(bu 2
+DB structure change: descriptors.major and qualifiers.major columns swapped
+.IP \(bu 2
+DB structure change: section.name is now an untyped varchar (OtherAbstract
+separation)
+.IP \(bu 2
+cleaned up the ORM test cases
+.UNINDENT
+.TP
+.B 1.1.1
+.INDENT 7.0
+.IP \(bu 2
+code cleanup (PEP8, PyFlake)
+.IP \(bu 2
+fixed an issue where the parser would not leave the skipping state
+.UNINDENT
+.TP
+.B 1.1.0
+.INDENT 7.0
+.IP \(bu 2
+\fB\-\-update parse\fP now writes a file to use with \fB\-\-pmid\-lists delete\fP
+.IP \(bu 2
+fixed a bug with CRUD manager
+.IP \(bu 2
+added a man page
+.UNINDENT
+.TP
+.B 1.0.2
+.INDENT 7.0
+.IP \(bu 2
+fixes to make the PyPi version and \fBpip install medic\fP work
+.UNINDENT
+.TP
+.B 1.0.1
+.INDENT 7.0
+.IP \(bu 2
+updates to the setup.py and README.rst files
+.UNINDENT
+.TP
+.B 1.0.0
+.INDENT 7.0
+.IP \(bu 2
+initial release
+.UNINDENT
+.UNINDENT
+.SH COPYRIGHT AND LICENSE
+.sp
+License: \fI\%GNU GPL v3\fP\&.
+Copyright 2012\-2014 Florian Leitner. All rights reserved.
+.\" Generated by docutils manpage writer.
+.
