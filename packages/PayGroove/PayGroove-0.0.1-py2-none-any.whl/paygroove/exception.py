@@ -1,0 +1,2 @@
+class PayGrooveException(Exception):
+    pass
