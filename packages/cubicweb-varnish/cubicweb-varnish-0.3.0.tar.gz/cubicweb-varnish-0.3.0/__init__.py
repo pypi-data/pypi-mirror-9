@@ -1,0 +1,1 @@
+"""cubicweb-varnish application package"""

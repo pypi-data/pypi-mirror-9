@@ -1,0 +1,21 @@
+options = (
+    ('varnishcli-hosts',
+     {'type' : 'csv',
+      'default': (),
+      'help': 'varnish CLI host (for multiple varnishcli connections, list them with commas to separate). Default configuration of varnish is usually 127.0.0.1:6082',
+      'group': 'varnish', 'level': 0,
+      }),
+    ('varnish-secrets',
+     {'type' : 'csv',
+      'default': (),
+      'help': 'paths to secret files (must be readable by process owner), for multiple varnish servers '\
+              'list the same number of secret files, even if it is the same file (optionnal)',
+      'group': 'varnish', 'level': 0,
+      }),
+    ('varnish-version',
+     {'type' : 'int',
+      'default': 2,
+      'help': 'varnish major version (only 2, 3 and 4 are supported for now)',
+      'group': 'varnish', 'level': 0,
+      }),
+)
