@@ -1,0 +1,47 @@
+Changelog
+=========
+
+
+v0.3.0 (2015-01-13)
+-------------------
+
+- Add ``search_movie``.
+- Add ``search_episode``.
+- Add ``search_series``.
+- Add support for ``type`` OMDb parameter via ``media_type`` argument to every main API function.
+
+
+v0.2.0 (2014-10-16)
+-------------------
+
+- Update ``models.Item`` with additional ``OMDb API`` fields: ``Awards``, ``Country``, ``Language``, and ``Metascore``.
+- Add ``omdb.request`` method for easier access to raw request response.
+- Initialization of ``omdb.Client`` now accepts keyword arguments for API request parameter defaults. Previously, a ``dict`` object needed to be passed in.
+- Full PEP8 compliance.
+- Integrate ``tox`` testing into ``setup.py``.
+
+
+v0.1.1 (2014-02-09)
+-------------------
+
+- Python3 support. Thanks agronholm_!
+- PEP8 compliance excluding max-line-length. Thanks agronholm_!
+- Wheel support. Thanks agronholm_!
+
+
+v0.1.0 (2013-11-24)
+-------------------
+
+- Convert API response to data models (see omdb/models.py).
+- Add /tests folder and move appropriate doctests there.
+- Return empty data for ``search`` and ``get`` requests which return no record(s).
+- Add ``omdb.set_default()`` for setting default request parameters (e.g. ``set_default(tomatoes=True)`` to always include tomatoes data)
+
+
+v0.0.1 (2013-11-12)
+-------------------
+
+- Initial release.
+
+
+.. _agronholm: https://github.com/agronholm
