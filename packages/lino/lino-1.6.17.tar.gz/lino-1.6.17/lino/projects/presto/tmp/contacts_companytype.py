@@ -1,0 +1,21 @@
+# -*- coding: UTF-8 -*-
+logger.info("Loading 16 objects to table contacts_companytype...")
+# fields: id, name, abbr
+loader.save(create_contacts_companytype(1,[u'Public Limited Company', u'Aktiengesellschaft', u'Soci\xe9t\xe9 Anonyme', u''],[u'', u'AG', u'SA', u'']))
+loader.save(create_contacts_companytype(2,[u'Limited Liability Company', u'Private Gesellschaft mit beschr\xe4nkter Haft', u'Soci\xe9t\xe9 Priv\xe9e \xe0 Responsabilit\xe9 Limit\xe9e', u''],[u'', u'PGmbH', u'SPRL', u'']))
+loader.save(create_contacts_companytype(3,[u'One-person Private Limited Company', u'Einpersonengesellschaft mit beschr\xe4nkter Haft', u"Soci\xe9t\xe9 d'Une Personne \xe0 Responsabilit\xe9 Limit\xe9e", u''],[u'', u'EGmbH', u'SPRLU', u'']))
+loader.save(create_contacts_companytype(4,[u'Cooperative Company with Limited Liability', u'Kooperative mit beschr\xe4nkter Haft', u'Soci\xe9t\xe9 Coop\xe9rative \xe0 Responsabilit\xe9 Limit\xe9e', u''],[u'', u'', u'SCRL', u'']))
+loader.save(create_contacts_companytype(5,[u'Cooperative Company with Unlimited Liability', u'Kooperative mit unbeschr\xe4nkter Haft', u'Soci\xe9t\xe9 Coop\xe9rative \xe0 Responsabilit\xe9 Illimit\xe9e', u''],[u'', u'', u'SCRI', u'']))
+loader.save(create_contacts_companytype(6,[u'General Partnership', u'', u'Soci\xe9t\xe9 en Nom Collectif', u''],[u'', u'', u'SNC', u'']))
+loader.save(create_contacts_companytype(7,[u'Limited Partnership', u'', u'Soci\xe9t\xe9 en Commandite Simple', u''],[u'', u'', u'SCS', u'']))
+loader.save(create_contacts_companytype(8,[u'Non-stock Corporation', u'Gesellschaft \xf6ffentlichen Rechts', u'Soci\xe9t\xe9 de Droit Commun', u''],[u'', u'', u'', u'']))
+loader.save(create_contacts_companytype(9,[u'Charity/Company established for social purposes', u'Vereinigung ohne Gewinnabsicht', u'Association sans But Lucratif', u''],[u'', u'V.o.G.', u'ASBL', u'']))
+loader.save(create_contacts_companytype(10,[u'Cooperative Company', u'Genossenschaft', u'Soci\xe9t\xe9 Coop\xe9rative', u''],[u'', u'', u'SC', u'']))
+loader.save(create_contacts_companytype(11,[u'Company', u'Firma', u'Soci\xe9t\xe9', u''],[u'', u'', u'', u'']))
+loader.save(create_contacts_companytype(12,[u'Public service', u'\xd6ffentlicher Dienst', u'Service Public', u''],[u'', u'', u'', u'']))
+loader.save(create_contacts_companytype(13,[u'Ministry', u'Ministerium', u'Minist\xe8re', u''],[u'', u'', u'', u'']))
+loader.save(create_contacts_companytype(14,[u'School', u'Schule', u'\xe9cole', u''],[u'', u'', u'', u'']))
+loader.save(create_contacts_companytype(15,[u'Freelancer', u'Freier Mitarbeiter', u'Travailleur libre', u''],[u'', u'', u'', u'']))
+loader.save(create_contacts_companytype(16,[u'Sole proprietorship', u'Einzelunternehmen', u'Entreprise individuelle', u''],[u'', u'', u'', u'']))
+
+loader.flush_deferred_objects()
