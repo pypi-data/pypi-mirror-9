@@ -1,0 +1,45 @@
+#!/Users/meister/ansible-roles/env/bin/python
+
+import sys
+import re
+from subprocess import Popen, PIPE
+import shlex
+
+filename = sys.argv[1]
+try:
+    path = sys.argv[2]
+except IndexError:
+    path = None
+
+pattern=re.compile(r'^(?P<name>[^=]+)=(?P<scm>[^\+]+)\+(?P<protocol>[^:]+)://(?P<url>.*)$')
+
+SCM = ('git', 'hg')
+PROTOCOL = ('ssh')
+
+
+def color(color, string):
+    END = '\033[0m'
+    COLOR = {'green': '\033[1;32m',
+             'red': '\033[1;31m',}
+    return COLOR[color] + string + END
+
+with open(filename) as fh:
+    for line in fh.readlines():
+        name, scm, protocol, url = pattern.match(line).groups()
+        print 'Installing %s...' % name
+        if scm not in SCM:
+            sys.stderr.write(color('red', 'Unknow scm %s' % scm))
+            sys.exit(1)
+        if protocol not in PROTOCOL:
+            sys.stderr.write(color('red', 'Unknow protocol %s' % protocol))
+            sys.exit(1)
+        if scm == 'git':
+            cmd = 'git clone %s %s' % (url, name)
+        if scm == 'hg':
+            cmd = 'hg clone %s %s' % (url, name)
+        install = Popen(shlex.split(cmd), stdout=PIPE, stderr=PIPE, cwd=path)
+        if install.wait() == 0:
+            print color('green', 'OK')
+        else:
+            sys.stderr.write(color('red', install.stderr.read()))
+
