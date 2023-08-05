@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en"
+  xmlns:tal="http://xml.zope.org/namespaces/tal"
+  metal:use-macro="skin: /main_template">
+
+  <head metal:fill-slot="javascript" tal:condition="can_view_estimate_column">
+    <script type="text/javascript" src="https://www.google.com/jsapi"></script>
+    <script type="text/javascript">
+      google.load('visualization', '1', {packages: ['corechart']});
+    </script>
+    <script type="text/javascript" src="${request.application_url}/static/por_backlog/tekken.js"></script>
+  </head>
+  <body>
+
+    <div metal:fill-slot="body" tal-omit-tag="" tal:define="perm_edit request.has_permission('metadata', context)">
+
+      <div id="visualization" style="width: 600px; height: 100px;" tal:condition="can_view_estimate_column"></div>
+
+      <form id="tekken-filter">
+        <div class="subnav">
+          <select id="contract" name="contract">
+            <option tal:repeat="contract all_contracts" value="${contract.id}">${contract.name} [${contract.workflow_state}]</option>
+          </select>
+        </div>
+        <div class="subnav">
+          <ul class="nav">
+            <li class="pull-left">
+            </li>
+            <li tal:repeat="wf_state cr_workflow_states" class="pull-left">
+            <input type="checkbox"
+            id="workflow_${wf_state[0]}"
+            name="workflow_${wf_state[0]}"
+            value="${wf_state[0]}"
+            checked="${'checked' if wf_state[0] in cr_workflow_active else nothing}" />
+            <label for="workflow_${wf_state[0]}">
+              ${wf_state[1]}
+            </label>
+            </li>
+          </ul>
+        </div>
+      </form>
+
+      <metal:body define-macro="report-main">
+      <form action="${request.url}" method="POST">
+      <table class="bgb-container table-condensed table">
+        <colgroup>
+          <col class="col-customer-request" />
+          <col class="col-workflow-state" />
+          <col tal:condition="can_view_estimate_column" class="col-estimated" />
+          <col tal:condition="can_view_done_column" class="col-done" />
+          <col tal:condition="can_view_percentage_column" class="col-done" />
+        </colgroup>
+        <thead>
+          <tr class="backlog-table-headers">
+            <th>&nbsp;</th>
+            <th class="backlog-workflow">state</th>
+            <th tal:condition="can_view_estimate_column" class="backlog-duration">estimated</th>
+            <th tal:condition="can_view_done_column" class="backlog-duration">done</th>
+            <th tal:condition="can_view_percentage_column" class="backlog-duration">percentage</th>
+          </tr>
+        </thead>
+        <tal:bgb repeat="bgb bgbs">
+        <tbody class="bgb-project-header">
+          <tr>
+            <td colspan="2">
+              <input type="checkbox" class="check_all" tal:condition="perm_edit">
+              ${bgb.project.customer.name} / ${bgb.project.name}
+            </td>
+            <td tal:condition="can_view_estimate_column" class="backlog-duration"><span class="total-estimate"></span></td>
+            <td tal:condition="can_view_done_column" class="backlog-duration"><span class="total-done"></span></td>
+            <td tal:condition="can_view_percentage_column" class="backlog-duration"><span class="total-percentage"></span></td>
+          </tr>
+        </tbody>
+        <tbody class="bgb-project table">
+          <tal:cr repeat="cr sorted(bgb.project.customer_requests, key=unicodelower)">
+          <tr tal:define="tickets number_of_tickets_per_cr.get(cr.id, 0)"
+            class="${tickets==0 and 'error'}"
+            data-cr-id="${cr.id}"
+            data-cr-editable="${1 if can_edit_cr[cr] else nothing}"
+            data-workflow-state="${cr.workflow_state}"
+            data-filler="${cr.filler}"
+            data-contract="${cr.contract and cr.contract.id or ''}"
+            data-contract-days="${cr.contract and cr.contract.days or ''}"
+            data-duration-estimate="${bgb.get_estimate(cr) if can_view_estimate[bgb.project] else nothing}"
+            data-duration-percentage="${bgb.get_percentage(cr) if can_view_percentage[bgb.project] else nothing}"
+            data-duration-done="${bgb.get_done(cr) if can_view_done[bgb.project] else nothing}">
+            <td>
+              <input type="checkbox" name="cr" value="${cr.id}" tal:condition="perm_edit">
+              <a href="/admin/CustomerRequest/${cr.id}">${cr.name}</a>
+              <span tal:condition="can_view_estimate_column" class="badge badge-success pull-right" title="Number of tickets">${tickets}</span>
+              <span tal:condition="cr.filler" class="label label-inverse pull-right">Filler</span>
+            </td>
+            <td class="backlog-workflow">${cr.workflow_state}</td>
+            <td tal:condition="can_view_estimate_column" class="backlog-duration">&nbsp;</td>
+            <td tal:condition="can_view_done_column" class="backlog-duration">&nbsp;</td>
+            <td tal:condition="can_view_percentage_column" class="backlog-duration">&nbsp;</td>
+          </tr>
+          </tal:cr>
+          <tr>
+            <td>&nbsp;</td>
+            <td>&nbsp;</td>
+            <td tal:condition="can_view_estimate_column">&nbsp;</td>
+            <td tal:condition="can_view_done_column">&nbsp;</td>
+            <td tal:condition="can_view_percentage_column">&nbsp;</td>
+          </tr>
+        </tbody>
+        </tal:bgb>
+        <tfoot class="backlog-no-rows hide">
+          <td colspan="2">No customer request matches the selection.</td>
+          <td tal:condition="can_view_estimate_column">&nbsp;</td>
+          <td tal:condition="can_view_done_column">&nbsp;</td>
+          <td tal:condition="can_view_percentage_column">&nbsp;</td>
+        </tfoot>
+      </table>
+      <div class="well form-inline" tal:condition="perm_edit">
+          <select id="new_state" name="new_state" class="i-can-haz-chzn-select">
+            <option value="">Choose a new state...</option>
+            <option tal:repeat="ws cr_workflow_states"
+                    value="${ws[0]}">${ws[1]}</option>
+          </select>
+          <script>$('#new_state').chosen()</script>
+          <script>
+              $('input.check_all').click(function() {
+                $(this).closest('form').find('input[type=checkbox]:visible').attr('checked', $(this).is(':checked'));
+              });
+          </script>
+          <button class="btn btn-small btn-primary" type="submit" value="state_change" name="submit">
+            <i class="icon-white icon-ok"></i>
+            Change
+          </button>
+      </div>
+      </form>
+      </metal:body>
+
+    </div>
+
+  </body>
+</html>
