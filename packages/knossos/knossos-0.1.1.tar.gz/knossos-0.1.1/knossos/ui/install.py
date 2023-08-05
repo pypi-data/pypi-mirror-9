@@ -1,0 +1,90 @@
+# -*- coding: utf-8 -*-
+
+# Form implementation generated from reading ui file 'ui/install.ui'
+#
+# Created: Fri Jan 30 01:48:17 2015
+#      by: pyside-uic 0.2.15 running on PySide 1.2.2
+#
+# WARNING! All changes made in this file will be lost!
+
+from ..qt import QtCore, QtGui
+
+class Ui_Dialog(object):
+    def setupUi(self, Dialog):
+        Dialog.setObjectName("Dialog")
+        Dialog.resize(460, 560)
+        Dialog.setModal(True)
+        self.verticalLayout_3 = QtGui.QVBoxLayout(Dialog)
+        self.verticalLayout_3.setObjectName("verticalLayout_3")
+        self.splitter = QtGui.QSplitter(Dialog)
+        self.splitter.setOrientation(QtCore.Qt.Vertical)
+        self.splitter.setObjectName("splitter")
+        self.verticalLayoutWidget = QtGui.QWidget(self.splitter)
+        self.verticalLayoutWidget.setObjectName("verticalLayoutWidget")
+        self.verticalLayout = QtGui.QVBoxLayout(self.verticalLayoutWidget)
+        self.verticalLayout.setContentsMargins(0, 0, 0, 0)
+        self.verticalLayout.setObjectName("verticalLayout")
+        self.titleLabel = QtGui.QLabel(self.verticalLayoutWidget)
+        font = QtGui.QFont()
+        font.setPointSize(11)
+        font.setWeight(75)
+        font.setBold(True)
+        self.titleLabel.setFont(font)
+        self.titleLabel.setAlignment(QtCore.Qt.AlignCenter)
+        self.titleLabel.setWordWrap(True)
+        self.titleLabel.setObjectName("titleLabel")
+        self.verticalLayout.addWidget(self.titleLabel)
+        spacerItem = QtGui.QSpacerItem(20, 10, QtGui.QSizePolicy.Minimum, QtGui.QSizePolicy.Fixed)
+        self.verticalLayout.addItem(spacerItem)
+        self.treeWidget = QtGui.QTreeWidget(self.verticalLayoutWidget)
+        sizePolicy = QtGui.QSizePolicy(QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Expanding)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.treeWidget.sizePolicy().hasHeightForWidth())
+        self.treeWidget.setSizePolicy(sizePolicy)
+        self.treeWidget.setAlternatingRowColors(True)
+        self.treeWidget.setAnimated(True)
+        self.treeWidget.setWordWrap(True)
+        self.treeWidget.setObjectName("treeWidget")
+        self.treeWidget.header().setDefaultSectionSize(300)
+        self.verticalLayout.addWidget(self.treeWidget)
+        self.dlSizeLabel = QtGui.QLabel(self.verticalLayoutWidget)
+        self.dlSizeLabel.setObjectName("dlSizeLabel")
+        self.verticalLayout.addWidget(self.dlSizeLabel)
+        self.verticalLayoutWidget_2 = QtGui.QWidget(self.splitter)
+        self.verticalLayoutWidget_2.setObjectName("verticalLayoutWidget_2")
+        self.verticalLayout_2 = QtGui.QVBoxLayout(self.verticalLayoutWidget_2)
+        self.verticalLayout_2.setContentsMargins(0, 0, 0, 0)
+        self.verticalLayout_2.setObjectName("verticalLayout_2")
+        self.label = QtGui.QLabel(self.verticalLayoutWidget_2)
+        self.label.setObjectName("label")
+        self.verticalLayout_2.addWidget(self.label)
+        self.notesField = QtGui.QTextEdit(self.verticalLayoutWidget_2)
+        sizePolicy = QtGui.QSizePolicy(QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Expanding)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.notesField.sizePolicy().hasHeightForWidth())
+        self.notesField.setSizePolicy(sizePolicy)
+        self.notesField.setReadOnly(True)
+        self.notesField.setObjectName("notesField")
+        self.verticalLayout_2.addWidget(self.notesField)
+        self.buttonBox = QtGui.QDialogButtonBox(self.verticalLayoutWidget_2)
+        self.buttonBox.setOrientation(QtCore.Qt.Horizontal)
+        self.buttonBox.setStandardButtons(QtGui.QDialogButtonBox.Cancel|QtGui.QDialogButtonBox.Ok)
+        self.buttonBox.setObjectName("buttonBox")
+        self.verticalLayout_2.addWidget(self.buttonBox)
+        self.verticalLayout_3.addWidget(self.splitter)
+
+        self.retranslateUi(Dialog)
+        QtCore.QObject.connect(self.buttonBox, QtCore.SIGNAL("accepted()"), Dialog.accept)
+        QtCore.QObject.connect(self.buttonBox, QtCore.SIGNAL("rejected()"), Dialog.reject)
+        QtCore.QMetaObject.connectSlotsByName(Dialog)
+
+    def retranslateUi(self, Dialog):
+        Dialog.setWindowTitle(QtGui.QApplication.translate("Dialog", "Install a mod", None, QtGui.QApplication.UnicodeUTF8))
+        self.titleLabel.setText(QtGui.QApplication.translate("Dialog", "Install {MOD}?", None, QtGui.QApplication.UnicodeUTF8))
+        self.treeWidget.headerItem().setText(0, QtGui.QApplication.translate("Dialog", "Name", None, QtGui.QApplication.UnicodeUTF8))
+        self.treeWidget.headerItem().setText(1, QtGui.QApplication.translate("Dialog", "Filesize", None, QtGui.QApplication.UnicodeUTF8))
+        self.dlSizeLabel.setText(QtGui.QApplication.translate("Dialog", "Download size: {DL_SIZE}", None, QtGui.QApplication.UnicodeUTF8))
+        self.label.setText(QtGui.QApplication.translate("Dialog", "Notes:", None, QtGui.QApplication.UnicodeUTF8))
+
