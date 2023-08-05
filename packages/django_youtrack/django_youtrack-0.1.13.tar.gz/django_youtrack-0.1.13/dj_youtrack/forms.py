@@ -1,0 +1,37 @@
+# -*- encoding: utf-8 -*-
+from django import forms
+from django.conf import settings
+from youtrack.connection import Connection
+from youtrack import YouTrackException
+
+
+class IssueForm(forms.Form):
+    email = forms.EmailField()
+    description = forms.CharField(widget=forms.Textarea)
+    commands = []
+
+    def get_summary(self):
+        return u'Issue from feedback form'
+
+    def __init__(self, project, subsystem=None, **kwargs):
+        self.project = project
+        self.subsystem = subsystem
+        super(IssueForm, self).__init__(**kwargs)
+
+    def add_command(self, command):
+        self.commands.append(command)
+
+    def submit(self):
+        try:
+            connection = Connection(settings.YOUTRACK_URL, settings.YOUTRACK_LOGIN, settings.YOUTRACK_PASSWORD)
+            response, content = connection.createIssue(self.project, assignee=None,
+                                                       summary=self.get_summary().encode('utf-8'),
+                                                       description=self.cleaned_data['description'].encode('utf-8'))
+            issue_id = response['location'].split('/')[-1]
+            if self.subsystem is not None:
+                self.commands.append('Subsystem %s' % self.subsystem)
+            self.commands.append('Customer email "%s"' % self.cleaned_data['email'])
+            connection.executeCommand(issue_id, u' '.join(self.commands))
+            return True
+        except YouTrackException:
+            return False
