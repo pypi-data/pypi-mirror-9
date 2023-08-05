@@ -1,0 +1,80 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# BASC Imageboard Archiver
+from __future__ import print_function
+from __future__ import absolute_import
+
+__doc__ = """BASC-Archiver.
+
+Archives threads from 4chan and other imageboards, including images and/or
+thumbnails, thread HTML, JSON if available, and produces a list of
+referenced external links.
+
+Usage:
+  thread-archiver <url>... [options]
+  thread-archiver -h | --help
+  thread-archiver -v | --version
+
+Options:
+  --path=<string>            Path to folder where archives will be saved [default: ./archive]
+  --runonce                  Downloads the thread as it is presently, then exits
+  --delay=<float>            Delay between file downloads [default: 0]
+  --poll-delay=<float>       Delay between thread checks [default: 20]
+  --nothumbs                 Don't download thumbnails
+  --thumbsonly               Download thumbnails, no images
+  --ssl                      Download using HTTPS
+  --follow-children          Follow threads linked in downloaded threads
+  --follow-to-other-boards   Follow linked threads, even if from other boards
+  --silent                   Suppresses mundane printouts, prints what's important
+  --verbose                  Printout more information than normal
+  -h --help                  Show help
+  -v --version               Show version
+"""
+
+from docopt import docopt
+import time
+import sys
+
+from basc_archiver import version, Options, Archiver
+
+if __name__ == '__main__':
+    args = docopt(__doc__, version=version)
+
+    options = Options(args['--path'], args['--ssl'], silent=args['--silent'], verbose=args['--verbose'],
+                      delay=args['--delay'],
+                      skip_thumbs=args['--nothumbs'], thumbs_only=args['--thumbsonly'],
+                      follow_child_threads=args['--follow-children'], follow_to_other_boards=args['--follow-to-other-boards'])
+    archiver = Archiver(options)
+
+    # add threads to our archiver
+    for url in args['<url>']:
+        archiver.add_thread(url)
+
+    if archiver.existing_threads < 1:
+        print('')
+        print('We could not find any of the supplied threads, exiting.')
+        sys.exit(0)
+
+    # download thread loop
+    try:
+        if args['--runonce']:
+            archiver.download_threads()
+        else:
+            first_run = True
+            while True:
+                archiver.download_threads()
+
+                if archiver.existing_threads < 1:
+                    print('')
+                    print("All threads have either 404'd or no longer exist, exiting.")
+                    break
+
+                if first_run or not options.silent:
+                    print('Waiting {} seconds before retrying (Type Ctrl-C to stop)'.format(args['--poll-delay']))
+                time.sleep(float(args['--poll-delay']))
+
+                if first_run:
+                    first_run = False
+    except KeyboardInterrupt:
+        print('')
+        print('Dump complete. To resume dumping, run this script again.')
