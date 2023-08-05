@@ -1,0 +1,10 @@
+__version__ = "0.2.40"
+__git_commiter_name__ = "Guy Rozendorn"
+__git_commiter_email__ = "guy@rzn.co.il"
+__git_branch__ = '(detached from v0.2.40)'
+__git_remote_tracking_branch__ = '(No remote tracking)'
+__git_remote_url__ = '(Not remote tracking)'
+__git_head_hash__ = '1be3e581938f1a588d6094945315091e33854725'
+__git_head_subject__ = 'Finished release v0.2.40.'
+__git_head_message__ = "* release/v0.2.40:\n  HIPVM-710 retry rescan on vmware after 30 seconds\n  HIPVM-710 refactoring rescan_and_wait_for and initiate_rescan to support a more granular rescan in VMware\n  raise error from vm's _refresh_host_storage thread\n  don't use run_together in windows' initiate_rescan\n  HIPVM-688 support raise_error in rescan_and_wait_for"
+__git_dirty_diff__ = ''
