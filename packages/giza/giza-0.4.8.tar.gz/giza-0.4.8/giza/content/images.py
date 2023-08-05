@@ -1,0 +1,317 @@
+# Copyright 2014 MongoDB, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""
+Given a a specification of an image, and an ``svg`` in the configured image
+directory, build desired image artifacts (using ``inkscape``) as well as an
+``rst`` file that includes all of content to include the image in the
+output.
+
+With images generated from SVG, we separate the generation of build artifacts
+(images) from their source, which means the documentation can use
+output-specific images and potentially translate the text in the diagrams. By
+generating all of the ``rst`` to inclde the images, its possible display and
+maintain the presentation of images systematically and centrally.
+
+The format of the image specification is: ::
+
+  {
+    "name": <imgBaseName>,
+    "alt": <text>,
+    "output": [
+      {
+        "type": <string>,
+        "tag": <string>,
+        "dpi": <int>,
+        "width": <int>
+      },
+    ]
+  }
+
+The ``tag`` field is optional and appends a string to the generated file name,
+to facilitate multiple output targets without having conflicting file names.
+
+The ``<imgBaseName>`` is the name of the ``.svg`` file without the
+extension. The main image-generation operation is in
+:func:`giza.content.images.image_tasks()`, while definition of the `rst`` content
+is in :func:`giza.content.images.generate_image_pages()`.
+
+.. note::
+
+   The current implementation does not strictly enforce the metadata schema.
+"""
+
+import sys
+import os.path
+import logging
+import subprocess
+
+import libgiza.task
+
+from docutils.core import publish_parts
+from rstcloth.rstcloth import RstCloth
+
+from giza.tools.files import verbose_remove
+
+logger = logging.getLogger('giza.content.images')
+
+# Internal Supporting Methods
+
+
+def generate_image_pages(dir, name, alt, output, conf):
+    r = RstCloth()
+
+    image = '/'.join([dir, name])
+
+    for img_output in output:
+        img_output['width'] = str(img_output['width']) + 'px'
+
+        if img_output['type'] == 'offset':
+            build_type = 'eps'
+        else:
+            build_type = 'png'
+
+        r.newline()
+
+        if 'tag' in img_output:
+            tag = ''.join(['-', img_output['tag'], '.', build_type])
+        else:
+            tag = '.' + build_type
+
+        options = [('alt', alt), ('align', 'center'), ('figwidth', img_output['width'])]
+
+        if 'scale' in img_output:
+            options.append(('scale', img_output['scale']))
+        if 'target' in img_output:
+            options.append(('target', (img_output['target'])))
+
+        if img_output['type'] == 'target':
+            continue
+        elif img_output['type'] == 'print':
+            r.directive('only', 'latex and not offset', wrap=False)
+            r.newline()
+
+            r.directive(name='figure',
+                        arg='/images/{0}{1}'.format(name, tag),
+                        fields=options,
+                        indent=3)
+            r.newline()
+        elif img_output['type'] == 'offset':
+            tex_figure = [
+                r'\begin{figure}[h!]',
+                r'\centering',
+                ''.join([r'\includegraphics[width=', img_output['width'],
+                         ']{', name, tag, '}']),
+                r'\end{figure}'
+            ]
+
+            r.directive('only', 'latex and offset', wrap=False)
+            r.newline()
+            r.directive('raw', 'latex', content=tex_figure, indent=3)
+        else:
+            r.directive('only', 'website and slides', wrap=False)
+            r.newline()
+            r.directive(name='figure',
+                        arg='/images/{0}{1}'.format(name, tag),
+                        fields=options,
+                        indent=3)
+
+            r.newline()
+
+            r.directive('only', 'website and html', wrap=False)
+            r.newline()
+            r.directive(name='figure',
+                        arg='/images/{0}{1}'.format(name, tag),
+                        fields=options,
+                        indent=3)
+
+            r.newline()
+
+            if img_output['width'] > 740:
+                options[2] = ('figwidth', 740)
+
+            r.directive('only', 'website and not (html or slides)', wrap=False)
+            r.newline()
+            img_str = ''.join(['<div class="figure align-center" style="max-width:{5};">',
+                               '<img src="{0}/{1}/_images/{2}{3}" alt="{4}">', '</img>',
+                               '{6}</div>'])
+            alt_html = publish_parts(alt, writer_name='html')['body'].strip()
+            r.directive(name='raw', arg='html',
+                        content=img_str.format(conf.project.url,
+                                               conf.git.branches.current, name, tag, alt,
+                                               img_output['width'], alt_html),
+                        indent=3)
+
+        r.newline()
+
+    image_rst_file_path = os.path.join(conf.paths.projectroot, image + '.rst')
+    r.write(image_rst_file_path)
+    logger.debug('generated include file {0}.rst'.format(image))
+
+
+def _get_inkscape_cmd():
+    if sys.platform in ['linux', 'linux2']:
+        return '/usr/bin/inkscape'
+    elif sys.platform == 'darwin':
+        inkscape = '/Applications/Inkscape.app/Contents/Resources/bin/inkscape'
+        if os.path.exists(inkscape):
+            return inkscape
+
+    return 'inkscape'
+
+
+def _generate_images(cmd, dpi, width, target, source):
+    full_cmd = cmd.format(cmd=_get_inkscape_cmd(),
+                          dpi=dpi,
+                          width=width,
+                          target=target,
+                          source=source)
+
+    with open(os.devnull, 'w') as f:
+        r = subprocess.call(full_cmd.split(), stdout=f, stderr=f)
+
+    if r == 0:
+        logger.info('generated image file {0}'.format(target))
+    else:
+        logger.warning('error generating image: ' + target)
+        logger.error(full_cmd)
+
+
+def get_images_metadata_file(conf):
+    base = None
+    for fn in conf.system.files.paths:
+        if isinstance(fn, dict):
+            if 'images' in fn:
+                base = fn['images']
+                break
+        else:
+            if fn.startswith('images'):
+                base = fn
+                break
+
+    if base is None:
+        return None
+    elif base.startswith('/'):
+        base = base[1:]
+        return os.path.join(conf.paths.projectroot, conf.paths.branch_output, base)
+    else:
+        return os.path.join(conf.paths.projectroot, conf.paths.builddata, base)
+
+
+def image_tasks(conf):
+    tasks = []
+
+    meta_file = get_images_metadata_file(conf)
+
+    if 'images' not in conf.system.files.data:
+        logger.info('no images to generate')
+        return
+
+    if isinstance(conf.system.files.data.images, list):
+        images = conf.system.files.data.images
+    else:
+        images = [conf.system.files.data.images]
+
+    image_dir = conf.paths.branch_images
+
+    for image in images:
+        image['dir'] = image_dir
+        image['conf'] = conf
+
+        source_base = os.path.join(conf.paths.projectroot, image['dir'], image['name'])
+        source_file = source_base + '.svg'
+        source_core = os.path.join(conf.paths.projectroot,
+                                   conf.paths.branch_images,
+                                   image['name'] + '.svg')
+        rst_file = source_base + '.rst'
+
+        if not os.path.isfile(source_core):
+            logger.error('"{0}" does not exist'.format(source_core))
+            continue
+
+        description = "generating rst include file {0} for {1}".format(rst_file, source_core)
+        t = libgiza.task.Task(job=generate_image_pages,
+                              args=image,  # as kwargs
+                              target=rst_file,
+                              dependency=[meta_file, os.path.abspath(__file__)],
+                              description=description)
+        tasks.append(t)
+        logger.debug('adding task for image rst file: {0}'.format(rst_file))
+
+        if conf.runstate.fast is True:
+            continue
+
+        for output in image['output']:
+            if output['type'] == 'offset':
+                build_type = 'eps'
+            else:
+                build_type = 'png'
+
+            if 'tag' in output:
+                tag = '-' + output['tag']
+            else:
+                tag = ''
+
+            target_img = ''.join([source_base, tag, '.', build_type])
+
+            if build_type == 'png':
+                inkscape_cmd = '{cmd} -z -d {dpi} -w {width} -y 0.0 -e {target} {source}'
+
+            elif build_type == 'eps':
+                inkscape_cmd = '{cmd} -z -d {dpi} -w {width} -y 1.0 -E {target} {source}'
+
+            description = 'generating image file {0} from {1}'.format(target_img, source_core)
+            t = libgiza.task.Task(job=_generate_images,
+                                  args=(inkscape_cmd, output['dpi'],
+                                        output['width'], target_img,
+                                        source_file),
+                                  target=target_img,
+                                  dependency=source_core,
+                                  description=description)
+            tasks.append(t)
+            logger.debug('adding image creation job for {0}'.format(target_img))
+
+    return tasks
+
+
+def image_clean(conf):
+    if 'images' not in conf.system.files.data:
+        logger.info('no images to clean')
+        return []
+
+    tasks = []
+    for image in conf.system.files.data.images:
+        source_base = os.path.join(conf.paths.projectroot, conf.paths.branch_images, image['name'])
+
+        t = libgiza.task.Task(job=verbose_remove,
+                              args=[source_base + '.rst'],
+                              target=True,
+                              dependency=None,
+                              description="removing img rst file")
+        tasks.append(t)
+
+        for output in image['output']:
+            if 'tag' in output:
+                rm_args = ''.join((source_base, '-', output['tag'], '-', '.png'))
+            else:
+                rm_args = source_base, '.png'
+
+            t = libgiza.task.Task(job=verbose_remove,
+                                  args=rm_args,
+                                  target=True,
+                                  dependency=None,
+                                  description="removing img file")
+            tasks.append(t)
+
+    return tasks
