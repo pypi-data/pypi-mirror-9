@@ -1,0 +1,11 @@
+__version__ = "0.4.22"
+__git_commiter_name__ = "Guy Rozendorn"
+__git_commiter_email__ = "guy@rzn.co.il"
+__git_branch__ = '(detached from v0.4.22)'
+__git_remote_tracking_branch__ = '(No remote tracking)'
+__git_remote_url__ = '(Not remote tracking)'
+__git_head_hash__ = '7c21fdde030f04788025f513dd20375a030686a6'
+__git_head_subject__ = 'Finished release v0.4.22.'
+__git_head_message__ = '* release/v0.4.22:\n  HOSTDEV-1466 removing the inline version input in buildout.cfg\n  TRIVIAL support for Python-2.7.9\n  TRIVIAL tests should not run easy_install\n  HOSTDEV-1466 another fix for supporting our default.in by as default input'
+__git_dirty_diff__ = ''
+__git_commit_date__ = '2014-12-20 17:23:33'
