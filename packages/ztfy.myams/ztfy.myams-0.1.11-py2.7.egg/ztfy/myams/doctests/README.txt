@@ -1,0 +1,3 @@
+ztfy.myams doctests
+=================
+
