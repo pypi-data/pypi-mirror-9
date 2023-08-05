@@ -1,0 +1,130 @@
+Introduction
+============
+
+Feature
+-------------
+
+A video will be automatic uploading to AWS S3 and creating for MP4 file, HLS file and thumbnail Elastic Transcoder,
+when you upload video file on Plone.
+The video will be hosted HLS (Smart phone/Safari) or RTMP (PC browser) via CloudFront, when finished trans coding.
+
+This system will be creating `Signed URL` for security content, You can see the video in 7200s (2h) at showing this Plone content.
+This is you could see the video, if you have view permission. This system is able to host for secure.
+
+The uploaded video file will NOT be permanently saved, Only trans coded video file will saved on S3.
+
+Setup
+--------
+
+- Install by buildout
+- Quick install
+- Setting on AWS
+
+  - Login to AWS
+  - Create new IAM and Create KEY PAIR
+  - Setting to permission for this IAM user, it's joining Admin Group.
+  - Create Cloud Front KEY PAIR and download public key and private key.
+
+- Streaming AWS settings on Plone
+
+  - The setting URL: http(s)://YOUR_DOMAIN/@@streaming-aws-settings (Streaming AWS setting)
+  - ACCESS_KEY_ID: KEY ID of IAM
+  - SECRET_ACCESS_KEY: ACCESS_KEY of IAM
+  - REGION_NAME: Selecting REGION
+  - TEMP_BUCKET_NAME: Temporary bucket for uploading your video, the file deleting after 1 day.
+  - PRIVATE_BUCKET_NAME: Data saved bucket for your video.
+  - PRIVATE_BUCKET_SUB_FOLDER: Sub folder name for needed (NOT required)
+  - TRANS_CODER_PIPELINE_NAME: Name of Trans coder, it's free word, if you want to use transcoder
+  - CloudFront_KEYPAIR_ID: KEY PAIR of CloudFront
+  - CloudFront_PRIVATE_KEY_STRING: Private key of CloudFront. Include of `-----BEGIN RSA PRIVATE KEY-----`.
+  - Click Save button.
+
+  - Click to `Setting AWS` link on top of this page. This is stating AWS setting for S3, Transcoder and CloudFront.
+  - You can look at items of CloudFront_web_domain and CloudFront_rtmp_domain
+
+  - You need to use `AWS Web console`. You move to your 2 CloudFront Distribution setting, you need to change `Grant Read Permissions on Bucket: Yes` & Save.
+
+- You can create content `StreamingVideo` by Add New menu.
+- Deleting video file of already no need.
+
+  -
+
+- AWS S3上の不要な動画の削除
+
+  - This system is creating new file at every upload file.
+  - S3 file management URL: http(s)://YOUR_DOMAIN/@@manage-s3-video (Manage S3 Videos)
+  - Deleting garbage files on S3 to click to `Remove garbage on S3`
+
+
+Code repository
+-------------------
+
+- https://bitbucket.org/cmscom/c2.app.streamingaws
+
+Issues
+----------
+
+- https://bitbucket.org/cmscom/c2.app.streamingaws/issues
+
+Help me
+----------
+
+- I'm looking for supporter of creating / modifying this documentation for English
+- I'm looking for tester. Please comment or pull request to @terapyon
+
+
+
+Introduction by Japanese
+===============================
+
+このプロダクトは、動画ストリーミングをPlone上でサポートする為のものです。AWSと連携して使います。
+
+特徴
+------
+
+Ploneのコンテンツとして動画をアップロードすると、自動的にS3にアップロードし、Elastic Transcoderにて、小さなMP4形式の動画、HLS用動画とサムネイル画像を生成します。
+変換が終わると、CloudFrontを経由し、HLS(スマホ・Safariの場合)、RTMP(PCブラウザの場合)にて動画閲覧できます。
+
+CloudFrontからの動画は、7200秒(2時間)限定のURLにて閲覧することが出来ます。
+すなわち、Ploneのコンテンツへの閲覧権限がないと、CloudFrontからの動画を閲覧することが出来ません。セキュアに動画の配信が可能です。
+
+アップロードしたファイルは変換されたもののみが永続化されます。
+
+使い方
+--------
+
+- buildoutでインストール
+- Quick install
+- AWSの設定
+
+  - AWS にログイン
+  - IAM を作り、KEY PAIRを作り、記録
+  - IAM の権限設定。今回は全ての権限を渡したので、Adminsグループに追加＜＜TODO: 修正したい
+  - CloudFrontのKEY PAIRを作り、公開鍵と秘密鍵をダウンロード
+
+- Streaming AWS settings で設定
+
+  - 管理画面URL: http(s)://YOUR_DOMAIN/@@streaming-aws-settings (コントロールパネルから「Streaming AWS setting」リンクから遷移可能)
+  - ACCESS_KEY_ID: IAMのKEY ID
+  - SECRET_ACCESS_KEY: IAMのACCESS_KEY
+  - REGION_NAME: 選択する
+  - TEMP_BUCKET_NAME: ビデオファイルの仮置きのバケット、このビデオファイルは1日で削除されます (任意の文字(グローバルで一意になっている必要がある))
+  - PRIVATE_BUCKET_NAME: ビデオファイルの最終的な置き場 (任意の文字(グローバルで一意になっている必要がある))
+  - PRIVATE_BUCKET_SUB_FOLDER: サブフォルダ(必要な場合) (任意の文字)
+  - TRANS_CODER_PIPELINE_NAME: トランスコーダの名称 (任意の文字) (変換が必要な場合)
+  - CloudFront_KEYPAIR_ID: CloudFrontのKEY PAIR
+  - CloudFront_PRIVATE_KEY_STRING: CloudFrontの秘密鍵を入力 (-----BEGIN RSA PRIVATE KEY-----を含めて)
+  - 保存
+
+  - このページの上記の "Setting AWS" リンクをクリックし、S3の設定、Trans Coderの設定、CloudFrontの設定が行われる
+  - その後、CloudFront_web_domain と CloudFront_rtmp_domain が表示される
+  - その後、CloudFrontの2つのDistributionに対して、「Grant Read Permissions on Bucket: Yes」にして保存し直す
+
+- 新規アイテムの追加で、「StreamingVideo」を選択しコンテンツを追加
+- AWS S3上の不要な動画の削除
+
+  - Ploneがアップロードするたびに、S3上に新規に動画ファイルが配置される。つまりS3上にゴミが残る。
+  - 管理画面URL: http(s)://YOUR_DOMAIN/@@manage-s3-video (コントロールパネルから「Manage S3 Videos」リンクから遷移可能)
+  - 「Remove garbage on S3」をクリックすると、Ploneに存在しないコンテンツ(つまり紐付きされていない)をS3から削除 ＜＜TODO: バグで動作してない
+
+
