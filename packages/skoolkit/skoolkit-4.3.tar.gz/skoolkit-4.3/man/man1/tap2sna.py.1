@@ -1,0 +1,339 @@
+.\" Man page generated from reStructuredText.
+.
+.TH "TAP2SNA.PY" "1" "February 14, 2015" "4.3" "SkoolKit"
+.SH NAME
+tap2sna.py \- convert a TAP or TZX file into a snapshot file
+.
+.nr rst2man-indent-level 0
+.
+.de1 rstReportMargin
+\\$1 \\n[an-margin]
+level \\n[rst2man-indent-level]
+level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
+-
+\\n[rst2man-indent0]
+\\n[rst2man-indent1]
+\\n[rst2man-indent2]
+..
+.de1 INDENT
+.\" .rstReportMargin pre:
+. RS \\$1
+. nr rst2man-indent\\n[rst2man-indent-level] \\n[an-margin]
+. nr rst2man-indent-level +1
+.\" .rstReportMargin post:
+..
+.de UNINDENT
+. RE
+.\" indent \\n[an-margin]
+.\" old: \\n[rst2man-indent\\n[rst2man-indent-level]]
+.nr rst2man-indent-level -1
+.\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
+.in \\n[rst2man-indent\\n[rst2man-indent-level]]u
+..
+.SH SYNOPSIS
+.nf
+\fBtap2sna.py\fP [options] INPUT snapshot.z80
+\fBtap2sna.py\fP @FILE [args]
+.fi
+.sp
+.SH DESCRIPTION
+.sp
+\fBtap2sna.py\fP converts a TAP or TZX file (which may be inside a zip archive)
+into a Z80 snapshot. INPUT may be the full URL to a remote zip archive or
+TAP/TZX file, or the path to a local file. Arguments may be read from FILE
+instead of (or as well as) being given on the command line.
+.SH OPTIONS
+.INDENT 0.0
+.TP
+.BI \-d \ DIR\fP,\fB \ \-\-output\-dir \ DIR
+Write the snapshot file in this directory.
+.TP
+.B \-f\fP,\fB  \-\-force
+Overwrite an existing snapshot.
+.TP
+.BI \-\-ram \ OPERATION
+Perform a load, move or poke operation on the memory snapshot being built. Do
+\fB\-\-ram help\fP for more information, or see the sections on \fBLOAD\fP,
+\fBMOVE\fP and \fBPOKE\fP operations below. This option may be used multiple
+times.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-reg name=value
+Set the value of a register. Do \fB\-\-reg help\fP for more information, or see
+the section on \fBREGISTERS\fP below. This option may be used multiple times.
+.TP
+.B \-\-state name=value
+Set a hardware state attribute. Do \fB\-\-state help\fP for more information, or
+see the section on \fBHARDWARE STATE\fP below. This option may be used multiple
+times.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-V\fP,\fB  \-\-version
+Show the SkoolKit version number and exit.
+.UNINDENT
+.SH LOAD OPERATIONS
+.sp
+By default, \fBtap2sna.py\fP loads bytes from every data block on the tape, using
+the start address given in the corresponding header. For tapes that contain
+headerless data blocks, headers with incorrect start addresses, or irrelevant
+blocks, the \fB\-\-ram\fP option can be used to load bytes from specific blocks at
+the appropriate addresses. The syntax is:
+.nf
+
+.in +2
+\fB\-\-ram load=block,start[,length,step,offset,inc]\fP
+.in -2
+.fi
+.sp
+.sp
+where the parameters have the following meanings:
+.INDENT 0.0
+.TP
+.B \fBblock\fP
+The tape block number; the first block is 1, the next is 2, etc.
+.TP
+.B \fBstart\fP
+The destination address at which to start loading.
+.TP
+.B \fBlength\fP
+The number of bytes to load (optional; defaults to the number of bytes
+remaining in the block).
+.TP
+.B \fBstep\fP
+This number is added to the destination address after each byte is loaded
+(optional; default=1).
+.TP
+.B \fBoffset\fP
+This number is added to the destination address before a byte is loaded, and
+subtracted after the byte is loaded (optional; default=0). It is analogous to
+the offset \fBd\fP in the \fBLD (IX+d),L\fP operation that is commonly used in
+load routines to copy the byte just loaded from tape (\fBL\fP) into memory.
+.TP
+.B \fBinc\fP
+After \fBstep\fP is added to the destination address, this number is added too
+if the result overflowed past 65535 (optional; default=0).
+.UNINDENT
+.sp
+A single tape block can be loaded in two or more stages; for example:
+.nf
+
+.in +2
+\fB\-\-ram load=2,32768,2048\fP # Load the first 2K at 32768
+\fB\-\-ram load=2,49152\fP      # Load the remainder at 49152
+.in -2
+.fi
+.sp
+.SH MOVE OPERATIONS
+.sp
+The \fB\-\-ram\fP option can be used to move a block of bytes from one location to
+another before saving the snapshot.
+.nf
+
+.in +2
+\fB\-\-ram move=src,N,dest\fP
+.in -2
+.fi
+.sp
+.sp
+This moves a block of \fBN\fP bytes from \fBsrc\fP to \fBdest\fP\&. For example:
+.nf
+
+.in +2
+\fB\-\-ram move=32512,256,32768\fP # Move 32512\-32767 to 32768\-33023
+.in -2
+.fi
+.sp
+.SH POKE OPERATIONS
+.sp
+The \fB\-\-ram\fP option can be used to POKE values into the snapshot before saving
+it.
+.nf
+
+.in +2
+\fB\-\-ram poke=A[\-B[\-C]],V\fP
+.in -2
+.fi
+.sp
+.sp
+This does \fBPOKE N,V\fP for \fBN\fP in \fB{A, A+C, A+2C..., B}\fP, where:
+.sp
+\fBA\fP is the first address to POKE
+.sp
+\fBB\fP is the last address to POKE (optional; default is \fBA\fP)
+.sp
+\fBC\fP is the step (optional; default=1)
+.sp
+\fBV\fP is the value to POKE
+.sp
+For example:
+.nf
+
+.in +2
+\fB\-\-ram poke=24576,16\fP        # POKE 24576,16
+\fB\-\-ram poke=30000\-30002,0\fP   # POKE 30000,0: POKE 30001,0: POKE 30002,0
+\fB\-\-ram poke=40000\-40004\-2,1\fP # POKE 40000,1: POKE 40002,1: POKE 40004,1
+.in -2
+.fi
+.sp
+.SH REGISTERS
+.sp
+The \fB\-\-reg\fP option sets the value of a register in the snapshot.
+.nf
+
+.in +2
+\fB\-\-reg name=value\fP
+.in -2
+.fi
+.sp
+.sp
+For example:
+.nf
+
+.in +2
+\fB\-\-reg hl=32768\fP
+\fB\-\-reg b=17\fP
+.in -2
+.fi
+.sp
+.sp
+To set the value of an alternate (shadow) register, use the \(aq^\(aq prefix:
+.nf
+
+.in +2
+\fB\-\-reg ^hl=10072\fP
+.in -2
+.fi
+.sp
+.sp
+Recognised register names are:
+.nf
+
+.in +2
+\fB^a\fP, \fB^b\fP, \fB^bc\fP, \fB^c\fP, \fB^d\fP, \fB^de\fP, \fB^e\fP, \fB^f\fP, \fB^h\fP, \fB^hl\fP, \fB^l\fP,
+\fBa\fP, \fBb\fP, \fBbc\fP, \fBc\fP, \fBd\fP, \fBde\fP, \fBe\fP, \fBf\fP, \fBh\fP, \fBhl\fP, \fBl\fP,
+\fBi\fP, \fBix\fP, \fBiy\fP, \fBpc\fP, \fBr\fP, \fBsp\fP
+.in -2
+.fi
+.sp
+.sp
+The default value for each register is 0, with the following exceptions:
+.nf
+
+.in +2
+\fBi=63\fP
+\fBiy=23610\fP
+.in -2
+.fi
+.sp
+.SH HARDWARE STATE
+.sp
+The \fB\-\-state\fP option sets a hardware state attribute.
+.nf
+
+.in +2
+\fB\-\-state name=value\fP
+.in -2
+.fi
+.sp
+.sp
+Recognised attribute names and their default values are:
+.INDENT 0.0
+.TP
+.B \fBborder\fP
+border colour (default=0)
+.TP
+.B \fBiff\fP
+interrupt flip\-flop: 0=disabled, 1=enabled (default=1)
+.TP
+.B \fBim\fP
+interrupt mode (default=1)
+.UNINDENT
+.SH READING ARGUMENTS FROM A FILE
+.sp
+For complex snapshots that require many \fB\-\-ram\fP, \fB\-\-reg\fP or \fB\-\-state\fP
+options to build, it may be more convenient to store the arguments to
+\fBtap2sna.py\fP in a file. For example, if the file \fBgame.t2s\fP has the
+following contents:
+.nf
+
+.in +2
+;
+; tap2sna.py file for GAME
+;
+http://example.com/pub/games/GAME.zip
+game.z80
+\-\-ram load=4,32768         # Load the fourth block at 32768
+\-\-ram move=40960,512,43520 # Move 40960\-41471 to 43520\-44031
+\-\-reg pc=34816             # Start at 34816
+\-\-reg sp=32768             # Stack at 32768
+\-\-state iff=0              # Disable interrupts
+.in -2
+.fi
+.sp
+.sp
+then:
+.nf
+
+.in +2
+\fBtap2sna.py @game.t2s\fP
+.in -2
+.fi
+.sp
+.sp
+will create \fBgame.z80\fP as if the arguments specified in \fBgame.t2s\fP had been
+given on the command line.
+.SH TZX SUPPORT
+.sp
+Support for TZX files is limited to block types 0x10 (Standard Speed Data
+Block) and 0x11 (Turbo Speed Data Block).
+.SH EXAMPLES
+.INDENT 0.0
+.IP 1. 3
+Extract the TAP or TZX file from a remote zip archive and convert it into a
+Z80 snapshot:
+.nf
+
+.in +2
+\fBtap2sna.py ftp://example.com/game.zip game.z80\fP
+.in -2
+.fi
+.sp
+.IP 2. 3
+Extract the TAP or TZX file from a zip archive, and convert it into a Z80
+snapshot with the program counter set to 32768:
+.nf
+
+.in +2
+\fBtap2sna.py \-\-reg pc=32768 game.zip game.z80\fP
+.in -2
+.fi
+.sp
+.IP 3. 3
+Convert a TZX file into a Z80 snapshot by loading the third block on the
+tape at 25000:
+.nf
+
+.in +2
+\fBtap2sna.py \-\-ram load=3,25000 game.tzx game.z80\fP
+.in -2
+.fi
+.sp
+.IP 4. 3
+Convert a TZX file into a Z80 snapshot using options read from the file
+\fBgame.t2s\fP:
+.nf
+
+.in +2
+\fBtap2sna.py @game.t2s game.tzx game.z80\fP
+.in -2
+.fi
+.sp
+.UNINDENT
+.SH AUTHOR
+Richard Dymond
+.SH COPYRIGHT
+2015, Richard Dymond
+.\" Generated by docutils manpage writer.
+.
