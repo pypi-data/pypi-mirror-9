@@ -1,0 +1,1 @@
+This provides a Python wrapper around Viddler's v2 API.
