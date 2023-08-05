@@ -1,0 +1,120 @@
+from django.template import Library
+from django.template.base import NodeList
+from django.template.defaulttags import IfNode, TemplateLiteral
+from djinn_contenttypes.registry import CTRegistry
+
+
+register = Library()
+
+
+class HasLocalRoleNode(IfNode):
+
+    def __init__(self, ctx, user, role, nodelist_true, nodelist_false=None):
+        self.nodelist_true, self.nodelist_false = nodelist_true, nodelist_false
+        self.ctx = ctx
+        self.usr = user
+        self.role = role
+
+    def render(self, context):
+
+        ctx = self.ctx.eval(context)
+        usr = self.usr.eval(context)
+        role = self.role.eval(context)
+
+        if ctx.has_local_role(usr, role):
+            return self.nodelist_true.render(context)
+        else:
+            return self.nodelist_false.render(context)
+
+
+def has_local_role(parser, token):
+
+    bits = token.split_contents()[1:]
+
+    ctx = TemplateLiteral(parser.compile_filter(bits[0]), bits[0])
+    user = TemplateLiteral(parser.compile_filter(bits[1]), bits[1])
+    role = TemplateLiteral(parser.compile_filter(bits[2]), bits[2])
+
+    nodelist_true = parser.parse(('else', 'endif'))
+    token = parser.next_token()
+    if token.contents == 'else':
+        nodelist_false = parser.parse(('endif',))
+        parser.delete_first_token()
+    else:
+        nodelist_false = NodeList()
+    return HasLocalRoleNode(ctx, user, role, nodelist_true, nodelist_false)
+
+register.tag("has_local_role", has_local_role)
+
+
+class HasPermissionNode(IfNode):
+
+    def __init__(self, ctx, user, perm, nodelist_true, nodelist_false=None):
+        self.nodelist_true, self.nodelist_false = nodelist_true, nodelist_false
+        self.ctx = ctx
+        self.usr = user
+        self.perm = perm
+
+    def render(self, context):
+
+        ctx = self.ctx.eval(context)
+        usr = self.usr.eval(context)
+
+        if hasattr(self.perm, "eval"):
+            perm = self.perm.eval(context)
+        else:
+            perm = self.perm
+
+        if usr.has_perm(perm, obj=ctx):
+            return self.nodelist_true.render(context)
+        else:
+            return self.nodelist_false.render(context)
+
+
+def if_permission(parser, token):
+
+    """ Usage: ifpermission <context> <user object> '<permission codename>'"""
+
+    bits = token.split_contents()[1:]
+
+    ctx = TemplateLiteral(parser.compile_filter(bits[0]), bits[0])
+    user = TemplateLiteral(parser.compile_filter(bits[1]), bits[1])
+    perm = TemplateLiteral(parser.compile_filter(bits[2]), bits[2])
+
+    nodelist_true = parser.parse(('else', 'endifpermission'))
+    token = parser.next_token()
+
+    if token.contents == 'else':
+        nodelist_false = parser.parse(('endifpermission',))
+        parser.delete_first_token()
+    else:
+        nodelist_false = NodeList()
+    return HasPermissionNode(ctx, user, perm, nodelist_true, nodelist_false)
+
+register.tag("ifpermission", if_permission)
+
+
+@register.simple_tag()
+def username(user):
+
+    try:
+        return str(user.profile) or str(user)
+    except:
+        return str(user)
+
+
+@register.inclusion_tag('pgauth/snippets/owner.html', takes_context=True)
+def owner(context, object, editable='True', toggle=False):
+
+    return {'owner': object.get_owner(),
+            'current_user': context['request'].user,
+            'extra_classes': (toggle and 'inline' or ''),
+            'editable': editable == 'True',
+            'object': object}
+
+
+@register.filter(name='viewable')
+def viewable(objects, user):
+
+    return [obj for obj in objects if \
+                user.has_perm("contenttypes.view", obj=obj)]
