@@ -1,0 +1,142 @@
+#!/usr/bin/env python
+import squadron
+from squadron import main,initialize,daemon,log,setup
+from argparse import ArgumentParser, RawTextHelpFormatter
+import json
+import os
+import socket
+import sys
+import logging
+
+def _apply(args, parent, dry_run):
+    parser = ArgumentParser(prog='{} {}'.format(parent.prog, 'check' if dry_run else 'apply'),
+                description='Parses a squadron repo and applies configuration',
+                epilog=parent.epilog,
+                parents=[parent])
+    parser.add_argument('-i', '--directory', help='Input directory')
+    parser.add_argument('-n', '--node-name', help='Override this node\'s name')
+    parser.add_argument('-t', '--status', help='Specify a status hub to register with')
+    parser.add_argument('-c', '--config', help='Override which configuration file to read')
+    parser.add_argument('-d', '--sysdir', help='Directory to store Squadron state in')
+    parser.add_argument('-l', '--loglevel', help='What log level to run at', default='INFO')
+    parser.add_argument('-x', '--dontrollback', help='Don\'t rollback automatically', action='store_true')
+    parser.add_argument('-f', '--force', help='Force apply, don\'t check last run', action='store_true')
+
+    output = parser.parse_args(args)
+
+    log.setup_log(output.loglevel, console=True, squadron_dir=output.directory)
+
+    return main.go(output.directory, output.sysdir, output.config,
+            output.node_name, output.status, output.dontrollback, output.force, dry_run)
+
+def _daemonize(args, parent):
+    parser = ArgumentParser(prog='{} daemon',
+                description='Starts squadron up in daemonized mode',
+                epilog=parent.epilog,
+                parents=[parent])
+    parser.add_argument('-i', '--directory', help='Input directory')
+    parser.add_argument('-n', '--node-name', help='Override this node\'s name')
+    parser.add_argument('-c', '--config', help='Override which configuration file to read')
+    parser.add_argument('-p', '--polltime', help='How long in minutes to wait between polls')
+    parser.add_argument('-r', '--repo', help='What source code repository to poll')
+    parser.add_argument('-l', '--loglevel', help='What log level to run at', default='INFO')
+
+    output = parser.parse_args(args)
+    log.setup_log(output.loglevel, output.config, False, squadron_dir=output.directory)
+
+    return daemon.daemonize(output.directory, output.config, output.polltime, output.repo, output.node_name)
+
+def _init(args, parent):
+    parser = ArgumentParser(prog='{} init'.format(parent.prog),
+                formatter_class=RawTextHelpFormatter,
+                description='Initializes a squadron repository\n' +
+                            'Typical usage:\n' +
+                            '\tsquadron init -i squadron-repo\n' +
+                            '\tsquadron init -i squadron-repo --service name\n' +
+                            '\tsquadron init -i squadron-repo --env dev',
+                epilog=parent.epilog,
+                parents=[parent])
+    parser.add_argument('-i', '--directory', help='Input directory', default=os.getcwd())
+    parser.add_argument('-e','--env', help='name of environment to initialize')
+    parser.add_argument('-c','--copyfrom', help='name of environment to copy (use with -e)')
+    parser.add_argument('-s', '--service', help='name of service to initialize')
+    parser.add_argument('-v', '--version', help='version of the service to initialize', default='0.0.1')
+    parser.add_argument('-f', '--force', help='Force initialize a non-empty directory', action='store_true')
+    parser.add_argument('-g', '--gitrepo', help='Git repo to use')
+    parser.add_argument('-x', '--example', help='initialize with an example', action='store_true')
+    parser.add_argument('-l', '--loglevel', help='What log level to run at', default='INFO')
+
+    output = parser.parse_args(args)
+
+    log.setup_log(output.loglevel, console=True, squadron_dir=output.directory)
+
+    if output.service:
+        return initialize.init_service(output.directory, output.service, output.version)
+    elif output.env:
+        return initialize.init_environment(output.directory, output.env, output.copyfrom)
+    else:
+        return initialize.init(output.directory, output.gitrepo, output.force, output.example)
+
+def _setup(args, parent):
+    parser = ArgumentParser(prog='{} setup'.format(parent.prog),
+                formatter_class=RawTextHelpFormatter,
+                description='Initializes config and state directories.\n' +
+                            'Typical usage:\n' +
+                            '\tsquadron setup',
+                epilog=parent.epilog,
+                parents=[parent])
+    parser.add_argument('-c', '--config', help='Initialize config directory')
+    parser.add_argument('-s', '--state', help='Initialize state directory')
+    parser.add_argument('-l', '--loglevel', help='What log level to run at', default='INFO')
+    output = parser.parse_args(args)
+
+    log.setup_log(output.loglevel, console=True)
+
+    return setup.setup(output.config, output.state)
+
+if __name__ == "__main__":
+    parser = ArgumentParser(
+                description='Easy configuration management tool',
+                usage='%(prog)s [command] [options]',
+                add_help=False,
+                epilog="Version {} Website: http://gosquadron.com".format(squadron.__version__)
+            )
+
+    command_parser = ArgumentParser(
+            description = parser.description,
+            epilog = parser.epilog,
+            usage= parser.usage,
+            parents=[parser])
+    command_parser.add_argument('init', help='Initialization of repositories')
+    command_parser.add_argument('check', help='Perform a dry run of an apply')
+    command_parser.add_argument('apply', help='Apply this configuration')
+    command_parser.add_argument('daemon', help='Background apply config')
+    command_parser.add_argument('help', help='Print out help')
+    command_parser.add_argument('setup', help='Perform one-time setup')
+
+    if len(sys.argv) <= 1:
+        command_parser.print_help()
+        exit(1)
+
+    command = sys.argv[1]
+
+    other_args = sys.argv[2:]
+
+    if command == "init":
+        if not _init(other_args, parser):
+            exit(1)
+    elif command == "apply" or command == "check":
+        if not _apply(other_args, parser, command == "check"):
+            exit(1)
+    elif command == "daemon":
+        if not _daemonize(other_args, parser):
+            exit(1)
+    elif command == "setup":
+        if not _setup(other_args, parser):
+            exit(1)
+    elif command == "help" or command == "-h" or command == "--help":
+        command_parser.print_help()
+    else:
+        print "Unsupported command {}".format(output.command)
+        exit(1)
+
