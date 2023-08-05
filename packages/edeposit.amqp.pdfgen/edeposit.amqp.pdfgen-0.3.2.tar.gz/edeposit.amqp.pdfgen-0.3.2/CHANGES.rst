@@ -1,0 +1,45 @@
+Changelog
+=========
+
+0.3.2
+-----
+    - Added installation notes specific to Suse systems.
+    - Fixed bugs specific to OpenSuse.
+    - Tests moved to the root of the package.
+
+0.3.1
+-----
+    - "jednajici" removed from contract.
+
+0.3.0
+-----
+    - Added support for QR code.
+    - Added logo into contract template.
+    - Small improvements of templates.
+
+0.2.4
+-----
+    - Added experimental utf-8 skip.
+
+0.2.3
+-----
+    - Removed default arguments in GenerateReview structure.
+
+0.2.2
+-----
+    - Added internal_url field.
+    - review_example.pdf is now saved to test directory. This is useful for showing the review to other people.
+
+0.2.1
+-----
+    - requests_template.py renamed to requests_template.txt.
+    - Fixed #16 - bug in setuptools. HTML generation command had to be removed.
+    - Fixed small bug in contract generator.
+
+0.2.0
+-----
+    - Added logo to review.
+
+0.1.0
+-----
+    - Project created.
