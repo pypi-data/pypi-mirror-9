@@ -1,0 +1,52 @@
+from django import forms
+from django.utils.translation import ugettext_lazy as _
+from djinn_profiles.utils import get_userprofile_model
+
+
+RECIPIENT_CHOICES = (("followers", "De collega's die jou volgen"),
+                     ("group", "Een groep of afdeling"),
+                     ("user", "Een collega"))
+
+
+class ShareForm(forms.Form):
+
+    recipient = forms.CharField(
+        label="Delen met", required=True,
+        widget=forms.RadioSelect(choices=RECIPIENT_CHOICES)
+    )
+
+    group = forms.IntegerField(label="Groepen", required=False,
+                               widget=forms.Select(choices=[]))
+
+    user = forms.ModelChoiceField(
+        label="Collega's", empty_label=None,
+        queryset=None,
+        required=False)
+
+    message = forms.CharField(
+        label=_("Schrijf een persoonlijke boodschap (maximaal 200 karakters)"),
+        max_length=200,
+        widget=forms.Textarea(attrs={"class": "expand init_expansion",
+                                     "cols": 100}),
+        required=True
+    )
+
+    def __init__(self, *args, **kwargs):
+
+        super(RetweetForm, self).__init__(*args, **kwargs)
+
+        self.fields['user'].queryset = get_userprofile_model().objects.all()
+
+    def clean(self):
+        cleaned_data = super(RetweetForm, self).clean()
+
+        if cleaned_data.get("recipient", "") == "group" and \
+           not cleaned_data.get("group"):
+
+            raise forms.ValidationError("Geen groep geselecteerd")
+
+        if cleaned_data.get("recipient", "") == "user" and \
+           not cleaned_data.get("user"):
+            raise forms.ValidationError("Geen collega geselecteerd")
+
+        return cleaned_data
