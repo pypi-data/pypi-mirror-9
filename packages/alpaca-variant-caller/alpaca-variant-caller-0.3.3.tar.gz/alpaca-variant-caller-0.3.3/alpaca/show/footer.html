@@ -1,0 +1,223 @@
+;
+// end of json stream
+
+
+function lookup_obo(anchor) {
+    var term = $(anchor).text();
+    $("#obo_query").val(term);
+    $("#obo_lookup").submit();
+}
+
+
+function obo_link(data, type, row) {
+    return '<a href="javascript:void(0)" onclick="lookup_obo(this)">' + data + '</a>';
+}
+
+function list_of_links(url, data) {
+    var s = '';
+    for(var i=0; i<data.length; i++) {
+        s += '<a target="_blank" href="' + url + data[i] + '">' + data[i] + '</a>';
+        if(i < data.length - 1) {
+            s += ', ';
+        }
+    }
+    return s;
+}
+
+
+$(document).ready(
+    function() {
+        var table = $("#calls").DataTable(
+            {
+                bDeferRender: true,
+                order: [[ 7, "desc" ]],
+                data: data,
+                columns: [
+                    {data: "id"},
+                    {data: "chrom"},
+                    {data: "pos"},
+                    {data: "genes"},
+                    {data: "ref"},
+                    {data: "alt"},
+                    {data: "colocated_variants"},
+                    {data: "worst_consequence"},
+                    {data: "qual"},
+                    % for i in range(len(samples)):
+                        {data: "sample_info.${i}.genotype"},
+                    % endfor
+                ],
+                columnDefs: [
+                    {
+                        render: function(data, type, row) {
+                            return '<a target="_blank" href="http://www.ensembl.org/${species}/Location/View?r=' + row.chrom
+                                + ':' + row.pos + '">' + data + '</a>';
+                        },
+                        targets: 2
+                    },
+                    {
+                        render: function(data, type, row) {
+                            return '<a href=# onclick="show_details(' + row.id + ')">+</a>';
+                        },
+                        targets: 0,
+                        orderable: false
+                    },
+                    {
+                        render: function(data, type, row) {
+                            return list_of_links('http://www.ensembl.org/${species}/Gene/Summary?g=', data);
+                        },
+                        targets: 3
+                    },
+                    {
+                        render: function(data, type, row) {
+                            return list_of_links('http://www.ensembl.org/Homo_sapiens/Variation/Explore?vdb=variation;v=', data);
+                        },
+                        targets: 6
+                    },
+                    {
+                        render: obo_link,
+                        targets: 7
+                    }
+                ]
+            }
+        );
+        $("select").select2();
+        yadcf.init(table, [
+            { column_number: 1, filter_type: "multi_select", select_type: "select2", filter_default_label: "select" },
+            { column_number: 2, filter_type: "range_number" },
+            { column_number: 3, filter_type: "text", filter_default_label: "select" },
+            { column_number: 7, filter_type: "multi_select", select_type: "select2", filter_default_label: "select" },
+            { column_number: 8, filter_type: "range_number" },
+            
+        ], "footer");
+        $(document).foundation();
+    }
+);
+
+
+var tables = [null, null, null, null];
+function show_details(i) {
+    for(var j=0; j<= tables.length; j++) {
+        if(tables[j] != null) {
+            tables[j].destroy();
+            tables[j] = null;
+        }
+    }
+
+    if(data[i].transcript_consequences.length) {
+        tables[0] = $("#transcript-consequences").DataTable(
+            {
+                order: [[ 1, "asc" ]],
+                data: data[i].transcript_consequences,
+                columns: [
+                    {data: "alt"},
+                    {data: "gene"},
+                    {data: "transcript_id"},
+                    {data: "consequence"}
+                ],
+                columnDefs: [
+                    {
+                        render: function(data, type, row) {
+                            return '<a target="_blank" href="http://www.ensembl.org/${species}/Transcript/Summary?t=' + data + '">' + data + '</a>';
+                        },
+                        targets: 2
+                    },
+                    {
+                        render: obo_link,
+                        targets: 3
+                    }
+                ],
+                bPaginate: false,
+                bFilter: false,
+                bInfo: false
+            }
+        );
+    }
+
+    if(data[i].protein_consequences.length) {
+        tables[1] = $("#protein-consequences").DataTable(
+            {
+                order: [[ 1, "asc" ]],
+                data: data[i].protein_consequences,
+                columns: [
+                    {data: "alt"},
+                    {data: "gene"},
+                    {data: "transcript_id"},
+                    {data: "consequence"},
+                    {data: "hgvsp"},
+                    {data: "polyphen_prediction"},
+                    {data: "polyphen_score"},
+                    {data: "sift_prediction"},
+                    {data: "sift_score"}
+                ],
+                columnDefs: [
+                    {
+                        render: function(data, type, row) {
+                            return '<a target="_blank" href="http://www.ensembl.org/${species}/Transcript/Summary?t=' + data + '">' + data + '</a>';
+                        },
+                        targets: 2
+                    },
+                    {
+                        render: obo_link,
+                        targets: 3
+                    }
+                ],
+                bPaginate: false,
+                bFilter: false,
+                bInfo: false
+            }
+        );
+    }
+
+    tables[2] = $("#genotype-details").DataTable(
+        {
+            data: data[i].sample_info,
+            columns: [
+                {data: "sample"},
+                {data: "genotype"},
+                {data: "depth"},
+                {data: "ref_depth"},
+                {data: "alt_depths"},
+                {data: "strand_bias"}
+            ],
+            bPaginate: false,
+            bFilter: false,
+            bInfo: false
+        }
+    );
+
+    tables[3] = $("#read-counts").DataTable(
+        {
+            data: data[i].sample_info,
+            columns: [
+                {data: "sample"},
+                % for k, a in enumerate(alleles):
+                    {data: "read_counts.${k}"},
+                    {data: "read_counts.${k + 6}"},
+                % endfor
+            ],
+            columnDefs: [
+                {
+                    render: function(data, type, row) {
+                        if(data == 0) {
+                            return "";
+                        }
+                        return data;
+                    },
+                    targets: [
+                        % for k in range(1, len(alleles) * 2 + 1):
+                            ${k},
+                        %endfor
+                    ]
+                }
+            ],
+            bPaginate: false,
+            bFilter: false,
+            bInfo: false
+        }
+    );
+
+    $("#details").foundation("reveal", "open");
+}
+</script>
+</body>
+</html>
