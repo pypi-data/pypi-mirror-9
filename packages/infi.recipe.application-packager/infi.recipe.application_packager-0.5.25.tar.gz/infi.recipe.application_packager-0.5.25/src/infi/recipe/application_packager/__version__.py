@@ -1,0 +1,10 @@
+__version__ = "0.5.25"
+__git_commiter_name__ = "Guy Rozendorn"
+__git_commiter_email__ = "guy@rzn.co.il"
+__git_branch__ = '(detached from v0.5.25)'
+__git_remote_tracking_branch__ = '(No remote tracking)'
+__git_remote_url__ = '(Not remote tracking)'
+__git_head_hash__ = '43252231c7098e4a560fa0e3419ce480ba5cfbbd'
+__git_head_subject__ = 'HOSTDEV-1949 delete_non_production_packages_from_cache_dist deleted foo-1.0-1'
+__git_head_message__ = ''
+__git_dirty_diff__ = ''
