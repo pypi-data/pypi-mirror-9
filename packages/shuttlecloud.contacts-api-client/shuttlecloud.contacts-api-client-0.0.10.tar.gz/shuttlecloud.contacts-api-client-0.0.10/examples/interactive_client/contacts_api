@@ -1,0 +1,86 @@
+#!/usr/bin/env python
+import argparse
+import operator
+
+import oauth
+import settings
+import reflection
+import method_caller
+import verbose_api
+
+
+def create_api(settings):
+    """
+    Returns ContactsAPI instance configured with the specified settings.
+    """
+    oauth_handlers = {
+        "google": oauth.GoogleOAuth(
+            settings.GOOGLE_CLIENT_ID,
+            settings.GOOGLE_CALLBACK,
+            settings.GOOGLE_SCOPE
+        ),
+        "microsoft": oauth.MicrosoftOAuth(
+            settings.MICROSOFT_CLIENT_ID,
+            settings.MICROSOFT_CALLBACK,
+            settings.MICROSOFT_SCOPE
+        )
+    }
+    api_settings = (settings.API_BASE_URL, settings.API_APP_ID, settings.API_TOKEN, oauth_handlers)
+    api_instance = verbose_api.VerboseContactsApi(*api_settings)
+    return api_instance
+
+
+def print_on_exception(function):
+    """
+    Prints details of an exception when it is raised.
+    Decorates the specified function with such logic.
+    """
+    def wrapper(*args, **kwargs):
+        try:
+            return function(*args, **kwargs)
+        except Exception as e:
+            print "\n{}".format(e)
+    return wrapper
+
+
+def main():
+    api_instance = create_api(settings)
+    method_signatures = reflection.get_method_signatures(api_instance)
+
+    parser = argparse.ArgumentParser(description="Shuttlecloud Contacts API")
+    method_group = parser.add_mutually_exclusive_group(required=True)
+
+    # add interactive method
+    method_group.add_argument(
+        "--interactive", action="store_true",
+        help="Select methods and arguments interactively.")
+
+    # add API methods automatically
+    for (method_name, argument_names) in method_signatures:
+        method = getattr(api_instance, method_name)
+        method_group.add_argument(
+            "--" + method_name,
+            metavar=tuple(argument_names),
+            nargs=len(argument_names),
+            help=method.__doc__)
+
+    command_line_args = vars(parser.parse_args())
+
+    # choose the method name and arguments selected by user
+    method_name, arguments = filter(operator.itemgetter(1), command_line_args.items())[0]
+
+    caller = method_caller.InteractiveMethodCaller(api_instance)
+    # wrap calling method with exception printing decorator
+    caller.call_method_directly = print_on_exception(caller.call_method_directly)
+
+    if method_name == "interactive":
+        print "Press EOF to exit"
+        while True:
+            print
+            caller.call_method_interactively()
+    else:
+        caller.call_method_directly(method_name, *arguments)
+
+
+if __name__ == "__main__":
+    main()
