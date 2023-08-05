@@ -1,0 +1,205 @@
+Metadata-Version: 2.0
+Name: aiopg
+Version: 0.6.1
+Summary: Postgres integration with asyncio.
+Home-page: http://aiopg.readthedocs.org
+Author: Andrew Svetlov
+Author-email: andrew.svetlov@gmail.com
+License: BSD
+Download-URL: https://pypi.python.org/pypi/aiopg
+Platform: POSIX
+Classifier: License :: OSI Approved :: BSD License
+Classifier: Intended Audience :: Developers
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.3
+Classifier: Programming Language :: Python :: 3.4
+Classifier: Operating System :: POSIX
+Classifier: Operating System :: MacOS :: MacOS X
+Classifier: Environment :: Web Environment
+Classifier: Development Status :: 4 - Beta
+Classifier: Topic :: Database
+Classifier: Topic :: Database :: Front-Ends
+Requires: psycopg2
+Provides: aiopg
+Requires-Dist: psycopg2 (>=2.5.2)
+Provides-Extra: sa
+Requires-Dist: sqlalchemy (>=0.9); extra == 'sa'
+
+aiopg
+=======
+
+**aiopg** is a library for accessing a PostgreSQL_ database
+from the asyncio_ (PEP-3156/tulip) framework. It wraps
+asynchronous features of the Psycopg database driver.
+
+Example
+-------
+
+::
+
+   import asyncio
+   from aiopg.pool import create_pool
+
+   dsn = 'dbname=jetty user=nick password=1234 host=localhost port=5432'
+
+
+   @asyncio.coroutine
+   def test_select():
+       pool = yield from create_pool(dsn)
+
+       with (yield from pool) as conn:
+           cur = yield from conn.cursor()
+           yield from cur.execute('SELECT 1')
+           ret = yield from cur.fetchone()
+           assert ret == (1,), ret
+
+
+   asyncio.get_event_loop().run_until_complete(test_select())
+
+
+Example of SQLAlchemy optional integration
+-------------------------------------------
+
+::
+
+   import asyncio
+   from aiopg.sa import create_engine
+   import sqlalchemy as sa
+
+
+   metadata = sa.MetaData()
+
+   tbl = sa.Table('tbl', metadata,
+       sa.Column('id', sa.Integer, primary_key=True),
+       sa.Column('val', sa.String(255)))
+
+
+   @asyncio.coroutine
+   def go():
+       engine = yield from create_engine(user='aiopg',
+                                         database='aiopg',
+                                         host='127.0.0.1',
+                                         password='passwd')
+
+       with (yield from engine) as conn:
+           yield from conn.execute(tbl.insert().values(val='abc'))
+
+           res = yield from conn.execute(tbl.select())
+           for row in res:
+               print(row.id, row.val)
+
+
+   asyncio.get_event_loop().run_until_complete(go())
+
+.. _PostgreSQL: http://www.postgresql.org/
+.. _asyncio: http://docs.python.org/3.4/library/asyncio.html
+
+Please use::
+
+   $ python3 runtests.py
+
+for executing project's unittests
+
+CHANGES
+-------
+
+0.6.0 (2015-02-03)
+^^^^^^^^^^^^^^^^^^
+
+* Accept dict, list, tuple, named and positional parameters in
+  `SAConnection.execute()`
+
+0.5.2 (2014-12-08)
+^^^^^^^^^^^^^^^^^^
+
+* Minor release, fixes a bug that leaves connection in broken state
+  after `cursor.execute()` failure.
+
+0.5.1 (2014-10-31)
+^^^^^^^^^^^^^^^^^^
+
+* Fix a bug for processing transactions in line.
+
+0.5.0 (2014-10-31)
+^^^^^^^^^^^^^^^^^^
+
+* Add .terminate() to Pool and Engine
+
+* Reimplement connection pool (now pool size cannot be greater than pool.maxsize)
+
+* Add .close() and .wait_closed() to Pool and Engine
+
+* Add minsize, maxsize, size and freesize properties to sa.Engine
+
+* Support *echo* parameter for logging executed SQL commands
+
+* Connection.close() is not a coroutine (but we keep backward compatibility).
+
+0.4.1 (2014-10-02)
+^^^^^^^^^^^^^^^^^^
+
+* make cursor iterable
+
+* update docs
+
+0.4.0 (2014-10-02)
+^^^^^^^^^^^^^^^^^^
+
+* add timeouts for database operations.
+
+* Autoregister psycopg2 support for json data type.
+
+* Support JSON in aiopg.sa
+
+* Support ARRAY in aiopg.sa
+
+* Autoregister hstore support if present in connected DB
+
+* Support HSTORE in aiopg.sa
+
+0.3.2 (2014-07-07)
+^^^^^^^^^^^^^^^^^^
+
+* change signature to cursor.execute(operation, parameters=None) to
+  follow psycopg2 convention.
+
+0.3.1 (2014-07-04)
+^^^^^^^^^^^^^^^^^^
+
+* Forward arguments to cursor constructor for pooled connections.
+
+0.3.0 (2014-06-22)
+^^^^^^^^^^^^^^^^^^
+
+* Allow executing SQLAlchemy DDL statements.
+
+* Fix bug with race conditions on acquiring/releasing connections from pool.
+
+0.2.3 (2014-06-12)
+^^^^^^^^^^^^^^^^^^
+
+* Fix bug in connection pool.
+
+0.2.2 (2014-06-07)
+^^^^^^^^^^^^^^^^^^
+
+* Fix bug with passing parameters into SAConnection.execute when
+  executing raw SQL expression.
+
+0.2.1 (2014-05-08)
+^^^^^^^^^^^^^^^^^^
+
+* Close connection with invalid transaction status on returning to pool.
+
+0.2.0 (2014-05-04)
+^^^^^^^^^^^^^^^^^^
+
+* Implemented optional support for sqlalchemy functional sql layer.
+
+0.1.0 (2014-04-06)
+^^^^^^^^^^^^^^^^^^
+
+* Implemented plain connections: connect, Connection, Cursor.
+
+* Implemented database pools: create_pool and Pool.
+
