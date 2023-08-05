@@ -1,0 +1,2 @@
+VERSION = "0.6"
+DATE = "2015-Jan-08"
