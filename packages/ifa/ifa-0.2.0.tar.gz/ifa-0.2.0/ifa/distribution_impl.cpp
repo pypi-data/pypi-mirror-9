@@ -1,0 +1,225 @@
+/*
+The MIT License (MIT)
+
+Copyright (c) 2015 Jan Olszak (j.olszak@gmail.com)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+*/
+
+#include "distribution_impl.hpp"
+#include <cmath>
+#include <stdexcept>
+#include <memory>
+
+namespace ifa {
+
+namespace {
+inline
+int negSign(double x)
+{
+    return (x > 0) ? -1 : ((x < 0) ? 1 : 0);
+}
+} // namespace
+
+Distribution::Distribution()
+{
+
+}
+
+Distribution::~Distribution()
+{
+
+}
+
+double Distribution::normalize()
+{
+    normalizingConstant = 0;
+    for (const auto &entry : dist) {
+        normalizingConstant += entry.second;
+    }
+
+    for (auto &entry : dist) {
+        entry.second /= normalizingConstant;
+    }
+
+    return normalizingConstant;
+}
+
+void Distribution::prepare()
+{
+    auto it = dist.begin();
+    while (it != dist.end()) {
+        if (it->second <= 0) {
+            it = dist.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    normalize();
+}
+
+double Distribution::getNormalizingConstant()
+{
+    return normalizingConstant;
+}
+
+unsigned int Distribution::size() const
+{
+    return dist.size();
+}
+
+bool Distribution::isEmpty() const
+{
+    return dist.empty();
+}
+
+bool Distribution::contains(const std::string &key) const
+{
+    return dist.count(key) != 0;
+}
+
+double Distribution::get(const std::string &key) const
+{
+    try {
+        return dist.at(key);
+
+    } catch (const std::out_of_range &e)
+    {
+        return 0.0;
+    }
+}
+
+void Distribution::set(const std::string &key, const double value)
+{
+    dist[key] = value;
+}
+
+void Distribution::remove(const Distribution *p)
+{
+    for (const auto &entry : p->dist) {
+        auto it = dist.find(entry.first);
+        if (it != dist.end()) {
+            it->second -= entry.second;
+            if (it->second <= 0) {
+                dist.erase(it);
+            }
+        }
+    }
+}
+
+void Distribution::remove(const std::string &key, const double value)
+{
+    auto it = dist.find(key);
+    if (it != dist.end()) {
+        it->second -= value;
+        if (it->second <= 0) {
+            dist.erase(it);
+        }
+    }
+}
+
+void Distribution::append(const Distribution *p)
+{
+    for (const auto &entry : p->dist) {
+        dist[entry.first] += entry.second;
+    }
+}
+
+void Distribution::append(const std::string &key, const double value)
+{
+    dist[key] += value;
+}
+
+void Distribution::erase(const std::string &key)
+{
+    dist.erase(key);
+}
+
+void Distribution::insert(const std::string &key, const double value)
+{
+    dist.emplace(key, value);
+}
+
+void Distribution::startIteration()
+{
+    m_it = dist.begin();
+}
+
+std::pair<std::string, double> Distribution::next()
+{
+    if (m_it == dist.end()) {
+        throw std::out_of_range("IFA: End of sequence");
+    }
+
+    return *(m_it++);
+}
+
+double Distribution::entropy() const
+{
+    double entropy = 0;
+
+    for (const auto &entry : dist) {
+        entropy += entry.second * std::log2(entry.second);
+    }
+
+    return -1 * entropy;
+}
+
+void add(const Distribution *p, const Distribution *q, Distribution *result)
+{
+    result->append(p);
+    result->append(q);
+}
+
+void subtract(const Distribution *p, const Distribution *q, Distribution *result)
+{
+    result->append(p);
+    result->remove(q);
+}
+
+void common(const Distribution *p, const Distribution *q, Distribution *result)
+{
+    for (const auto &entry : p->dist) {
+        if (q->contains(entry.first)) {
+            result->set(entry.first, entry.second);
+        }
+    }
+
+    result->normalize();
+}
+
+int direction(const Distribution *p, const Distribution *q)
+{
+    std::unique_ptr<Distribution> cP (new Distribution());
+    common(p, q, cP.get());
+
+    if (cP->isEmpty()) {
+        return 0;
+    }
+
+    std::unique_ptr<Distribution> cQ(new Distribution());
+    common(q, p, cQ.get());
+
+    double tp = cP->entropy() / (cP->size() / p->size());
+    double tq = cQ->entropy() / (cQ->size() / q->size());
+
+    return negSign(tp - tq);
+}
+
+} // namespace ifa
