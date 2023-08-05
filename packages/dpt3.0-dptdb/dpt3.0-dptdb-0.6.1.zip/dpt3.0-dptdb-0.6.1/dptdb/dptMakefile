@@ -1,0 +1,225 @@
+### Makefile to build SWIG wrappers for DPT
+
+### This make job is normally run by the setup.py in this file's directory.
+### When the distutils Mingw32CCompiler class can deal with these tasks this
+### make will by replaced by standard distutils functions.
+
+### Modified from Makefile distributed with DPT for cross-compiling the DPT API.
+
+### The default settings deal with a Microsoft Windows build or a Wine build. 
+### When cross-compiling the Python include and library directories will be at
+### /home/user/.wine/drive_c/Python33
+### rather than
+### c:/Python33
+### for example.
+
+### At a msys shell, on Microsoft Windows, the command should be typed like
+### the following example to get the path separators to the utilities:
+### make windows PYTHON_VERSION=32 PATH_TO_SWIG=\\c:\\swigwin-2.0.8
+
+### The Python which is running this make
+### After the DPT API is built for the target Python, the Python module
+### build_helpers/dptversion.py is used to extract the DPT version number from
+### the source code and create the module version.py.
+### The Python known to be available to do this is the one running this make.
+### The target Python will not do when cross-compiling and it is known to be
+### possible for usable Pythons to exist on Wine while it is not possible to
+### use the target Python because it's installation fails at a late stage.
+### It may be that the usable Python cannot be installed on Wine if deleted!
+
+PYTHON_RUNNING_MAKE ?= 
+
+### Fundamental settings for Python builds
+
+PACKAGE_NAME = dptdb
+PYTHON_VERSION ?= 33
+PATH_TO_PYTHON ?= C:/Python
+PYTHON_INCLUDE_SUFFIX ?= /include
+PATH_TO_SWIG ?= C:/swigwin-2.0.8
+PATH_TO_CXX ?= 
+COMPILER = mingw32-g++
+SWIG_PYTHON = python
+GCC_VERSION_PATCHING ?= true
+WINE ?=
+
+### Common settings
+
+CXX = $(PATH_TO_CXX)$(COMPILER)
+DEFOPTS = $(DEFINES) $(OPTIONS)
+CXXEXTRA = \
+   -D_BBDBAPI
+DPT_STDAFX = stdafx
+DPT_BASE ?= ../dptextract
+DPT_INCLUDE = -Iinclude -I$(DPT_STDAFX)
+DPTAPI_INCLUDE = -Iinclude -Iinclude/dbapi -I$(DPT_STDAFX)
+DPTAFX_INCLUDE = -Iinclude -I$(DPT_STDAFX)
+DPT_LDFLAGS = -shared
+
+### Main DPT folders
+
+DPT_SRC = source
+DPT_INC = include
+DPT_DOC = doc
+DPT_LICENCE = licence.txt
+DPTAPI_SRC = $(DPT_SRC)/dbapi
+DPTAPI_INC = $(DPT_INC)/dbapi
+DPT_RELEASE = Release
+
+### SWIG settings
+
+SWIG_COMMAND ?= $(WINE) $(PATH_TO_SWIG)/swig
+SWIG_DPTAPI = dptapi
+
+### Python settings
+
+PYTHON_INCLUDE = $(PATH_TO_PYTHON)$(PYTHON_VERSION)$(PYTHON_INCLUDE_SUFFIX)
+PYTHON_LIBRARY = $(SWIG_PYTHON)$(PYTHON_VERSION)
+PYTHON_API_INCLUDE = -Iinclude/dbapi -Iinclude -I$(PYTHON_INCLUDE)
+PYTHON_API_DLL = ../_$(SWIG_DPTAPI).pyd
+PYTHON_LIBS = -l$(PYTHON_LIBRARY) -L$(PATH_TO_PYTHON)$(PYTHON_VERSION)/libs
+
+### Patches
+
+### No patching in this Makefile
+
+### Sources
+
+DPT_NAMES ?= 
+
+DPTAPI_NAMES ?= 
+
+DPT_INC_NAMES ?= 
+
+DPTAPI_INC_NAMES ?= 
+
+DPTAFX_NAMES = \
+   stdafx
+
+DPT_OBJS = $(DPT_NAMES:%=$(DPT_RELEASE)/%.o)
+
+DPTAPI_OBJS = $(DPTAPI_NAMES:%=$(DPT_RELEASE)/%.o)
+
+DPTAFX_OBJS = $(DPTAFX_NAMES:%=$(DPT_RELEASE)/%.o)
+
+DPT_SRCS = $(DPT_NAMES:%=$(DPT_SRC)/%.cpp)
+
+DPTAPI_SRCS = $(DPTAPI_NAMES:%=$(DPTAPI_SRC)/%.cpp)
+
+DPT_INCS = $(DPT_INC_NAMES:%=$(DPT_INC)/%.h)
+
+DPTAPI_INCS = $(DPTAPI_INC_NAMES:%=$(DPTAPI_INC)/%.h)
+
+DPTAFX_SRCS = $(DPTAFX_NAMES:%=$(DPT_STDAFX)/%.cpp)
+
+DPTAFX_INCS = $(DPTAFX_NAMES:%=$(DPT_STDAFX)/%.h)
+
+### Targets
+
+.PHONY : all copy clean_extract clean_swig $(SWIG_PYTHON)
+
+all : $(SWIG_PYTHON)
+
+copy : $(DPT_SRCS) $(DPT_INCS) $(DPTAPI_SRCS) $(DPTAPI_INCS) $(DPTAFX_SRCS) $(DPTAFX_INCS)
+
+### Clean up targets
+
+### clean_extract implies clean_swig
+
+clean_extract :
+	-rm _dptapi.pyd
+	-rm dptapi.py
+	-rm version.py
+	-rm licence.txt
+	-rm -r dptbuild
+	-rm -r dptextract
+
+clean_swig :
+	-rm _dptapi.pyd
+	-rm dptapi.py
+	-rm dptbuild/dptapi_$(SWIG_PYTHON)_wrap.cxx
+	-rm dptbuild/dptapi_$(SWIG_PYTHON)_wrap.o
+
+### The object file directory
+
+$(DPT_RELEASE) :
+	-mkdir $(DPT_RELEASE)
+
+### Python wrapper
+
+### dpt API version
+
+PYTHON_API_VERSION = ../version.py
+
+$(SWIG_DPTAPI)_$(SWIG_PYTHON)_wrap.cxx : SWIG_LANG_OPTS =
+$(SWIG_DPTAPI)_$(SWIG_PYTHON)_wrap.o : SWIG_LANG_INCLUDE = $(PYTHON_API_INCLUDE)
+$(PYTHON_API_DLL) : SWIG_LANG_LIBS = $(PYTHON_LIBS)
+$(PYTHON_API_DLL) : SWIG_LANG_DLL = $(PYTHON_API_DLL)
+
+$(PYTHON_API_VERSION) : $(PYTHON_API_DLL)
+	$(PYTHON_RUNNING_MAKE) ../../dptversion.py
+
+$(SWIG_PYTHON) : copy $(SWIG_DPTAPI)_$(SWIG_PYTHON)_wrap.cxx $(DPT_RELEASE) $(DPT_OBJS) $(DPTAPI_OBJS) $(DPTAFX_OBJS) $(PYTHON_API_VERSION)
+
+### install dptdb package in site-packages
+### python documentation suggests that distutils may be able to do the whole build
+### while admitting that its SWIG interface is flaky.
+
+### setup.py gets this Makefile to do the build but does install and uninstall itself
+
+$(PYTHON_API_DLL) : $(SWIG_DPTAPI)_$(SWIG_PYTHON)_wrap.o
+	$(CXX) $(DPT_LDFLAGS) -o $@ $< $(DPTAPI_OBJS) $(DPT_OBJS) $(SWIG_LANG_LIBS)
+
+### Pattern rules DPT C++
+
+### Normalize path element separators in #include directives as '/' for *nix
+### build environment.  There are only a few files which do not comply, but do
+### it always anyway for simplicity.
+
+$(DPT_SRC)/%.cpp : $(DPT_BASE)/$(DPT_SRC)/%.cpp
+	sed -e '/#include .*.h/s/\\/\//g' $< > $@
+
+$(DPT_INC)/%.h : $(DPT_BASE)/$(DPT_INC)/%.h
+	sed -e '/#include .*.h/s/\\/\//g' $< > $@
+
+$(DPTAPI_SRC)/%.cpp : $(DPT_BASE)/$(DPTAPI_SRC)/%.cpp
+	sed -e '/#include .*.h/s/\\/\//g' $< > $@
+
+$(DPTAPI_INC)/%.h : $(DPT_BASE)/$(DPTAPI_INC)/%.h
+	sed -e '/#include .*.h/s/\\/\//g' $< > $@
+
+$(DPT_STDAFX)/%.cpp : $(DPT_BASE)/$(DPT_STDAFX)/%.cpp
+	sed -e '/#include .*.h/s/\\/\//g' $< > $@
+
+### VC6++ and MinGW-3.4.5 do not require explicit #include directives for
+### <string.h>, <limits.h> and <stdlib.h> but MinGW-4.8.1 does require them.
+### Do this as well in stdafx.h.
+### The make in the MinGW-3.4.5 environment is not able to deal with the
+### 'else ifeq' construct, so always doing the '/' normalization helps a lot.
+
+$(DPT_STDAFX)/%.h : $(DPT_BASE)/$(DPT_STDAFX)/%.h
+ifeq ($(GCC_VERSION_PATCHING),false)
+	sed -e '/#include .*.h/s/\\/\//g' $< > $@
+else
+	sed -e '/#include .*.h/s/\\/\//g' \
+	-e '/#include <stdio.h>/s/#include <stdio.h>/#include <stdio.h>\
+#include <string.h>\
+#include <limits.h>\
+#include <stdlib.h>/g' $< > $@
+endif
+
+$(DPT_RELEASE)/%.o : $(DPT_SRC)/%.cpp
+	$(CXX) -c $(CXXEXTRA) $(CXXFLAGS) $(DPT_INCLUDE) $(DEFOPTS) -o $@ $<
+
+$(DPT_RELEASE)/%.o : $(DPTAPI_SRC)/%.cpp
+	$(CXX) -c $(CXXEXTRA) $(CXXFLAGS) $(DPTAPI_INCLUDE) $(DEFOPTS) -o $@ $<
+
+$(DPT_RELEASE)/%.o : $(DPT_STDAFX)/%.cpp
+	$(CXX) -c $(CXXEXTRA) $(CXXFLAGS) $(DPTAFX_INCLUDE) $(DEFOPTS) -o $@ $<
+
+### Pattern rules SWIG wrappers for dpt API version
+
+$(SWIG_DPTAPI)_$(SWIG_PYTHON)_wrap.cxx : $(SWIG_DPTAPI)_$(SWIG_PYTHON).i
+	$(SWIG_COMMAND) -c++ -$(SWIG_PYTHON) $(SWIG_LANG_OPTS) -o $@ -outdir .. -I$(DPTAPI_INC) $<
+
+$(SWIG_DPTAPI)_$(SWIG_PYTHON)_wrap.o : $(SWIG_DPTAPI)_$(SWIG_PYTHON)_wrap.cxx
+	$(CXX) -c $(CXXEXTRA) $(CXXFLAGS) $(SWIG_LANG_INCLUDE) $(DEFOPTS) -o $@ $<
