@@ -1,0 +1,89 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+
+#head#
+
+'''
+@author: Daniel Llin Ferrero
+'''
+
+
+#TODO
+#o Parameterlisten als dict
+#o alle maße ohne Einheit, Einheit separat
+#o alle klassen-nutzungen durch aufrufstring erweitern (z.B \path[area,%(areaAdditional)s])
+#o alle strings als parameter zur verfügung stellen
+#o für die ganzen string-templates mehr variablen zur verfügung stellen
+#o rahmenmethoden zum einbetten in tikzpicture/scope/figure in superklasse auslagern
+
+import sys
+import argparse
+import textwrap
+import unicodecsv as csv
+import os
+
+from zikt.piechart import PieChart
+from zikt.barchart import BarChart
+from zikt.cs import TikZCoordinateSystem
+from zikt.cschart import MultipleValueCoordinateChart
+from zikt.plotchart import PlotChart
+from zikt.stackedbarchart import StackedBarChart
+from zikt.stackedareachart import StackedAreaChart
+from zikt.csvwriter import CSV
+from zikt.tables import *
+from zikt.helper import ziktRenderException
+from zikt.helper import __file__ as helperfile
+
+programname="ZikT"
+version="0.1"
+
+argparser = argparse.ArgumentParser(
+	formatter_class=argparse.RawDescriptionHelpFormatter,
+	description=textwrap.dedent('''\
+			Create TikZ based charts from csv data.
+		'''))
+
+defaulttable=None
+
+
+argparser.add_argument('-v','--version',action='store_true',help='print the program version')
+argparser.add_argument('-l','--load',type=file,help='the csv input file')
+argparser.add_argument('-r','--renderer',help='a renderer for instant rendering')
+argparser.add_argument('--swap',action='store_true',help='swaps columns and rows of the table')
+argparser.add_argument('--printsty',action='store_true',help='prints the content of zikt.sty (which has to be included in the LaTeX document) and terminates')
+
+args = argparser.parse_args()
+
+if (args.version):
+	print "This is %(program)s, version %(version)s." % {'program':programname, 'version':version}
+	sys.exit(0)
+	
+if (args.printsty):
+	ziktpath = os.path.dirname(helperfile)
+	stylefilename =  os.path.join(ziktpath,"latex","zikt.sty")
+	import codecs
+	stylefile = codecs.open(stylefilename, "r", "utf-8")
+	print stylefile.read()
+	stylefile.close()
+	sys.exit(0)
+
+if args.load:
+	defaulttable = FloatTable(StringTable(args.load))
+	
+if args.swap and defaulttable != None:
+	defaulttable.swap()
+
+if args.renderer:
+	try:
+		renderer = eval(args.renderer)
+		tikzcode=""
+#		try:
+		tikzcode = renderer.render(defaulttable)
+#		except BaseException as e:
+#			sys.stderr.write("Bad error with arguments %s.\n"%args)
+#			sys.stderr.write("Exception was: %s.\n"%e)
+		print "\\begin{tikzpicture}"
+		print tikzcode
+		print "\\end{tikzpicture}"
+	except object, o:
+		sys.stderr.write("Error: "+str(o))
