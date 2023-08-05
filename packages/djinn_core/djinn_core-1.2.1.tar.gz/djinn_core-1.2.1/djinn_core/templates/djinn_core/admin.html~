@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+
+<html lang="nl">
+  <head>
+
+    <meta charset="utf-8">
+
+    <title>{{ SETTINGS.INTRANET_TITLE|default:"PythonUnited Intranet" }}</title>
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    {% include "static_includes_1.html" %}
+
+    {% block extra_js %}
+    <!-- extra JS -->
+    {% endblock %}
+
+    {% block extra_css %}
+    <!-- extra CSS -->
+    {% endblock %}
+    
+  </head>
+
+  <body class="{% block body_class %}main{% endblock %}">
+
+    {% if object.parentusergroup %}
+    <span class="hide">
+      {% ct_menu object.parentusergroup.profile 'groupaddmenu' %}
+    </span>
+    {% endif %}
+
+    <div id="status"></div>
+
+    <div class="message alert {% if not messages %}hide{% endif %} {% if messages %}alert-{{ messages|messageclass }}{% endif %}" id="alerts">
+      <button class="close" data-dismiss="alert">×</button>
+      <span class="alert-body">
+        {% for message in messages %}
+        {{ message }}
+        {% endfor %}
+      </span>
+    </div>
+
+    <div class="container-fluid">
+
+      <div class="navbar row-fluid">
+
+        <div class="span5">        
+          <a class="brand" href="/">
+              {{ SETTINGS.INTRANET_TITLE|default:"PythonUnited <em>Intranet</em>"|safe }}
+          </a>        
+        </div>
+
+        <div class="span7">
+          {% block userinfo %}
+          <ul class="nav nav-pills pull-right" id="user-menu">
+            <li>
+              <a {% if user.profile.profile_image %}style="position: relative;right: 25px;"{% endif %} href="{% url 'home' %}">Home</a>
+            </li>
+            <li class="dropdown">
+              <a class="dropdown-toggle" data-toggle="dropdown" href="{{ user.profile.get_absolute_url }}" data-target="#">
+                <img src="{{ user.profile.avatar_thumbnail_url }}"
+                     class="profile-thumbnail"
+                     alt="{{ user.profile }}"
+                     />
+                {{ user.profile }} (<span id="unseen">{{ user.profile.unseen_notices_count }}</span>)
+                <b class="caret"></b>
+              </a>
+              <ul class="dropdown-menu" id="useractions">
+                <li>
+                  <a href="{{ user.profile.get_absolute_url }}">
+                    Mijn profiel
+                </a>
+                </li>
+                <li class="with-sub">
+                  <a href="{% url 'pgprofile_mycontent_userprofile' %}?&sr_title=Toegevoegd door {{ user.profile }}">
+                     Mijn content
+                     </a>
+                  <div class="sub">
+                  <ul id="mycontent">
+                    {% with permobject=None %}
+                        {% ifpermission permobject request.user 'contenttypes.add_contenttype' %}
+                        <li><a href="{% url 'pgprofile_mycontent_userprofile' %}?meta_type=pgcontent.document">Bestanden</a></li>
+                        <li><a href="{% url 'pgprofile_mycontent_userprofile' %}?meta_type=pgprofile.groupprofile">Groepen</a></li>
+                        <li><a href="{% url 'pgprofile_mycontent_userprofile' %}?meta_type=pgcontent.article">Pagina's</a></li>
+                        {% endifpermission %}
+                        {% ifpermission permobject request.user 'pgpress.add_pressquestion' %}
+                        <li><a href="{% url 'pgprofile_mycontent_userprofile' %}?meta_type=pgpress.pressquestion">Persvragen</a></li>
+                        {% endifpermission %}
+                        {% ifpermission permobject request.user 'pgcontent.add_product' %}
+                        <li><a href="{% url 'pgprofile_mycontent_userprofile' %}?meta_type=pgcontent.product">Producten/diensten</a></li>
+                        {% endifpermission %}
+                        <li><a href="{% url 'pgprofile_mycontent_userprofile' %}?meta_type=djinn_news.news">Nieuwsberichten</a></li>
+                        {% ifpermission permobject request.user 'djinn_announcements.add_serviceannouncement' %}
+                        <li><a href="{% url 'pgprofile_mycontent_userprofile' %}?meta_type=djinn_announcements.serviceannouncement">Storingen/werkzaamheden</a></li>
+                        {% endifpermission %}
+                        {% ifpermission permobject request.user 'djinn_events.add_event' %}
+                        <li><a href="{% url 'pgprofile_mycontent_userprofile' %}?meta_type=djinn_events.event">Vergeet-me-nietjes</a></li>
+                        {% endifpermission %}
+                    {% endwith %}
+                  </ul>
+                  </div>
+                </li>
+                <li>
+                  <a data-toggle="modal"
+                     data-target="#MyModal"
+                     class="wide"
+                     href="{% url 'pgevents_notices' %}">Mijn meldingen
+                    ({{ request.user.profile.notifications.count }})
+                  </a>
+                </li>
+              {% if user.is_superuser %}
+              <li>
+                <a href="/admin">Beheer</a></li>
+              {% endif %}
+              {% if not SETTINGS.SSO_ENABLED %}
+                <li>
+                  <a href="/profiel/login/">Inloggen als andere gebruiker</a>
+                </li>
+                {% endif %}
+              </ul>
+            </li>
+            <!-- TODO: should be registerd by module itself -->
+            <li class="dropdown">
+              <a href="{% url 'pu_in_favorites_favorites' %}"
+                 class="dropdown-toggle" data-toggle="dropdown" 
+                 id="favorites_action">
+                Favorieten
+                <b class="caret"></b>
+              </a>
+              {% with object=user.profile %}
+              {% include "snippets/favorites.html" %}
+              {% endwith %}
+            </li>
+            <li class="dropdown">
+              <a class="dropdown-toggle" data-toggle="dropdown" href="#">
+                Toevoegen
+                <b class="caret"></b>
+              </a>
+              {% block addmenu %}
+              {% ct_menu %}
+              {% endblock %}
+            </li>
+            <li class="with-sub" id="menu_add_content">
+               <a href="{% url 'pgcontent_add_content' %}">Toevoegen</a>
+                <div class="sub" id="sub-add-content">
+
+                {% with show_intro_text=False %}
+                    {% include 'pgcontent/snippets/add_content_icons.html' %}
+                {% endwith %}
+
+                </div>
+            </li>
+            <li>
+               <a href="{% url 'pgcontent_view_product' 'vacatures' 428 %}">Vacatures</a>
+            </li>
+            <li>
+               <a href="{% url 'pgcontent_view_article_bysummary' 'algemene-help-pagina' %}">Help</a>
+            </li>
+
+          </ul>
+          {% endblock %}
+
+        </div>
+      </div>
+      <!-- end of top bar -->
+
+      <!-- nav bar -->
+      <div class="main-nav row-fluid">
+        <div class="span6">
+          {% block tabs %}
+          <ul id="main-menu" class="nav nav-pills">
+
+          <li id="collegues" class="with-sub">
+              <a href="{% url 'haystack_search' %}?meta_type=userprofile&order_by=title_exact&sr_title=Collega's">Collega's</a>
+              <div class="sub" style="display: none;">
+                  <ul>
+                  <li>
+                      <a href="{% url 'haystack_search' %}?meta_type=pgprofile.userprofile&content_type=pgprofile.directorprofile&order_by=title_exact&sr_title=Directieleden">Directieleden</a>
+                  </li>
+                  <li>
+                      <a href="{% url 'haystack_search' %}?meta_type=pgprofile.userprofile&content_type=pgprofile.deputyprofile&order_by=title_exact&sr_title=Gedeputeerden">Gedeputeerden</a>
+                  </li>
+                  <li>
+                      <a href="{% url 'haystack_search' %}?meta_type=pgprofile.userprofile&content_type=pgprofile.headofdepartmentprofile&order_by=title_exact&sr_title=Afdelingshoofden">Afdelingshoofden</a>
+                  </li>
+                  <li>
+                      <a href="{% url 'haystack_search' %}?meta_type=userprofile&order_by=title_exact">Alle collega's</a>
+                  </li>
+                  </ul>
+              </div>
+          </li>
+
+          <li class="with-sub">
+              <a class="{% if content_type == 'groupprofile' %}active{% endif %}"
+                 href="{% url 'haystack_search' %}?meta_type=groupprofile&order_by=title_exact&sr_title=Groepen">Groepen</a>
+              <div class="sub">
+                  <ul>
+                  <li>
+                      <a href="{% url 'haystack_search' %}?meta_type=groupprofile&content_type=pgprofile.department&order_by=title_exact&sr_title=Groepen">Afdelingen</a>
+                  </li>
+                  <li>
+                      <a href="{% url 'haystack_search' %}?meta_type=groupprofile&content_type=pgprofile.groupprofile&order_by=title_exact&sr_title=Groepen">Overige groepen</a>
+                  </li>
+                  </ul>
+              </div>
+          </li>
+          <li>
+              <a class="{% if content_type == 'product' %}active{% endif %}"
+                 href="{% url 'haystack_serviceloket' %}?content_type=product&order_by=title_exact&subtype=onlydeps&sr_title=Serviceloket">Serviceloket</a>
+          </li>
+          </ul>
+          {% endblock %}
+        </div>
+        <div class="span6 searchblock">
+          {% block search %}
+          {% include "search/search_box_simple.html" %}
+          {% endblock %}
+        </div>
+      </div>
+
+      <div id="edit-info">
+        Je kunt nu het profiel bewerken <a href="#" class="edit toggle-inline">Terug naar profielpagina</a>
+      </div>
+
+      <!-- main content block -->
+      <div id="content" class="row-fluid">
+        {% block pre_container %}
+        {% endblock %}
+        {% block container %}
+        {% endblock %}
+        {% block post_container %}
+        {% endblock %}
+      </div>
+    </div>
+    <!-- end of main container -->
+
+    <div class="modal hide fade" id="MyModal">
+      <div class="modal-header">
+        <a class="close" data-dismiss="modal">x Sluit venster</a>
+        <h3></h3>
+      </div>
+      <div class="modal-body">
+        <img src="/static/img/loading.gif">
+        <p>Laden...</p>
+      </div>
+      <div class="modal-footer">
+      </div>
+    </div>
+
+    {{ SETTINGS.STATS_SNIPPET|safe }}
+
+  </body>
+
+</html>
