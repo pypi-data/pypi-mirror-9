@@ -1,0 +1,10 @@
+def print_lol(the_list):
+        """ 打印列表
+作者： 王志军
+时间： 2015-02-13 """
+        for the_item in the_list:
+                if isinstance(the_item,list):
+                        print_lol(the_item)
+                else:
+                        print(the_item)
+
