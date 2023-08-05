@@ -1,0 +1,10 @@
+__version__ = "0.0.2"
+__git_commiter_name__ = "Guy Rozendorn"
+__git_commiter_email__ = "guy@rzn.co.il"
+__git_branch__ = '(detached from v0.0.2)'
+__git_remote_tracking_branch__ = '(No remote tracking)'
+__git_remote_url__ = '(Not remote tracking)'
+__git_head_hash__ = '999a80aa0cf41699188d6af6002e428aed829cc2'
+__git_head_subject__ = 'buildout.cfg: adding lxml to requirements'
+__git_head_message__ = ''
+__git_dirty_diff__ = ''
