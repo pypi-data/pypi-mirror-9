@@ -1,0 +1,354 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>Installation &mdash; django-tenant-schema dev documentation</title>
+    
+    <link rel="stylesheet" href="_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    './',
+        VERSION:     'dev',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="top" title="django-tenant-schema dev documentation" href="index.html" />
+    <link rel="next" title="Using django-tenant-schemas" href="use.html" />
+    <link rel="prev" title="Welcome to django-tenant-schemas documentation!" href="index.html" /> 
+  </head>
+  <body role="document">
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="use.html" title="Using django-tenant-schemas"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="index.html" title="Welcome to django-tenant-schemas documentation!"
+             accesskey="P">previous</a> |</li>
+        <li><a href="index.html">django-tenant-schema dev documentation</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <div class="section" id="installation">
+<h1>Installation<a class="headerlink" href="#installation" title="Permalink to this headline">¶</a></h1>
+<p>Assuming you have django installed, the first step is to install <code class="docutils literal"><span class="pre">django-tenant-schemas</span></code>.</p>
+<div class="highlight-bash"><div class="highlight"><pre>pip install django-tenant-schemas
+</pre></div>
+</div>
+<div class="section" id="basic-settings">
+<h2>Basic Settings<a class="headerlink" href="#basic-settings" title="Permalink to this headline">¶</a></h2>
+<p>You&#8217;ll have to make the following modifications to your <code class="docutils literal"><span class="pre">settings.py</span></code> file.</p>
+<p>Your <code class="docutils literal"><span class="pre">DATABASE_ENGINE</span></code> setting needs to be changed to</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="n">DATABASES</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s">&#39;default&#39;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s">&#39;ENGINE&#39;</span><span class="p">:</span> <span class="s">&#39;tenant_schemas.postgresql_backend&#39;</span><span class="p">,</span>
+        <span class="c"># ..</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>Add <cite>tenant_schemas.routers.TenantSyncRouter</cite> to your <cite>DATABASE_ROUTERS</cite> setting, so that the correct apps can be synced, depending on what&#8217;s being synced (shared or tenant).</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="n">DATABASE_ROUTERS</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="s">&#39;tenant_schemas.routers.TenantSyncRouter&#39;</span><span class="p">,</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>Add the middleware <code class="docutils literal"><span class="pre">tenant_schemas.middleware.TenantMiddleware</span></code> to the top of <code class="docutils literal"><span class="pre">MIDDLEWARE_CLASSES</span></code>, so that each request can be set to use the correct schema.</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="n">MIDDLEWARE_CLASSES</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="s">&#39;tenant_schemas.middleware.TenantMiddleware&#39;</span><span class="p">,</span>
+    <span class="c">#...</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>Make sure you have <code class="docutils literal"><span class="pre">django.core.context_processors.request</span></code> listed under <code class="docutils literal"><span class="pre">TEMPLATE_CONTEXT_PROCESSORS</span></code> else the tenant will not be available on <code class="docutils literal"><span class="pre">request</span></code>.</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="n">TEMPLATE_CONTEXT_PROCESSORS</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="s">&#39;django.core.context_processors.request&#39;</span><span class="p">,</span>
+    <span class="c">#...</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="the-tenant-model">
+<h2>The Tenant Model<a class="headerlink" href="#the-tenant-model" title="Permalink to this headline">¶</a></h2>
+<p>Now we have to create your tenant model. Your tenant model can contain whichever fields you want, however, you <strong>must</strong> inherit from <code class="docutils literal"><span class="pre">TenantMixin</span></code>. This Mixin only has two fields (<code class="docutils literal"><span class="pre">domain_url</span></code> and <code class="docutils literal"><span class="pre">schema_name</span></code>) and both are required. Here&#8217;s an example, suppose we have an app named <code class="docutils literal"><span class="pre">customers</span></code> and we want to create a model called <code class="docutils literal"><span class="pre">Client</span></code>.</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">django.db</span> <span class="kn">import</span> <span class="n">models</span>
+<span class="kn">from</span> <span class="nn">tenant_schemas.models</span> <span class="kn">import</span> <span class="n">TenantMixin</span>
+
+<span class="k">class</span> <span class="nc">Client</span><span class="p">(</span><span class="n">TenantMixin</span><span class="p">):</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">100</span><span class="p">)</span>
+    <span class="n">paid_until</span> <span class="o">=</span>  <span class="n">models</span><span class="o">.</span><span class="n">DateField</span><span class="p">()</span>
+    <span class="n">on_trial</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">BooleanField</span><span class="p">()</span>
+    <span class="n">created_on</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">DateField</span><span class="p">(</span><span class="n">auto_now_add</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+
+    <span class="c"># default true, schema will be automatically created and synced when it is saved</span>
+    <span class="n">auto_create_schema</span> <span class="o">=</span> <span class="bp">True</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="configure-tenant-and-shared-applications">
+<h2>Configure Tenant and Shared Applications<a class="headerlink" href="#configure-tenant-and-shared-applications" title="Permalink to this headline">¶</a></h2>
+<p>To make use of shared and tenant-specific applications, there are two settings called <code class="docutils literal"><span class="pre">SHARED_APPS</span></code> and <code class="docutils literal"><span class="pre">TENANT_APPS</span></code>. <code class="docutils literal"><span class="pre">SHARED_APPS</span></code> is a tuple of strings just like <code class="docutils literal"><span class="pre">INSTALLED_APPS</span></code> and should contain all apps that you want to be synced to <code class="docutils literal"><span class="pre">public</span></code>. If <code class="docutils literal"><span class="pre">SHARED_APPS</span></code> is set, then these are the only apps that will be synced to your <code class="docutils literal"><span class="pre">public</span></code> schema! The same applies for <code class="docutils literal"><span class="pre">TENANT_APPS</span></code>, it expects a tuple of strings where each string is an app. If set, only those applications will be synced to all your tenants. Here&#8217;s a sample setting</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="n">SHARED_APPS</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="s">&#39;tenant_schemas&#39;</span><span class="p">,</span>  <span class="c"># mandatory</span>
+    <span class="s">&#39;customers&#39;</span><span class="p">,</span> <span class="c"># you must list the app where your tenant model resides in</span>
+
+    <span class="s">&#39;django.contrib.contenttypes&#39;</span><span class="p">,</span>
+
+    <span class="c"># everything below here is optional</span>
+    <span class="s">&#39;django.contrib.auth&#39;</span><span class="p">,</span>
+    <span class="s">&#39;django.contrib.sessions&#39;</span><span class="p">,</span>
+    <span class="s">&#39;django.contrib.sites&#39;</span><span class="p">,</span>
+    <span class="s">&#39;django.contrib.messages&#39;</span><span class="p">,</span>
+    <span class="s">&#39;django.contrib.admin&#39;</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="n">TENANT_APPS</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="c"># The following Django contrib apps must be in TENANT_APPS</span>
+    <span class="s">&#39;django.contrib.contenttypes&#39;</span><span class="p">,</span>
+
+    <span class="c"># your tenant-specific apps</span>
+    <span class="s">&#39;myapp.hotels&#39;</span><span class="p">,</span>
+    <span class="s">&#39;myapp.houses&#39;</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="n">INSTALLED_APPS</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">SHARED_APPS</span> <span class="o">+</span> <span class="n">TENANT_APPS</span><span class="p">))</span>
+</pre></div>
+</div>
+<p>You also have to set where your tenant model is.</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="n">TENANT_MODEL</span> <span class="o">=</span> <span class="s">&quot;customers.Client&quot;</span> <span class="c"># app.Model</span>
+</pre></div>
+</div>
+<p>Now run <code class="docutils literal"><span class="pre">migrate_schemas</span> <span class="pre">--shared</span></code> (<code class="docutils literal"><span class="pre">sync_schemas</span> <span class="pre">--shared</span></code> if you&#8217;re on Django 1.6 or older), this will create the shared apps on the <code class="docutils literal"><span class="pre">public</span></code> schema. Note: your database should be empty if this is the first time you&#8217;re running this command.</p>
+<div class="highlight-bash"><div class="highlight"><pre><span class="c"># Django &gt;= 1.7</span>
+python manage.py migrate_schemas --shared
+
+<span class="c"># Django &lt; 1.7</span>
+python manage.py sync_schemas --shared
+</pre></div>
+</div>
+<div class="admonition warning">
+<p class="first admonition-title">Warning</p>
+<p class="last">Never use <code class="docutils literal"><span class="pre">syncdb</span></code> as it would sync <em>all</em> your apps to <code class="docutils literal"><span class="pre">public</span></code>!</p>
+</div>
+<p>Lastly, you need to create a tenant whose schema is <code class="docutils literal"><span class="pre">public</span></code> and it&#8217;s address is your domain URL. Please see the section on <a class="reference internal" href="use.html"><em>use</em></a>.</p>
+<p>You can also specify extra schemas that should be visible to all queries using
+<code class="docutils literal"><span class="pre">PG_EXTRA_SEARCH_PATHS</span></code> setting.</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="n">PG_EXTRA_SEARCH_PATHS</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;extensions&#39;</span><span class="p">]</span>
+</pre></div>
+</div>
+<p><code class="docutils literal"><span class="pre">PG_EXTRA_SEARCH_PATHS</span></code> should be a list of schemas you want to make visible
+globally.</p>
+<div class="admonition tip">
+<p class="first admonition-title">Tip</p>
+<p class="last">You can create a dedicated schema to hold postgresql extensions and make it
+available globally. This helps avoid issues caused by hiding the public
+schema from queries.</p>
+</div>
+</div>
+<div class="section" id="south-migrations">
+<h2>South Migrations<a class="headerlink" href="#south-migrations" title="Permalink to this headline">¶</a></h2>
+<p>If you&#8217;re on Django 1.6 or older, this app supports <a class="reference external" href="http://south.aeracode.org/">South</a>  so if you haven&#8217;t configured it yet and would like to:</p>
+<p>For Django 1.1 or below</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="n">SOUTH_DATABASE_ADAPTER</span> <span class="o">=</span> <span class="s">&#39;south.db.postgresql_psycopg2&#39;</span>
+</pre></div>
+</div>
+<p>For Django 1.2 or above</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="n">SOUTH_DATABASE_ADAPTERS</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s">&#39;default&#39;</span><span class="p">:</span> <span class="s">&#39;south.db.postgresql_psycopg2&#39;</span><span class="p">,</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>You can list <code class="docutils literal"><span class="pre">south</span></code> under <code class="docutils literal"><span class="pre">TENANT_APPS</span></code> and <code class="docutils literal"><span class="pre">SHARED_APPS</span></code> if you want.</p>
+<p>We override <code class="docutils literal"><span class="pre">south</span></code>&#8216;s <code class="docutils literal"><span class="pre">syncdb</span></code> and <code class="docutils literal"><span class="pre">migrate</span></code> command, so you&#8217;ll need to change your <code class="docutils literal"><span class="pre">INSTALLED_APPS</span></code> to</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="n">INSTALLED_APPS</span> <span class="o">=</span> <span class="n">SHARED_APPS</span> <span class="o">+</span> <span class="n">TENANT_APPS</span> <span class="o">+</span> <span class="p">(</span><span class="s">&#39;tenant_schemas&#39;</span><span class="p">,)</span>
+</pre></div>
+</div>
+<p>This makes sure <code class="docutils literal"><span class="pre">tenant_schemas</span></code> is the last on the list and therefore always has precedence when running an overridden command.</p>
+</div>
+<div class="section" id="optional-settings">
+<h2>Optional Settings<a class="headerlink" href="#optional-settings" title="Permalink to this headline">¶</a></h2>
+<dl class="attribute">
+<dt id="PUBLIC_SCHEMA_NAME">
+<code class="descname">PUBLIC_SCHEMA_NAME</code><a class="headerlink" href="#PUBLIC_SCHEMA_NAME" title="Permalink to this definition">¶</a></dt>
+<dd><table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Default:</th><td class="field-body"><code class="docutils literal"><span class="pre">'public'</span></code></td>
+</tr>
+</tbody>
+</table>
+<p>The schema name that will be treated as <code class="docutils literal"><span class="pre">public</span></code>, that is, where the <code class="docutils literal"><span class="pre">SHARED_APPS</span></code> will be created.</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="TENANT_CREATION_FAKES_MIGRATIONS">
+<code class="descname">TENANT_CREATION_FAKES_MIGRATIONS</code><a class="headerlink" href="#TENANT_CREATION_FAKES_MIGRATIONS" title="Permalink to this definition">¶</a></dt>
+<dd><table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Default:</th><td class="field-body"><code class="docutils literal"><span class="pre">'True'</span></code></td>
+</tr>
+</tbody>
+</table>
+<p>Sets if the models will be synced directly to the last version and all migration subsequently faked. Useful in the cases where migrations can not be faked and need to be ran individually. Be aware that setting this to <cite>False</cite> may significantly slow down the process of creating tenants. Only relevant if <a class="reference external" href="http://south.aeracode.org/">South</a> is used.</p>
+</dd></dl>
+
+<div class="section" id="tenant-view-routing">
+<h3>Tenant View-Routing<a class="headerlink" href="#tenant-view-routing" title="Permalink to this headline">¶</a></h3>
+<dl class="attribute">
+<dt id="PUBLIC_SCHEMA_URLCONF">
+<code class="descname">PUBLIC_SCHEMA_URLCONF</code><a class="headerlink" href="#PUBLIC_SCHEMA_URLCONF" title="Permalink to this definition">¶</a></dt>
+<dd><table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Default:</th><td class="field-body"><code class="docutils literal"><span class="pre">None</span></code></td>
+</tr>
+</tbody>
+</table>
+<p>We have a goodie called <code class="docutils literal"><span class="pre">PUBLIC_SCHEMA_URLCONF</span></code>. Suppose you have your main website at <code class="docutils literal"><span class="pre">example.com</span></code> and a customer at <code class="docutils literal"><span class="pre">customer.example.com</span></code>. You probably want your user to be routed to different views when someone requests <code class="docutils literal"><span class="pre">http://example.com/</span></code> and <code class="docutils literal"><span class="pre">http://customer.example.com/</span></code>. Because django only uses the string after the host name, this would be impossible, both would call the view at <code class="docutils literal"><span class="pre">/</span></code>. This is where <code class="docutils literal"><span class="pre">PUBLIC_SCHEMA_URLCONF</span></code> comes in handy. If set, when the <code class="docutils literal"><span class="pre">public</span></code> schema is being requested, the value of this variable will be used instead of <a class="reference external" href="https://docs.djangoproject.com/en/dev/ref/settings/#std:setting-ROOT_URLCONF">ROOT_URLCONF</a>. So for example, if you have</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="n">PUBLIC_SCHEMA_URLCONF</span> <span class="o">=</span> <span class="s">&#39;myproject.urls_public&#39;</span>
+</pre></div>
+</div>
+<p>When requesting the view <code class="docutils literal"><span class="pre">/login/</span></code> from the public tenant (your main website), it will search for this path on <code class="docutils literal"><span class="pre">PUBLIC_SCHEMA_URLCONF</span></code> instead of <code class="docutils literal"><span class="pre">ROOT_URLCONF</span></code>.</p>
+</dd></dl>
+
+</div>
+<div class="section" id="separate-projects-for-the-main-website-and-tenants-optional">
+<h3>Separate projects for the main website and tenants (optional)<a class="headerlink" href="#separate-projects-for-the-main-website-and-tenants-optional" title="Permalink to this headline">¶</a></h3>
+<p>In some cases using the <code class="docutils literal"><span class="pre">PUBLIC_SCHEMA_URLCONF</span></code> can be difficult. For example, <a class="reference external" href="https://www.django-cms.org/">Django CMS</a> takes some control over the default Django URL routing by using middlewares that do not play well with the tenants. Another example would be when some apps on the main website need different settings than the tenants website. In these cases it is much simpler if you just run the main website <cite>example.com</cite> as a separate application.</p>
+<p>If your projects are ran using a WSGI configuration, this can be done by creating a filed called <code class="docutils literal"><span class="pre">wsgi_main_website.py</span></code> in the same folder as <code class="docutils literal"><span class="pre">wsgi.py</span></code>.</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="c"># wsgi_main_website.py</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s">&quot;DJANGO_SETTINGS_MODULE&quot;</span><span class="p">,</span> <span class="s">&quot;project.settings_public&quot;</span><span class="p">)</span>
+
+<span class="kn">from</span> <span class="nn">django.core.wsgi</span> <span class="kn">import</span> <span class="n">get_wsgi_application</span>
+<span class="n">application</span> <span class="o">=</span> <span class="n">get_wsgi_application</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>If you put this in the same Django project, you can make a new <code class="docutils literal"><span class="pre">settings_public.py</span></code> which points to a different <code class="docutils literal"><span class="pre">urls_public.py</span></code>. This has the advantage that you can use the same apps that you use for your tenant websites.</p>
+<p>Or you can create a completely separate project for the main website.</p>
+</div>
+</div>
+<div class="section" id="configuring-your-apache-server-optional">
+<h2>Configuring your Apache Server (optional)<a class="headerlink" href="#configuring-your-apache-server-optional" title="Permalink to this headline">¶</a></h2>
+<p>Here&#8217;s how you can configure your Apache server to route all subdomains to your django project so you don&#8217;t have to setup any subdomains manually.</p>
+<div class="highlight-apacheconf"><div class="highlight"><pre><span class="nt">&lt;VirtualHost</span> <span class="s">127.0.0.1:8080</span><span class="nt">&gt;</span>
+    <span class="nb">ServerName</span> mywebsite.com
+    <span class="nb">ServerAlias</span> *.mywebsite.com mywebsite.com
+    <span class="nb">WSGIScriptAlias</span> / <span class="s2">&quot;/path/to/django/scripts/mywebsite.wsgi&quot;</span>
+<span class="nt">&lt;/VirtualHost&gt;</span>
+</pre></div>
+</div>
+<p><a class="reference external" href="https://docs.djangoproject.com/en/dev/howto/deployment/wsgi/modwsgi/">Django&#8217;s Deployment with Apache and mod_wsgi</a> might interest you too.</p>
+</div>
+<div class="section" id="building-documentation">
+<h2>Building Documentation<a class="headerlink" href="#building-documentation" title="Permalink to this headline">¶</a></h2>
+<p>Documentation is available in <code class="docutils literal"><span class="pre">docs</span></code> and can be built into a number of
+formats using <a class="reference external" href="http://pypi.python.org/pypi/Sphinx">Sphinx</a>. To get started</p>
+<div class="highlight-bash"><div class="highlight"><pre>pip install Sphinx
+<span class="nb">cd </span>docs
+make html
+</pre></div>
+</div>
+<p>This creates the documentation in HTML format at <code class="docutils literal"><span class="pre">docs/_build/html</span></code>.</p>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+  <h3><a href="index.html">Table Of Contents</a></h3>
+  <ul>
+<li><a class="reference internal" href="#">Installation</a><ul>
+<li><a class="reference internal" href="#basic-settings">Basic Settings</a></li>
+<li><a class="reference internal" href="#the-tenant-model">The Tenant Model</a></li>
+<li><a class="reference internal" href="#configure-tenant-and-shared-applications">Configure Tenant and Shared Applications</a></li>
+<li><a class="reference internal" href="#south-migrations">South Migrations</a></li>
+<li><a class="reference internal" href="#optional-settings">Optional Settings</a><ul>
+<li><a class="reference internal" href="#tenant-view-routing">Tenant View-Routing</a></li>
+<li><a class="reference internal" href="#separate-projects-for-the-main-website-and-tenants-optional">Separate projects for the main website and tenants (optional)</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#configuring-your-apache-server-optional">Configuring your Apache Server (optional)</a></li>
+<li><a class="reference internal" href="#building-documentation">Building Documentation</a></li>
+</ul>
+</li>
+</ul>
+
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="index.html"
+                        title="previous chapter">Welcome to django-tenant-schemas documentation!</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="use.html"
+                        title="next chapter">Using django-tenant-schemas</a></p>
+  <div role="note" aria-label="source link">
+    <h3>This Page</h3>
+    <ul class="this-page-menu">
+      <li><a href="_sources/install.txt"
+            rel="nofollow">Show Source</a></li>
+    </ul>
+   </div>
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="use.html" title="Using django-tenant-schemas"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="index.html" title="Welcome to django-tenant-schemas documentation!"
+             >previous</a> |</li>
+        <li><a href="index.html">django-tenant-schema dev documentation</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer" role="contentinfo">
+        &copy; Copyright 2015, Bernardo Pires Carneiro.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.3b2.
+    </div>
+  </body>
+</html>
