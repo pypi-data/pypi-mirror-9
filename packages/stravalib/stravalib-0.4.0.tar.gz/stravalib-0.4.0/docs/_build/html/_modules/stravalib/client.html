@@ -1,0 +1,1287 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>stravalib.client &mdash; stravalib 0.2.0 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '0.2.0',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <link rel="top" title="stravalib 0.2.0 documentation" href="../../index.html" />
+    <link rel="up" title="Module code" href="../index.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../index.html">stravalib 0.2.0 documentation</a> &raquo;</li>
+          <li><a href="../index.html" accesskey="U">Module code</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <h1>Source code for stravalib.client</h1><div class="highlight"><pre>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Provides the main interface classes for the Strava version 3 REST API.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">functools</span>
+<span class="kn">import</span> <span class="nn">time</span>
+<span class="kn">import</span> <span class="nn">collections</span>
+<span class="kn">from</span> <span class="nn">io</span> <span class="kn">import</span> <span class="n">BytesIO</span>
+<span class="kn">from</span> <span class="nn">datetime</span> <span class="kn">import</span> <span class="n">datetime</span><span class="p">,</span> <span class="n">timedelta</span>
+
+<span class="kn">from</span> <span class="nn">dateutil.parser</span> <span class="kn">import</span> <span class="n">parser</span>
+<span class="n">dateparser</span> <span class="o">=</span> <span class="n">parser</span><span class="p">()</span>
+
+<span class="kn">from</span> <span class="nn">units.quantity</span> <span class="kn">import</span> <span class="n">Quantity</span>
+
+<span class="kn">from</span> <span class="nn">stravalib</span> <span class="kn">import</span> <span class="n">model</span><span class="p">,</span> <span class="n">exc</span>
+<span class="kn">from</span> <span class="nn">stravalib.protocol</span> <span class="kn">import</span> <span class="n">ApiV3</span>
+<span class="kn">from</span> <span class="nn">stravalib.util</span> <span class="kn">import</span> <span class="n">limiter</span>
+<span class="kn">from</span> <span class="nn">stravalib</span> <span class="kn">import</span> <span class="n">unithelper</span>
+
+<span class="k">try</span><span class="p">:</span>
+    <span class="nb">unicode</span>
+<span class="k">except</span><span class="p">:</span>
+    <span class="nb">unicode</span> <span class="o">=</span> <span class="nb">str</span>
+
+<div class="viewcode-block" id="Client"><a class="viewcode-back" href="../../api.html#stravalib.client.Client">[docs]</a><span class="k">class</span> <span class="nc">Client</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Main client class for interacting with the exposed Strava v3 API methods.</span>
+
+<span class="sd">    This class can be instantiated without an access_token when performing authentication;</span>
+<span class="sd">    however, most methods will require a valid access token.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">access_token</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">rate_limit_requests</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span>
+                 <span class="n">rate_limiter</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">requests_session</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Initialize a new client object.</span>
+
+<span class="sd">        :param access_token: The token that provides access to a specific Strava account.  If empty, assume that this</span>
+<span class="sd">                             account is not yet authenticated.</span>
+<span class="sd">        :type access_token: str</span>
+
+<span class="sd">        :param rate_limit_requests: Whether to apply a rate limiter to the requests. (default True)</span>
+<span class="sd">        :type rate_limit_requests: bool</span>
+
+<span class="sd">        :param rate_limiter: A :class:`stravalib.util.limiter.RateLimiter&#39; object to use.</span>
+<span class="sd">                             If not specified (and rate_limit_requests is True), then</span>
+<span class="sd">                             :class:`stravalib.util.limiter.DefaultRateLimiter&#39; will</span>
+<span class="sd">                             be used.</span>
+<span class="sd">        :type rate_limiter: callable</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">log</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s">&#39;{0.__module__}.{0.__name__}&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">__class__</span><span class="p">))</span>
+
+        <span class="k">if</span> <span class="n">rate_limit_requests</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">rate_limiter</span><span class="p">:</span>
+                <span class="n">rate_limiter</span> <span class="o">=</span> <span class="n">limiter</span><span class="o">.</span><span class="n">DefaultRateLimiter</span><span class="p">()</span>
+        <span class="k">elif</span> <span class="n">rate_limiter</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&quot;Cannot specify rate_limiter object when rate_limit_requests is False&quot;</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">protocol</span> <span class="o">=</span> <span class="n">ApiV3</span><span class="p">(</span><span class="n">access_token</span><span class="o">=</span><span class="n">access_token</span><span class="p">,</span>
+                              <span class="n">requests_session</span><span class="o">=</span><span class="n">requests_session</span><span class="p">,</span>
+                              <span class="n">rate_limiter</span><span class="o">=</span><span class="n">rate_limiter</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">access_token</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        The currently configured authorization token.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">protocol</span><span class="o">.</span><span class="n">access_token</span>
+
+    <span class="nd">@access_token.setter</span>
+<div class="viewcode-block" id="Client.access_token"><a class="viewcode-back" href="../../api.html#stravalib.client.Client.access_token">[docs]</a>    <span class="k">def</span> <span class="nf">access_token</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">v</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Set the currently configured authorization token.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">protocol</span><span class="o">.</span><span class="n">access_token</span> <span class="o">=</span> <span class="n">v</span>
+</div>
+<div class="viewcode-block" id="Client.authorization_url"><a class="viewcode-back" href="../../api.html#stravalib.client.Client.authorization_url">[docs]</a>    <span class="k">def</span> <span class="nf">authorization_url</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client_id</span><span class="p">,</span> <span class="n">redirect_uri</span><span class="p">,</span> <span class="n">approval_prompt</span><span class="o">=</span><span class="s">&#39;auto&#39;</span><span class="p">,</span> <span class="n">scope</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Get the URL needed to authorize your application to access a Strava user&#39;s information.</span>
+
+<span class="sd">        :param client_id: The numeric developer client id.</span>
+<span class="sd">        :type client_id: int</span>
+
+<span class="sd">        :param redirect_uri: The URL that Strava will redirect to after successful (or failed) authorization.</span>
+<span class="sd">        :type redirect_uri: str</span>
+
+<span class="sd">        :param approval_prompt: Whether to prompt for approval even if approval already granted to app.</span>
+<span class="sd">                                Choices are &#39;auto&#39; or &#39;force&#39;.  (Default is &#39;auto&#39;)</span>
+<span class="sd">        :type approval_prompt: str</span>
+
+<span class="sd">        :param scope: The access scope required.  Omit to imply &quot;public&quot;.  Valid values are &#39;public&#39;, &#39;write&#39;, &#39;view_private&#39;, &#39;view_private,write&#39;</span>
+<span class="sd">        :type scope: str</span>
+
+<span class="sd">        :param state: An arbitrary variable that will be returned to your application in the redirect URI.</span>
+<span class="sd">        :type state: str</span>
+
+<span class="sd">        :return: The URL to use for authorization link.</span>
+<span class="sd">        :rtype: str</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">protocol</span><span class="o">.</span><span class="n">authorization_url</span><span class="p">(</span><span class="n">client_id</span><span class="o">=</span><span class="n">client_id</span><span class="p">,</span>
+                                               <span class="n">redirect_uri</span><span class="o">=</span><span class="n">redirect_uri</span><span class="p">,</span>
+                                               <span class="n">approval_prompt</span><span class="o">=</span><span class="n">approval_prompt</span><span class="p">,</span>
+                                               <span class="n">scope</span><span class="o">=</span><span class="n">scope</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">state</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Client.exchange_code_for_token"><a class="viewcode-back" href="../../api.html#stravalib.client.Client.exchange_code_for_token">[docs]</a>    <span class="k">def</span> <span class="nf">exchange_code_for_token</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client_id</span><span class="p">,</span> <span class="n">client_secret</span><span class="p">,</span> <span class="n">code</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Exchange the temporary authorization code (returned with redirect from strava authorization URL)</span>
+<span class="sd">        for a permanent access token.</span>
+
+<span class="sd">        :param client_id: The numeric developer client id.</span>
+<span class="sd">        :type client_id: int</span>
+
+<span class="sd">        :param client_secret: The developer client secret</span>
+<span class="sd">        :type client_secret: str</span>
+
+<span class="sd">        :param code: The temporary authorization code</span>
+<span class="sd">        :type code: str</span>
+
+<span class="sd">        :return: The access token.</span>
+<span class="sd">        :rtype: str</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">protocol</span><span class="o">.</span><span class="n">exchange_code_for_token</span><span class="p">(</span><span class="n">client_id</span><span class="o">=</span><span class="n">client_id</span><span class="p">,</span>
+                                                     <span class="n">client_secret</span><span class="o">=</span><span class="n">client_secret</span><span class="p">,</span>
+                                                     <span class="n">code</span><span class="o">=</span><span class="n">code</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="Client.get_activities"><a class="viewcode-back" href="../../api.html#stravalib.client.Client.get_activities">[docs]</a>    <span class="k">def</span> <span class="nf">get_activities</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">before</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">after</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Get activities for authenticated user sorted by newest first.</span>
+
+<span class="sd">        http://strava.github.io/api/v3/activities/</span>
+
+
+<span class="sd">        :param before: Result will start with activities whose start date is</span>
+<span class="sd">                       before specified date. (UTC)</span>
+<span class="sd">        :type before: datetime.datetime or str</span>
+
+<span class="sd">        :param after: Result will start with activities whose start date is after</span>
+<span class="sd">                      specified value. (UTC)</span>
+<span class="sd">        :type after: datetime.datetime or str</span>
+
+<span class="sd">        :param limit: How many maximum activities to return.</span>
+<span class="sd">        :type limit: int</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">if</span> <span class="n">before</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">before</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+                <span class="n">before</span> <span class="o">=</span> <span class="n">dateparser</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">before</span><span class="p">,</span> <span class="n">ignoretz</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+            <span class="n">before</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">mktime</span><span class="p">(</span><span class="n">before</span><span class="o">.</span><span class="n">timetuple</span><span class="p">())</span>
+
+        <span class="k">if</span> <span class="n">after</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">after</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+                <span class="n">after</span> <span class="o">=</span> <span class="n">dateparser</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">after</span><span class="p">,</span> <span class="n">ignoretz</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+            <span class="n">after</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">mktime</span><span class="p">(</span><span class="n">after</span><span class="o">.</span><span class="n">timetuple</span><span class="p">())</span>
+
+        <span class="n">params</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">before</span><span class="o">=</span><span class="n">before</span><span class="p">,</span> <span class="n">after</span><span class="o">=</span><span class="n">after</span><span class="p">)</span>
+        <span class="n">result_fetcher</span> <span class="o">=</span> <span class="n">functools</span><span class="o">.</span><span class="n">partial</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">protocol</span><span class="o">.</span><span class="n">get</span><span class="p">,</span>
+                                           <span class="s">&#39;/athlete/activities&#39;</span><span class="p">,</span>
+                                           <span class="o">**</span><span class="n">params</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">BatchedResultsIterator</span><span class="p">(</span><span class="n">entity</span><span class="o">=</span><span class="n">model</span><span class="o">.</span><span class="n">Activity</span><span class="p">,</span>
+                                      <span class="n">bind_client</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span>
+                                      <span class="n">result_fetcher</span><span class="o">=</span><span class="n">result_fetcher</span><span class="p">,</span>
+                                      <span class="n">limit</span><span class="o">=</span><span class="n">limit</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="Client.get_athlete"><a class="viewcode-back" href="../../api.html#stravalib.client.Client.get_athlete">[docs]</a>    <span class="k">def</span> <span class="nf">get_athlete</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">athlete_id</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Gets the specified athlete; if athlete_id is None then retrieves a</span>
+<span class="sd">        detail-level representation of currently authenticated athlete;</span>
+<span class="sd">        otherwise summary-level representation returned of athlete.</span>
+
+<span class="sd">        http://strava.github.io/api/v3/athlete/#get-details</span>
+
+<span class="sd">        http://strava.github.io/api/v3/athlete/#get-another-details</span>
+
+<span class="sd">        :param: athlete_id: The numeric ID of the athlete to fetch.</span>
+<span class="sd">        :type: athlete_id: int</span>
+<span class="sd">        :return: The athlete model object.</span>
+<span class="sd">        :rtype: :class:`stravalib.model.Athlete`</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">athlete_id</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">raw</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">protocol</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/athlete&#39;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">raw</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">protocol</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/athletes/{athlete_id}&#39;</span><span class="p">,</span> <span class="n">athlete_id</span><span class="o">=</span><span class="n">athlete_id</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">model</span><span class="o">.</span><span class="n">Athlete</span><span class="o">.</span><span class="n">deserialize</span><span class="p">(</span><span class="n">raw</span><span class="p">,</span> <span class="n">bind_client</span><span class="o">=</span><span class="bp">self</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Client.get_athlete_friends"><a class="viewcode-back" href="../../api.html#stravalib.client.Client.get_athlete_friends">[docs]</a>    <span class="k">def</span> <span class="nf">get_athlete_friends</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">athlete_id</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Gets friends for current (or specified) athlete.</span>
+
+<span class="sd">        http://strava.github.io/api/v3/follow/#friends</span>
+
+<span class="sd">        :param athlete_id</span>
+<span class="sd">        :type athlete_id: int</span>
+<span class="sd">        :param limit: Maximum number of athletes to return (default unlimited).</span>
+<span class="sd">        :type limit: int</span>
+<span class="sd">        :return: An iterator of :class:`stravalib.model.Athlete` objects.</span>
+<span class="sd">        :rtype: :class:`BatchedResultsIterator`</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">athlete_id</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">result_fetcher</span> <span class="o">=</span> <span class="n">functools</span><span class="o">.</span><span class="n">partial</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">protocol</span><span class="o">.</span><span class="n">get</span><span class="p">,</span> <span class="s">&#39;/athlete/friends&#39;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">result_fetcher</span> <span class="o">=</span> <span class="n">functools</span><span class="o">.</span><span class="n">partial</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">protocol</span><span class="o">.</span><span class="n">get</span><span class="p">,</span>
+                                               <span class="s">&#39;/athletes/{id}/friends&#39;</span><span class="p">,</span>
+                                               <span class="nb">id</span><span class="o">=</span><span class="n">athlete_id</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">BatchedResultsIterator</span><span class="p">(</span><span class="n">entity</span><span class="o">=</span><span class="n">model</span><span class="o">.</span><span class="n">Athlete</span><span class="p">,</span>
+                                      <span class="n">bind_client</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span>
+                                      <span class="n">result_fetcher</span><span class="o">=</span><span class="n">result_fetcher</span><span class="p">,</span>
+                                      <span class="n">limit</span><span class="o">=</span><span class="n">limit</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Client.get_athlete_followers"><a class="viewcode-back" href="../../api.html#stravalib.client.Client.get_athlete_followers">[docs]</a>    <span class="k">def</span> <span class="nf">get_athlete_followers</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">athlete_id</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Gets followers for current (or specified) athlete.</span>
+
+<span class="sd">        http://strava.github.io/api/v3/follow/#followers</span>
+
+<span class="sd">        :param athlete_id</span>
+<span class="sd">        :type athlete_id: int</span>
+<span class="sd">        :param limit: Maximum number of athletes to return (default unlimited).</span>
+<span class="sd">        :type limit: int</span>
+<span class="sd">        :return: An iterator of :class:`stravalib.model.Athlete` objects.</span>
+<span class="sd">        :rtype: :class:`BatchedResultsIterator`</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">athlete_id</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">result_fetcher</span> <span class="o">=</span> <span class="n">functools</span><span class="o">.</span><span class="n">partial</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">protocol</span><span class="o">.</span><span class="n">get</span><span class="p">,</span> <span class="s">&#39;/athlete/followers&#39;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">result_fetcher</span> <span class="o">=</span> <span class="n">functools</span><span class="o">.</span><span class="n">partial</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">protocol</span><span class="o">.</span><span class="n">get</span><span class="p">,</span>
+                                               <span class="s">&#39;/athletes/{id}/followers&#39;</span><span class="p">,</span>
+                                               <span class="nb">id</span><span class="o">=</span><span class="n">athlete_id</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">BatchedResultsIterator</span><span class="p">(</span><span class="n">entity</span><span class="o">=</span><span class="n">model</span><span class="o">.</span><span class="n">Athlete</span><span class="p">,</span>
+                                      <span class="n">bind_client</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span>
+                                      <span class="n">result_fetcher</span><span class="o">=</span><span class="n">result_fetcher</span><span class="p">,</span>
+                                      <span class="n">limit</span><span class="o">=</span><span class="n">limit</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Client.get_both_following"><a class="viewcode-back" href="../../api.html#stravalib.client.Client.get_both_following">[docs]</a>    <span class="k">def</span> <span class="nf">get_both_following</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">athlete_id</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Retrieve the athletes who both the authenticated user and the indicated</span>
+<span class="sd">         athlete are following.</span>
+
+<span class="sd">        http://strava.github.io/api/v3/follow/#both</span>
+
+<span class="sd">        :param athlete_id: The ID of the other athlete (for follower intersection with current athlete)</span>
+<span class="sd">        :type athlete_id: int</span>
+<span class="sd">        :param limit: Maximum number of athletes to return. (default unlimited)</span>
+<span class="sd">        :type limit: int</span>
+<span class="sd">        :return: An iterator of :class:`stravalib.model.Athlete` objects.</span>
+<span class="sd">        :rtype: :class:`BatchedResultsIterator`</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">result_fetcher</span> <span class="o">=</span> <span class="n">functools</span><span class="o">.</span><span class="n">partial</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">protocol</span><span class="o">.</span><span class="n">get</span><span class="p">,</span>
+                                           <span class="s">&#39;/athletes/{id}/both-following&#39;</span><span class="p">,</span>
+                                           <span class="nb">id</span><span class="o">=</span><span class="n">athlete_id</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">BatchedResultsIterator</span><span class="p">(</span><span class="n">entity</span><span class="o">=</span><span class="n">model</span><span class="o">.</span><span class="n">Athlete</span><span class="p">,</span>
+                                      <span class="n">bind_client</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span>
+                                      <span class="n">result_fetcher</span><span class="o">=</span><span class="n">result_fetcher</span><span class="p">,</span>
+                                      <span class="n">limit</span><span class="o">=</span><span class="n">limit</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="Client.get_athlete_clubs"><a class="viewcode-back" href="../../api.html#stravalib.client.Client.get_athlete_clubs">[docs]</a>    <span class="k">def</span> <span class="nf">get_athlete_clubs</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        List the clubs for the currently authenticated athlete.</span>
+
+<span class="sd">        http://strava.github.io/api/v3/clubs/#get-athletes</span>
+
+<span class="sd">        :rtype: list of :class:`stravalib.model.Club`</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">club_structs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">protocol</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/athlete/clubs&#39;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">model</span><span class="o">.</span><span class="n">Club</span><span class="o">.</span><span class="n">deserialize</span><span class="p">(</span><span class="n">raw</span><span class="p">,</span> <span class="n">bind_client</span><span class="o">=</span><span class="bp">self</span><span class="p">)</span> <span class="k">for</span> <span class="n">raw</span> <span class="ow">in</span> <span class="n">club_structs</span><span class="p">]</span>
+</div>
+<div class="viewcode-block" id="Client.get_club"><a class="viewcode-back" href="../../api.html#stravalib.client.Client.get_club">[docs]</a>    <span class="k">def</span> <span class="nf">get_club</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">club_id</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Return a specific club object.</span>
+
+<span class="sd">        http://strava.github.io/api/v3/clubs/#get-details</span>
+
+<span class="sd">        :param club_id: The ID of the club to fetch.</span>
+<span class="sd">        :rtype: :class:`stravalib.model.Club`</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">raw</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">protocol</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&quot;/clubs/{id}&quot;</span><span class="p">,</span> <span class="nb">id</span><span class="o">=</span><span class="n">club_id</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">model</span><span class="o">.</span><span class="n">Club</span><span class="o">.</span><span class="n">deserialize</span><span class="p">(</span><span class="n">raw</span><span class="p">,</span> <span class="n">bind_client</span><span class="o">=</span><span class="bp">self</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Client.get_club_members"><a class="viewcode-back" href="../../api.html#stravalib.client.Client.get_club_members">[docs]</a>    <span class="k">def</span> <span class="nf">get_club_members</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">club_id</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Gets the member objects for specified club ID.</span>
+
+<span class="sd">        http://strava.github.io/api/v3/clubs/#get-members</span>
+
+<span class="sd">        :param club_id: The numeric ID for the club.</span>
+<span class="sd">        :param limit: Maximum number of athletes to return. (default unlimited)</span>
+<span class="sd">        :type limit: int</span>
+<span class="sd">        :return: An iterator of :class:`stravalib.model.Athlete` objects.</span>
+<span class="sd">        :rtype: :class:`BatchedResultsIterator`</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">result_fetcher</span> <span class="o">=</span> <span class="n">functools</span><span class="o">.</span><span class="n">partial</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">protocol</span><span class="o">.</span><span class="n">get</span><span class="p">,</span>
+                                           <span class="s">&#39;/clubs/{id}/members&#39;</span><span class="p">,</span>
+                                           <span class="nb">id</span><span class="o">=</span><span class="n">club_id</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">BatchedResultsIterator</span><span class="p">(</span><span class="n">entity</span><span class="o">=</span><span class="n">model</span><span class="o">.</span><span class="n">Athlete</span><span class="p">,</span> <span class="n">bind_client</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span>
+                                      <span class="n">result_fetcher</span><span class="o">=</span><span class="n">result_fetcher</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="n">limit</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Client.get_club_activities"><a class="viewcode-back" href="../../api.html#stravalib.client.Client.get_club_activities">[docs]</a>    <span class="k">def</span> <span class="nf">get_club_activities</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">club_id</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Gets the activities associated with specified club.</span>
+
+<span class="sd">        http://strava.github.io/api/v3/clubs/#get-activities</span>
+
+<span class="sd">        :param club_id: The numeric ID for the club.</span>
+<span class="sd">        :param limit: Maximum number of activities to return. (default unlimited)</span>
+<span class="sd">        :type limit: int</span>
+<span class="sd">        :return: An iterator of :class:`stravalib.model.Activity` objects.</span>
+<span class="sd">        :rtype: :class:`BatchedResultsIterator`</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">result_fetcher</span> <span class="o">=</span> <span class="n">functools</span><span class="o">.</span><span class="n">partial</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">protocol</span><span class="o">.</span><span class="n">get</span><span class="p">,</span>
+                                           <span class="s">&#39;/clubs/{id}/activities&#39;</span><span class="p">,</span>
+                                           <span class="nb">id</span><span class="o">=</span><span class="n">club_id</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">BatchedResultsIterator</span><span class="p">(</span><span class="n">entity</span><span class="o">=</span><span class="n">model</span><span class="o">.</span><span class="n">Activity</span><span class="p">,</span> <span class="n">bind_client</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span>
+                                      <span class="n">result_fetcher</span><span class="o">=</span><span class="n">result_fetcher</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="n">limit</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="Client.get_activity"><a class="viewcode-back" href="../../api.html#stravalib.client.Client.get_activity">[docs]</a>    <span class="k">def</span> <span class="nf">get_activity</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">activity_id</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Gets specified activity.</span>
+
+<span class="sd">        Will be detail-level if owned by authenticated user; otherwise summary-level.</span>
+
+<span class="sd">        http://strava.github.io/api/v3/activities/#get-details</span>
+
+<span class="sd">        :param activity_id: The ID of activity to fetch.</span>
+<span class="sd">        :rtype: :class:`stravalib.model.Activity`</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">raw</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">protocol</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/activities/{id}&#39;</span><span class="p">,</span> <span class="nb">id</span><span class="o">=</span><span class="n">activity_id</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">model</span><span class="o">.</span><span class="n">Activity</span><span class="o">.</span><span class="n">deserialize</span><span class="p">(</span><span class="n">raw</span><span class="p">,</span> <span class="n">bind_client</span><span class="o">=</span><span class="bp">self</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Client.get_friend_activities"><a class="viewcode-back" href="../../api.html#stravalib.client.Client.get_friend_activities">[docs]</a>    <span class="k">def</span> <span class="nf">get_friend_activities</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Gets activities for friends (of currently authenticated athlete).</span>
+
+<span class="sd">        http://strava.github.io/api/v3/activities/#get-feed</span>
+
+<span class="sd">        :param limit: Maximum number of activities to return. (default unlimited)</span>
+<span class="sd">        :type limit: int</span>
+<span class="sd">        :return: An iterator of :class:`stravalib.model.Activity` objects.</span>
+<span class="sd">        :rtype: :class:`BatchedResultsIterator`</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">result_fetcher</span> <span class="o">=</span> <span class="n">functools</span><span class="o">.</span><span class="n">partial</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">protocol</span><span class="o">.</span><span class="n">get</span><span class="p">,</span> <span class="s">&#39;/activities/following&#39;</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">BatchedResultsIterator</span><span class="p">(</span><span class="n">entity</span><span class="o">=</span><span class="n">model</span><span class="o">.</span><span class="n">Activity</span><span class="p">,</span> <span class="n">bind_client</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span>
+                                      <span class="n">result_fetcher</span><span class="o">=</span><span class="n">result_fetcher</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="n">limit</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="Client.create_activity"><a class="viewcode-back" href="../../api.html#stravalib.client.Client.create_activity">[docs]</a>    <span class="k">def</span> <span class="nf">create_activity</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">activity_type</span><span class="p">,</span> <span class="n">start_date_local</span><span class="p">,</span> <span class="n">elapsed_time</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">distance</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Create a new manual activity.</span>
+
+<span class="sd">        If you would like to create an activity from an uploaded GPS file, see the</span>
+<span class="sd">        :meth:`stravalib.client.Client.upload_activity` method instead.</span>
+
+<span class="sd">        :param name: The name of the activity.</span>
+<span class="sd">        :param activity_type: The activity type (case-insensitive).</span>
+<span class="sd">                              Possible values: ride, run, swim, workout, hike, walk, nordicski,</span>
+<span class="sd">                              alpineski, backcountryski, iceskate, inlineskate, kitesurf, rollerski,</span>
+<span class="sd">                              windsurf, workout, snowboard, snowshoe</span>
+<span class="sd">        :param start_date: Local date/time of activity start. (TZ info will be ignored)</span>
+<span class="sd">        :type start_date: :class:`datetime.datetime` or string in ISO8601 format.</span>
+<span class="sd">        :param elapsed_time: The time in seconds or a :class:`datetime.timedelta` object.</span>
+<span class="sd">        :type elapsed_time: :class:`datetime.timedelta` or int (seconds)</span>
+<span class="sd">        :param description: The description for the activity.</span>
+<span class="sd">        :type description: str</span>
+<span class="sd">        :param distance: The distance in meters (float) or a :class:`units.quantity.Quantity` instance.</span>
+<span class="sd">        :type distance: :class:`units.quantity.Quantity` or float (meters)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">elapsed_time</span><span class="p">,</span> <span class="n">timedelta</span><span class="p">):</span>
+            <span class="n">elapsed_time</span> <span class="o">=</span> <span class="n">unithelper</span><span class="o">.</span><span class="n">timedelta_to_seconds</span><span class="p">(</span><span class="n">elapsed_time</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">distance</span><span class="p">,</span> <span class="n">Quantity</span><span class="p">):</span>
+            <span class="n">distance</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">unithelper</span><span class="o">.</span><span class="n">meters</span><span class="p">(</span><span class="n">distance</span><span class="p">))</span>
+
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">start_date_local</span><span class="p">,</span> <span class="n">datetime</span><span class="p">):</span>
+            <span class="n">start_date_local</span> <span class="o">=</span> <span class="n">start_date_local</span><span class="o">.</span><span class="n">strftime</span><span class="p">(</span><span class="s">&quot;%Y-%m-</span><span class="si">%d</span><span class="s">T%H:%M:%SZ&quot;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">activity_type</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">in</span> <span class="p">[</span><span class="n">t</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">Activity</span><span class="o">.</span><span class="n">TYPES</span><span class="p">]:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&quot;Invalid activity type: {0}.  Possible values: {1!r}&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">activity_type</span><span class="p">,</span> <span class="n">model</span><span class="o">.</span><span class="n">Activity</span><span class="o">.</span><span class="n">TYPES</span><span class="p">))</span>
+
+        <span class="n">params</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="n">activity_type</span><span class="p">,</span> <span class="n">start_date_local</span><span class="o">=</span><span class="n">start_date_local</span><span class="p">,</span>
+                      <span class="n">elapsed_time</span><span class="o">=</span><span class="n">elapsed_time</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">description</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">params</span><span class="p">[</span><span class="s">&#39;description&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">description</span>
+
+        <span class="k">if</span> <span class="n">distance</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">params</span><span class="p">[</span><span class="s">&#39;distance&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">distance</span>
+
+        <span class="n">raw_activity</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">protocol</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="s">&#39;/activities&#39;</span><span class="p">,</span> <span class="o">**</span><span class="n">params</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">model</span><span class="o">.</span><span class="n">Activity</span><span class="o">.</span><span class="n">deserialize</span><span class="p">(</span><span class="n">raw_activity</span><span class="p">,</span> <span class="n">bind_client</span><span class="o">=</span><span class="bp">self</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Client.update_activity"><a class="viewcode-back" href="../../api.html#stravalib.client.Client.update_activity">[docs]</a>    <span class="k">def</span> <span class="nf">update_activity</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">activity_id</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">activity_type</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+                        <span class="n">private</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">commute</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">trainer</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">gear_id</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+                        <span class="n">description</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Updates the properties of a specific activity.</span>
+
+<span class="sd">        http://strava.github.io/api/v3/activities/#put-updates</span>
+
+<span class="sd">        :param activity_id: The ID of the activity to update.</span>
+<span class="sd">        :param name: The name of the activity.</span>
+<span class="sd">        :param activity_type: The activity type (case-insensitive).</span>
+<span class="sd">                              Possible values: ride, run, swim, workout, hike,</span>
+<span class="sd">                              walk, nordicski, alpineski, backcountryski,</span>
+<span class="sd">                              iceskate, inlineskate, kitesurf, rollerski,</span>
+<span class="sd">                              windsurf, workout, snowboard, snowshoe</span>
+<span class="sd">        :param private: Whether the activity is private.</span>
+<span class="sd">        :param commute: Whether the activity is a commute.</span>
+<span class="sd">        :param trainer: Whether this is a trainer activity.</span>
+<span class="sd">        :param gear_id: Alpha-numeric ID of gear (bike, shoes) used on this activity.</span>
+<span class="sd">        :param description: Description for the activity.</span>
+<span class="sd">        :return: The updated activity.</span>
+<span class="sd">        :rtype: :class:`stravalib.model.Activity`</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="c"># Convert the kwargs into a params dict</span>
+        <span class="n">params</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">activity_id</span><span class="o">=</span><span class="n">activity_id</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">name</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">params</span><span class="p">[</span><span class="s">&#39;name&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">name</span>
+        <span class="k">if</span> <span class="n">activity_type</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">activity_type</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">in</span> <span class="p">[</span><span class="n">t</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">Activity</span><span class="o">.</span><span class="n">TYPES</span><span class="p">]:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&quot;Invalid activity type: {0}.  Possible values: {1!r}&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">activity_type</span><span class="p">,</span> <span class="n">model</span><span class="o">.</span><span class="n">Activity</span><span class="o">.</span><span class="n">TYPES</span><span class="p">))</span>
+            <span class="n">params</span><span class="p">[</span><span class="s">&#39;type&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">activity_type</span>
+        <span class="k">if</span> <span class="n">private</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">params</span><span class="p">[</span><span class="s">&#39;private&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">private</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">commute</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">params</span><span class="p">[</span><span class="s">&#39;commute&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">commute</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">trainer</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">params</span><span class="p">[</span><span class="s">&#39;trainer&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">trainer</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">gear_id</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">params</span><span class="p">[</span><span class="s">&#39;gear_id&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">gear_id</span>
+
+        <span class="n">raw_activity</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">protocol</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="s">&#39;/activities/{activity_id}&#39;</span><span class="p">,</span> <span class="o">**</span><span class="n">params</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">model</span><span class="o">.</span><span class="n">Activity</span><span class="o">.</span><span class="n">deserialize</span><span class="p">(</span><span class="n">raw_activity</span><span class="p">,</span> <span class="n">bind_client</span><span class="o">=</span><span class="bp">self</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Client.upload_activity"><a class="viewcode-back" href="../../api.html#stravalib.client.Client.upload_activity">[docs]</a>    <span class="k">def</span> <span class="nf">upload_activity</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">activity_file</span><span class="p">,</span> <span class="n">data_type</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+                        <span class="n">activity_type</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">private</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">external_id</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Uploads a GPS file (tcx, gpx) to create a new activity for current athlete.</span>
+
+<span class="sd">        http://strava.github.io/api/v3/athlete/#get-details</span>
+
+<span class="sd">        :param activity_file: The file object to upload or file contents.</span>
+<span class="sd">        :type activity_file: file or str</span>
+
+<span class="sd">        :param data_type: File format for upload. Possible values: fit, fit.gz, tcx, tcx.gz, gpx, gpx.gz</span>
+<span class="sd">        :type data_type: str</span>
+
+<span class="sd">        :param name: (optional) if not provided, will be populated using start date and location, if available</span>
+<span class="sd">        :type name: str</span>
+
+<span class="sd">        :param activity_type: (optional) case-insensitive type of activity.</span>
+<span class="sd">                              possible values: ride, run, swim, workout, hike, walk,</span>
+<span class="sd">                              nordicski, alpineski, backcountryski, iceskate, inlineskate,</span>
+<span class="sd">                              kitesurf, rollerski, windsurf, workout, snowboard, snowshoe</span>
+<span class="sd">                              Type detected from file overrides, uses athlete&#39;s default type if not specified</span>
+<span class="sd">        :type activity_type: str</span>
+
+<span class="sd">        :param private: (optional) set to True to mark the resulting activity as private, &#39;view_private&#39; permissions will be necessary to view the activity</span>
+<span class="sd">        :type private: bool</span>
+
+<span class="sd">        :param external_id: (optional) An arbitrary unique identifier may be specified which will be included in status responses.</span>
+<span class="sd">        :type external_id: str</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">activity_file</span><span class="p">,</span> <span class="s">&#39;read&#39;</span><span class="p">):</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="nb">file</span><span class="p">,</span> <span class="nb">unicode</span><span class="p">):</span>
+                <span class="n">activity_file</span> <span class="o">=</span> <span class="n">BytesIO</span><span class="p">(</span><span class="nb">file</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s">&#39;utf-8&#39;</span><span class="p">))</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="nb">file</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+                <span class="n">activity_file</span> <span class="o">=</span> <span class="n">BytesIO</span><span class="p">(</span><span class="nb">file</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s">&quot;Invalid type specified for actvitity_file: {0}&quot;</span><span class="o">.</span><span class="n">type</span><span class="p">(</span><span class="nb">file</span><span class="p">))</span>
+
+        <span class="n">valid_data_types</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;fit&#39;</span><span class="p">,</span> <span class="s">&#39;fit.gz&#39;</span><span class="p">,</span> <span class="s">&#39;tcx&#39;</span><span class="p">,</span> <span class="s">&#39;tcx.gz&#39;</span><span class="p">,</span> <span class="s">&#39;gpx&#39;</span><span class="p">,</span> <span class="s">&#39;gpx.gz&#39;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">data_type</span> <span class="ow">in</span> <span class="n">valid_data_types</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&quot;Invalid data type {0}. Possible vavlues {1!r}&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">data_type</span><span class="p">,</span> <span class="n">valid_data_types</span><span class="p">))</span>
+
+        <span class="n">params</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;data_type&#39;</span><span class="p">:</span> <span class="n">data_type</span><span class="p">}</span>
+        <span class="k">if</span> <span class="n">name</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">params</span><span class="p">[</span><span class="s">&#39;activity_name&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">name</span>
+        <span class="k">if</span> <span class="n">activity_type</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">activity_type</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">in</span> <span class="p">[</span><span class="n">t</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">Activity</span><span class="o">.</span><span class="n">TYPES</span><span class="p">]:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&quot;Invalid activity type: {0}.  Possible values: {1!r}&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">activity_type</span><span class="p">,</span> <span class="n">model</span><span class="o">.</span><span class="n">Activity</span><span class="o">.</span><span class="n">TYPES</span><span class="p">))</span>
+            <span class="n">params</span><span class="p">[</span><span class="s">&#39;activity_type&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">activity_type</span>
+        <span class="k">if</span> <span class="n">private</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">params</span><span class="p">[</span><span class="s">&#39;private&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">private</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">external_id</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">params</span><span class="p">[</span><span class="s">&#39;external_id&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">external_id</span>
+
+        <span class="n">initial_response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">protocol</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="s">&#39;/uploads&#39;</span><span class="p">,</span>
+                                              <span class="n">files</span><span class="o">=</span><span class="p">{</span><span class="s">&#39;file&#39;</span><span class="p">:</span> <span class="n">activity_file</span><span class="p">},</span>
+                                              <span class="n">check_for_errors</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+                                              <span class="o">**</span><span class="n">params</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">ActivityUploader</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">response</span><span class="o">=</span><span class="n">initial_response</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Client.get_activity_zones"><a class="viewcode-back" href="../../api.html#stravalib.client.Client.get_activity_zones">[docs]</a>    <span class="k">def</span> <span class="nf">get_activity_zones</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">activity_id</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Gets zones for activity.</span>
+
+<span class="sd">        Requires premium account.</span>
+
+<span class="sd">        http://strava.github.io/api/v3/activities/#zones</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">zones</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">protocol</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/activities/{id}/zones&#39;</span><span class="p">,</span> <span class="nb">id</span><span class="o">=</span><span class="n">activity_id</span><span class="p">)</span>
+        <span class="c"># We use a factory to give us the correct zone based on type.</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">model</span><span class="o">.</span><span class="n">BaseActivityZone</span><span class="o">.</span><span class="n">deserialize</span><span class="p">(</span><span class="n">z</span><span class="p">,</span> <span class="n">bind_client</span><span class="o">=</span><span class="bp">self</span><span class="p">)</span> <span class="k">for</span> <span class="n">z</span> <span class="ow">in</span> <span class="n">zones</span><span class="p">]</span>
+</div>
+<div class="viewcode-block" id="Client.get_activity_comments"><a class="viewcode-back" href="../../api.html#stravalib.client.Client.get_activity_comments">[docs]</a>    <span class="k">def</span> <span class="nf">get_activity_comments</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">activity_id</span><span class="p">,</span> <span class="n">markdown</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Gets the comments for an activity.</span>
+
+<span class="sd">        http://strava.github.io/api/v3/comments/#list</span>
+
+<span class="sd">        :param activity_id: The activity for which to fetch comments.</span>
+<span class="sd">        :param markdown: Whether to include markdown in comments (default is false/filterout).</span>
+<span class="sd">        :param limit: Max rows to return (default unlimited).</span>
+<span class="sd">        :type limit: int</span>
+<span class="sd">        :return: An iterator of :class:`stravalib.model.ActivityComment` objects.</span>
+<span class="sd">        :rtype: :class:`BatchedResultsIterator`</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">result_fetcher</span> <span class="o">=</span> <span class="n">functools</span><span class="o">.</span><span class="n">partial</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">protocol</span><span class="o">.</span><span class="n">get</span><span class="p">,</span> <span class="s">&#39;/activities/{id}/comments&#39;</span><span class="p">,</span>
+                                           <span class="nb">id</span><span class="o">=</span><span class="n">activity_id</span><span class="p">,</span> <span class="n">markdown</span><span class="o">=</span><span class="nb">int</span><span class="p">(</span><span class="n">markdown</span><span class="p">))</span>
+
+        <span class="k">return</span> <span class="n">BatchedResultsIterator</span><span class="p">(</span><span class="n">entity</span><span class="o">=</span><span class="n">model</span><span class="o">.</span><span class="n">ActivityComment</span><span class="p">,</span>
+                                      <span class="n">bind_client</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span>
+                                      <span class="n">result_fetcher</span><span class="o">=</span><span class="n">result_fetcher</span><span class="p">,</span>
+                                      <span class="n">limit</span><span class="o">=</span><span class="n">limit</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Client.get_activity_kudos"><a class="viewcode-back" href="../../api.html#stravalib.client.Client.get_activity_kudos">[docs]</a>    <span class="k">def</span> <span class="nf">get_activity_kudos</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">activity_id</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Gets the kudos for an activity.</span>
+
+<span class="sd">        http://strava.github.io/api/v3/kudos/#list</span>
+
+<span class="sd">        :param activity_id: The activity for which to fetch kudos.</span>
+<span class="sd">        :param limit: Max rows to return (default unlimited).</span>
+<span class="sd">        :type limit: int</span>
+<span class="sd">        :return: An iterator of :class:`stravalib.model.Athlete` objects.</span>
+<span class="sd">        :rtype: :class:`BatchedResultsIterator`</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">result_fetcher</span> <span class="o">=</span> <span class="n">functools</span><span class="o">.</span><span class="n">partial</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">protocol</span><span class="o">.</span><span class="n">get</span><span class="p">,</span>
+                                           <span class="s">&#39;/activities/{id}/kudos&#39;</span><span class="p">,</span>
+                                           <span class="nb">id</span><span class="o">=</span><span class="n">activity_id</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">BatchedResultsIterator</span><span class="p">(</span><span class="n">entity</span><span class="o">=</span><span class="n">model</span><span class="o">.</span><span class="n">ActivityKudos</span><span class="p">,</span>
+                                      <span class="n">bind_client</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span>
+                                      <span class="n">result_fetcher</span><span class="o">=</span><span class="n">result_fetcher</span><span class="p">,</span>
+                                      <span class="n">limit</span><span class="o">=</span><span class="n">limit</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Client.get_activity_photos"><a class="viewcode-back" href="../../api.html#stravalib.client.Client.get_activity_photos">[docs]</a>    <span class="k">def</span> <span class="nf">get_activity_photos</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">activity_id</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Gets the photos from an activity.</span>
+
+<span class="sd">        http://strava.github.io/api/v3/photos/</span>
+
+<span class="sd">        :param activity_id: The activity for which to fetch kudos.</span>
+<span class="sd">        :return: An iterator of :class:`stravalib.model.ActivityPhoto` objects.</span>
+<span class="sd">        :rtype: :class:`BatchedResultsIterator`</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">result_fetcher</span> <span class="o">=</span> <span class="n">functools</span><span class="o">.</span><span class="n">partial</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">protocol</span><span class="o">.</span><span class="n">get</span><span class="p">,</span>
+                                           <span class="s">&#39;/activities/{id}/photos&#39;</span><span class="p">,</span>
+                                           <span class="nb">id</span><span class="o">=</span><span class="n">activity_id</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">BatchedResultsIterator</span><span class="p">(</span><span class="n">entity</span><span class="o">=</span><span class="n">model</span><span class="o">.</span><span class="n">ActivityPhoto</span><span class="p">,</span>
+                                      <span class="n">bind_client</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span>
+                                      <span class="n">result_fetcher</span><span class="o">=</span><span class="n">result_fetcher</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="Client.get_activity_laps"><a class="viewcode-back" href="../../api.html#stravalib.client.Client.get_activity_laps">[docs]</a>    <span class="k">def</span> <span class="nf">get_activity_laps</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">activity_id</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Gets the laps from an activity.</span>
+
+<span class="sd">        http://strava.github.io/api/v3/activities/#laps</span>
+
+<span class="sd">        :param activity_id: The activity for which to fetch laps.</span>
+<span class="sd">        :return: An iterator of :class:`stravalib.model.ActivityLaps` objects.</span>
+<span class="sd">        :rtype: :class:`BatchedResultsIterator`</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">result_fetcher</span> <span class="o">=</span> <span class="n">functools</span><span class="o">.</span><span class="n">partial</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">protocol</span><span class="o">.</span><span class="n">get</span><span class="p">,</span>
+                                           <span class="s">&#39;/activities/{id}/laps&#39;</span><span class="p">,</span>
+                                           <span class="nb">id</span><span class="o">=</span><span class="n">activity_id</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">BatchedResultsIterator</span><span class="p">(</span><span class="n">entity</span><span class="o">=</span><span class="n">model</span><span class="o">.</span><span class="n">ActivityLap</span><span class="p">,</span>
+                                      <span class="n">bind_client</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span>
+                                      <span class="n">result_fetcher</span><span class="o">=</span><span class="n">result_fetcher</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Client.get_gear"><a class="viewcode-back" href="../../api.html#stravalib.client.Client.get_gear">[docs]</a>    <span class="k">def</span> <span class="nf">get_gear</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">gear_id</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Get details for an item of gear.</span>
+
+<span class="sd">        http://strava.github.io/api/v3/gear/#show</span>
+
+<span class="sd">        :param gear_id: The gear id.</span>
+<span class="sd">        :type gear_id: str</span>
+<span class="sd">        :return: The Bike or Shoe subclass object.</span>
+<span class="sd">        :rtype: :class:`stravalib.model.Gear`</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">model</span><span class="o">.</span><span class="n">Gear</span><span class="o">.</span><span class="n">deserialize</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">protocol</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/gear/{id}&#39;</span><span class="p">,</span> <span class="nb">id</span><span class="o">=</span><span class="n">gear_id</span><span class="p">))</span>
+</div>
+<div class="viewcode-block" id="Client.get_segment_effort"><a class="viewcode-back" href="../../api.html#stravalib.client.Client.get_segment_effort">[docs]</a>    <span class="k">def</span> <span class="nf">get_segment_effort</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">effort_id</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Return a specific segment effort by ID.</span>
+
+<span class="sd">        http://strava.github.io/api/v3/efforts/#retrieve</span>
+
+<span class="sd">        :param effort_id: The id of associated effort to fetch.</span>
+<span class="sd">        :rtype: :class:`stravalib.model.SegmentEffort`</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">model</span><span class="o">.</span><span class="n">SegmentEffort</span><span class="o">.</span><span class="n">deserialize</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">protocol</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/segment_efforts/{id}&#39;</span><span class="p">,</span>
+                                                                 <span class="nb">id</span><span class="o">=</span><span class="n">effort_id</span><span class="p">))</span>
+</div>
+<div class="viewcode-block" id="Client.get_segment"><a class="viewcode-back" href="../../api.html#stravalib.client.Client.get_segment">[docs]</a>    <span class="k">def</span> <span class="nf">get_segment</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">segment_id</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Gets a specific segment by ID.</span>
+
+<span class="sd">        http://strava.github.io/api/v3/segments/#retrieve</span>
+
+<span class="sd">        :param segment_id: The segment to fetch.</span>
+<span class="sd">        :rtype: :class:`stravalib.model.Segment`</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">model</span><span class="o">.</span><span class="n">Segment</span><span class="o">.</span><span class="n">deserialize</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">protocol</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/segments/{id}&#39;</span><span class="p">,</span>
+                                         <span class="nb">id</span><span class="o">=</span><span class="n">segment_id</span><span class="p">),</span> <span class="n">bind_client</span><span class="o">=</span><span class="bp">self</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="Client.get_starred_segment"><a class="viewcode-back" href="../../api.html#stravalib.client.Client.get_starred_segment">[docs]</a>    <span class="k">def</span> <span class="nf">get_starred_segment</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns a summary representation of the segments starred by the</span>
+<span class="sd">         authenticated user. Pagination is supported.</span>
+
+<span class="sd">        http://strava.github.io/api/v3/segments/#starred</span>
+
+<span class="sd">        :param limit: (optional), limit number of starred segments returned.</span>
+<span class="sd">        :type limit: int</span>
+
+<span class="sd">        :rtype: :class:`stravalib.model.Segment`</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">params</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">if</span> <span class="n">limit</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">params</span><span class="p">[</span><span class="s">&quot;limit&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">limit</span>
+
+        <span class="n">result_fetcher</span> <span class="o">=</span> <span class="n">functools</span><span class="o">.</span><span class="n">partial</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">protocol</span><span class="o">.</span><span class="n">get</span><span class="p">,</span>
+                                           <span class="s">&#39;/segments/starred&#39;</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">BatchedResultsIterator</span><span class="p">(</span><span class="n">entity</span><span class="o">=</span><span class="n">model</span><span class="o">.</span><span class="n">Segment</span><span class="p">,</span>
+                                      <span class="n">bind_client</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span>
+                                      <span class="n">result_fetcher</span><span class="o">=</span><span class="n">result_fetcher</span><span class="p">,</span>
+                                      <span class="n">limit</span><span class="o">=</span><span class="n">limit</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="Client.get_segment_leaderboard"><a class="viewcode-back" href="../../api.html#stravalib.client.Client.get_segment_leaderboard">[docs]</a>    <span class="k">def</span> <span class="nf">get_segment_leaderboard</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">segment_id</span><span class="p">,</span> <span class="n">gender</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">age_group</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">weight_class</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+                                <span class="n">following</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">club_id</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">timeframe</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">top_results_limit</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Gets the leaderboard for a segment.</span>
+
+<span class="sd">        http://strava.github.io/api/v3/segments/#leaderboard</span>
+
+<span class="sd">        Note that by default Strava will return the top 10 results *and then will also include</span>
+<span class="sd">        the bottom 5 results*.  The top X results can be configured by setting the top_results_limit</span>
+<span class="sd">        parameter; however,the bottom 5 results are always included.  (i.e. if you specify top_results_limit=15,</span>
+<span class="sd">        you will get a total of 20 entries back.)</span>
+
+<span class="sd">        :param segment_id: ID of the segment.</span>
+<span class="sd">        :param gender: (optional) &#39;M&#39; or &#39;F&#39;</span>
+<span class="sd">        :param age_group: (optional) &#39;0_24&#39;, &#39;25_34&#39;, &#39;35_44&#39;, &#39;45_54&#39;, &#39;55_64&#39;, &#39;65_plus&#39;</span>
+<span class="sd">        :param weight_class: (optional) pounds &#39;0_124&#39;, &#39;125_149&#39;, &#39;150_164&#39;, &#39;165_179&#39;, &#39;180_199&#39;, &#39;200_plus&#39;</span>
+<span class="sd">                             or kilograms &#39;0_54&#39;, &#39;55_64&#39;, &#39;65_74&#39;, &#39;75_84&#39;, &#39;85_94&#39;, &#39;95_plus&#39;</span>
+<span class="sd">        :param following: (optional) Limit to athletes current user is following.</span>
+<span class="sd">        :param club_id: (optional) limit to specific club</span>
+<span class="sd">        :param timeframe: (optional)  &#39;this_year&#39;, &#39;this_month&#39;, &#39;this_week&#39;, &#39;today&#39;</span>
+<span class="sd">        :param top_results_limit: (optional, strava default is 10 + 5 from end) How many of leading leaderboard entries to display.</span>
+<span class="sd">                            See description for why this is a little confusing.</span>
+<span class="sd">        :rtype: :class:`stravalib.model.SegmentLeaderboard`</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">params</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">if</span> <span class="n">gender</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">gender</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s">&#39;M&#39;</span><span class="p">,</span> <span class="s">&#39;F&#39;</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&quot;Invalid gender: {0}. Possible values: &#39;M&#39; or &#39;F&#39;&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">gender</span><span class="p">))</span>
+            <span class="n">params</span><span class="p">[</span><span class="s">&#39;gender&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">gender</span>
+
+        <span class="n">valid_age_groups</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;0_24&#39;</span><span class="p">,</span> <span class="s">&#39;25_34&#39;</span><span class="p">,</span> <span class="s">&#39;35_44&#39;</span><span class="p">,</span> <span class="s">&#39;45_54&#39;</span><span class="p">,</span> <span class="s">&#39;55_64&#39;</span><span class="p">,</span> <span class="s">&#39;65_plus&#39;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">age_group</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">age_group</span> <span class="ow">in</span> <span class="n">valid_age_groups</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&quot;Invalid age group: {0}.  Possible values: {1!r}&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">age_group</span><span class="p">,</span> <span class="n">valid_age_groups</span><span class="p">))</span>
+            <span class="n">params</span><span class="p">[</span><span class="s">&#39;age_group&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">age_group</span>
+
+        <span class="n">valid_weight_classes</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;0_124&#39;</span><span class="p">,</span> <span class="s">&#39;125_149&#39;</span><span class="p">,</span> <span class="s">&#39;150_164&#39;</span><span class="p">,</span> <span class="s">&#39;165_179&#39;</span><span class="p">,</span> <span class="s">&#39;180_199&#39;</span><span class="p">,</span> <span class="s">&#39;200_plus&#39;</span><span class="p">,</span>
+                                <span class="s">&#39;0_54&#39;</span><span class="p">,</span> <span class="s">&#39;55_64&#39;</span><span class="p">,</span> <span class="s">&#39;65_74&#39;</span><span class="p">,</span> <span class="s">&#39;75_84&#39;</span><span class="p">,</span> <span class="s">&#39;85_94&#39;</span><span class="p">,</span> <span class="s">&#39;95_plus&#39;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">weight_class</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">weight_class</span> <span class="ow">in</span> <span class="n">valid_weight_classes</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&quot;Invalid weight class: {0}.  Possible values: {1!r}&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">weight_class</span><span class="p">,</span> <span class="n">valid_weight_classes</span><span class="p">))</span>
+            <span class="n">params</span><span class="p">[</span><span class="s">&#39;weight_class&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">weight_class</span>
+
+        <span class="k">if</span> <span class="n">following</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">params</span><span class="p">[</span><span class="s">&#39;following&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">following</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">club_id</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">params</span><span class="p">[</span><span class="s">&#39;club_id&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">club_id</span>
+
+        <span class="k">if</span> <span class="n">timeframe</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">valid_timeframes</span> <span class="o">=</span> <span class="s">&#39;this_year&#39;</span><span class="p">,</span> <span class="s">&#39;this_month&#39;</span><span class="p">,</span> <span class="s">&#39;this_week&#39;</span><span class="p">,</span> <span class="s">&#39;today&#39;</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">timeframe</span> <span class="ow">in</span> <span class="n">valid_timeframes</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&quot;Invalid timeframe: {0}.  Possible values: {1!r}&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">timeframe</span><span class="p">,</span> <span class="n">valid_timeframes</span><span class="p">))</span>
+            <span class="n">params</span><span class="p">[</span><span class="s">&#39;date_range&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">timeframe</span>
+
+        <span class="k">if</span> <span class="n">top_results_limit</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">params</span><span class="p">[</span><span class="s">&#39;per_page&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">top_results_limit</span>
+
+        <span class="k">return</span> <span class="n">model</span><span class="o">.</span><span class="n">SegmentLeaderboard</span><span class="o">.</span><span class="n">deserialize</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">protocol</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/segments/{id}/leaderboard&#39;</span><span class="p">,</span>
+                                                                      <span class="nb">id</span><span class="o">=</span><span class="n">segment_id</span><span class="p">,</span>
+                                                                      <span class="o">**</span><span class="n">params</span><span class="p">),</span>
+                                                    <span class="n">bind_client</span><span class="o">=</span><span class="bp">self</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Client.get_segment_efforts"><a class="viewcode-back" href="../../api.html#stravalib.client.Client.get_segment_efforts">[docs]</a>    <span class="k">def</span> <span class="nf">get_segment_efforts</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">segment_id</span><span class="p">,</span> <span class="n">athlete_id</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+                            <span class="n">start_date_local</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">end_date_local</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+                            <span class="n">limit</span><span class="o">=</span><span class="bp">None</span> <span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Gets all efforts on a particular segment sorted by start_date_local</span>
+
+<span class="sd">        Returns an array of segment effort summary representations sorted by</span>
+<span class="sd">        start_date_local ascending or by elapsed_time if an athlete_id is</span>
+<span class="sd">        provided.</span>
+
+<span class="sd">        If no filtering parameters is provided all efforts for the segment</span>
+<span class="sd">        will be returned.</span>
+
+<span class="sd">        Date range filtering is accomplished using an inclusive start and end time,</span>
+<span class="sd">        thus start_date_local and end_date_local must be sent together. For open</span>
+<span class="sd">        ended ranges pick dates significantly in the past or future. The</span>
+<span class="sd">        filtering is done over local time for the segment, so there is no need</span>
+<span class="sd">        for timezone conversion. For example, all efforts on Jan. 1st, 2014</span>
+<span class="sd">        for a segment in San Francisco, CA can be fetched using</span>
+<span class="sd">        2014-01-01T00:00:00Z and 2014-01-01T23:59:59Z.</span>
+
+<span class="sd">        http://strava.github.io/api/v3/segments/#all_efforts</span>
+
+<span class="sd">        :param segment_id: ID of the segment.</span>
+<span class="sd">        :type segment_id: int</span>
+
+<span class="sd">        :param athlete_id: (optional) ID of athlete.</span>
+<span class="sd">        :type athlete_id: int</span>
+
+<span class="sd">        :param start_date_local: (optional) efforts before this date will be excluded.</span>
+<span class="sd">                                            Either as ISO8601 or datetime object</span>
+<span class="sd">        :type start_date_local: datetime.datetime or str</span>
+
+<span class="sd">        :param end_date_local: (optional) efforts after this date will be excluded.</span>
+<span class="sd">                                           Either as ISO8601 or datetime object</span>
+<span class="sd">        :type end_date_local: datetime.datetime or str</span>
+
+<span class="sd">        :param top_results_limit: (optional),</span>
+<span class="sd">        :type results_limit: int</span>
+
+<span class="sd">        :rtype: :class:`stravalib.model.SegmentEffort`</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">params</span> <span class="o">=</span> <span class="p">{</span><span class="s">&quot;segment_id&quot;</span><span class="p">:</span> <span class="n">segment_id</span><span class="p">}</span>
+
+        <span class="k">if</span> <span class="n">athlete_id</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">params</span><span class="p">[</span><span class="s">&#39;athlete_id&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">athlete_id</span>
+
+        <span class="k">if</span> <span class="n">start_date_local</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">start_date_local</span><span class="p">,</span> <span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="nb">unicode</span><span class="p">)):</span>
+                <span class="n">start_date_local</span> <span class="o">=</span> <span class="n">dateparser</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">start_date_local</span><span class="p">,</span> <span class="n">ignoretz</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+            <span class="n">params</span><span class="p">[</span><span class="s">&quot;start_date_local&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">start_date_local</span><span class="o">.</span><span class="n">strftime</span><span class="p">(</span><span class="s">&quot;%Y-%m-</span><span class="si">%d</span><span class="s">T%H:%M:%SZ&quot;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">end_date_local</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">end_date_local</span><span class="p">,</span> <span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="nb">unicode</span><span class="p">)):</span>
+                <span class="n">end_date_local</span> <span class="o">=</span> <span class="n">dateparser</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">end_date_local</span><span class="p">,</span> <span class="n">ignoretz</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+            <span class="n">params</span><span class="p">[</span><span class="s">&quot;end_date_local&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">end_date_local</span><span class="o">.</span><span class="n">strftime</span><span class="p">(</span><span class="s">&quot;%Y-%m-</span><span class="si">%d</span><span class="s">T%H:%M:%SZ&quot;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">limit</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">params</span><span class="p">[</span><span class="s">&quot;limit&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">limit</span>
+
+        <span class="n">result_fetcher</span> <span class="o">=</span> <span class="n">functools</span><span class="o">.</span><span class="n">partial</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">protocol</span><span class="o">.</span><span class="n">get</span><span class="p">,</span>
+                                           <span class="s">&#39;/segments/{}/all_efforts&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">segment_id</span><span class="p">),</span>
+                                           <span class="o">**</span><span class="n">params</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">BatchedResultsIterator</span><span class="p">(</span><span class="n">entity</span><span class="o">=</span><span class="n">model</span><span class="o">.</span><span class="n">BaseEffort</span><span class="p">,</span> <span class="n">bind_client</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span>
+                                      <span class="n">result_fetcher</span><span class="o">=</span><span class="n">result_fetcher</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="n">limit</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Client.explore_segments"><a class="viewcode-back" href="../../api.html#stravalib.client.Client.explore_segments">[docs]</a>    <span class="k">def</span> <span class="nf">explore_segments</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">bounds</span><span class="p">,</span> <span class="n">activity_type</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">min_cat</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">max_cat</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns an array of up to 10 segments.</span>
+
+<span class="sd">        http://strava.github.io/api/v3/segments/#explore</span>
+
+<span class="sd">        :param bounds: list of bounding box corners lat/lon [sw.lat, sw.lng, ne.lat, ne.lng] (south,west,north,east)</span>
+<span class="sd">        :type bounds: list of 4 floats or list of 2 (lat,lon) tuples</span>
+<span class="sd">        :param activity_type: (optional, default is riding)  &#39;running&#39; or &#39;riding&#39;</span>
+<span class="sd">        :type activity_type: str</span>
+<span class="sd">        :param min_cat: (optional) Minimum climb category filter</span>
+<span class="sd">        :type min_cat: int</span>
+<span class="sd">        :param max_cat: (optional) Maximum climb category filter</span>
+<span class="sd">        :type max_cat: int</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">bounds</span><span class="p">)</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="n">bounds</span> <span class="o">=</span> <span class="p">(</span><span class="n">bounds</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">0</span><span class="p">],</span> <span class="n">bounds</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">1</span><span class="p">],</span> <span class="n">bounds</span><span class="p">[</span><span class="mi">1</span><span class="p">][</span><span class="mi">0</span><span class="p">],</span> <span class="n">bounds</span><span class="p">[</span><span class="mi">1</span><span class="p">][</span><span class="mi">2</span><span class="p">])</span>
+        <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="n">bounds</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">4</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&quot;Invalid bounds specified: {0!r}. Must be list of 4 float values or list of 2 (lat,lon) tuples.&quot;</span><span class="p">)</span>
+
+        <span class="n">params</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;bounds&#39;</span><span class="p">:</span> <span class="s">&#39;,&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">b</span><span class="p">)</span> <span class="k">for</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">bounds</span><span class="p">)}</span>
+
+        <span class="n">valid_activity_types</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;riding&#39;</span><span class="p">,</span> <span class="s">&#39;running&#39;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">activity_type</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">activity_type</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s">&#39;riding&#39;</span><span class="p">,</span> <span class="s">&#39;running&#39;</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&#39;Invalid activity type: {0}.  Possible values: {1!r}&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">activity_type</span><span class="p">,</span> <span class="n">valid_activity_types</span><span class="p">))</span>
+            <span class="n">params</span><span class="p">[</span><span class="s">&#39;activity_type&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">activity_type</span>
+
+        <span class="k">if</span> <span class="n">min_cat</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">params</span><span class="p">[</span><span class="s">&#39;min_cat&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">min_cat</span>
+        <span class="k">if</span> <span class="n">max_cat</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">params</span><span class="p">[</span><span class="s">&#39;max_cat&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">max_cat</span>
+
+        <span class="n">raw</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">protocol</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/segments/explore&#39;</span><span class="p">,</span> <span class="o">**</span><span class="n">params</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">model</span><span class="o">.</span><span class="n">SegmentExplorerResult</span><span class="o">.</span><span class="n">deserialize</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="n">bind_client</span><span class="o">=</span><span class="bp">self</span><span class="p">)</span>
+                                                    <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">raw</span><span class="p">[</span><span class="s">&#39;segments&#39;</span><span class="p">]]</span>
+
+</div>
+<div class="viewcode-block" id="Client.get_activity_streams"><a class="viewcode-back" href="../../api.html#stravalib.client.Client.get_activity_streams">[docs]</a>    <span class="k">def</span> <span class="nf">get_activity_streams</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">activity_id</span><span class="p">,</span> <span class="n">types</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+                             <span class="n">resolution</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">series_type</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns an streams for an activity.</span>
+
+<span class="sd">        Streams represent the raw data of the uploaded file. External</span>
+<span class="sd">        applications may only access this information for activities owned</span>
+<span class="sd">        by the authenticated athlete.</span>
+
+<span class="sd">        Streams are available in 11 different types. If the stream is not</span>
+<span class="sd">        available for a particular activity it will be left out of the request</span>
+<span class="sd">        results.</span>
+
+<span class="sd">        Streams types are: time, latlng, distance, altitude, velocity_smooth,</span>
+<span class="sd">                           heartrate, cadence, watts, temp, moving, grade_smooth</span>
+
+<span class="sd">        http://strava.github.io/api/v3/streams/#activity</span>
+
+<span class="sd">        :param activity_id: The ID of activity.</span>
+<span class="sd">        :type: int</span>
+<span class="sd">        :param types: (optional) A list of the the types of streams to fetch.</span>
+<span class="sd">        :type types: list</span>
+<span class="sd">        :param resolution: (optional, default is &#39;all&#39;) indicates desired number</span>
+<span class="sd">                            of data points. &#39;low&#39; (100), &#39;medium&#39; (1000),</span>
+<span class="sd">                            &#39;high&#39; (10000) or &#39;all&#39;.</span>
+<span class="sd">        :type resolution: str</span>
+<span class="sd">        :param series_type: (optional, default is &#39;distance&#39;.  Relevant only if</span>
+<span class="sd">                             using resolution either &#39;time&#39; or &#39;distance&#39;.</span>
+<span class="sd">                             Used to index the streams if the stream is being</span>
+<span class="sd">                             reduced.</span>
+<span class="sd">        :type series_type: str</span>
+<span class="sd">        :rtype: :class:`stravalib.model.Stream`</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="c"># stream are comma seperated list</span>
+        <span class="k">if</span> <span class="n">types</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">types</span><span class="o">=</span> <span class="s">&quot;,&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">types</span><span class="p">)</span>
+
+        <span class="n">params</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">if</span> <span class="n">resolution</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">params</span><span class="p">[</span><span class="s">&quot;resolution&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">resolution</span>
+
+        <span class="k">if</span> <span class="n">series_type</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">params</span><span class="p">[</span><span class="s">&quot;series_type&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">series_type</span>
+
+        <span class="n">result_fetcher</span> <span class="o">=</span> <span class="n">functools</span><span class="o">.</span><span class="n">partial</span><span class="p">(</span>
+                              <span class="bp">self</span><span class="o">.</span><span class="n">protocol</span><span class="o">.</span><span class="n">get</span><span class="p">,</span>
+                              <span class="s">&#39;/activities/{id}/streams/{types}&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
+                                                                <span class="nb">id</span><span class="o">=</span><span class="n">activity_id</span><span class="p">,</span>
+                                                                <span class="n">types</span><span class="o">=</span><span class="n">types</span><span class="p">),</span>
+                                                                <span class="o">**</span><span class="n">params</span><span class="p">)</span>
+
+        <span class="n">streams</span> <span class="o">=</span> <span class="n">BatchedResultsIterator</span><span class="p">(</span><span class="n">entity</span><span class="o">=</span><span class="n">model</span><span class="o">.</span><span class="n">Stream</span><span class="p">,</span>
+                                         <span class="n">bind_client</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span>
+                                         <span class="n">result_fetcher</span><span class="o">=</span><span class="n">result_fetcher</span><span class="p">)</span>
+
+        <span class="c"># Pack streams into dictionary</span>
+        <span class="k">return</span> <span class="p">{</span><span class="n">i</span><span class="o">.</span><span class="n">type</span> <span class="p">:</span> <span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">streams</span><span class="p">}</span>
+
+</div>
+<div class="viewcode-block" id="Client.get_effort_streams"><a class="viewcode-back" href="../../api.html#stravalib.client.Client.get_effort_streams">[docs]</a>    <span class="k">def</span> <span class="nf">get_effort_streams</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">effort_id</span><span class="p">,</span> <span class="n">types</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+                           <span class="n">resolution</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">series_type</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns an streams for an effort.</span>
+
+<span class="sd">        Streams represent the raw data of the uploaded file. External</span>
+<span class="sd">        applications may only access this information for activities owned</span>
+<span class="sd">        by the authenticated athlete.</span>
+
+<span class="sd">        Streams are available in 11 different types. If the stream is not</span>
+<span class="sd">        available for a particular activity it will be left out of the request</span>
+<span class="sd">        results.</span>
+
+<span class="sd">        Streams types are: time, latlng, distance, altitude, velocity_smooth,</span>
+<span class="sd">                           heartrate, cadence, watts, temp, moving, grade_smooth</span>
+
+<span class="sd">        http://strava.github.io/api/v3/streams/#effort</span>
+
+<span class="sd">        :param effort_id: The ID of effort.</span>
+<span class="sd">        :type: int</span>
+<span class="sd">        :param types: (optional) A list of the the types of streams to fetch.</span>
+<span class="sd">        :type types: list</span>
+<span class="sd">        :param resolution: (optional, default is &#39;all&#39;) indicates desired number</span>
+<span class="sd">                            of data points. &#39;low&#39; (100), &#39;medium&#39; (1000),</span>
+<span class="sd">                            &#39;high&#39; (10000) or &#39;all&#39;.</span>
+<span class="sd">        :type resolution: str</span>
+<span class="sd">        :param series_type: (optional, default is &#39;distance&#39;.  Relevant only if</span>
+<span class="sd">                             using resolution either &#39;time&#39; or &#39;distance&#39;.</span>
+<span class="sd">                             Used to index the streams if the stream is being</span>
+<span class="sd">                             reduced.</span>
+<span class="sd">        :type series_type: str</span>
+<span class="sd">        :rtype: :class:`stravalib.model.Stream`</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="c"># stream are comma seperated list</span>
+        <span class="k">if</span> <span class="n">types</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">types</span><span class="o">=</span> <span class="s">&quot;,&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">types</span><span class="p">)</span>
+
+        <span class="n">params</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">if</span> <span class="n">resolution</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">params</span><span class="p">[</span><span class="s">&quot;resolution&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">resolution</span>
+
+        <span class="k">if</span> <span class="n">series_type</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">params</span><span class="p">[</span><span class="s">&quot;series_type&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">series_type</span>
+
+        <span class="n">result_fetcher</span> <span class="o">=</span> <span class="n">functools</span><span class="o">.</span><span class="n">partial</span><span class="p">(</span>
+                              <span class="bp">self</span><span class="o">.</span><span class="n">protocol</span><span class="o">.</span><span class="n">get</span><span class="p">,</span>
+                              <span class="s">&#39;/segment_efforts/{id}/streams/{types}&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">id</span><span class="o">=</span><span class="n">effort_id</span><span class="p">,</span>
+                                                                        <span class="n">types</span><span class="o">=</span><span class="n">types</span><span class="p">),</span>
+                                                           <span class="o">**</span><span class="n">params</span><span class="p">)</span>
+
+        <span class="n">streams</span> <span class="o">=</span> <span class="n">BatchedResultsIterator</span><span class="p">(</span><span class="n">entity</span><span class="o">=</span><span class="n">model</span><span class="o">.</span><span class="n">Stream</span><span class="p">,</span>
+                                         <span class="n">bind_client</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span>
+                                         <span class="n">result_fetcher</span><span class="o">=</span><span class="n">result_fetcher</span><span class="p">)</span>
+
+        <span class="c"># Pack streams into dictionary</span>
+        <span class="k">return</span> <span class="p">{</span><span class="n">i</span><span class="o">.</span><span class="n">type</span> <span class="p">:</span> <span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">streams</span><span class="p">}</span>
+</div>
+<div class="viewcode-block" id="Client.get_segment_streams"><a class="viewcode-back" href="../../api.html#stravalib.client.Client.get_segment_streams">[docs]</a>    <span class="k">def</span> <span class="nf">get_segment_streams</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">segment_id</span><span class="p">,</span> <span class="n">types</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+                            <span class="n">resolution</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">series_type</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns an streams for a segment.</span>
+
+<span class="sd">        Streams represent the raw data of the uploaded file. External</span>
+<span class="sd">        applications may only access this information for activities owned</span>
+<span class="sd">        by the authenticated athlete.</span>
+
+<span class="sd">        Streams are available in 11 different types. If the stream is not</span>
+<span class="sd">        available for a particular activity it will be left out of the request</span>
+<span class="sd">        results.</span>
+
+<span class="sd">        Streams types are: time, latlng, distance, altitude, velocity_smooth,</span>
+<span class="sd">                           heartrate, cadence, watts, temp, moving, grade_smooth</span>
+
+<span class="sd">        http://strava.github.io/api/v3/streams/#effort</span>
+
+<span class="sd">        :param segment_id: The ID of segment.</span>
+<span class="sd">        :type: int</span>
+<span class="sd">        :param types: (optional) A list of the the types of streams to fetch.</span>
+<span class="sd">        :type types: list</span>
+<span class="sd">        :param resolution: (optional, default is &#39;all&#39;) indicates desired number</span>
+<span class="sd">                            of data points. &#39;low&#39; (100), &#39;medium&#39; (1000),</span>
+<span class="sd">                            &#39;high&#39; (10000) or &#39;all&#39;.</span>
+<span class="sd">        :type resolution: str</span>
+<span class="sd">        :param series_type: (optional, default is &#39;distance&#39;.  Relevant only if</span>
+<span class="sd">                             using resolution either &#39;time&#39; or &#39;distance&#39;.</span>
+<span class="sd">                             Used to index the streams if the stream is being</span>
+<span class="sd">                             reduced.</span>
+<span class="sd">        :type series_type: str</span>
+<span class="sd">        :rtype: :class:`stravalib.model.Stream`</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="c"># stream are comma seperated list</span>
+        <span class="k">if</span> <span class="n">types</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">types</span><span class="o">=</span> <span class="s">&quot;,&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">types</span><span class="p">)</span>
+
+        <span class="n">params</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">if</span> <span class="n">resolution</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">params</span><span class="p">[</span><span class="s">&quot;resolution&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">resolution</span>
+
+        <span class="k">if</span> <span class="n">series_type</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">params</span><span class="p">[</span><span class="s">&quot;series_type&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">series_type</span>
+
+        <span class="n">result_fetcher</span> <span class="o">=</span> <span class="n">functools</span><span class="o">.</span><span class="n">partial</span><span class="p">(</span>
+                              <span class="bp">self</span><span class="o">.</span><span class="n">protocol</span><span class="o">.</span><span class="n">get</span><span class="p">,</span>
+                              <span class="s">&#39;/segments/{id}/streams/{types}&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">id</span><span class="o">=</span><span class="n">segment_id</span><span class="p">,</span>
+                                                                        <span class="n">types</span><span class="o">=</span><span class="n">types</span><span class="p">),</span>
+                                                            <span class="o">**</span><span class="n">params</span><span class="p">)</span>
+
+        <span class="n">streams</span> <span class="o">=</span> <span class="n">BatchedResultsIterator</span><span class="p">(</span><span class="n">entity</span><span class="o">=</span><span class="n">model</span><span class="o">.</span><span class="n">Stream</span><span class="p">,</span>
+                                         <span class="n">bind_client</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span>
+                                         <span class="n">result_fetcher</span><span class="o">=</span><span class="n">result_fetcher</span><span class="p">)</span>
+
+        <span class="c"># Pack streams into dictionary</span>
+        <span class="k">return</span> <span class="p">{</span><span class="n">i</span><span class="o">.</span><span class="n">type</span> <span class="p">:</span> <span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">streams</span><span class="p">}</span>
+
+
+</div></div>
+<div class="viewcode-block" id="BatchedResultsIterator"><a class="viewcode-back" href="../../api.html#stravalib.client.BatchedResultsIterator">[docs]</a><span class="k">class</span> <span class="nc">BatchedResultsIterator</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    An iterator that enables iterating over requests that return paged results.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="c"># How many results returned in a batch.  We maximize this to minimize</span>
+    <span class="c">#  requests to server (rate limiting)</span>
+    <span class="n">default_per_page</span> <span class="o">=</span> <span class="mi">200</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">entity</span><span class="p">,</span> <span class="n">result_fetcher</span><span class="p">,</span> <span class="n">bind_client</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">per_page</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        :param entity: The class for the model entity.</span>
+<span class="sd">        :type entity: type</span>
+
+<span class="sd">        :param result_fetcher: The callable that will return another batch of results.</span>
+<span class="sd">        :type result_fetcher: callable</span>
+
+<span class="sd">        :param bind_client: The client object to pass to the entities for supporting further</span>
+<span class="sd">                             fetching of objects.</span>
+<span class="sd">        :type bind_client: :class:`stravalib.client.Client`</span>
+
+<span class="sd">        :param limit: The maximum number of rides to return.</span>
+<span class="sd">        :type limit: int</span>
+
+<span class="sd">        :param per_page: How many rows to fetch per page (default is 200).</span>
+<span class="sd">        :type per_page: int</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">log</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s">&#39;{0.__module__}.{0.__name__}&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">__class__</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">entity</span> <span class="o">=</span> <span class="n">entity</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">bind_client</span> <span class="o">=</span> <span class="n">bind_client</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">result_fetcher</span> <span class="o">=</span> <span class="n">result_fetcher</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">limit</span> <span class="o">=</span> <span class="n">limit</span>
+
+        <span class="k">if</span> <span class="n">per_page</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">per_page</span> <span class="o">=</span> <span class="n">per_page</span>
+        <span class="c">#elif limit is not None:</span>
+        <span class="c">#    self.per_page = limit</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">per_page</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">default_per_page</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">reset</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s">&#39;&lt;{0} entity={1}&gt;&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">__class__</span><span class="o">.</span><span class="n">__name__</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">entity</span><span class="o">.</span><span class="n">__name__</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_counter</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_page</span> <span class="o">=</span> <span class="mi">1</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_all_results_fetched</span> <span class="o">=</span> <span class="bp">False</span>
+
+    <span class="k">def</span> <span class="nf">_fill_buffer</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Fills the internal size-50 buffer from Strava API.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c"># If we cannot fetch anymore from the server then we&#39;re done here.</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_all_results_fetched</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_eof</span><span class="p">()</span>
+
+        <span class="n">raw_results</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">result_fetcher</span><span class="p">(</span><span class="n">page</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_page</span><span class="p">,</span> <span class="n">per_page</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">per_page</span><span class="p">)</span>
+
+        <span class="n">entities</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">raw</span> <span class="ow">in</span> <span class="n">raw_results</span><span class="p">:</span>
+            <span class="n">entities</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">entity</span><span class="o">.</span><span class="n">deserialize</span><span class="p">(</span><span class="n">raw</span><span class="p">,</span> <span class="n">bind_client</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">bind_client</span><span class="p">))</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span> <span class="o">=</span> <span class="n">collections</span><span class="o">.</span><span class="n">deque</span><span class="p">(</span><span class="n">entities</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&quot;Requested page {0} (got: {1} items)&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_page</span><span class="p">,</span>
+                                                                    <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span><span class="p">)))</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span><span class="p">)</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">per_page</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_all_results_fetched</span> <span class="o">=</span> <span class="bp">True</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_page</span> <span class="o">+=</span> <span class="mi">1</span>
+
+    <span class="k">def</span> <span class="nf">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span>
+
+    <span class="k">def</span> <span class="nf">_eof</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">reset</span><span class="p">()</span>
+        <span class="k">raise</span> <span class="ne">StopIteration</span>
+
+    <span class="k">def</span> <span class="nf">next</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">limit</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_counter</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">limit</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_eof</span><span class="p">()</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_fill_buffer</span><span class="p">()</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span><span class="o">.</span><span class="n">popleft</span><span class="p">()</span>
+        <span class="k">except</span> <span class="ne">IndexError</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_eof</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_counter</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="k">return</span> <span class="n">result</span>
+</div>
+<div class="viewcode-block" id="ActivityUploader"><a class="viewcode-back" href="../../api.html#stravalib.client.ActivityUploader">[docs]</a><span class="k">class</span> <span class="nc">ActivityUploader</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    The &quot;future&quot; object that holds information about an activity file upload and can</span>
+<span class="sd">    wait for upload to finish, etc.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client</span><span class="p">,</span> <span class="n">response</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        :param client: The :class:`stravalib.client.Client` object that is handling the upload.</span>
+<span class="sd">        :type client: :class:`stravalib.client.Client`</span>
+<span class="sd">        :param response: The initial upload response.</span>
+<span class="sd">        :type response: dict</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">client</span> <span class="o">=</span> <span class="n">client</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">update_from_repsonse</span><span class="p">(</span><span class="n">response</span><span class="p">)</span>
+
+<div class="viewcode-block" id="ActivityUploader.update_from_repsonse"><a class="viewcode-back" href="../../api.html#stravalib.client.ActivityUploader.update_from_repsonse">[docs]</a>    <span class="k">def</span> <span class="nf">update_from_repsonse</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">response</span><span class="p">,</span> <span class="n">raise_exc</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Updates internal state of object.</span>
+
+<span class="sd">        :param response: The response object (dict).</span>
+<span class="sd">        :type response: dict</span>
+<span class="sd">        :param raise_exc: Whether to raise an exception if the response</span>
+<span class="sd">                          indicates an error state. (default True)</span>
+<span class="sd">        :type raise_exc: bool</span>
+<span class="sd">        :raise stravalib.exc.ActivityUploadFailed: If the response indicates an error and raise_exc is True.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">upload_id</span> <span class="o">=</span> <span class="n">response</span><span class="p">[</span><span class="s">&#39;id&#39;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">external_id</span> <span class="o">=</span> <span class="n">response</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;external_id&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">activity_id</span> <span class="o">=</span> <span class="n">response</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;activity_id&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">status</span> <span class="o">=</span> <span class="n">response</span><span class="p">[</span><span class="s">&#39;status&#39;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">error</span> <span class="o">=</span> <span class="n">response</span><span class="p">[</span><span class="s">&#39;error&#39;</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">raise_exc</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">raise_for_error</span><span class="p">()</span>
+</div>
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">is_processing</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">activity_id</span> <span class="ow">is</span> <span class="bp">None</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">error</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">is_error</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">error</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">is_complete</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">activity_id</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">raise_for_error</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">error</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">exc</span><span class="o">.</span><span class="n">ActivityUploadFailed</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">error</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">status</span> <span class="o">==</span> <span class="s">&quot;The created activity has been deleted.&quot;</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">exc</span><span class="o">.</span><span class="n">CreatedActivityDeleted</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">status</span><span class="p">)</span>
+
+<div class="viewcode-block" id="ActivityUploader.poll"><a class="viewcode-back" href="../../api.html#stravalib.client.ActivityUploader.poll">[docs]</a>    <span class="k">def</span> <span class="nf">poll</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Update internal state from polling strava.com.</span>
+
+<span class="sd">        :raise stravalib.exc.ActivityUploadFailed: If the poll returns an error.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">protocol</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/uploads/{upload_id}&#39;</span><span class="p">,</span>
+                                            <span class="n">upload_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">upload_id</span><span class="p">,</span>
+                                            <span class="n">check_for_errors</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">update_from_repsonse</span><span class="p">(</span><span class="n">response</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="ActivityUploader.wait"><a class="viewcode-back" href="../../api.html#stravalib.client.ActivityUploader.wait">[docs]</a>    <span class="k">def</span> <span class="nf">wait</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">poll_interval</span><span class="o">=</span><span class="mf">1.0</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Wait for the upload to complete or to err out.</span>
+
+<span class="sd">        Will return the resulting Activity or raise an exception if the upload fails.</span>
+
+<span class="sd">        :param timeout: The max seconds to wait. Will raise TimeoutExceeded</span>
+<span class="sd">                        exception if this time passes without success or error response.</span>
+<span class="sd">        :type timeout: float</span>
+<span class="sd">        :param poll_interval: How long to wait between upload checks.  Strava</span>
+<span class="sd">                              recommends 1s minimum. (default 1.0s)</span>
+<span class="sd">        :type poll_interval: float</span>
+<span class="sd">        :return: The uploaded Activity object (fetched from server)</span>
+<span class="sd">        :rtype: :class:`stravalib.model.Activity`</span>
+<span class="sd">        :raise stravalib.exc.TimeoutExceeded: If a timeout was specified and</span>
+<span class="sd">                                              activity is still processing after</span>
+<span class="sd">                                              timeout has elapsed.</span>
+<span class="sd">        :raise stravalib.exc.ActivityUploadFailed: If the poll returns an error.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">start</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+        <span class="k">while</span> <span class="bp">self</span><span class="o">.</span><span class="n">activity_id</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">poll</span><span class="p">()</span>
+            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">poll_interval</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">timeout</span> <span class="ow">and</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">start</span><span class="p">)</span> <span class="o">&gt;</span> <span class="n">timeout</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">exc</span><span class="o">.</span><span class="n">TimeoutExceeded</span><span class="p">()</span>
+        <span class="c"># If we got this far, we must have an activity!</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get_activity</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">activity_id</span><span class="p">)</span></div></div>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../index.html">stravalib 0.2.0 documentation</a> &raquo;</li>
+          <li><a href="../index.html" >Module code</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2013, Hans Lellelid.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>
