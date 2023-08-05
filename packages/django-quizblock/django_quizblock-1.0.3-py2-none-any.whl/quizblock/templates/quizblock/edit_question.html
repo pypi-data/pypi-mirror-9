@@ -1,0 +1,92 @@
+{% extends 'base.html' %}
+{% load bootstrap %}
+{% load static from staticfiles %}
+
+{% block css %}
+<link rel="stylesheet"
+      href="https://ajax.googleapis.com/ajax/libs/jqueryui/1.11.2/themes/smoothness/jquery-ui.css" />
+
+    <style type="text/css">
+        .draghandle {
+            float: left;
+            cursor: move;
+        }
+        #answers { padding: 0; }
+        #answers li {
+            margin: 0 3px 3px 3px;
+            padding: 0.4em;
+            padding-left: 1.5em;
+            background-color: #ddd;
+        }
+        .dragging { border: #f60 solid 1px; }
+    </style>
+
+{% endblock %}
+
+{% block js %}
+    {% include "quizblock/include_jquery.html" %}
+    <script src="{% static 'quizblock/js/quizblock-admin.js' %}"></script>
+    <script>
+        (function($) {
+        var url = "{% url 'reorder-answer' question.id %}";
+        $(document).ready(function() {
+            $("#answers").sortable({
+                containment : 'parent',
+                axis : 'y',
+                tolerance: 'pointer',
+                activeClass: 'dragging',
+                handle: '.draghandle',
+                stop: function(event, ui) {
+                    quizblock.saveOrder($('#answers li'), url, 'answer_');
+                }
+            });
+            $("#answers").disableSelection();
+        });
+        })(quizblock.$);
+    </script>
+
+
+{% endblock %}
+{% block content %}
+
+<ul class="breadcrumb">
+<li><a href="{{question.quiz.pageblock.section.get_edit_url}}">{{question.quiz.pageblock.section.label}}</a></li>
+<li><a href="{% url 'edit-quiz' question.quiz.id %}">Edit Quiz</a></li>
+<li>Edit Question</li>
+</ul>
+
+<h2>Question {{question.display_number}}: {{ question.text }}</h2>
+
+<form action="." method="post" class="well form-horizontal" >{% csrf_token %}
+<table width="100%">
+{{ question.edit_form|bootstrap }}
+</table>
+<input type="submit" value="save" class="btn btn-primary" />
+</form>
+
+{% if question.answer_set.count %}
+<h2>Answers</h2>
+<ul class="dragparent" id="answers">
+{% for answer in question.answer_set.all %}
+<li class="draggable" id="answer-{{answer.id}}">
+<span title="drag to reorder answers" class="draghandle ui-icon ui-icon-arrowthick-2-n-s"></span>[<a href="{% url 'delete-answer' answer.id %}">delete</a>]
+Answer {{ answer.display_number }}:
+<a href="{% url 'edit-answer' answer.id %}">{{answer.label}}</a>
+{% if answer.correct %}<i class="icon-ok"></i>{% endif %}
+</li>
+{% endfor %}
+</ul>
+{% endif %}
+
+{% if question.answerable %}
+<h3>Add Answer</h3>
+<form action="{% url 'add-answer-to-question' question.id %}" method="post" class="well form-horizontal">
+    {% csrf_token %}
+<table width="100%">
+{{ answer_form|bootstrap}}
+</table>
+<input type="submit" value="add answer" class="btn btn-primary" />
+</form>
+{% endif %}
+
+{% endblock %}
