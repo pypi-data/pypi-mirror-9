@@ -1,0 +1,1620 @@
+#!/usr/bin/env python
+
+from __future__ import unicode_literals, print_function
+
+"""
+https://pypi.python.org/pypi/salvage/
+
+In order to make this tool as easy as possible to run on a clean system, it is
+packaged as a single Python script with no external library dependencies. It
+does require gpg (https://www.gnupg.org/) for the cryptography; you can specify
+a full path to gpg as an option or let it search the shell path.
+
+"""
+
+import argparse
+from binascii import hexlify, unhexlify
+from collections import OrderedDict
+import functools
+import hashlib
+import hmac
+import itertools
+import json
+import logging
+import logging.config
+import operator
+import os
+import os.path
+import re
+import shutil
+from subprocess import Popen, PIPE
+import sys
+import tarfile
+import tempfile
+import unittest
+import uuid
+
+
+#
+# A few global utilities.
+#
+
+logger = logging.getLogger('salvage')
+
+
+# Verbosity levels to logging levels.
+VERBOSITY = {
+    0: 'CRITICAL',
+    1: 'ERROR',
+    2: 'WARNING',
+    3: 'INFO',
+    4: 'DEBUG',
+}
+
+# Global options, as defined by the argument parser.
+options = None
+
+# Only set when running tests.
+test_work_path = None
+test_keep_files = False
+
+
+#
+# The command processor.
+#
+
+class Salvage(object):
+    """
+    Argument parser and primary dispatch.
+    """
+    def __init__(self):
+        self.parser = self._init_arg_parser()
+
+    #
+    # Argument parsing
+    #
+
+    def _init_arg_parser(self):
+        """ Initializes our ArgumentParser. """
+        parser = argparse.ArgumentParser()
+        parser.add_argument('-o', '--output', type=self._path(True), default=os.getcwd(), help="the output directory [%(default)s]")
+        parser.add_argument('--gpg', default='gpg', help="name or path of your gpg executable [%(default)s]")
+        parser.add_argument('-v', '--verbosity', type=int, choices=sorted(VERBOSITY.keys()), default=2, help="verbosity level (0-4) [%(default)s]")
+        sub = parser.add_subparsers(title="commands", dest='action')
+
+        new_parser = sub.add_parser('new', help="create a new salvate kit from a source file or directory")
+        new_parser.add_argument('participants', type=self._at_least_2, help="the total number of participants")
+        new_parser.add_argument('threshold', type=self._at_least_2, help="the number required to recover the data")
+        new_parser.add_argument('source', type=self._path(True), help="the file or directory to protect")
+        new_parser.set_defaults(impl=self.new)
+
+        recover_parser = sub.add_parser('recover', help="recover an encrypted item using the reunited shares")
+        recover_parser.add_argument('--no-gpg', action='store_true', help="don't decrypt the data, just recover the key")
+        recover_parser.add_argument('shares', nargs='+', type=self._path(True), help="directories previously created by `salvage new`")
+        recover_parser.set_defaults(impl=self.recover)
+
+        test_parser = sub.add_parser('test', help="run unit tests")
+        test_parser.add_argument('-w', '--working', type=self._path(True), default=None, help="working directory for tests")
+        test_parser.add_argument('-k', '--keep-files', action='store_true', help="don't clean up test-generated files")
+        test_parser.add_argument('test_args', nargs=argparse.REMAINDER)
+        test_parser.set_defaults(impl=self.test)
+
+        return parser
+
+    def _at_least_2(self, value):
+        """ Parses and validates an integer >= 2. """
+        try:
+            value = int(value)
+        except Exception as e:
+            raise argparse.ArgumentTypeError(e)
+
+        if value < 2:
+            raise argparse.ArgumentTypeError("{} must be at least 2".format(value))
+
+        return value
+
+    def _path(self, exists=False):
+        """
+        An argument type constructor for filesystem paths.
+
+        This will normalize the path and optionally check for existence.
+
+        """
+        def path(value):
+            value = os.path.abspath(os.path.expanduser(value))
+            if exists and (not os.path.exists(value)):
+                raise argparse.ArgumentTypeError("{} does not exist".format(value))
+
+            return value
+
+        return path
+
+    #
+    # Entry point
+    #
+
+    def main(self, argv, testing=False, stdout=sys.stdout):
+        """
+        Main entry point.
+
+        This is called from the body of the script and from unit tests.
+
+        """
+        global options
+
+        options = self.parser.parse_args(argv)
+
+        if not testing:
+            self._init_logging(VERBOSITY.get(options.verbosity, 'WARNING'))
+
+        return options.impl(stdout=stdout)
+
+    def _init_logging(self, level):
+        config = {
+            'version': 1,
+            'formatters': {
+                'console': {
+                    'format': '%(levelname)s: %(message)s',
+                },
+            },
+            'handlers': {
+                'console': {
+                    'class': 'logging.StreamHandler',
+                    'formatter': 'console',
+                },
+            },
+            'loggers': {
+                'salvage': {
+                    'level': level,
+                    'handlers': ['console'],
+                },
+            },
+        }
+
+        logging.config.dictConfig(config)
+
+    #
+    # Subcommand implementations
+    #
+
+    def new(self, stdout):
+        """ Implements the new subcommand. """
+        if options.threshold > options.participants:
+            logger.warning("Setting the threshold to {}".format(options.participants))
+            options.threshold = options.participants
+
+        key = SharedKey(options.participants, options.threshold)
+        kit = Kit.create(options.output, options.source, key)
+
+        if options.verbosity > 0:
+            if kit is not None:
+                print("Recovery kit for {} created in {}".format(options.source, options.output), file=stdout)
+            else:
+                print("Failed to create recovery kit for {}".format(options.source), file=stdout)
+
+        return (0 if (kit is not None) else 1)
+
+    def recover(self, stdout):
+        """ Implements the recover subcommand. """
+        kit = Kit.load(options.shares)
+
+        if not kit.is_sufficient():
+            logger.error("This salvage kit requires {} shares for recovery, but only {} were given.".format(kit.threshold, kit.share_count))
+            success = False
+        elif options.no_gpg:
+            master = kit.master_key()
+            success = (master is not None)
+
+            if options.verbosity > 0:
+                if success:
+                    print("GnuPG passphrase for {}: {}".format(Locker.filename, hexlify(master).decode('ascii')), file=stdout)
+                else:
+                    logger.error("Failed to recover the master key.")
+        else:
+            dst_path = os.path.join(options.output, 'Salvage data {}'.format(kit.uuid))
+            success = kit.unpack(dst_path)
+
+            if options.verbosity > 0:
+                if success:
+                    print("Salvage kit successfully recovered to {}".format(dst_path), file=stdout)
+                else:
+                    logger.error("Failed to recover salvage kit to {}".format(dst_path))
+
+        return (0 if success else 1)
+
+    def test(self, stdout):
+        """ Implements the test subcommand. """
+        global test_work_path, test_keep_files
+
+        self._init_logging('CRITICAL')
+
+        if options.working is not None:
+            test_work_path = options.working
+        else:
+            test_work_path = tempfile.mkdtemp()
+        test_keep_files = options.keep_files
+
+        # Remove arguments consumed by our ArgumentParser.
+        argv = sys.argv[:1] + options.test_args
+
+        unittest.main(argv=argv, verbosity=options.verbosity - 1)
+
+        # Clean up the temp directory if it didn't come from the user.
+        if options.working is None:
+            shutil.rmtree(test_work_path)
+
+
+#
+# A recovery kit is made up of shares.
+#
+
+class Kit(object):
+    """
+    The top-level object that we manipulate.
+
+    A kit is a collection of shares, each of which manages a directory on disk.
+    Each share contains data intended for a single participant.
+
+    You don't necessarily need all of the original shares to have a valid kit.
+    When creating a new kit, we will create a share for each participant. When
+    accessing an existing kit, we just need enough shares to reconstruct the
+    master key.
+
+    A kit with all of the original shares is said to be "complete". A kit with
+    at least as many shares as the kit's threshold is said to be "sufficient".
+
+    .. attribute:: shares
+
+        *list*: A list of :class:`Share` objects in this kit.
+
+    """
+    def __init__(self, shares=[]):
+        self._shares = set(shares)
+
+    @classmethod
+    def create(cls, path, src_path, shared_key):
+        """
+        Creates a new kit.
+
+        :param str path: The directory in which to create the shares.
+        :param str src_path: The file or directory to protect.
+        :param SharedKey shared_key: The :class:`SharedKey` to use. This
+            determines the participant and threshold counts.
+
+        """
+        shares = []
+
+        kit_uuid = uuid.uuid1()
+        share_paths = cls._ensure_share_paths(path, shared_key.n)
+        if share_paths is None:
+            return None
+
+        locker = Locker.create(share_paths[0], src_path, shared_key.master)
+
+        for i, share_path in enumerate(share_paths):
+            logger.info("Creating share {}".format(share_path))
+
+            if i > 0:
+                locker = locker.copy(share_path)
+            manifest = Manifest.new(kit_uuid, i, locker.mac, shared_key)
+            manifest.save(share_path)
+
+            # Copy in some extra information to help with recovery.
+            script_path = os.path.join(share_path, 'salvage.py')
+            shutil.copyfile(__file__, script_path)
+
+            readme_path = os.path.join(share_path, 'README.txt')
+            with open(readme_path, 'w') as f:
+                f.writelines(readme_lines(shared_key))
+
+            share = Share.new(share_path, locker, manifest)
+            shares.append(share)
+
+        return cls(shares)
+
+    @classmethod
+    def _ensure_share_paths(cls, root_path, n):
+        paths = []
+
+        for i in range(n):
+            path = os.path.join(root_path, 'salvage-share-{}'.format(i))
+            if not os.path.exists(path):
+                os.makedirs(path)
+            if os.path.isdir(path):
+                paths.append(path)
+            else:
+                logger.error("{} already exists and is not a directory".format(path))
+                paths = None
+                break
+
+        return paths
+
+    @classmethod
+    def load(cls, paths):
+        """
+        Loads an existing kit from a set of shares on disk.
+
+        :param iterable paths: A collection of file paths to shares.
+
+        """
+        shares = filter(None, map(Share.load, paths))
+        kit = Kit()
+        for share in shares:
+            kit.add_share(share)
+
+        return kit
+
+    @property
+    def share_count(self):
+        """ The number of shares loaded. """
+        return len(self._shares)
+
+    @property
+    def shares(self):
+        """ The sorted list of shares. """
+        return sorted(self._shares)
+
+    #
+    # Incremental kit assembly
+    #
+
+    def add_share(self, share):
+        """
+        Adds another share to the kit.
+
+        The share will be rejected if it does not match shares already in the
+        kit. If the share has already been added (even from a different path),
+        this does nothing.
+
+        :param share: The share to add.
+        :type share: :class:`Share`.
+        :returns: bool
+
+        """
+        existing = self.any_share
+        if (existing is not None) and (share.kit_fingerprint != existing.kit_fingerprint):
+            logger.warning("Ignoring the share at {} because it does not belong with the shares already loaded.".format(share.path))
+            success = False
+        else:
+            self._shares.add(share)
+            success = True
+
+        return success
+
+    def remove_share(self, share):
+        """ Removes a share from the kit. """
+        self._shares.discard(share)
+
+    #
+    # State queries
+    #
+
+    def is_complete(self):
+        """ Returns True iff all shares are present. """
+        return (len(self._shares) == self.participants)
+
+    def is_sufficient(self):
+        """ Returns True iff enough shares are present for the threshold. """
+        return (len(self._shares) >= self.threshold)
+
+    #
+    # Recovery
+    #
+
+    def validate(self):
+        """
+        Generates warnings or errors if any shares are invalid or inconsistent.
+        """
+
+    def unpack(self, dst_path):
+        """
+        Unpack the locker into the output directory.
+
+        Returns True iff the unpack is successful.
+
+        """
+        if not self.is_sufficient():
+            logger.warning("Unable to reassemble kit: insufficient shares.")
+            success = False
+        else:
+            success = self.locker.unpack(dst_path, self.master_key(), self.mac)
+
+        return success
+
+    def master_key(self):
+        """
+        Reconstructs the master key.
+
+        :returns: bytes or None
+
+        """
+        if self.is_sufficient():
+            shares = list(self._shares)[:self.threshold]
+            group = tuple(sorted(share.manifest.share_index for share in shares))
+            key = SplitKey(share.manifest.keys[group] for share in shares).master
+        else:
+            key = None
+
+        return key
+
+    #
+    # Kit parameters, taken from an arbitrary manifest.
+    #
+
+    @property
+    def locker(self):
+        return (self.any_share.locker if self._shares else None)
+
+    @property
+    def uuid(self):
+        return (self.any_share.manifest.uuid if self._shares else None)
+
+    @property
+    def participants(self):
+        return (self.any_share.manifest.participants if self._shares else None)
+
+    @property
+    def threshold(self):
+        return (self.any_share.manifest.threshold if self._shares else None)
+
+    @property
+    def mac(self):
+        return (self.any_share.manifest.mac if self._shares else None)
+
+    @property
+    def any_share(self):
+        """ Returns an arbitrary share from our set. """
+        return next(iter(self._shares), None)
+
+
+@functools.total_ordering
+class Share(object):
+    """
+    A single share of a recovery kit.
+
+    A share consists of at least a Locker and a Manifest.
+
+    :param str path: A path to the share on disk.
+
+    """
+    @classmethod
+    def new(cls, path, locker, manifest):
+        """
+        Creates a new share.
+
+        :param str path: The path of the new share.
+        :param Locker locker: The locker to copy in.
+        :param Manifest manifest: The manifest to copy in.
+
+        """
+        return cls(path, locker, manifest)
+
+    @classmethod
+    def load(cls, path):
+        """
+        Loads an existing share.
+
+        :param str path: File path to a share.
+
+        """
+        locker = Locker.load(os.path.join(path, Locker.filename))
+        manifest = Manifest.load(os.path.join(path, Manifest.filename))
+
+        if (locker is not None) and (manifest is not None):
+            share = cls(path, locker, manifest)
+        else:
+            share = None
+
+        return share
+
+    def __init__(self, path, locker, manifest):
+        if not isinstance(locker, Locker):
+            raise TypeError("Not a valid Locker instance")
+        if not isinstance(manifest, Manifest):
+            raise TypeError("Not a valid Manifest instance")
+
+        self.path = path
+        self.locker = locker
+        self.manifest = manifest
+
+    #
+    # Manifest shortcuts
+    #
+
+    @property
+    def kit_fingerprint(self):
+        return self.manifest.kit_fingerprint
+
+    @property
+    def uuid(self):
+        return self.manifest.uuid
+
+    @property
+    def index(self):
+        return self.manifest.share_index
+
+    #
+    # A share is uniquely identified and orderable by Kit uuid and index.
+    #
+
+    def __hash__(self):
+        return hash(self._identity)
+
+    def __eq__(self, other):
+        if not isinstance(other, Share):
+            return NotImplemented
+        else:
+            return (self._identity == other._identity)
+
+    def __lt__(self, other):
+        if not isinstance(other, Share):
+            return NotImplemented
+        else:
+            return (self._identity < other._identity)
+
+    @property
+    def _identity(self):
+        """ A value uniquely identifying this logical share. """
+        return (self.manifest.uuid, self.manifest.share_index)
+
+
+#
+# Each share contains an identical encrypted Locker and a Manifest.
+#
+
+class Locker(object):
+    """
+    A Locker is an archive encrypted by gpg with a passphrase.
+
+    This class is used to seal data in a locker and to unpack an existing one.
+
+    """
+    # The official name of a locker file.
+    filename = 'locker.tbz.gpg'
+
+    @classmethod
+    def create(cls, dest_path, src_path, key):
+        """
+        Creates a new locker from a source file or directory.
+
+        :param str dest_path: Path to the parent directory of the new archive.
+        :param str src_path: Path to the source file or directory to archive.
+        :param bytes key: The binary key to encrypt the data with.
+
+        """
+        locker = None
+
+        tbz_path = src_path + '.salvage.tbz'
+        path = os.path.join(dest_path, Locker.filename)
+
+        logger.debug("Creating temporary archive {} from {}".format(tbz_path, src_path))
+        archive = tarfile.open(tbz_path, mode='w|bz2')
+        archive.add(src_path, os.path.basename(src_path))
+        archive.close()
+
+        mac = cls._path_hmac(tbz_path, key)
+
+        if os.path.exists(path):
+            logger.warning("Replacing existing file {}".format(path))
+            os.unlink(path)
+
+        ok = cls._run_gpg(
+            '--symmetric', '--armor',
+            '--cipher-algo', 'AES', '--compress-algo', 'none',
+            '--batch', '--passphrase', hexlify(key).decode('ascii'),
+            '--output', path, archive.name
+        )
+
+        if os.path.exists(tbz_path):
+            logger.debug("Removing temporary archive {}".format(tbz_path))
+            os.unlink(tbz_path)
+
+        if ok:
+            locker = cls(path, mac)
+
+        return locker
+
+    @classmethod
+    def load(cls, path, mac=None):
+        """
+        Loads an existing Locker from disk.
+
+        :param str path: Path to the encrypted archive.
+
+        """
+        return cls(path, mac)
+
+    def __init__(self, path, mac):
+        self.path = path
+        self.mac = mac
+
+    def copy(self, dest_path):
+        """
+        Copies this locker to a new parent directory.
+
+        Returns a new Locker object for the copy.
+
+        """
+        new_path = os.path.join(dest_path, os.path.basename(self.path))
+        if os.path.exists(new_path):
+            logger.warning("Replacing existing file {}".format(new_path))
+
+        shutil.copy(self.path, dest_path)
+
+        return Locker(os.path.join(dest_path, self.filename), self.mac)
+
+    def unpack(self, dst_path, key, mac):
+        """
+        Decrypts a locker and unpacks its contents.
+
+        :param str dst_path: Path to a directory to unpack into.
+        :param bytes key: The binary key to decrypt the data with.
+        :param bytes mac: The HMAC of the unencrypted archive.
+
+        """
+        tbz_path = os.path.splitext(self.path)[0]
+
+        success = self._run_gpg(
+            '--batch', '--passphrase', hexlify(key).decode('ascii'),
+            '--output', tbz_path, self.path
+        )
+
+        if success:
+            computed_mac = self._path_hmac(tbz_path, key)
+            if computed_mac != mac:
+                logger.error("The locker did not decrypt correctly. This might mean that the archive or manifest was tampered with.")
+                success = False
+            else:
+                self.mac = mac
+
+        if success:
+            archive = tarfile.open(tbz_path)
+            archive.extractall(dst_path)
+            archive.close()
+
+        if os.path.exists(tbz_path):
+            logger.debug("Removing temporary archive {}".format(tbz_path))
+            os.unlink(tbz_path)
+
+        return success
+
+    @classmethod
+    def _run_gpg(self, *args):
+        """
+        Runs a gpg command.
+
+        Returns True iff it succeeds.
+
+        """
+        cmd = [options.gpg] + list(args)
+
+        logger.debug(' '.join(cmd))
+
+        try:
+            gpg = Popen(cmd, stdin=PIPE, stdout=PIPE, stderr=PIPE)
+            stdout, stderr = gpg.communicate()
+        except OSError as e:
+            logger.error(e)
+            success = False
+        else:
+            success = (gpg.returncode == 0)
+            if not success:
+                logger.error("gpg failed ({}): {}".format(gpg.returncode, stderr))
+
+        return success
+
+    @classmethod
+    def _path_hmac(self, path, key, digest=hashlib.sha256):
+        """ Returns a hex-encoded HMAC of the file at path. """
+        mac = hmac.new(key, digestmod=digest)
+
+        with open(path, 'rb') as f:
+            buf = f.read(1024)
+            while buf != b'':
+                mac.update(buf)
+                buf = f.read(1024)
+
+        return mac.digest()
+
+
+class Manifest(object):
+    """
+    A Manifest is the metadata that describes a share.
+
+    The manifest is named 'salvage.json' and always lives in its share's top-
+    level directory. It has the following shape:
+
+        {
+            "version": int,
+            "urn": str,
+            "share_index": int,
+            "mac": str,
+            "participants": int,
+            "threshold": int,
+            "keys": [
+                [[idx1, idx2, ...], key],
+                ...
+            ]
+        }
+
+    * *version*: The current version is 1.
+    * *urn*: Identifies the kit that this share belongs to. In version 1, this
+      must be an RFC 4122 UUID.
+    * *share_index*: The (zero-based) index of this share within its kit.
+    * *mac*: The hex-encoded SHA-256-HMAC of the unencrypted archive.
+    * *participants*: The total number of shares in the kit (n).
+    * *threshold*: The number of shares necessary to reconstruct the key (t).
+    * *keys*: Each element associates t share indexes with a hex-encoded key.
+      Each share in the list will have a different key value for the same index
+      group; combining them all with xor will produce the master key.
+
+    Internally, self.keys is a mapping from t-tuples to raw (not hex-encoded)
+    keys.
+
+    """
+    filename = 'salvage.json'
+
+    @classmethod
+    def new(cls, kit_uuid, share_index, mac, shared_key):
+        """
+        Creates a new manfifest for a share.
+
+        :param UUID kit_uuid: The unique identifier for the kit.
+        :param int share_index: The index of the share that this manifest
+            describes.
+        :param bytes mac: The HMAC of the unencrypted archive.
+        :param shared_kay: The shared key for this kit.
+        :type shared_key: :class:`SharedKey`
+
+        """
+        # This extracts out part of the key for each subgroup. Subgroups that
+        # don't include this share are ignored.
+        keys = OrderedDict(
+            (idxs, split[idxs.index(share_index)])
+            for idxs, split in shared_key.splits.items()
+            if share_index in idxs
+        )
+
+        return cls(1, kit_uuid, share_index, mac, shared_key.n, shared_key.t, keys)
+
+    @classmethod
+    def load(cls, path):
+        """
+        Loads and parses an existing manifest.
+
+        :param str path: Full path to salvage.json.
+        :returns: :class:`Manifest` or None.
+
+        """
+        manifest = None
+
+        logger.info("Loading manfest from {}".format(path))
+
+        try:
+            with open(path, 'r') as f:
+                jsonable = json.load(f)
+
+            version = jsonable['version']
+            kit_uuid = uuid.UUID(jsonable['urn'])
+            share_index = jsonable['share_index']
+            mac = unhexlify(jsonable['mac'].encode('ascii'))
+            participants = jsonable['participants']
+            threshold = jsonable['threshold']
+            keys = OrderedDict(
+                (tuple(idxs), unhexlify(key.encode('ascii')))
+                for idxs, key in jsonable['keys']
+            )
+        except Exception as e:
+            logger.error("Error parsing manifest at {}: {}".format(path, e))
+        else:
+            manifest = cls(version, kit_uuid, share_index, mac, participants, threshold, keys)
+
+        return manifest
+
+    def __init__(self, version, kit_uuid, share_index, mac, participants, threshold, keys):
+        self.version = version
+        self.uuid = kit_uuid
+        self.share_index = share_index
+        self.mac = mac
+        self.participants = participants
+        self.threshold = threshold
+        self.keys = keys
+
+    def save(self, share_path):
+        """
+        Writes the manifest into a share.
+
+        :param str share_path: Path to the root of our share.
+
+        """
+        path = os.path.join(share_path, self.filename)
+        logger.info("Writing manfest to {}".format(path))
+        if os.path.exists(path):
+            logger.warning("Replacing existing file {}".format(path))
+
+        with open(path, 'w') as f:
+            json.dump(self.to_jsonable(), f, indent=2)
+
+    def to_jsonable(self):
+        """ Returns our JSON-friendly representation. """
+        return OrderedDict([
+            ('version', self.version),
+            ('urn', self.uuid.urn),
+            ('share_index', self.share_index),
+            ('mac', hexlify(self.mac).decode('ascii')),
+            ('participants', self.participants),
+            ('threshold', self.threshold),
+            ('keys', [(idxs, hexlify(key).decode('ascii')) for idxs, key in self.keys.items()]),
+        ])
+
+    @property
+    def kit_fingerprint(self):
+        """
+        A value unique to this manifest's kit.
+
+        This value can be used to decide whether two manifests belong to the
+        same kit and have (probably) not been tampered with.
+
+        """
+        return (self.version, self.uuid, self.mac, self.participants, self.threshold)
+
+
+#
+# A Locker is protected by a SharedKey, which is split across participants.
+#
+
+class SharedKey(object):
+    """
+    The master encryption key, plus a SplitKey for each participant subgroup.
+
+    To split the key, we need to know the total number of participants and the
+    number required to recover the key (the threshold).
+
+    :param int n: The total number of participants (0 < n).
+    :param int t: The number of participants required to recover the key
+        (0 < t <= n).
+    :param bytes master: The master key, or None to generate a random one.
+    :param int key_len: If the master key is not given, the length to generate.
+
+    .. attribute:: master
+
+        *str*: The master encryption key as a byte string. Can be None to
+        generate a random one.
+
+    .. attribute:: splits
+
+        *dict*: Maps participant subgroups to SharedKey objects. Keys in the
+        dict are ordered tuples of participant indexes (e.g. (0, 1, 2), (0, 1,
+        3), ...).
+
+    """
+    def __init__(self, n, t, master=None, key_len=16):
+        """
+        Initializes and splits a symmetric key.
+        """
+        assert (0 < t <= n)
+
+        if master is None:
+            master = os.urandom(key_len)
+        else:
+            key_len = len(master)
+
+        self.n = n
+        self.t = t
+        self.key_len = key_len
+
+        self.master = master
+        self.splits = dict(
+            (indexes, SplitKey.from_master(master, t))
+            for indexes in itertools.combinations(range(n), t)
+        )
+
+
+class SplitKey(tuple):
+    """
+    A tuple of values that xor to a symmetric key.
+    """
+    @classmethod
+    def from_master(cls, master, t):
+        """
+        Creates a shared key from the master key.
+
+        :param bytes master: The master key (byte string).
+        :param int t: The number of parts to split the key into (threshold).
+
+        """
+        key_len = len(master)
+
+        parts = []
+        for i in range(t - 1):
+            parts.append(os.urandom(key_len))
+        parts.append(xor_str(master, functools.reduce(xor_str, parts)))
+
+        return cls(parts)
+
+    @classmethod
+    def from_parts(cls, parts):
+        """
+        Creates a shared key from its parts.
+
+        :param parts: An iterable of parts that xor to the master key.
+
+        """
+        return cls(parts)
+
+    @property
+    def master(self):
+        """ The original master key. """
+        return functools.reduce(xor_str, self)
+
+
+def xor_str(a, b):
+    """ Returns the xor of two byte strings. """
+    return b''.join(map(int2byte, [x ^ y for x, y in zip_longest(iterbytes(a), iterbytes(b), fillvalue=0)]))
+
+
+#
+# Documentation to be bundled in new kits.
+#
+
+def readme_lines(shared_key):
+    return README.format(n=shared_key.n, t=shared_key.t)
+
+
+README = """This folder is one of {n} shares of a kit generated by Salvage
+(https://pypi.python.org/pypi/salvage/). You need at least {t} shares to
+recover the encrypted data. If you have the necessary shares, the included
+script (salvage.py) can be used to recover the data.
+
+
+For Python Users
+----------------
+
+If you're already comforable with Python, here's the short version. Salvage
+requires Python 2.7 or 3.2+. It also requires gpg to be installed; if it's not
+available on your path as 'gpg', use the --gpg option to specify a name or full
+path. See `salvage -h` for more options.
+
+    % pip install salvage
+    % salvage recover path/to/share1 path/to/share2 ...
+
+or
+
+    % python path/to/share1/salvage.py recover ...
+
+
+For OS X Users
+--------------
+
+Unless you're running a very old version of OS X, you already have all of the
+necessary tools installed.
+
+1. The folder that this file lives in is one of {t} "shares" that you need. Copy
+   all {t} shares to your desktop.
+
+2. Open the Terminal application to get a command shell (you can use Cmd-Space to
+   search for Terminal).
+
+3. Run the following commands, replacing 'share1', etc. with the names of the
+   folders you copied in step 3 (don't type the %):
+
+    % cd ~/Desktop
+    % python share1/salvage.py recover share1 share2 ...
+
+This will create a new folder on your desktop with the decrypted data.
+
+
+For Windows Users
+-----------------
+
+1. Download and install Python from https://www.python.org/downloads/. Both Python
+   2 and Python 3 are supported. Make sure the "Add python.exe to Path" option is
+   selected.
+
+2. Download and install GnuPG for Windows from http://gpg4win.org/download.html.
+
+3. The folder that this file lives in is one of {t} "shares" that you need. Copy
+   all {t} shares to your desktop.
+
+4. Open the start menu and enter 'cmd' into the search box. Run this program to
+   get a command shell.
+
+5. Run the following commands, replacing 'share1', etc. with the names of the
+   folders you copied in step 3 (don't type the >):
+
+   > cd Desktop
+   > python share1/salvage.py recover share1 share2 ...
+
+This will create a new folder on your desktop with the decrypted data.
+
+
+For Developers
+--------------
+
+As a last resort, here's a description of how to recover the data manually. You
+can also refer to salvage.py for the source code.
+
+Every share of a salvage kit has an identical locker.tbz.gpg with the encrypted
+data, plus a salvage.json with metadata (aka the manifest). Each copy of the
+manifest contains some common values and some share-specific ones. In
+particular, each one contains the UUID of the salvage kit and the zero-based
+index of that particular share.
+
+1. Examine the manifests in all of the shares you have. Make sure they have the
+   same UUID and different share indexes.
+
+2. Make a note of the share indexes you're working with. For this example,
+   I'll assume that this is a 5-share kit with the threshold of 3 and that
+   you have shares 0, 2, and 3. This is your group.
+
+3. Each manifest has a table of key material of the form [group, key] items.
+   Find the one with your group of shares, e.g. [0, 2, 3]. Each of your
+   manifests should have this row in the key table with a different value.
+   These are your keys.
+
+4. Convert each key to its binary form (Python: binascii.unhexlify(key)).
+   Combine the three keys by xor-ing the bytes. This is your master key.
+
+5. Convert the master key to its hex representation (e.g. 01234567). This
+   is your passphrase.
+
+6. Run `gpg locker.tbz.gpg` and enter the passhprase when it asks. Or run
+   `gpg --batch --passphrase <passphrase> locker.tbz.gpg`.
+
+You should now have the decrypted data in the form of locker.tbz (a tar/bzip2
+archive). For extra credit, you can verify the signature: use the master key
+from step 4 to compute the SHA-256-HMAC of locker.tbz. The expected value is
+included in each manifest under the key "mac".
+"""
+
+
+#
+# Bits and pieces lifted from six.
+#
+
+PY2 = (sys.version_info[0] == 2)
+PY3 = (sys.version_info[0] == 3)
+
+if PY3:
+    from io import StringIO
+
+    iterbytes = iter
+    if sys.version_info[1] <= 1:
+        int2byte = lambda i: bytes((i,))
+    else:
+        # This is about 2x faster than the implementation above on 3.2+
+        int2byte = operator.methodcaller("to_bytes", 1, "big")
+    zip_longest = itertools.zip_longest
+else:
+    from StringIO import StringIO
+
+    iterbytes = functools.partial(itertools.imap, ord)
+    int2byte = chr
+    zip_longest = itertools.izip_longest
+
+
+#
+# Tests
+#
+
+class BaseTestCase(unittest.TestCase):
+    """
+    A base class for test cases, with a few utilities.
+    """
+    _tempdir = None
+
+    def setUp(self):
+        super(BaseTestCase, self).setUp()
+
+    def tearDown(self):
+        if (not test_keep_files) and (self._tempdir is not None):
+            shutil.rmtree(self._tempdir)
+        self._tempdir = None
+
+        super(BaseTestCase, self).tearDown()
+
+    def work_path(self, path='', create=False):
+        path = os.path.join(self.tempdir, path)
+        if create and (not os.path.exists(path)):
+            os.makedirs(path)
+
+        return path
+
+    @property
+    def tempdir(self):
+        """ A clean temporary directory, created on demand for each test. """
+        if self._tempdir is None:
+            self._tempdir = os.path.join(test_work_path, self._test_name())
+            if os.path.exists(self._tempdir):
+                shutil.rmtree(self._tempdir)
+            os.mkdir(self._tempdir)
+
+        return self._tempdir
+
+    def content_path(self, content='testing'):
+        """
+        Creates some simple content and returns a path to it.
+        """
+        path = os.path.join(self.tempdir, 'content')
+        if not os.path.exists(path):
+            os.makedirs(path)
+        with open(os.path.join(path, 'secrets.txt'), 'wb') as f:
+            f.write(content.encode('utf8'))
+
+        return path
+
+    TEST_NAME_RE = re.compile(r'(\w+)\s+\(__main__\.(\w+)\)')
+
+    def _test_name(self):
+        """ Returns the name of the current test. """
+        match = self.TEST_NAME_RE.search(str(self))
+        if match is not None:
+            name = '{}.{}'.format(match.group(2), match.group(1))
+        else:
+            name = None
+
+        return name
+
+
+class SharedKeyTestCase(BaseTestCase):
+    def test_defaults(self):
+        """ Create a SharedKey with default parameters. """
+        key = SharedKey(5, 3)
+
+        self.assertEqual(len(key.master), key.key_len)
+
+    def test_existing_master(self):
+        """ Create a SharedKey with an existing master key. """
+        key = SharedKey(5, 3, master=b'01234567', key_len=32)
+
+        self.assertEqual(key.master, b'01234567')
+        self.assertEqual(key.key_len, len(key.master))
+
+    def test_key_gen(self):
+        """ Specify a key length. """
+        key = SharedKey(5, 3, key_len=8)
+
+        self.assertEqual(key.key_len, 8)
+        self.assertEqual(len(key.master), 8)
+
+    def test_roundtrip(self):
+        """ Make sure the splits are usable. """
+        key = SharedKey(5, 3, key_len=8)
+
+        for split in key.splits.values():
+            self.assertEqual(
+                SplitKey.from_parts(tuple(split)).master,
+                key.master
+            )
+
+
+class LockerTestCase(BaseTestCase):
+    def test_create(self):
+        """ Create a new locker. """
+        Locker.create(self.tempdir, self.content_path(), b'01234567')
+
+        with open(self.work_path(Locker.filename), 'rb') as f:
+            content = f.read()
+
+        self.assertTrue(b'-----BEGIN PGP MESSAGE-----' in content)
+
+    def test_roundtrip(self):
+        """ Unpack a new locker and check the content. """
+        locker = Locker.create(self.tempdir, self.content_path(), b'01234567')
+        locker.unpack(self.work_path('unpacked', create=True), b'01234567', locker.mac)
+
+        with open(self.work_path('unpacked/content/secrets.txt'), 'rb') as f:
+            self.assertEqual(f.read(), b'testing')
+
+    def test_overwrite(self):
+        """ Overwrite an existing locker. """
+        locker = Locker.create(self.tempdir, self.content_path(), b'01234567')
+        locker = Locker.create(self.tempdir, self.content_path('overwrite'), b'01234567')
+        locker.unpack(self.work_path('unpacked', create=True), b'01234567', locker.mac)
+
+        with open(self.work_path('unpacked/content/secrets.txt'), 'rb') as f:
+            self.assertEqual(f.read(), b'overwrite')
+
+    def test_load(self):
+        """ Load an existing locker from disk. """
+        locker0 = Locker.create(self.tempdir, self.content_path(), b'01234567')
+        locker = Locker.load(self.work_path(Locker.filename))
+        locker.unpack(self.work_path('unpacked', create=True), b'01234567', locker0.mac)
+
+        with open(self.work_path('unpacked/content/secrets.txt'), 'rb') as f:
+            self.assertEqual(f.read(), b'testing')
+        self.assertEqual(locker.mac, locker0.mac)
+
+    def test_copy(self):
+        """ Copy a locker to a new directory. """
+        src_path = self.work_path('src', True)
+        dst_path = self.work_path('dst', True)
+
+        locker0 = Locker.create(src_path, self.content_path(), b'01234567')
+        locker1 = locker0.copy(dst_path)
+
+        self.assertEqual(locker1.path, os.path.join(dst_path, Locker.filename))
+
+    def test_bad_key(self):
+        """ Try to unpack a locker with the wrong key. """
+        locker = Locker.create(self.tempdir, self.content_path(), b'01234567')
+
+        success = locker.unpack(self.work_path('unpacked', create=True), b'bogus', locker.mac)
+
+        self.assertFalse(success)
+
+    def test_bad_hmac(self):
+        """ Detect a bad HMAC on an existing locker. """
+        locker = Locker.create(self.tempdir, self.content_path(), b'01234567')
+        locker = Locker.load(self.work_path(Locker.filename))
+
+        success = locker.unpack(self.work_path('unpacked', create=True), b'01234567', b'bogus-mac')
+
+        self.assertFalse(success)
+
+    def test_no_gpg(self):
+        """ Try to create a locker when gpg is not available. """
+        gpg_save = options.gpg
+        options.gpg = 'bogus_gpg'
+        try:
+            locker = Locker.create(self.tempdir, self.content_path(), b'01234567')
+        finally:
+            options.gpg = gpg_save
+
+        self.assertTrue(locker is None)
+
+
+class ManifestTestCase(BaseTestCase):
+    def setUp(self):
+        self.uuid = uuid.uuid1()
+        self.key = SharedKey(3, 2, b'0123456')
+        self.manifest = Manifest.new(self.uuid, 1, b'test-mac', self.key)
+
+    def test_new(self):
+        """ Create a new manifest. """
+        self.assertManifestContent(self.manifest)
+
+    def test_save(self):
+        """ Save a manifest to disk. """
+        self.manifest.save(self.work_path())
+
+        self.assertTrue(os.path.isfile(self.work_path(Manifest.filename)))
+
+    def test_roundtrip(self):
+        """ Load an existing manifest. """
+        self.manifest.save(self.work_path())
+        manifest = Manifest.load(self.work_path(Manifest.filename))
+
+        self.assertManifestContent(manifest)
+
+    def test_missing_key(self):
+        """ Try to load an incomplete manifest. """
+        jsonable = self.manifest.to_jsonable()
+        del jsonable['version']
+        with open(self.work_path(Manifest.filename), 'w') as f:
+            json.dump(jsonable, f)
+
+        manifest = Manifest.load(self.work_path(Manifest.filename))
+
+        self.assertTrue(manifest is None)
+
+    def assertManifestContent(self, manifest):
+        """ Asserts the properties of our standard test manifest. """
+        self.assertEqual(manifest.version, 1)
+        self.assertEqual(manifest.uuid, self.uuid)
+        self.assertEqual(manifest.share_index, 1)
+        self.assertEqual(manifest.mac, b'test-mac')
+        self.assertEqual(manifest.participants, 3)
+        self.assertEqual(manifest.threshold, 2)
+        self.assertEqual(len(manifest.keys), 2)
+        self.assertEqual(list(manifest.keys.keys()), [(0, 1), (1, 2)])
+        self.assertEqual(manifest.keys[(0, 1)], self.key.splits[(0, 1)][1])
+        self.assertEqual(manifest.keys[(1, 2)], self.key.splits[(1, 2)][0])
+
+
+class ShareTestCase(BaseTestCase):
+    def test_bad_share(self):
+        """ Try to load a share with data missing. """
+        share = Share.load(self.tempdir)
+
+        self.assertTrue(share is None)
+
+    def test_share_init(self):
+        """ Test share init edge cases. """
+        locker = Locker.create(self.tempdir, self.content_path(), b'01234567')
+        manifest = Manifest.new(uuid.uuid1(), 1, b'test-mac', SharedKey(3, 2, b'01234567'))
+
+        with self.assertRaises(TypeError):
+            Share(self.tempdir, None, manifest)
+        with self.assertRaises(TypeError):
+            Share(self.tempdir, locker, None)
+
+
+class KitTestCase(BaseTestCase):
+    @classmethod
+    def setUpClass(cls):
+        super(KitTestCase, cls).setUpClass()
+
+        cls.key = SharedKey(5, 3, b'0123456')
+
+    @classmethod
+    def tearDownClass(cls):
+        del cls.key
+
+        super(KitTestCase, cls).tearDownClass()
+
+    def test_create(self):
+        """ Create a new salvage kit. """
+        kit_path = self.work_path('kit', True)
+
+        Kit.create(kit_path, self.content_path(), self.key)
+
+        for dirpath, dirnames, filenames in os.walk(kit_path):
+            if dirpath == kit_path:
+                self.assertEqual(len(dirnames), 5)
+            else:
+                self.assertTrue(Locker.filename in filenames)
+                self.assertTrue(Manifest.filename in filenames)
+                self.assertTrue('salvage.py' in filenames)
+                self.assertTrue('README.txt' in filenames)
+
+    def test_collision(self):
+        """ Try to create a kit with an existing file in the way. """
+        kit_path = self.work_path('kit', True)
+        share_path = self.work_path('kit/salvage-share-1')
+        with open(share_path, 'w'):
+            pass
+
+        kit = Kit.create(kit_path, self.content_path(), self.key)
+
+        self.assertTrue(kit is None)
+
+    def test_load(self):
+        """ Load an existing complete kit. """
+        kit_path = self.work_path('kit', True)
+
+        Kit.create(kit_path, self.content_path(), self.key)
+        kit = Kit.load(os.path.join(kit_path, share_dir) for share_dir in os.listdir(kit_path))
+
+        self.assertTrue(kit.is_complete())
+        self.assertTrue(kit.is_sufficient())
+
+    def test_sufficient(self):
+        """ Load a partial but sufficient kit. """
+        kit_path = self.work_path('kit', True)
+
+        Kit.create(kit_path, self.content_path(), self.key)
+        kit = Kit.load(
+            os.path.join(kit_path, share_dir)
+            for share_dir in os.listdir(kit_path)[:self.key.t]
+        )
+
+        success = kit.unpack(self.work_path('unpacked'))
+
+        self.assertTrue(success)
+        self.assertFalse(kit.is_complete())
+        self.assertTrue(kit.is_sufficient())
+
+    def test_roundtrip(self):
+        """ Unpack an existing kit. """
+        kit_path = self.work_path('kit', True)
+
+        kit = Kit.create(kit_path, self.content_path(), self.key)
+        kit.unpack(self.work_path('unpacked'))
+
+        with open(self.work_path('unpacked/content/secrets.txt'), 'rb') as f:
+            self.assertEqual(f.read(), b'testing')
+
+    def test_share_ordering(self):
+        """ Test the ordering properties of shares. """
+        kit = Kit.create(self.work_path('kit', True), self.content_path(), self.key)
+
+        self.assertEqual([share.index for share in kit.shares], list(range(self.key.n)))
+        self.assertEqual(kit.shares[0], kit.shares[0])
+
+    def test_incremental(self):
+        """ Build a kit by adding and removing shares incrementally. """
+        kit_path = self.work_path('kit', True)
+
+        Kit.create(kit_path, self.content_path(), self.key)
+        kit = Kit.load([])
+
+        self.assertEqual(kit.share_count, 0)
+
+        for dirname in os.listdir(kit_path):
+            kit.add_share(Share.load(os.path.join(kit_path, dirname)))
+
+        self.assertEqual(kit.share_count, self.key.n)
+
+        for dirname in os.listdir(kit_path):
+            kit.add_share(Share.load(os.path.join(kit_path, dirname)))
+
+        self.assertEqual(kit.share_count, self.key.n)
+
+        for dirname in os.listdir(kit_path)[:2]:
+            kit.remove_share(Share.load(os.path.join(kit_path, dirname)))
+
+        self.assertEqual(kit.share_count, self.key.n - 2)
+
+    def test_mismatched_share(self):
+        """ Try to load a kit from mismatched shares. """
+        kit1_path = self.work_path('kit1', True)
+        kit2_path = self.work_path('kit2', True)
+
+        Kit.create(kit1_path, self.content_path(), self.key)
+        Kit.create(kit2_path, self.content_path(), self.key)
+        kit = Kit()
+
+        success1 = kit.add_share(Share.load(os.path.join(kit1_path, os.listdir(kit1_path)[0])))
+        success2 = kit.add_share(Share.load(os.path.join(kit2_path, os.listdir(kit1_path)[0])))
+
+        self.assertTrue(success1)
+        self.assertFalse(success2)
+
+    def test_insufficient(self):
+        """ Try to unpack a kit with insufficient shares. """
+        kit_path = self.work_path('kit', True)
+
+        Kit.create(kit_path, self.content_path(), self.key)
+        kit = Kit.load(
+            os.path.join(kit_path, share_dir)
+            for share_dir in os.listdir(kit_path)[:self.key.t - 1]
+        )
+
+        success = kit.unpack(self.work_path('unpacked'))
+
+        self.assertFalse(success)
+        self.assertFalse(kit.is_complete())
+        self.assertFalse(kit.is_sufficient())
+        self.assertTrue(kit.master_key() is None)
+
+
+class SalvageTestCase(BaseTestCase):
+    def setUp(self):
+        super(SalvageTestCase, self).setUp()
+
+        self.stdout = StringIO()
+
+    def tearDown(self):
+        del self.stdout
+
+        super(SalvageTestCase, self).tearDown()
+
+    def test_gte2_arg(self):
+        """ Test parsing int arguments that must be at least 2. """
+        two = Salvage()._at_least_2('2')
+
+        self.assertEqual(two, 2)
+        with self.assertRaises(argparse.ArgumentTypeError):
+            Salvage()._at_least_2('bogus')
+        with self.assertRaises(argparse.ArgumentTypeError):
+            Salvage()._at_least_2('1')
+
+    def test_path_arg(self):
+        """ Test parsing path arguments. """
+        noexist = self.work_path('noexist')
+
+        self.assertEqual(Salvage()._path()(self.tempdir), self.tempdir)
+        self.assertEqual(Salvage()._path(True)(self.tempdir), self.tempdir)
+        self.assertEqual(Salvage()._path()(noexist), noexist)
+        with self.assertRaises(argparse.ArgumentTypeError):
+            Salvage()._path(True)(noexist)
+
+    def test_new(self):
+        """ Crate a new kit. """
+        src_path = self.content_path()
+        kit_path = self.tempdir
+
+        rc = self.main(['-o', kit_path, 'new', '3', '2', src_path])
+
+        kit = Kit.load(
+            os.path.join(kit_path, share_dir)
+            for share_dir in os.listdir(kit_path)
+        )
+
+        self.assertEqual(rc, 0)
+        self.assertTrue(kit.is_complete())
+
+    def test_new_threshold_cap(self):
+        """ Constrain the threshold to the participant count. """
+        src_path = self.content_path()
+        kit_path = self.tempdir
+
+        rc = self.main(['-o', kit_path, 'new', '3', '5', src_path])
+
+        kit = Kit.load(
+            os.path.join(kit_path, share_dir)
+            for share_dir in os.listdir(kit_path)
+        )
+
+        self.assertEqual(rc, 0)
+        self.assertTrue(kit.is_complete())
+
+    def test_recover(self):
+        """ Recover the data from a kit. """
+        src_path = self.content_path()
+        kit_path = self.work_path('kit', True)
+        out_path = self.work_path('out', True)
+
+        Kit.create(kit_path, src_path, SharedKey(5, 3))
+        share_paths = [os.path.join(kit_path, share_path) for share_path in os.listdir(kit_path)]
+
+        rc = self.main(['-o', out_path, 'recover'] + share_paths)
+
+        self.assertEqual(rc, 0)
+        data_path = os.path.join(out_path, os.listdir(out_path)[0])
+        with open(os.path.join(data_path, 'content/secrets.txt'), 'rb') as f:
+            self.assertEqual(f.read(), b'testing')
+
+    def test_recover_no_gpg(self):
+        """ Recover the key from a kit, but don't run gpg. """
+        src_path = self.content_path()
+        kit_path = self.work_path('kit', True)
+        out_path = self.work_path('out', True)
+
+        Kit.create(kit_path, src_path, SharedKey(5, 3))
+        share_paths = [os.path.join(kit_path, share_path) for share_path in os.listdir(kit_path)]
+
+        rc = self.main(['--gpg', 'bogus', '-o', out_path, 'recover', '--no-gpg'] + share_paths)
+
+        self.assertEqual(rc, 0)
+
+    def test_recover_insufficient(self):
+        """ Try to recover with insufficient shares. """
+        src_path = self.content_path()
+        kit_path = self.work_path('kit', True)
+        out_path = self.work_path('out', True)
+
+        Kit.create(kit_path, src_path, SharedKey(5, 3))
+        share_paths = [os.path.join(kit_path, share_path) for share_path in os.listdir(kit_path)[:2]]
+
+        rc = self.main(['-o', out_path, 'recover', '--no-gpg'] + share_paths)
+
+        self.assertNotEqual(rc, 0)
+
+    def test_recover_duplicate(self):
+        """ Try to recover with duplicate shares. """
+        src_path = self.content_path()
+        kit_path = self.work_path('kit', True)
+        out_path = self.work_path('out', True)
+
+        Kit.create(kit_path, src_path, SharedKey(5, 3))
+        share_paths = [os.path.join(kit_path, share_path) for share_path in os.listdir(kit_path)[:2] * 2]
+
+        rc = self.main(['-o', out_path, 'recover', '--no-gpg'] + share_paths)
+
+        self.assertNotEqual(rc, 0)
+
+    def test_recover_broken(self):
+        """ Try to recover a kit with broken mac values. """
+        src_path = self.content_path()
+        kit_path = self.work_path('kit', True)
+        out_path = self.work_path('out', True)
+
+        kit = Kit.create(kit_path, src_path, SharedKey(5, 3))
+        for share in kit.shares:
+            share.manifest.mac = xor_str(share.manifest.mac, b'\1')
+            share.manifest.save(share.path)
+        share_paths = [os.path.join(kit_path, share_path) for share_path in os.listdir(kit_path)]
+
+        rc = self.main(['-o', out_path, 'recover'] + share_paths)
+
+        self.assertNotEqual(rc, 0)
+        self.assertEqual(os.listdir(out_path), [])
+
+    #
+    # Utils
+    #
+
+    def main(self, argv):
+        return Salvage().main(argv, testing=True, stdout=self.stdout)
+
+
+#
+# Main entry point
+#
+
+if __name__ == '__main__':
+    rc = Salvage().main(sys.argv[1:])
+    if rc != 0:
+        sys.exit(rc)
