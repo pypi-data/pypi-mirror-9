@@ -1,0 +1,123 @@
+#!/usr/bin/env python
+#-*-coding:utf-8-*-
+
+# 从 tasks 和 files 两个维度思考
+
+import os, sys
+import argparse
+from collections import defaultdict
+
+import luigi
+import luiti.manager as manager
+curr_dir  = os.getcwd()
+
+
+# 1. parser
+parser_main    = argparse.ArgumentParser(description="Luiti tasks manager.")
+subparsers     = parser_main.add_subparsers(title="subcommands", description='valid subcommands',)
+
+# 1.1. parser tasks
+parser_tasks   = subparsers.add_parser('tasks', help=u"manage luiti tasks.")
+parser_tasks.add_argument("ls",  nargs=1,       help=u"print current avaiable luiti tasks." )
+parser_tasks.add_argument("--project-dir",      help=u"force use another project directory.", default=curr_dir)
+
+# 1.2. parser files
+parser_files   = subparsers.add_parser('files', help=u"manage files that outputed by luiti tasks.")
+
+parser_files.add_argument('rm', nargs=1, )
+# TODO add ls by `add_mutually_exclusive_group`
+#parser_files_group = parser_files.add_mutually_exclusive_group(required=True)
+#parser_files_group.add_argument('ls',      action='store_true', default=None, )
+#parser_files_group.add_argument('rm',      action='store_true', default=None, )
+
+def bool_type(arg1):
+    arg2 = arg1.lower()
+    if arg2 == 'false': return False
+    if arg2 == 'true':  return True
+    raise ValueError("[err value] %s" % arg1)
+
+parser_files.add_argument('--task-name',         help=u"必须指定任务名称，比如 --task-name=Redmine5954ParentReportWeek",   required=True, )
+parser_files.add_argument('--date-range',        help=u"必须指定时间周期，比如 --date-range=20141001-20141015",            required=True, )
+parser_files.add_argument('--dry',               help=u"可以指定 **假运行** 模式 , 比如 --dry=true。",                     default=True,  choices=[True, False], type=bool_type)
+parser_files.add_argument('--dep',               help=u"可以指定 --dep=true，这样就会寻找依赖于当前Task之上的任务",        default=False, choices=[True, False], type=bool_type)
+parser_files.add_argument('--force',             help=u"强制删除文件",                                                     default=False, choices=[True, False], type=bool_type)
+parser_files.add_argument("--project-dir",       help=u"force use another project directory.", default=curr_dir)
+
+
+# TODO 整合到 tasks subcommand 里
+parser_run = subparsers.add_parser('run', help=u"run a luiti task.")
+parser_run.add_argument('--task-name',           help=u"必须指定任务名称，比如 --task-name=Redmine5954ParentReportWeek",   required=True, )
+parser_run.add_argument('--date-value',          help=u"必须指定具体时间，比如 --date-value=2014-09-01T00:00:01+08:00 。后面的时区信息是必须的。",   required=True, )
+parser_run.add_argument("--project-dir",         help=u"force use another project directory.", default=curr_dir)
+
+if len(sys.argv) == 1:
+    parser_main.print_help()
+    exit(0)
+
+
+args_main  = parser_main.parse_args()
+subcommand = sys.argv[1]
+
+# NOTE modify sys.path in here.
+luiti_tasks_dirs = manager.Path.find_all_luiti_tasks_parent_dirs(args_main.project_dir)
+result           = manager.Loader.load_all_tasks(*luiti_tasks_dirs)
+all_task_classes = [i1['task_cls'] for i1 in result['success']]
+
+
+if subcommand == "tasks":
+    if args_main.ls:
+        manager.Table.print_all_tasks(result)
+
+if "task_name" in args_main:
+    curr_task = manager.Loader.load_a_task_by_name(args_main.task_name)
+
+if subcommand == "files":
+    dep_tasks_on_curr_task = [curr_task]
+    if args_main.dep:
+        dep_tasks_on_curr_task = manager.Dep.find_dep_on_tasks(curr_task, all_task_classes)
+
+    if args_main.rm:
+        dep_file_to_task_instances = manager.get_all_date_file_to_task_instances(args_main.date_range, dep_tasks_on_curr_task)
+        manager.print_files_by_task_cls_and_date_range(
+                                curr_task,
+                                args_main,
+                                {
+                                    "dep_file_to_task_instances" : dep_file_to_task_instances,
+                                    "task_classes_count"         : len(dep_tasks_on_curr_task),
+                                    "dep_tasks_on_curr_task"     : dep_tasks_on_curr_task,
+                                })
+
+        if args_main.dry:
+            print "\nTips: just set --dry=false to soft-delete theses files.\n"
+        else:
+            manager.soft_delete_files(*dep_file_to_task_instances.keys())
+
+if subcommand == "run":
+    # 把参数修复为 luigi 接受的参数，即把只有 luiti 依赖的参数去除。
+    old = sys.argv[:]
+    def fetch_keys(parser1): return parser1.__dict__['_option_string_actions'].keys()
+    luigi_keep_opts = ["--date-value"]
+    luiti_only_opts = subparsers.choices.keys() + fetch_keys(parser_tasks) + fetch_keys(parser_files) + fetch_keys(parser_run)
+    luiti_only_opts = [i1 for i1 in luiti_only_opts if i1 not in  luigi_keep_opts]
+    delete_argv_idxes = set([])
+    for idx1, arg1 in enumerate(sys.argv):
+        if idx1 in delete_argv_idxes: continue
+
+        # 1. 排除 tasks, files, run 等
+        if (not arg1.startswith("--")) and (arg1 in luiti_only_opts):
+            delete_argv_idxes.add(idx1)
+            continue
+
+        # 2. 处理 --task-name 等参数
+        if "=" in arg1:
+            arg2, val2 = arg1.split("=", 1)
+            if arg2 in luiti_only_opts:
+                delete_argv_idxes.add(idx1)
+        else:
+            if (arg1 in luiti_only_opts) and (not arg1 in luigi_keep_opts):
+                delete_argv_idxes.add(idx1)
+                delete_argv_idxes.add(idx1 + 1)
+
+    sys.argv = [arg1 for idx1, arg1 in enumerate(sys.argv) if idx1 not in delete_argv_idxes]
+
+    luigi.run(main_task_cls=curr_task)
