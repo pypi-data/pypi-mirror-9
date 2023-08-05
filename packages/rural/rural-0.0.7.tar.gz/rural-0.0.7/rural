@@ -1,0 +1,217 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""
+    rural
+    ~~~~~
+    Simple command line utility for uploading local files to Amazon Web
+    Services (AWS) Simple Storage Service (S3), copying a public link to the
+    uploaded file to the clipboard if possible.
+
+"""
+__version__ = "0.0.7"
+
+import sys
+import logging
+from io import TextIOWrapper
+
+from boto.s3.connection import S3Connection
+from boto.s3.key import Key
+from boto.s3.bucket import Bucket
+import click
+
+
+class RuralSession(object):
+    aws_access_key_id = None
+    aws_secret_access_key = None
+    connection = None
+    bucket = None
+    bucket_name = None
+    url = None
+
+    def __init__(self, aws_access_key_id, aws_secret_access_key, bucket_name):
+        self.aws_access_key_id = aws_access_key_id
+        self.aws_secret_access_key = aws_secret_access_key
+        self.bucket_name = bucket_name
+
+    def get_bucket(self):
+        """Return a `boto.s3.bucket.Bucket` object based on current settings.
+
+        If a bucket has already been defined for this class instance, returns
+        this bucket. If a bucket has not yet been defined, it attempts to
+        create a new `boto.s3.connection.S3Connection`. If the connection is
+        successful and the bucket name has been defined, then a new
+        `boto.s3.bucket.Bucket` is instantiated and returned.
+
+        Raises an `AttributeError` if configuration is incomplete to be able to
+        return the Bucket.
+        """
+        if self.bucket:
+            return self.bucket
+
+        if not self.connection:
+            if self.aws_access_key_id and self.aws_secret_access_key:
+                self.connection = S3Connection(
+                    aws_access_key_id=self.aws_access_key_id,
+                    aws_secret_access_key=self.aws_secret_access_key)
+
+        if self.connection and self.bucket_name:
+            self.bucket = Bucket(self.connection, self.bucket_name)
+            return self.bucket
+        else:
+            raise AttributeError( "RuralSession object configuration "
+                    "incomplete")
+
+    def upload(self, fh, cb=None, remote_filename=None, mimetype=None,
+               prefix=None):
+        """Uploads a file stream to an S3 bucket.
+
+        Args:
+            fh (file stream): File handle or stream to upload to S3.
+            cb (function, optional): Callback function for the progress bar,
+                disabled by setting to None. Defaults to None.
+            remote_filename (str, optional): Name of the file (S3 key) to set
+                on S3. Defaults to None.
+
+                If set to None, tries to use `fh.name`. If the `fh` is a
+                stream, `uuid.uuid4()` is used to generate a random unique
+                filename.
+            mimetype (str, optional): MIME type of the file for S3 to set. If
+                we're piping input and mimetype is None, sets to 'text/plain'.
+            prefix (str, optional): Prefix for the filename. Defaults to None.
+
+                This can be thought of as something akin to a directory name
+                on the S3 bucket.
+
+        """
+        self.key = Key(self.get_bucket())
+
+        if not isinstance(fh, TextIOWrapper):
+            # Attempt to upload a local file
+
+            # Set S3 key, including a prefix if one has been set
+            self.key.key = remote_filename if remote_filename else fh.name
+            if prefix:
+                self.key.key = '/'.join((prefix, self.key.key))
+
+            headers = {'Content-Type': mimetype} if mimetype else None
+            self.key.set_contents_from_file(fh, cb=cb, num_cb=100,
+                                            headers=headers)
+        else:
+            # Upload file from stream
+            from uuid import uuid4
+            self.key.key = remote_filename if remote_filename else str(uuid4())
+            if prefix:
+                self.key.key = '/'.join((prefix, self.key.key))
+
+            mimetype = mimetype if mimetype else 'text/plain'
+            try:
+                self.key.set_contents_from_string(
+                    fh.read(), headers={
+                        'Content-Type': mimetype})
+            except UnicodeDecodeError:
+                raise NotImplementedError("Binary file stream not supported")
+
+    def publicize(self):
+        """Sets ACL for current Key to be public and creates URL. """
+        self.key.make_public()
+        self.url = self.key.generate_url(86400)
+        self.url = ''.join(self.url.split('?')[:-1])
+
+
+def _cb_progressbar(uploaded_bytes, total_bytes):
+    """Callback function that outputs a progressbar to stderr. """
+    if total_bytes:
+        pbw = 80  # progress bar width
+        progress_percent = float(uploaded_bytes) / float(total_bytes)
+        sys.stderr.write("\r[%s%s] %d%%" % (
+            '=' * int(progress_percent * pbw / 2),
+            ' ' * (pbw / 2 - int(progress_percent * pbw / 2)),
+            int(progress_percent * 100)))
+        if int(progress_percent * 100) == 100:
+            sys.stderr.write('\n')
+
+
+def initialize_loggers(verbosity=0):
+    """Setup loggers. """
+    global log
+    log = logging.Logger("rural")
+    log.stream = sys.stderr
+    log_handler = logging.StreamHandler(log.stream)
+    log.addHandler(log_handler)
+    log_level = logging.DEBUG if verbosity > 0 else logging.ERROR
+    log.setLevel(log_level)
+
+
+@click.command()
+@click.option('--aws-access-key-id', envvar='AWS_ACCESS_KEY_ID',
+              help='AWS access key ID, defaults to environment variable '
+              'AWS_ACCESS_KEY_ID', show_default=True)
+@click.option('--aws-secret-access-key', envvar='AWS_SECRET_ACCESS_KEY',
+              help='AWS secret access key, defaults to environment '
+              'variable AWS_SECRET_ACCESS_KEY', show_default=True)
+@click.option('--bucket-name', '-b', envvar='RURAL_BUCKET_NAME',
+              help='bucket name to which to upload/link files, defaults to '
+              'environment variable RURAL_BUCKET_NAME',
+              show_default=True)
+@click.option('--verbose', '-v', count=True)
+@click.option('--remote-filename', '-f', help='override remote file name')
+@click.option('--mimetype', '-m', help='override remote file mimetype')
+@click.option('--prefix', '-p', envvar='RURAL_KEY_PREFIX',
+              help='directory of remote file, defaults to environment '
+              'variable RURAL_KEY_PREFIX', show_default=True)
+@click.version_option(__version__)
+@click.argument('localfile', type=click.File('r'), default='-')
+def upload_copy(aws_access_key_id, aws_secret_access_key, bucket_name,
+                verbose, remote_filename, mimetype, prefix, localfile):
+    """Uploads a local file to AWS S3 and copy a publicly accessible link to
+    the file to the clipboard.
+    """
+    global rural_session
+
+    # Setup loggers
+    initialize_loggers(verbose)
+
+    # Output given configuration to debug
+    log.debug("AWS Access Key ID:\t{}".format(aws_access_key_id))
+    log.debug("AWS Secret Access Key:\t{}".format(aws_secret_access_key))
+    log.debug("Bucket:\t{}".format(bucket_name))
+
+    # Display progressbar if asked for and we're not piping input from stdin
+    is_file = not isinstance(localfile, TextIOWrapper)
+    _cb = _cb_progressbar if verbose and is_file else None
+
+    # Set AWS credentials so we're ready to upload
+    rural_session = RuralSession(
+        aws_access_key_id=aws_access_key_id,
+        aws_secret_access_key=aws_secret_access_key,
+        bucket_name=bucket_name)
+
+    # Upload file or stdin to S3
+    rural_session.upload(localfile, cb=_cb, remote_filename=remote_filename,
+                         mimetype=mimetype, prefix=prefix)
+    rural_session.publicize()
+
+    # Copy to clipboard if we can
+    try:
+        from xerox import copy
+        copy(rural_session.url)
+    except:
+        pass
+
+    # Output URL to stderr
+    log.error(rural_session.url)
+
+
+if __name__ == '__main__':
+    try:
+        upload_copy()
+    except AttributeError as e:
+        log.error(e)
+        log.error("Configuration incomplete, seek --help")
+        sys.exit(1)
+    except NotImplementedError:
+        log.error("Binary file streams not currently supported, exiting")
+        sys.exit(1)
+    except KeyboardInterrupt as SystemExit:
+        log.warning("Interrupt caught, exiting")
+    sys.exit()
