@@ -1,0 +1,229 @@
+{%extends "rolodex/base.html" %}
+{%load staticfiles%}
+{%block head%}
+
+<script src="{% static 'rolodex/js/selectize.min.js' %}"></script>
+<link rel="stylesheet" type="text/css" href="{% static 'rolodex/css/selectize.css' %}">
+<link rel="stylesheet" type="text/css" href="{% static 'rolodex/css/entity.css' %}">
+<link rel="stylesheet" type="text/css" href="{% static 'rolodex/css/nodeMap.css'%}">
+<script src="{% static 'rolodex/js/d3.v3.min.js'%}"></script>
+
+{%endblock%}
+
+{%block content%}
+
+
+<div id="midrail">
+
+{% if node.net_length > 2 %}
+<div id="networkCanvas"></div>
+<div class="fullMap">
+<a href="{%url 'rolodex_org_map' node.slug%}">Full page graph</a>
+</div>
+{%endif%}
+
+<h1>{{node.orgName}}</h1>
+
+<div class="change">
+<a href="{%url 'rolodex_edit_org' node.slug%}">Edit Info</a>
+</div>
+
+
+
+<div id="contactHead" class="clickable">Contacts</div>
+<div id="contactSlide" class="bioBank">
+
+{%for contact in node.contacts%}
+{%if contact.role%}
+<h6>{{contact.role}}</h6>
+{%endif%}
+<ul>
+  <li><span class="type">{{contact.type}}<br></span> 
+  {%if contact.type == "email"%}
+  <a href="mailto:{{contact.contact}}">{{contact.contact}}</a>
+  {%elif contact.type == "link" %}
+  <a href="{{contact.contact}}">{{contact.contact}}</a>
+  {%else%}
+  {{contact.contact}}
+  {%endif%}
+  </li>
+  {%if contact.notes%}
+  <li class="notes">{{contact.notes}}</li>
+  {%endif%}
+</ul>
+
+
+
+
+{%endfor%}
+  <div class="change">
+    <a href="{%url 'rolodex_edit_org' node.slug%}">Edit Contacts</a>
+  </div>
+</div>
+
+
+<div id="relationHead" class="clickable">Relationships</div>
+<div id="relationSlide" class="bioBank">
+<h6>Organizations</h6>
+<div class="relation_container clearfix">
+<div class="relations">
+
+
+{%for r in node.relations.orgs%}
+{% spaceless %}
+<div class="rel_O{{r.relation.pk}}">
+<span><a href="{%url 'rolodex_org' r.relation.slug%}">{{r.relation.orgName}}</a></span><br/><div class="relation_type">{{r.type}}</div>
+<div class="relation_delete">Delete this relationship</div><br/>
+</div>
+<script type="text/javascript">
+  $(".rel_O{{r.relation.pk}} .relation_delete").click(function(){
+      $.post("{%url 'rolodex_delete_relation'%}",
+          {
+            from_ent:"{{node.pk}}",
+            from_type:"o",
+            to_ent:"{{r.relation.pk}}",
+            to_type:"o",
+            csrfmiddlewaretoken: '{{ csrf_token }}',
+          },
+          function(){$(".rel_O{{r.relation.pk}}").slideUp("slow");} 
+      );
+  })
+</script>
+{% endspaceless %}
+{%endfor%}
+
+
+</div>
+</div>
+<h6>People</h6>
+<div class="relation_container clearfix">
+<div class="relations">
+
+
+{%for r in node.relations.people%}
+{% spaceless %}
+<div class="rel_P{{r.relation.pk}}">
+<span><a href="{%url 'rolodex_person' r.relation.slug%}">{{r.relation.firstName}} {{r.relation.lastName}}</a></span><br/><div class="relation_type">{{r.type}}{%if r.relation.role%}{%if r.type%} - {%endif%}{{r.relation.role.role}}{%endif%}</div>
+<div class="relation_delete">Delete this relationship</div><br/>
+</div>
+<script type="text/javascript">
+  $(".rel_P{{r.relation.pk}} .relation_delete").click(function(){
+      $(".rel_P{{r.relation.pk}}").slideUp("slow");
+      $.post("{%url 'rolodex_delete_relation'%}",
+          {
+            from_ent:"{{node.pk}}",
+            from_type:"o",
+            to_ent:"{{r.relation.pk}}",
+            to_type:"p",
+            csrfmiddlewaretoken: '{{ csrf_token }}',
+          }
+      );
+  })
+</script>
+{% endspaceless %}
+{%endfor%}
+
+
+</div>
+</div>
+  <div class="change">
+    <a href="{%url 'rolodex_new_org_relation' node.slug%}">Add Relationship</a>
+  </div>
+</div>
+
+<div id="searchPosition" class="clickable">Search Employees</div>
+<div id="peepPosition" class="bioBank">
+          <div id="peepDiv" class="searchbox">
+        <select id="peepSelect">
+            <option value=""></option>
+            {%for peep in node.employees%}
+             <option value="{{peep.id}}" org="{{peep.orgName}}" data-data='{"org":"{{peep.orgName}}"}'>{{peep.lastName}}, {{peep.firstName}}{%if peep.role%} ({{peep.role}}){%endif%}</option>
+            {%endfor%}    
+        </select>
+        <div class="buttonDiv">
+        <a class="goLink" href="">Go</a>
+        </div>
+        </div>
+        <div><a href="{%url 'rolodex_new_person' node.slug %}">Add an employee</a></div>
+</div>
+
+{%if node.notes%}
+<div class="entity_notes">
+<h4>Notes</h4>
+{{node.notes|linebreaks}}
+</div>
+{%endif%}
+
+<div class="change delete">
+<a href="{%url 'rolodex_delete_org' node.slug%}">Delete {{node.orgName}}?</a>
+</div>
+
+
+
+</div>
+
+<script type="text/javascript">
+  $(".bioBank").hide();
+
+  $("#contactHead").click(function(){$("#contactSlide").slideToggle("slow");scrolldown();});
+  $("#relationHead").click(function(){$("#relationSlide").slideToggle("slow");scrolldown();});
+  $("#searchPosition").click(function(){$("#peepPosition").slideToggle("slow");scrolldown();});
+
+
+function scrolldown(){
+  var y = $(window).scrollTop();  
+    $("html, body").animate({ scrollTop: y + 75 }, 600);
+}
+
+var PeepDict={};
+{%for peep in node.employees%}
+PeepDict['{{peep.id}}']="{%url 'rolodex_person' peep.slug%}";
+{%endfor%}
+
+var $peepSelect = $('#peepSelect').selectize({
+    placeholder: 'Search people...',
+    maxOptions:10,
+    optgroupLabelField:'org',
+    selectOnTab:true,
+    searchField:['org','text'],
+    onChange: function(value){
+        var option =PeepDict[$("#peepSelect").find(':selected').val()]; 
+        $("#peepDiv .goLink").attr("href",option);
+    },
+});
+
+var peepSelect = $peepSelect[0].selectize;
+
+
+</script>
+
+
+<script>
+var replaceP = '{% url "rolodex_person" "foobarbaz" %}',
+	replaceO = '{% url "rolodex_org" "foobarbaz" %}',
+	nodeID="{{node.orgName}}",
+	nodePRIME = "{{node.primary}}",
+  graphWidth = 500,
+  graphHeight = 250;
+</script>
+<script src="{% static 'rolodex/js/nodeNet.js'%}"></script>
+<script type="text/javascript">
+  $('#networkCanvas').html("<img class='waitingGIF' src=\"{%static 'rolodex/images/waiting.gif'%}\">");
+  $.ajax({
+    type:"GET",
+    dataType:"json",
+    url:"{%url 'rolodex_org_network' node.slug %}",
+    success: function(d){
+      $('#networkCanvas').html("");
+      chartNetwork(d);
+    }
+  });
+</script>
+
+<div class="breadcrumb-container">
+<ul class="breadcrumb">
+	<li><a href="{% url 'rolodex_home' %}">Home</a></li>
+	<li><a>{{node.orgName}}</a></li>
+</ul>
+</div>
+{%endblock%}
