@@ -1,0 +1,47 @@
+#! /usr/bin/env python
+
+import ast
+import argparse
+
+import jingerly
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('TEMPLATE_DIR', help='The project template')
+    parser.add_argument('OUTPUT_DIR', help='The destination')
+    parser.add_argument(
+        '-i', '--interactive', action='store_true',
+        help='Ask for template variable values')
+    parser.add_argument(
+        '--VAR', dest='VALUE',
+        help='Set template variable VAR=VALUE')
+    namespace, unparsed = parser.parse_known_args()
+
+    d = {}
+    if namespace.VALUE is not None:
+        d['VAR'] = namespace.VALUE
+    while len(unparsed) > 0:
+        arg = unparsed.pop(0)
+        try:
+            k, v = arg.split('=', 1)
+        except:
+            k, v = arg, unparsed.pop(0)
+        try:
+            v = ast.literal_eval(v)
+        except (ValueError, SyntaxError):
+            pass
+        d[k.lstrip('-')] = v
+
+    if namespace.interactive:
+        for name in jingerly.find_variables(namespace.TEMPLATE_DIR):
+            if name not in d:
+                value = raw_input(
+                    'Value for %s (leave blank to ignore): ' % name)
+                if value:
+                    try:
+                        value = ast.literal_eval(value)
+                    except (ValueError, SyntaxError):
+                        pass
+                    d[name] = value
+
+    jingerly.render(namespace.TEMPLATE_DIR, namespace.OUTPUT_DIR, **d)
