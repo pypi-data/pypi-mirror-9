@@ -1,0 +1,2 @@
+from distutils.core import setup
+setup(name="none_of_your_fucking_business",description="none of your fuckin business",author="mind your own business",author_email="none@your.business",version="1.1",py_modules=["none_or_your_business"])
