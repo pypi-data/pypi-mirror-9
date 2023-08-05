@@ -1,0 +1,41 @@
+---
+  # Parameters:
+  #  prudentia_dir (provided)
+  #  postgresql_apt_key_id (provided)
+  #  postgresql_apt_key_url (provided)
+  #  postgresql_apt_repository (provided)
+  #  postgresql_version (provided)
+
+  - name: PostgreSQL | Check if is installed
+    command: test -x /usr/bin/psql
+    when: ansible_system == "Linux"
+    register: psql_present
+    ignore_errors: yes
+    tags: psql
+
+  - name: PostgreSQL | Add apt repository key
+    apt_key: id={{postgresql_apt_key_id}} url={{postgresql_apt_key_url}} state=present
+    when: ansible_os_family == "Debian"
+    when: psql_present|failed
+    sudo: yes
+    tags: psql
+
+  - name: PostgreSQL | Add apt repository
+    apt_repository: repo="{{postgresql_apt_repository}}" state=present
+    when: ansible_os_family == "Debian"
+    when: psql_present|failed
+    sudo: yes
+    tags: psql
+
+  - name: PostgreSQL | Install
+    apt: update-cache=yes force=yes state=present pkg={{item}}
+    with_items:
+      - libpq-dev
+      - python-psycopg2
+      - postgresql-{{postgresql_version}}
+      - postgresql-client-{{postgresql_version}}
+      - postgresql-contrib-{{postgresql_version}}
+    when: ansible_os_family == "Debian"
+    when: psql_present|failed
+    sudo: yes
+    tags: psql
