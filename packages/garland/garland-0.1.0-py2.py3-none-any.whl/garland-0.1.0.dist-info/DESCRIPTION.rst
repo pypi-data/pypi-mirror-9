@@ -1,0 +1,66 @@
+=================================
+garland: Python decorator mocking
+=================================
+
+Garland is simple, repeatable decorator mocking.
+
+Why?
+====
+
+Decorators are applied at the time the decorated function is first imported, which
+makes mocking them a bit more challenging.
+
+Usage
+=====
+
+Provided you have a function like so::
+
+
+    @my_decorator
+    def something_cool(*args, **kwargs):
+        ...
+        return some_var
+
+Where your `my_decoroator` decorator is defined in another module, you can mock
+`my_decorator` so that you can test just the end decorated function.::
+
+    @garland.tinsel('utils.decorators.my_decorator', 'very_cool.module')
+    def test_something_cool(self):
+        ...
+
+Now `test_something` can test the return values from `something_cool` without
+the decorator potentially returning a different value, or providing a different
+function interface.
+
+The `tinsel` decorator takes two arguments:
+
+1. A dotted path to the decorator function you want to mock
+2. A dotted path to the module in which your function - the one you're testing -
+   is declared. If you're not importing the module like this in your tests then
+   this will do you little good (see limits, below).
+
+Limits
+======
+
+1. You need to import modules, not named functions, to work with garland.
+2. For now this is only tested with decorator functions and function decorators
+3. The mock turns your decorator into a pass-through, assuming that this is the
+   way you want to mock it.
+
+
+License
+=======
+
+Copyright Ben Lopatin. BSD licensed (see `LICENSE`).
+
+
+
+
+History
+-------
+
+0.1.0 (2015-01-20)
+---------------------
+
+* First release on PyPI.
+
