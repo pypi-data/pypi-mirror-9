@@ -1,0 +1,296 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>The Comprehensive Guide to Writing FireTasks with Python &mdash; FireWorks 0.98 documentation</title>
+    
+    <link rel="stylesheet" href="_static/nature.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    './',
+        VERSION:     '0.98',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="top" title="FireWorks 0.98 documentation" href="index.html" />
+    <link rel="next" title="FireWorks Changelog" href="changelog.html" />
+    <link rel="prev" title="Reference material" href="reference.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="changelog.html" title="FireWorks Changelog"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="reference.html" title="Reference material"
+             accesskey="P">previous</a> |</li>
+        <li><a href="index.html">FireWorks 0.98 documentation</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="the-comprehensive-guide-to-writing-firetasks-with-python">
+<h1>The Comprehensive Guide to Writing FireTasks with Python<a class="headerlink" href="#the-comprehensive-guide-to-writing-firetasks-with-python" title="Permalink to this headline">¶</a></h1>
+<p>This guide covers in more detail how one can write their own FireTasks (and return dynamic actions), and assemble those FireTasks into FireWorks and Workflows. This guide will also cover the FWAction object, passing data, and dynamic workflow actions.</p>
+<div class="section" id="writing-a-basic-firetask">
+<h2>Writing a Basic FireTask<a class="headerlink" href="#writing-a-basic-firetask" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="step-1-choose-existing-firetask-s-or-write-your-own">
+<h3>Step 1: Choose existing FireTask(s) or write your own?<a class="headerlink" href="#step-1-choose-existing-firetask-s-or-write-your-own" title="Permalink to this headline">¶</a></h3>
+<p>The first thing you should decide is whether to use an existing FireTask or write your own. FireWorks comes pre-packaged with many &#8220;default&#8221; FireTasks - in particular, the <a class="reference internal" href="pytask.html"><em>PyTask</em></a> allows you to call any Python function. There are also existing FireTasks for running scripts, remotely transferring files, etc. The quickest route to getting something running is to use an existing FireTask, i.e. use the <a class="reference internal" href="pytask.html"><em>PyTask</em></a> if you want to run a quick script.</p>
+<p>Links to documentation on default FireTasks can be found in the <a class="reference internal" href="index.html"><em>main page</em></a> under the heading &#8220;built-in FireTasks&#8221;.</p>
+<p>A few reasons to <em>not</em> use the default FireTasks are:</p>
+<ul class="simple">
+<li>You want to give your FireTasks custom names</li>
+<li>You prefer a class-based method to defining tasks rather than the function-based method of <a class="reference internal" href="pytask.html"><em>PyTask</em></a></li>
+<li>You want control over how the FireTask is constructed, e.g., define required parameters.</li>
+</ul>
+</div>
+<div class="section" id="step-2-start-with-a-firetask-template-and-modify-it">
+<h3>Step 2: Start with a FireTask template and modify it<a class="headerlink" href="#step-2-start-with-a-firetask-template-and-modify-it" title="Permalink to this headline">¶</a></h3>
+<p>The easiest way to understand a FireTask is to examine an example; for example, here&#8217;s one implementation of a task to archive files:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="k">class</span> <span class="nc">ArchiveDirTask</span><span class="p">(</span><span class="n">FireTaskBase</span><span class="p">):</span>
+   <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">   Wrapper around shutil.make_archive to make tar archives.</span>
+
+<span class="sd">   Args:</span>
+<span class="sd">       base_name (str): Name of the file to create.</span>
+<span class="sd">       format (str): Optional. one of &quot;zip&quot;, &quot;tar&quot;, &quot;bztar&quot; or &quot;gztar&quot;.</span>
+<span class="sd">   &quot;&quot;&quot;</span>
+
+   <span class="n">_fw_name</span> <span class="o">=</span> <span class="s">&#39;ArchiveDirTask&#39;</span>
+   <span class="n">required_params</span> <span class="o">=</span> <span class="p">[</span><span class="s">&quot;base_name&quot;</span><span class="p">]</span>
+   <span class="n">optional_params</span> <span class="o">=</span> <span class="p">[</span><span class="s">&quot;format&quot;</span><span class="p">]</span>
+
+   <span class="k">def</span> <span class="nf">run_task</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fw_spec</span><span class="p">):</span>
+       <span class="n">shutil</span><span class="o">.</span><span class="n">make_archive</span><span class="p">(</span><span class="bp">self</span><span class="p">[</span><span class="s">&quot;base_name&quot;</span><span class="p">],</span> <span class="n">format</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&quot;format&quot;</span><span class="p">,</span> <span class="s">&quot;gztar&quot;</span><span class="p">),</span> <span class="n">root_dir</span><span class="o">=</span><span class="s">&quot;.&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>You can copy this code to a new place and make the following modifications in order to write your FireTask:</p>
+<ul>
+<li><dl class="first docutils">
+<dt>In the first line, the name of the class (<em>ArchiveDirTask</em>) can be anything - it does not affect the operation of the code if you follow the structure above.</dt>
+<dd><ul class="first last simple">
+<li><em>Change the class name to anything you desire.</em></li>
+</ul>
+</dd>
+</dl>
+</li>
+<li><dl class="first docutils">
+<dt>The class extends the <em>FireTaskBase</em> abstract class. This abstract class does some work under the covers and also requires that you define a <tt class="docutils literal"><span class="pre">run_task(self,</span> <span class="pre">fw_spec)</span></tt> method.</dt>
+<dd><ul class="first last simple">
+<li><em>Keep this intact.</em></li>
+</ul>
+</dd>
+</dl>
+</li>
+<li><dl class="first docutils">
+<dt>The <tt class="docutils literal"><span class="pre">_fw_name</span></tt> is how this FireTask is identified. It must be a unique name that is always retained. See the Appendix section for working around this and an alternate formulations for identifying the FireTask.</dt>
+<dd><ul class="first last simple">
+<li><em>Change the ``fw_name`` value to a desired identifier for your FireTask, e.g. MyFavoriteTask.</em></li>
+</ul>
+</dd>
+</dl>
+</li>
+<li><dl class="first docutils">
+<dt>The <tt class="docutils literal"><span class="pre">required_params</span></tt> and <tt class="docutils literal"><span class="pre">optional_params</span></tt> relate to how the FireTask is constructed. In the example above, an <em>ArchiveTask</em> could be instantiated using something like <tt class="docutils literal"><span class="pre">my_task</span> <span class="pre">=</span> <span class="pre">ArchiveTask(base_name=&quot;my_filename&quot;,</span> <span class="pre">format=&quot;bztar&quot;)</span></tt>. Because <tt class="docutils literal"><span class="pre">base_name</span></tt> is in <tt class="docutils literal"><span class="pre">required_params</span></tt>, it <strong>must</strong> be specified (<tt class="docutils literal"><span class="pre">optional_params</span></tt> does not actually <em>do</em> anything).</dt>
+<dd><ul class="first last simple">
+<li><em>Add your required and optional parameters as desired.</em></li>
+</ul>
+</dd>
+</dl>
+</li>
+<li><dl class="first docutils">
+<dt>The meat of the FireTask is the <tt class="docutils literal"><span class="pre">run_task(self,</span> <span class="pre">fw_spec)</span></tt> method. It has two sources of information: the keys in <tt class="docutils literal"><span class="pre">fw_spec</span></tt> and a dictionary of <tt class="docutils literal"><span class="pre">self</span></tt> (which includes parameters like <tt class="docutils literal"><span class="pre">base_name</span></tt> used to construct the object). In this case, it&#8217;s tarring and gzipping some files according to the parameters the dictionary of itself, and ignoring anything in the <tt class="docutils literal"><span class="pre">fw_spec</span></tt>.</dt>
+<dd><p class="first last"><em>Keep the run_task method header intact, but change the definition to your custom operation. Remember you can access dict keys of &#8220;fw_spec&#8221; as well as dict keys of &#8220;self&#8221;</em></p>
+</dd>
+</dl>
+</li>
+</ul>
+</div>
+<div class="section" id="step-3-register-your-firetask">
+<h3>Step 3: Register your FireTask<a class="headerlink" href="#step-3-register-your-firetask" title="Permalink to this headline">¶</a></h3>
+<p>When FireWorks bootstraps your FireTask from a database definition, it needs to know where to look for FireTasks. Thus you must register your FireTask so that it can be found. There are a couple of options for registering your FireTask (you only need to do <em>one</em> of the below):</p>
+<ol class="arabic simple">
+<li>Use the <strong>&#64;explicit_serialize</strong> decorator to define your FW name (see the Appendix). No further registration is needed if you use this option.</li>
+<li>(or) if you have access to the FireWorks source directory, put your FireTask definition anywhere in <tt class="docutils literal"><span class="pre">fireworks.user_objects</span></tt> or it subdirectories - it will be automatically be found there.</li>
+<li>(or) put the FireTask wherever you&#8217;d like. However, you need to modify the <tt class="docutils literal"><span class="pre">USER_PACKAGES</span></tt> variable of the <a class="reference internal" href="config_tutorial.html"><em>FW config</em></a> to include the package for where to find the FireTask, e.g. &#8220;mypackage.my_subpackage&#8221;. Note that FireWorks will search within subpackages automatically, so you can just put a root package (but loading will be slightly slower).</li>
+</ol>
+<p>You are now ready to use your FireTask!</p>
+</div>
+</div>
+<div class="section" id="dynamic-and-message-passing-workflows">
+<h2>Dynamic and message-passing Workflows<a class="headerlink" href="#dynamic-and-message-passing-workflows" title="Permalink to this headline">¶</a></h2>
+<p>In the previous example, the <tt class="docutils literal"><span class="pre">run_task</span></tt> method did not return anything, nor does it pass data to downstream FireTasks or FireWorks. However, one can return a <tt class="docutils literal"><span class="pre">FWAction</span></tt> object that performs many powerful actions including dynamic workflows.</p>
+<p>Here&#8217;s an example of a FireTask implementation that includes dynamic actions via the <em>FWAction</em> object:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="k">class</span> <span class="nc">FibonacciAdderTask</span><span class="p">(</span><span class="n">FireTaskBase</span><span class="p">):</span>
+   <span class="n">_fw_name</span> <span class="o">=</span> <span class="s">&quot;Fibonacci Adder Task&quot;</span>
+
+   <span class="k">def</span> <span class="nf">run_task</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fw_spec</span><span class="p">):</span>
+       <span class="n">smaller</span> <span class="o">=</span> <span class="n">fw_spec</span><span class="p">[</span><span class="s">&#39;smaller&#39;</span><span class="p">]</span>
+       <span class="n">larger</span> <span class="o">=</span> <span class="n">fw_spec</span><span class="p">[</span><span class="s">&#39;larger&#39;</span><span class="p">]</span>
+       <span class="n">stop_point</span> <span class="o">=</span> <span class="n">fw_spec</span><span class="p">[</span><span class="s">&#39;stop_point&#39;</span><span class="p">]</span>
+
+       <span class="n">m_sum</span> <span class="o">=</span> <span class="n">smaller</span> <span class="o">+</span> <span class="n">larger</span>
+       <span class="k">if</span> <span class="n">m_sum</span> <span class="o">&lt;</span> <span class="n">stop_point</span><span class="p">:</span>
+           <span class="k">print</span><span class="p">(</span><span class="s">&#39;The next Fibonacci number is: {}&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">m_sum</span><span class="p">))</span>
+           <span class="c"># create a new Fibonacci Adder to add to the workflow</span>
+           <span class="n">new_fw</span> <span class="o">=</span> <span class="n">Firework</span><span class="p">(</span><span class="n">FibonacciAdderTask</span><span class="p">(),</span> <span class="p">{</span><span class="s">&#39;smaller&#39;</span><span class="p">:</span> <span class="n">larger</span><span class="p">,</span> <span class="s">&#39;larger&#39;</span><span class="p">:</span> <span class="n">m_sum</span><span class="p">,</span> <span class="s">&#39;stop_point&#39;</span><span class="p">:</span> <span class="n">stop_point</span><span class="p">})</span>
+           <span class="k">return</span> <span class="n">FWAction</span><span class="p">(</span><span class="n">stored_data</span><span class="o">=</span><span class="p">{</span><span class="s">&#39;next_fibnum&#39;</span><span class="p">:</span> <span class="n">m_sum</span><span class="p">},</span> <span class="n">additions</span><span class="o">=</span><span class="n">new_fw</span><span class="p">)</span>
+
+       <span class="k">else</span><span class="p">:</span>
+           <span class="k">print</span><span class="p">(</span><span class="s">&#39;We have now exceeded our limit; (the next Fibonacci number would have been: {})&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">m_sum</span><span class="p">))</span>
+           <span class="k">return</span> <span class="n">FWAction</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>We discussed running this example in the <a class="reference internal" href="dynamic_wf_tutorial.html"><em>Dynamic Workflow tutorial</em></a> - if you have not gone through that tutorial, we strongly suggest you do so now (it also includes an example of message passing).</p>
+<p>Note that this example is slightly different than the previous one:</p>
+<ul class="simple">
+<li>We did not define any required or optional parameters. The parameters are taken from the <tt class="docutils literal"><span class="pre">fw_spec</span></tt> rather than <tt class="docutils literal"><span class="pre">self</span></tt>.</li>
+<li>We are explicitly returning <em>FWAction</em> objects. In one case, the object looks to be storing data and adding FireWorks.</li>
+</ul>
+<p>Other than those differences, the code is the same format as earlier. The dynamicism comes only from the <em>FWAction</em> object; next, we will this object in more detail.</p>
+</div>
+<div class="section" id="the-fwaction-object">
+<h2>The FWAction object<a class="headerlink" href="#the-fwaction-object" title="Permalink to this headline">¶</a></h2>
+<p>A FireTask (or a function called by <a class="reference internal" href="pytask.html"><em>PyTask</em></a>) can return a <em>FWAction</em> object that can perform many powerful actions. Note that the <em>FWAction</em> is stored in the FW database after execution, so you can always go back and see what actions were returned by different FireTasks. A diagram of the different FWActions is below:</p>
+<img alt="FW actions" class="align-center" src="_images/fwactions.png" />
+<p>The parameters of FWAction are as follows:</p>
+<ul class="simple">
+<li><strong>stored_data</strong>: <em>(dict)</em> data to store from the run. The data is put in the Launch database along with the rest of the FWAction. Does not affect the operation of FireWorks.</li>
+<li><strong>exit</strong>: <em>(bool)</em> if set to True, any remaining FireTasks within the same Firework are skipped (like a <tt class="docutils literal"><span class="pre">break</span></tt> statement for a Firework).</li>
+<li><strong>update_spec</strong>: <em>(dict)</em> A data dict that will update the spec for any remaining FireTasks <em>and</em> the following Firework. Thus, this parameter can be used to pass data between FireTasks or between FireWorks. Note that if the original fw_spec and the update_spec contain the same key, the original will be overwritten.</li>
+<li><strong>mod_spec</strong>: ([dict]) This has the same purpose as update_spec - to pass data between FireTasks/FireWorks. However, the update_spec option is limited in that it can&#8217;t increment variables or append to lists. This parameter allows one to update the child FW&#8217;s spec using the DictMod language, a Mongo-like syntax that allows more fine-grained changes to the fw_spec.</li>
+<li><strong>additions</strong>: ([Workflow]) a list of WFs/FWs to add as children to this Firework.</li>
+<li><strong>detours</strong>: ([Workflow]) a list of WFs/FWs to add as children (they will inherit the current FW&#8217;s children)</li>
+<li><strong>defuse_children</strong>: (bool) defuse all the original children of this Firework</li>
+</ul>
+<p>The FWAction thereby allows you to <em>command</em> the workflow programmatically, allowing for the design of intelligent workflows that react dynamically to results.</p>
+</div>
+<div class="section" id="appendix-alternate-ways-to-identify-the-firetask-and-changing-the-identification">
+<h2>Appendix: alternate ways to identify the FireTask and changing the identification<a class="headerlink" href="#appendix-alternate-ways-to-identify-the-firetask-and-changing-the-identification" title="Permalink to this headline">¶</a></h2>
+<p>Other than explicitly defining a <tt class="docutils literal"><span class="pre">_fw_name</span></tt> parameter, there are two alternate ways to identify the FireTask:</p>
+<ul>
+<li><p class="first">You can omit the <tt class="docutils literal"><span class="pre">_fw_name</span></tt> parameter altogether, and the code will then use the Class name as the identifier. However, note that this is dangerous as changing your Class name later on can break your code. In addition, if you have two FireTasks with the same name the code will throw an error.</p>
+</li>
+<li><p class="first">(or) You can omit the <tt class="docutils literal"><span class="pre">_fw_name_</span></tt> <strong>and</strong> add an <tt class="docutils literal"><span class="pre">&#64;explicit_serialize</span></tt> decorator to your Class. This will identify your class by the module name AND class name. This prevents namespace collisions, AND it allows you to skip registering your FireTask! However, the serialization is even more sensitive to refactoring: moving your Class to a different module will break the code, as will renaming it. Here&#8217;s an example of how to use the decorator:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="nd">@explicit_serialize</span>
+<span class="k">class</span> <span class="nc">PrintFW</span><span class="p">(</span><span class="n">FireTaskBase</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">run_task</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fw_spec</span><span class="p">):</span>
+        <span class="k">print</span> <span class="nb">str</span><span class="p">(</span><span class="n">fw_spec</span><span class="p">[</span><span class="s">&#39;print&#39;</span><span class="p">])</span>
+</pre></div>
+</div>
+</li>
+</ul>
+<p>In both cases of removing <tt class="docutils literal"><span class="pre">_fw_name</span></tt>, there is still a workaround if you refactor your code. The <a class="reference internal" href="config_tutorial.html"><em>FW config</em></a> has a parameter called <tt class="docutils literal"><span class="pre">FW_NAME_UPDATES</span></tt> that allows one to map old names to new ones via a dictionary of {&lt;old name&gt;:&lt;new name&gt;}. This method also works if you need to change your <tt class="docutils literal"><span class="pre">_fw_name</span></tt> for any reason.</p>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h3><a href="index.html">Table Of Contents</a></h3>
+  <ul>
+<li><a class="reference internal" href="#">The Comprehensive Guide to Writing FireTasks with Python</a><ul>
+<li><a class="reference internal" href="#writing-a-basic-firetask">Writing a Basic FireTask</a><ul>
+<li><a class="reference internal" href="#step-1-choose-existing-firetask-s-or-write-your-own">Step 1: Choose existing FireTask(s) or write your own?</a></li>
+<li><a class="reference internal" href="#step-2-start-with-a-firetask-template-and-modify-it">Step 2: Start with a FireTask template and modify it</a></li>
+<li><a class="reference internal" href="#step-3-register-your-firetask">Step 3: Register your FireTask</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#dynamic-and-message-passing-workflows">Dynamic and message-passing Workflows</a></li>
+<li><a class="reference internal" href="#the-fwaction-object">The FWAction object</a></li>
+<li><a class="reference internal" href="#appendix-alternate-ways-to-identify-the-firetask-and-changing-the-identification">Appendix: alternate ways to identify the FireTask and changing the identification</a></li>
+</ul>
+</li>
+</ul>
+
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="reference.html"
+                        title="previous chapter">Reference material</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="changelog.html"
+                        title="next chapter">FireWorks Changelog</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="_sources/guide_to_writing_firetasks.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="changelog.html" title="FireWorks Changelog"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="reference.html" title="Reference material"
+             >previous</a> |</li>
+        <li><a href="index.html">FireWorks 0.98 documentation</a> &raquo;</li> 
+      </ul>
+    </div>
+
+    <div class="footer">
+        &copy; Copyright 2013, Anubhav Jain.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-53488807-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+  </body>
+</html>
