@@ -1,0 +1,5 @@
+recursive-include src *
+recursive-include docs *
+global-exclude *pyc
+global-exclude *~
+include CHANGES.rst
