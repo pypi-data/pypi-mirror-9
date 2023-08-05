@@ -1,0 +1,231 @@
+
+Boxplots
+========
+
+.. code:: python
+
+    import mgkit.plots.boxplot
+    import numpy 
+    import pandas
+    import seaborn as sns
+.. code:: python
+
+    nrows = 9
+    ncols = 30
+    data = pandas.DataFrame({
+        x: numpy.random.negative_binomial(1000, 0.05, size=nrows)
+        for x in xrange(ncols)
+    })
+Simple boxplot
+--------------
+
+.. code:: python
+
+    fig, ax = mgkit.plots.get_single_figure(figsize=(30, 10))
+    _ = mgkit.plots.boxplot.boxplot_dataframe(data, data.index, ax)
+
+
+.. image:: boxplot_files/boxplot_4_0.png
+
+
+Change order of boxplots
+------------------------
+
+.. code:: python
+
+    fig, ax = mgkit.plots.get_single_figure(figsize=(30, 10))
+    _ = mgkit.plots.boxplot.boxplot_dataframe(data, data.index[::-1], ax)
+
+
+.. image:: boxplot_files/boxplot_6_0.png
+
+
+Change labels
+-------------
+
+.. code:: python
+
+    fig, ax = mgkit.plots.get_single_figure(figsize=(30, 10))
+    _ = mgkit.plots.boxplot.boxplot_dataframe(data, data.index, ax, label_map={x: 'label {}'.format(x) for x in data.index})
+
+
+.. image:: boxplot_files/boxplot_8_0.png
+
+
+Change font parameters
+----------------------
+
+.. code:: python
+
+    fig, ax = mgkit.plots.get_single_figure(figsize=(30, 10))
+    _ = mgkit.plots.boxplot.boxplot_dataframe(
+        data, 
+        data.index, 
+        ax, 
+        label_map={x: 'label {}'.format(x) for x in data.index}, 
+        fonts=dict(fontsize=22, rotation=45)
+    )
+
+
+.. image:: boxplot_files/boxplot_10_0.png
+
+
+Empty boxplots
+--------------
+
+.. code:: python
+
+    fig, ax = mgkit.plots.get_single_figure(figsize=(30, 10))
+    _ = mgkit.plots.boxplot.boxplot_dataframe(
+        data, 
+        data.index, 
+        ax, 
+        label_map={x: 'label {}'.format(x) for x in data.index}, 
+        fonts=dict(fontsize=22, rotation=45),
+        fill_box=False
+    )
+
+
+.. image:: boxplot_files/boxplot_12_0.png
+
+
+Vertical boxplot
+----------------
+
+.. code:: python
+
+    fig, ax = mgkit.plots.get_single_figure(figsize=(10, 10))
+    _ = mgkit.plots.boxplot.boxplot_dataframe(
+        data, 
+        data.index, 
+        ax, 
+        label_map={x: 'label {}'.format(x) for x in data.index}, 
+        fonts=dict(fontsize=22, rotation='horizontal'),
+        fill_box=True,
+        box_vert=False
+    )
+
+
+.. image:: boxplot_files/boxplot_14_0.png
+
+
+Change boxplot colors
+---------------------
+
+.. code:: python
+
+    boxplot_colors = {
+        key: col
+        for key, col in zip(mgkit.plots.boxplot.DEFAULT_BOXPLOT_COLOURS, sns.color_palette('Dark2', len(mgkit.plots.boxplot.DEFAULT_BOXPLOT_COLOURS)))
+    }
+    fig, ax = mgkit.plots.get_single_figure(figsize=(30, 10))
+    _ = mgkit.plots.boxplot.boxplot_dataframe(
+        data, 
+        data.index, 
+        ax, 
+        label_map={x: 'label {}'.format(x) for x in data.index}, 
+        fonts=dict(fontsize=22, rotation=45),
+        fill_box=True,
+        colours=boxplot_colors
+    )
+
+
+.. image:: boxplot_files/boxplot_16_0.png
+
+
+Change data colors and the median color
+---------------------------------------
+
+.. code:: python
+
+    fig, ax = mgkit.plots.get_single_figure(figsize=(30, 10))
+    _ = mgkit.plots.boxplot.boxplot_dataframe(
+        data, 
+        data.index, 
+        ax, 
+        label_map={x: 'label {}'.format(x) for x in data.index}, 
+        fonts=dict(fontsize=22, rotation=45),
+        fill_box=True,
+        colours=dict(medians='k'),
+        data_colours={x: y for x, y in zip(data.index, sns.color_palette('hls', len(data.index)))}
+    )
+
+
+.. image:: boxplot_files/boxplot_18_0.png
+
+
+Adding data points
+------------------
+
+.. code:: python
+
+    reload(mgkit.plots.boxplot)
+    fig, ax = mgkit.plots.get_single_figure(figsize=(30, 10), dpi=300)
+    
+    data_colours = {x: y for x, y in zip(data.index, sns.color_palette('Dark2', len(data.index)))}
+    
+    plot_data = mgkit.plots.boxplot.boxplot_dataframe(
+        data, 
+        data.index, 
+        ax, 
+        label_map={x: 'label {}'.format(x) for x in data.index}, 
+        fonts=dict(fontsize=22, rotation=45),
+        fill_box=False,
+        data_colours=data_colours,
+        box_vert=True
+    )
+    
+    #note that box_vert must be the same in both boxplot_dataframe and add_values_to_boxplot. Their default is the opposite, now.
+    mgkit.plots.boxplot.add_values_to_boxplot(
+        data, 
+        ax, 
+        plot_data, 
+        data.index, 
+        data_colours=data_colours, 
+        s=600, 
+        alpha=0.5, 
+        box_vert=True
+    )
+
+
+.. image:: boxplot_files/boxplot_20_0.png
+
+
+Changed direction, different palette and marker
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code:: python
+
+    reload(mgkit.plots.boxplot)
+    fig, ax = mgkit.plots.get_single_figure(figsize=(20, 15), dpi=300)
+    
+    data_colours = {x: y for x, y in zip(data.index, sns.color_palette('Set1', len(data.index)))}
+    
+    plot_data = mgkit.plots.boxplot.boxplot_dataframe(
+        data, 
+        data.index, 
+        ax, 
+        label_map={x: 'label {}'.format(x) for x in data.index}, 
+        fonts=dict(fontsize=22, rotation=45),
+        fill_box=False,
+        data_colours=data_colours,
+        box_vert=False
+    )
+    
+    #note that box_vert must be the same in both boxplot_dataframe and add_values_to_boxplot. Their default is the opposite, now.
+    mgkit.plots.boxplot.add_values_to_boxplot(
+        data, 
+        ax, 
+        plot_data, 
+        data.index, 
+        data_colours=data_colours, 
+        s=600, 
+        alpha=0.5,
+        marker='|',
+        linewidth=8,
+        box_vert=False
+    )
+
+
+.. image:: boxplot_files/boxplot_22_0.png
+
