@@ -1,0 +1,66 @@
+import polib
+from django.conf import settings
+from override import Override
+
+
+class TransTool(object):
+
+    tainted = False
+
+    def __init__(self):
+
+        self.modules = self._list_modules()
+        self.overrides = {}
+
+        for lang in settings.LANGUAGES:
+
+            self.overrides[lang] = Override(lang)
+
+    def translate(self, msgid, msgstr, locale):
+
+        self.tainted = True
+
+        self.overrides[locale].update(msgid, msgstr)
+
+    def _list_modules(self):
+
+        """ List all locale modules and return a map of module, path """
+
+        _modules = {}
+
+        for mod in settings.LOCALE_PATHS:
+
+            modname = mod.split("/")[-2]
+
+            _modules[modname] = mod
+
+        return _modules
+
+    def list_entries(self, module, locale):
+
+        path = self.modules[module]
+
+        pofile_path = "%s/%s/LC_MESSAGES/django.po" % (path, locale)
+
+        try:
+            pofile = polib.pofile(pofile_path)
+            return [e for e in pofile if not e.obsolete]
+        except:
+            return []
+
+    def _list_entries(self):
+
+        _entries = {}
+
+        for module in self.modules.keys():
+
+            for entry in self.list_entries(module, locale):
+
+                if not entry.msgid in _entries.keys():
+                    _entries[entry.msgid] = entry
+
+        return _entries
+
+    def find_entry(self, msgid, locale):
+
+        return self.entries[msgid]
