@@ -1,0 +1,61 @@
+<tool id="deletion_prediction" name="Deletion Prediction for paired-end data">
+  <description>Predicts deletions in one or more aligned read samples based on coverage of the reference genome and on insert sizes</description>
+  <version_command>mimodd version -q</version_command>
+  <command>
+    mimodd delcall
+    #for $l in $list_input
+        ${l.bamfile}
+    #end for
+    $covfile -o $outputfile
+    --max-cov $max_cov --min-size $min_size $include_uncovered $group_by_id --verbose
+  </command>
+
+  <inputs>
+    <repeat name="list_input" title="Aligned reads input source" default="1" min="1">
+        <param name="bamfile" type="data" format="bam" label="input BAM file" />
+    </repeat>
+    <param name="covfile" type="data" format="bcf" label="BCF variant call file to extract coverage from" help="Use the Variant Calling tool to generate this file."/>
+    <param name="group_by_id" type="boolean" label="group reads based on read group id only" truevalue="-i" falsevalue="" checked="true" help="If selected, reads from different read groups will be treated strictly separate. If turned off, read groups with identical sample names are used together for identifying uncovered regions, but are still treated separately for the prediction of deletions." />
+    <param name="include_uncovered" type="boolean" label="include low-coverage regions" truevalue="-u" falsevalue="" checked="true" help="If selected, regions that fulfill the coverage criteria below, but are not statistically significant deletions, will be included in the output." />  
+    <param name="max_cov" type="integer" value="0" label="maximal coverage allowed inside a low-coverage region (default: 0)" help="The maximal coverage at a site allowed to consider it as part of a low-coverage region" />
+    <param name="min_size" type="integer" value="100" label="minimal deletion size (default: 100)" help="A low-coverage region must consist of at least this number of consecutive bases below the maximal coverage to consider it in further analyses."/>
+  </inputs>
+
+  <outputs>
+    <data name="outputfile" format="gff" />
+  </outputs>
+
+<help>
+.. class:: infomark
+
+   **What it does**
+
+The tool predicts deletions from paired-end data in a two-step process:
+
+1) It finds regions of low-coverage, i.e., candidate regions for deletions, by scanning a BCF file produced by the *Variant Calling* tool.
+
+   The *maximal coverage allowed inside a low-coverage region* and the *minimal deletion size* parameters are used at this step to define what is considered a low-coverage region.
+
+   .. class:: warningmark
+
+      The tool treats genome positions missing from the BCF input as zero coverage, so it is safe to use ONLY with BCF files produced by the *Variant Calling* tool or through other commands that keep the information for all sites.
+
+2) It assesses every low-coverage region statistically for evidence of it being a real deletion. **This step requires paired-end data** since it relies on shifts in the distribution of read pair insert sizes around real deletions.
+
+By default, the tool only reports Deletions, i.e., the subset of low-coverage regions that pass the statistical test.
+If *include low-coverage regions* is selected, regions that failed the test will also be reported.
+
+With *group reads based on read group id only* selected, as it is by default, grouping of reads into samples is done strictly based on their read group IDs.
+With the option deselected, grouping is done based on sample names in the first step of the analysis, i.e. the reads of all samples with a shared sample name are used to identify low-coverage regions.
+In the second step, however, reads will be regrouped by their read group IDs again, i.e. the statistical assessment for real deletions is always done on a per read group basis.
+
+**TIP:**
+Deselecting *group reads based on read group id only* can be useful, for example, if you have both paired-end and single-end sequencing data for the same sample.
+
+In this case, the two sets of reads will usually share a common sample name, but differ in their read groups.
+With grouping based on sample names, the single-end data can be used together with the paired-end data to identify low-coverage regions, thus increasing overall coverage and reliability of this step.
+Still, the assessment of deletions will use only the paired-end data (auto-detecting that the single-end reads do not provide insert size information).
+
+</help>
+
+</tool>

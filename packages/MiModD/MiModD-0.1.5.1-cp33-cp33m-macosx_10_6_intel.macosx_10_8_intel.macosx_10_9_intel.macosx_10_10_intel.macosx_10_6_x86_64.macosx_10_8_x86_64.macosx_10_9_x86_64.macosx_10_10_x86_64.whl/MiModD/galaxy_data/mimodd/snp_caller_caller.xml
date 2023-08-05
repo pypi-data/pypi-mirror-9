@@ -1,0 +1,62 @@
+<tool id="variant_calling" name="Variant Calling">
+  <description>From a reference and aligned reads generate a BCF file with position-specific variant likelihoods and coverage information</description>
+  <version_command>mimodd version -q</version_command>
+  <command>
+	mimodd varcall
+
+	$ref_genome
+	#for $l in $list_input
+            ${l.inputfile}
+        #end for
+	--ofile $output_vcf
+    --depth $depth
+	$group_by_id
+	$no_md5_check
+    --verbose
+    --quiet
+  </command>
+
+  <inputs>
+    <param name="ref_genome" type="data" format="fasta" label="reference genome" />
+    <repeat name="list_input" title="Aligned reads input source" default="1" min="1">
+      <param name="inputfile" type="data" format="bam" label="input file" />
+    </repeat>
+    <param name="group_by_id" type="boolean" label="group reads based on read group id only" truevalue="-i" falsevalue="" checked="true" help="If selected, this option ensures that only the read group id (but not the sample name) is considered in grouping reads in the input file(s). If turned off, read groups with identical sample names are automatically pooled and analyzed together even if they come from different NGS runs." />
+    <param name="no_md5_check" type="boolean" label="turn off md5 sum verification" truevalue="-x" falsevalue="" checked="false" help="leave turned on to avoid accidental variant calling against a wrong reference genome version (see the tool help below)." />
+    <param name="depth" type="integer" value="250" label="maximum per-BAM depth (default: 250)" help="to avoid excessive use of memory"/>
+  </inputs>
+
+  <outputs>
+    <data name="output_vcf" format="bcf" label="Variant Calls from MiModd Variant Calling on ${on_string}"/>
+  </outputs>
+
+<help>
+.. class:: infomark
+
+   **What it does**
+
+The tool transforms the read-centered information of its aligned reads input files into position-centered information.
+
+**It produces a BCF file that serves as the basis for all further variant analyses with MiModD**.
+
+**Notes:**
+
+By default, the tool will check whether the input BAM file(s) provide(s) MD5 checksums for the reference genome sequences used during read alignment (the *SNAP Read Alignment* tool stores these in the BAM file header). If it finds MD5 sums for all sequences, it will compare them to the actual checksums of the sequences in the specified reference genome and 
+check that every sequence mentioned in any BAM input file has a counterpart with matching MD5 sum in the reference genome and abort with an error message if that is not the case. If it finds sequences with matching checksum, but different names in the reference genome, it will use the name from the reference genome file in its output.
+
+This behavior has two benefits:
+
+1) It protects from accidental variant calling against a wrong reference genome (i.e., a different one than that used during the alignment step), which would result in wrong calls. This is the primary reason why we recommend to leave the check activated
+
+2) It provides an opportunity to change sequence names between aligned reads files and variant call files by providing a reference genome file with altered sequence names (but identical sequence data).
+
+Since there may be rare cases where you *really* want to align against a reference genome with different checksums (e.g., you may have edited the reference sequence based on the alignment results), the check can be turned off, but only do this if you know exactly why.
+
+-----------
+
+Internally, the tool uses samtools mpileup combined with bcftools to do all per-nucleotide calculations. 
+
+It exposes just a single configuration parameter of these tools - the *maximum per-BAM depth*. Through this parameter, the maximum number of reads considered for variant calling at any site can be controlled. Its default value of 250 is taken from *samtools mpileup* and usually suitable. Consider, however, that this gives the maximum read number per input file, so if you have a large number of samples in one input file, it could become necessary to increase the value to get sufficient reads considered per sample.
+
+</help>
+</tool>
