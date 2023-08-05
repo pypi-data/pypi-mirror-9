@@ -1,0 +1,124 @@
+<tool id="vcf_filter" name="VCF Filter">
+  <description>Extracts lines from a vcf variant file based on field-specific filters</description>
+  <version_command>mimodd version -q</version_command>
+  <command> 
+	mimodd vcf-filter
+	$inputfile
+	-o $outputfile
+	#if len($datasets):
+	-s
+	#for $i in $datasets
+		"$i.sample"
+	#end for
+	--gt
+	#for $i in $datasets
+	    ## remove whitespace from free-text input
+	    #echo ("".join($i.GT.split()) or "ANY")
+	    #echo " "
+	#end for
+	--dp
+	#for $i in $datasets
+	    $i.DP
+	#end for
+	--gq
+	#for $i in $datasets
+	    $i.GQ
+	#end for
+	#end if
+	#if len($regions):
+	-r
+	    #for $i in $regions
+	        #if $i.stop:
+	$i.chrom:$i.start-$i.stop
+	        #else:
+	$i.chrom:$i.start
+	        #end if
+	    #end for
+	#end if
+	#if $vfilter:
+	--vfilter
+	## remove ',' (and possibly adjacent whitespace) and replace with ' '
+	#echo (" ".join("".join($vfilter.split()).split(',')))
+	#end if
+	$vartype
+  </command>
+  
+  <inputs>
+    <param name="inputfile" type="data" format="vcf" label="VCF input file" />
+    <repeat name="datasets" title="Sample-specific Filter" default="0" min="0">
+        <param name="sample" type="text" label="sample" help="name of a sample as it appears in the VCF input file and that indicates the sample that this filter should be applied to." />
+	<param name="GT" type="text" label="genotype pattern(s) for the inclusion of variants" help="keep only variants for which the genotype of the sample matches the specified pattern; format: x/x where x = 0 is wildtype and x = 1 is mutant. Multiple genotypes can be specified as a comma-separated list." />
+	<param name="DP" type="integer" label="depth of coverage for the sample at the variant site" value = "0" help="keep only variants with at least this sample-specific coverage at the variant site" />
+	<param name="GQ" type="integer" label="genotype quality for the variant in the sample" value = "0" help="keep only variants for which the genotype prediction for the sample has at least this quality" />
+    </repeat>
+    <repeat name="regions" title="Region Filter" default="0" min="0" help = "Filter variant sites by their position in the genome. If multiple Region Filters are specified, all variants that fall in ONE of the regions are reported.">
+      <param name="chrom" type="text" label="Chromosome" />
+      <param name="start" type="text" label="Region Start" />
+      <param name="stop" type="text" label="Region End" />
+    </repeat>
+    <param name="vartype" type="select" label="Select the types of variants to include in the output">
+      <option value="">all types of variants</option>
+      <option value="--no-indels">exclude indels</option>
+      <option value="--indels-only">only indels</option>
+    </param>
+    <param name="vfilter" type="text" label="sample" help="Filter output by sample name; only the sample-specific columns with their sample name matching any of the comma separated filters will be retained in the output." />
+  </inputs>
+  
+  <outputs>
+    <data name="outputfile" format="vcf" />
+  </outputs>
+
+  <help>
+.. class:: infomark
+
+   **What it does**
+
+The tool filters a variant file in VCF format to generate a new VCF file with only a subset of the original variants.
+
+The following types of variant filters can be set up:
+
+1) Sample-specific filters:
+   
+   Filter variants based on their characteristics in the sequenced reads of a specific sample. Multiple sample-specific filters are combined by logical AND, i.e., only variants that pass ALL sample-specific filters are kept.
+   
+2) Region filters:
+   
+   Filter variants based on the genomic region they affect. Multiple region filters are combined by logical OR, i.e., variants passing ANY region filter are kept.
+   
+3) Variant type filter:
+
+   Filter variants by their type, i.e. whether they are single nucleotide variations (SNVs) or indels
+   
+In addition, the *sample* filter can be used to reduce the samples encoded in a multi-sample VCF file to just those specified by the filter.
+The *sample* filter is included mainly for compatibility reasons: if an external tool cannot deal with the multisample file format, but instead looks only at the first sample-specific column of the file, you can use the filter to turn the multi-sample file into a single-sample file. Besides, the filter can also be used to change the order of the samples since it will sort the samples in the order specified in the filter field.
+
+**Examples of sample-specific filters:**
+
+*Simple genotype pattern*
+
+genotype pattern: 1/1 ==> keep all variants in the vcf input file for which the specified sample's genotype is homozygous mutant
+
+*Complex genotype pattern*
+
+genotype pattern: 0/1, 0/0 ==> keep all variants for which the sample's genotype is either heterozygous or homozygous wildtype
+
+*Multiple sample-specific filters*
+
+Filter 1: genotype pattern: 0/0, Filter 2: genotype pattern 1/1:
+==> keep all variants for which the first sample's gentoype is homozygous wildtype **and** the second sample's genotype is homozygous mutant
+
+*Combining sample-specific filter criteria*
+
+genotype pattern: 1/1, depth of coverage: 3, genotype quality: 9
+==> keep variants for which the sample's genotype is homozygous mutant **and** for which this genotype assignment is corroborated by a genotype quality score of at least 9
+**and** at least three reads from the sample cover the variant site
+
+**TIP:**
+
+As in the example above, genotype quality is typically most useful in combination with a genotype pattern.
+It acts then, effectively, to make the genotype filter more stringent.
+
+
+
+  </help>
+</tool>
