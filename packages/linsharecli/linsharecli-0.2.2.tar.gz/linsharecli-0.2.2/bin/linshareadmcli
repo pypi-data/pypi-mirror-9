@@ -1,0 +1,212 @@
+#! /usr/bin/env python2
+# -*- coding: utf-8 -*-
+# PYTHON_ARGCOMPLETE_OK
+
+# This file is part of Linshare user cli.
+#
+# LinShare user cli is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# LinShare user cli is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with LinShare user cli.  If not, see <http://www.gnu.org/licenses/>.
+#
+# Copyright 2013 Frédéric MARTIN
+#
+# Contributors list :
+#
+#  Frédéric MARTIN frederic.martin.fma@gmail.com
+#
+
+# -----------------------------------------------------------------------------
+# Imports
+# -----------------------------------------------------------------------------
+from __future__ import unicode_literals
+
+import os
+import sys
+import argparse
+import codecs
+import locale
+
+from argtoolbox import BasicProgram
+from argtoolbox import SimpleSection
+from argtoolbox import Element
+from argtoolbox import Base64ElementHook
+from argtoolbox import SectionHook
+from linsharecli.admin.thread import add_parser as add_threads_parser
+from linsharecli.admin.tmember import add_parser as add_thread_members_parser
+from linsharecli.admin.user import add_parser as add_users_parser
+from linsharecli.admin.core import add_parser as add_test_parser
+from linsharecli.admin.domain import add_parser as add_domains_parser
+from linsharecli.admin.ldap import add_parser as add_ldap_connections_parser
+from linsharecli.admin.dpattern import add_parser as add_domain_patterns_parser
+from linsharecli.admin.func import add_parser as add_functionalitites_parser
+from linsharecli.admin.core import add_parser as add_core_parser
+import linsharecli
+
+# if you want to debug argcomplete completion,
+# you just need to export _ARC_DEBUG=True
+
+
+sys.stdout = codecs.getwriter(locale.getpreferredencoding())(sys.stdout)
+# Not use full ?
+#sys.stdin = codecs.getreader(locale.getpreferredencoding())(sys.stdin)
+
+
+# -----------------------------------------------------------------------------
+class LinShareCliProgram(BasicProgram):
+    """Main program."""
+
+    def add_config_options(self):
+        self.formatter_class = argparse.RawTextHelpFormatter
+
+        section_server = self.config.add_section(SimpleSection("server"))
+
+        section_server.add_element(Element(
+            'host',
+            required=True))
+
+        section_server.add_element(Element('user', required=True))
+
+        section_server.add_element(Element(
+            'password',
+            hidden=True,
+            desc="user password to linshare",
+            hooks=[Base64ElementHook(warning=True), ]))
+
+        section_server.add_element(Element(
+            'base_url',
+            desc="Default value is 'linshare/webservice/rest/admin'"))
+
+        section_server.add_element(Element(
+            'nocache',
+            e_type=bool,
+            default=False,
+            desc=argparse.SUPPRESS))
+
+        section_server.add_element(Element('verbose'))
+
+        section_server.add_element(Element(
+            'debug',
+            e_type=int,
+            default=0,
+            desc="""(default: 0)
+0 : debug off
+1 : debug on
+2 : debug on and request result is printed (pretty json)
+3 : debug on and urllib debug on and http headers and request
+are printed"""
+        ))
+
+    def add_pre_commands(self):
+
+        self.parser.add_argument(
+            '-s',
+            action="store",
+            dest='server_section',
+            help="""This option let you select the server section in the cfg
+file you want to load (server section is always load first as default
+configuration). You just need to specify a number like '4' for
+section 'server-4'""")
+
+        self.parser.add_argument(
+            '-d',
+            action="count",
+            **self.config.server.debug.get_arg_parse_arguments())
+
+    def reload(self):
+        # If section_server is defined, we need to modify the suffix
+        # attribute ofserver Section object.
+        hook = SectionHook(self.config.server, "_suffix", "server_section")
+
+        # Reloading configuration with previous optional arguments
+        # (ex config file name, server section, ...)
+        self.config.reload(hook)
+
+    def add_commands(self):
+
+        # Adding all others options.
+        self.parser.add_argument(
+            '-u',
+            '--user',
+            action="store",
+            **self.config.server.user.get_arg_parse_arguments())
+
+        password_group = self.parser.add_argument_group('Password')
+        password_required = True
+        if self.config.server.password is not None:
+            password_required = False
+        group = password_group.add_mutually_exclusive_group(
+            required=password_required)
+        group.add_argument(
+            '-P',
+            '--password',
+            action="store",
+            **self.config.server.password.get_arg_parse_arguments())
+
+        group.add_argument(
+            '-p',
+            action="store_true",
+            default=False,
+            dest="ask_password",
+            help="If set, the program will ask you your password.")
+
+        self.parser.add_argument(
+            '-H',
+            '--host',
+            action="store",
+            **self.config.server.host.get_arg_parse_arguments())
+
+        self.parser.add_argument(
+            '--nocache',
+            action="store_true",
+            **self.config.server.nocache.get_arg_parse_arguments())
+
+        self.parser.add_argument(
+            '--base-url',
+            action="store",
+            **self.config.server.base_url.get_arg_parse_arguments())
+
+        # Adding all others parsers.
+        subparsers = self.parser.add_subparsers()
+        add_threads_parser(subparsers, "threads", "threads management")
+        add_thread_members_parser(subparsers, "tmembers",
+                                  "thread member management")
+        add_users_parser(subparsers, "users", "users")
+        add_domains_parser(subparsers, "domains", "domains")
+        add_ldap_connections_parser(subparsers, "ldap", "ldap connections")
+        add_domain_patterns_parser(subparsers, "dpatterns", "domain patterns")
+        add_test_parser(subparsers, self.config)
+        add_functionalitites_parser(subparsers, "funcs", "Functionalities")
+        add_core_parser(subparsers, self.config)
+
+# if you need debug during class construction, config file loading,
+# you just need to export _LINSHARE_CLI_ADMIN_DEBUG=True
+PROG = LinShareCliProgram(
+    "linshare-admin-cli",
+    version=linsharecli.__version__,
+    force_debug=os.getenv('_LINSHARE_CLI_ADMIN_DEBUG', False),
+    force_debug_to_file=os.getenv('_LINSHARE_CLI_ADMIN_DEBUG_FILE', False),
+    desc="""An user cli for LinShare, using its REST API.
+
+    In order to enable auto complete support, or generate the default
+    configuration file associated with the current program,
+    look at the argtoolboxtool program.
+
+
+Advanced documentation :
+------------------------
+If you need debug during class construction, config file loading,
+you just need to export _LINSHARE_CLI_ADMIN_DEBUG=True
+
+================================================================
+""")
+if __name__ == "__main__":
+    PROG()
