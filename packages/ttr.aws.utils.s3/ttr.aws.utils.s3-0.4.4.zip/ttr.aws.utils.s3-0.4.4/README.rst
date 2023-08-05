@@ -1,0 +1,335 @@
+============
+AWS Utils S3
+============
+
+If you use AWS_ S3_, then this can be handy tool for you.
+ 
+This package offers few command line utilities, which allow a bit more, then scripts provided by boto_.
+
+Some special features:
+
+* List versions in defined time period, see versioning_
+* Fetch versions specified in CSV file (list-file)
+* Generate temporary url links for set of keys in buckets
+
+.. contents:: Table of Contents
+
+Installation
+============
+
+::
+
+  $ pip install ttr.aws.utils.s3
+
+Other methods (easy_install, setup.py) work too.
+    
+Quick start
+===========
+We want to fetch versions of feed in bucket `mybucket` named `my/versioned/feed.xml`
+
+1. Be sure, you have your BOTO credentials configured. You shall have file in form::
+
+      [Credentials]
+      aws_access_key_id = <your access key>
+      aws_secret_access_key = <your secret key>
+
+   somewhere, and have set variable BOTO_CONFIG to value of complete path to this file. For more see BotoConfig_.
+
+   .. note:: There are alternative methods of specifying AWS credentials, described later on.
+
+2. create csv file for given feed and time period::
+
+    $ s3lsvers -from 2012-05-24T00:15 -to 2012-05-24T01:15 -list-file list.csv mybucket my/versioned/feed.xml
+    
+   You shall then find file list.csv on your disk.    
+
+3. Review records in list.csv and delete all lines with version, which are not of your interest.
+
+4. Using list.csv, ask s3getvers to fetch all versions specified in the file. Be sure to run it on empty directory::
+
+    $ s3getvers mybucket list.csv
+    
+   You will see, how is each version downloaded and saved to your current directory.
+ 
+5. Finally, you can try generating temorary url to your feed (showing latest of versions)::
+
+    $ s3tmpgen 2014-09-30T00:00:00Z mybucket my/versioned/feed.xml
+    https://mybucket.s3.amazonaws.com/my/versioned/feed.xml?Signature=kOCwz%2FkanVWX8O15dlXhy4jrbwY%3D&Expires=1412031600&AWSAccessKeyId=AKIAxyzxyzxyzEQA
+
+   Note, that the url does not include VersionId, so it will always point to the most up todate version (in case the key happens to be on versioned bucket).
+
+Provided commands
+=================
+
+s3lsvers
+--------
+List versions of some feed. Could output into CSV file (-list-file) and/or html chart (-html-file).::
+
+    $ s3lsvers -h
+    usage: s3lsvers [-h] [-from None] [-to None] [-list-file None] [-html-file None] [-version-id None] [-profile-name None] [-aws-access-key-id None] [-aws-secret-access-key None] bucket_key
+
+    Lists all versions of given key, possibly filtering by from - to range
+        for version last_modified time.
+        Allows to put the listing into csv file and or into html chart.
+
+            Listing shows:
+              key_name
+                "file name". Can repeat if the file has more versions
+
+              version_id
+                unique identifier for given version on given bucket.  Has form of
+                string and not a number. identifiers are "random", do not expect
+                that they are sorten alphabetically.
+
+              size
+                size of file in bytes
+
+              last_modified
+                ISO 8601 formated time of file modification,
+                e.g. `2011-06-22T03:05:09.000Z`
+
+              age
+                difference between last_modified or given version
+                and preceding version. It is sort of current
+                update interval for that version.
+
+            Sample use:
+            Lists to the screen all versions of file keyname in the
+            bucketname bucket::
+
+                $ s3lsvers bucketname/keyname
+
+            Lists all versions younger then given time (from given time till now)::
+
+                $ s3lsvers -from 2011-07-19T12:00:00 bucketname/keyname
+
+            Lists all versions older then given time
+            (from very first version till given date)::
+
+                $ s3lsvers -to 2011-07-19T12:00:00 bucketname/keyname
+
+            Lists all versions in period betwen from and to time::
+
+                $ s3lsvers -from 2010-01-01 -to 2011-07-19T12:00:00             bucketname/keyname
+
+            Lists all versions and writes them into csv file named versions.csv::
+
+                $ s3lsvers -list-file versions.csv bucketname/keyname
+
+            Lists all versions and writes them into html chart file
+            named chart.html::
+
+                $ s3lsvers -html-file chart.html bucketname/keyname
+
+            Prints to screen, writes to csv, creates html chart and this all
+            for versions in given time period.::
+
+                $ s3lsvers -from 2010-01-01 -to 2011-07-19T12:00:00             -list-file versions.csv -html-file chart.html bucketname/keyname
+
+            Using bucket/key_name aliases in .s3lsvers file
+
+            Instead of using long bucket and key names on command line, you may define aliases.
+
+            Aliases are specified in file .s3lsvers, which may be located in currect directory, home directory or /etc/s3lsvers"
+
+            Content of .s3lsvers files may look like this::
+
+                #.s3lsversrc - definition of some preconfigured bucket/key values
+                [DEFAULT]
+                pl-base: pl-base.dp.tamtamresearch.com
+                cz-base: cz-base.dp.tamtamresearch.com
+                sk-base: sk-base.dp.tamtamresearch.com
+
+                #values left to ":" must not contain "/" to prevent confusion with real bucket names
+                [aliases]
+                plcsr: %(pl-base)s/region/pl/ConsumerServiceReady.xml
+                pldfs: %(pl-base)s/region/pl/DataFusionService.xml
+                czcsr: %(cz-base)s/region/cz/ConsumerServiceReady.xml
+                czdfs: %(cz-base)s/region/cz/DataFusionService.xml
+                skcsr: %(sk-base)s/region/sk/ConsumerServiceReady.xml
+                skdfs: %(sk-base)s/region/sk/DataFusionService.xml
+                skes: %(sk-base)s/region/sk/EventService.xml
+                sksr: %(sk-base)s/region/sk/SummaryReports.xml
+
+            The format follows SafeConfigParser rules: http://docs.python.org/2/library/configparser.html#safeconfigparser-objects
+
+    
+
+    positional arguments:
+      bucket_key            bucket_name/key_name for the key to list, or key alias defined in .s3lsvers file
+
+    optional arguments:
+      -h, --help            show this help message and exit
+      -from None, --from-time None
+                            Modification time of oldest expected version as ISO 8601 format. Can be truncated. (default: goes to the oldest version)
+      -to None, --to-time None
+                            Modification time of youngest expected version as ISO 8601 format. Can be truncated. (default: goes to the latest version)
+      -list-file None       Name of file, where is result written in csv format. If set, the file is always overwritten.
+      -html-file None       Name of file, where is result written in html format (as a chart). If set, the file is always overwritten.
+      -version-id None      Optional version-id. If specified, listing does not start from the freshest version, but starts searching from given VERSION_ID and continues searching older and older versions. This could speed up listng in
+                            case, you need rather older files and you know VERSION_ID which came somehow later then is the time scope you are going to list.
+      -profile-name None    Name of boto profile to use for credentials
+      -aws-access-key-id None
+                            Your AWS Access Key ID
+      -aws-secret-access-key None
+                            Your AWS Secret Access Key
+
+                            
+s3getvers
+---------
+::
+
+    $ s3getvers -h
+    usage: s3getvers [-h] [-output-version-id-names] [-no-decompression] [-profile-name None] [-aws-access-key-id None] [-aws-secret-access-key None] bucket_name csv_version_file
+
+    Fetch file versions as listed in provided csv file
+    
+        Typical csv file (as by default produced by s3lsvers) is:
+    
+            my/versioned/feed.xml;OrUr6XO8KSKEHbd8mQ.MloGcGlsh7Sir;191345;2012-05-23T20:45:10.000Z;39
+            my/versioned/feed.xml;xhkVOy.dJfjSfUwse8tsieqjDicp0owq;192790;2012-05-23T20:44:31.000Z;62
+            my/versioned/feed.xml;oKneK.N2wS8pW8.EmLqjldYlgcFwxN3V;193912;2012-05-23T20:43:29.000Z;58
+
+        and has columns:
+        :key_name: name of the feed (not containing the bucket name itself)
+        :version_id: string, identifying unique version. Any following columns can contain anything.
+        :size: size in bytes. This column is not used and can be missing.
+        :last_modified: date, when the version was posted. This column is not used and can be missing.
+    
+        Typical use (assuming, above csv file is available under name verlist.csv)::
+    
+            $ s3getvers yourbucketname verlist.csv
+    
+        What will create following files in current directory:
+    
+        + my/versioned/feed.xml.2012-05-23T20_45_10.xml
+        + my/versioned/feed.xml.2012-05-23T20_44_31.xml
+        + my/versioned/feed.xml.2012-05-23T20_43_29.xml
+    
+        Even though these files are gzipped on server, they will be decompressed on local disk.
+    
+    
+
+    positional arguments:
+      bucket_name           bucket name (default: None)
+      csv_version_file      name of CSV file with version_id
+
+    optional arguments:
+      -h, --help            show this help message and exit
+      -output-version-id-names
+                            Resulting file names shall use version_id to become distinguished (default is to use timestamp of file creation)
+      -no-decompression     Keeps the files as they come, do not decompress, if they come compressed
+      -profile-name None    Name of boto profile to use for credentials
+      -aws-access-key-id None
+                            Your AWS Access Key ID
+      -aws-secret-access-key None
+                            Your AWS Secret Access Key
+
+s3tmpgen
+--------
+
+
+::
+
+  $ s3tmpgen -h
+  usage: s3tmpgen [-h] [-profile-name None] [-aws-access-key-id None] [-aws-secret-access-key None] [-validate-bucket] [-validate-key] [-http] expire_dt bucket_name [key_names [key_names ...]]
+
+  Generate temporary url for accessing content of AWS S3 key.
+
+      Temporary url includes expiration time, after which it rejects serving the
+      content.
+
+      Urls are printed one per line to stdout.
+
+      For missing key names empty line is printed and error goes to stderr.
+
+      If the bucket is versioned, tmp url will serve the latest version
+      at the moment of request (version_id is not part of generated url).
+
+      By default, bucket and key name existnence is not verified.
+
+      Url is using https, unless `-http` is used.
+    
+
+  positional arguments:
+    expire_dt             ISO formatted time of expiration, full seconds, 'Z' is obligatory, e.g. '2014-02-14T21:47:16Z'
+    bucket_name           name of bucket
+    key_names             key names to generate tmpurl for
+
+  optional arguments:
+    -h, --help            show this help message and exit
+    -profile-name None    Name of boto profile to use for credentials
+    -aws-access-key-id None
+                          Your AWS Access Key ID
+    -aws-secret-access-key None
+                          Your AWS Secret Access Key
+    -validate-bucket      Make sure, the bucket really exists
+    -validate-key         Make sure, the key really exists
+    -http                 Force the url to use http and not https
+  
+
+Configuring AWS S3 credentials
+==============================
+
+There are multiple methods for specifying AWS credentials
+
+- access key and secret key on command line
+
+- access key and secret key set as environmental variables AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY
+
+- boto config file in default location
+
+- boto config file in alternate location pointed to by variable BOTO_CONFIG
+
+- using profile name of boto config section
+
+Details are described at BotoConfig_.
+
+The most stright-forward way of setting these variables is to create ini file in boto format as follows::
+
+    [Credentials]
+    aws_access_key_id = <your_access_key_here>
+    aws_secret_access_key = <your_secret_key_here>
+
+Name of the file may be arbitrary if you then ensure, environmental variable BOTO_CONFIG has value with complete path to that file.
+
+In case, you use multiple AWS identities, add profile sections to boto ini file::
+
+
+    [Credentials]
+    aws_access_key_id = <your default access key>
+    aws_secret_access_key = <your default secret key>
+
+    [profile jekyl]
+    aws_access_key_id = <jekyl access key for this profile>
+    aws_secret_access_key = <jekyl secret key for this profile>
+
+    [profile hyde]
+    aws_access_key_id = <hyde access key for this profile>
+    aws_secret_access_key = <hyde secret key for this profile>
+
+and use switch -profile when calling the commands.
+
+
+Credits
+=======
+This work is built on top of boto_ module, great Python library for accessing AWS services created by `Mitch Garnaat`_ .
+
+.. _AWS: http://aws.amazon.com/
+.. _S3: http://aws.amazon.com/s3/
+.. _versioning: http://aws.amazon.com/about-aws/whats-new/2010/02/08/versioning-feature-for-amazon-s3-now-available/
+.. _Buildout: http://www.buildout.org/
+.. _Distribute: http://pypi.python.org/pypi/distribute
+.. _`modern-package-template`: http://pypi.python.org/pypi/modern-package-template
+.. _BotoConfig: http://boto.readthedocs.org/en/latest/boto_config_tut.html
+.. _boto: http://code.google.com/p/boto/
+.. _`Mitch Garnaat`: http://www.elastician.com/ 
+.. _PyPi: http://pypi.python.org
+
+.. |copy|   unicode:: U+000A9 .. COPYRIGHT SIGN
+
+Copyright |copy| 2011, Jan Vlcinsky
+
+Copyright |copy| 2012-2015, TamTam Research s.r.o. http://www.tamtamresearch.com
+
+All rights reserved.
