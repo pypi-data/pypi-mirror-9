@@ -1,0 +1,176 @@
+Specification of the chaining DH mode for pbp
+
+1. Goal
+
+Create a non-interactive PFS encryption mode for offline operation
+that updates ephemeral encryption keys on each switch of direction of
+the conversation.
+
+2. Problem
+
+Current PGP either uses secret key crypto or public key crypto which
+is used for encrypting a message key. With the advent of an adversary
+that can archive selectively encrypted content for later decryption,
+when the secret key crypto can be recovered, means that suddenly years
+of so far encrypted content become available to the adversary.
+
+Interactive protocols like OTR or TLSv1.2 deploy ephemeral keys which
+are discarded regularly, this is usually achieved by periodically
+executing a DH key exchange. In offline modes having a 3 packet
+exchange preceding each new message is unfeasible due to the offline
+nature of the mode.
+
+3. Proposal
+
+Below we propose a chained DH mode for offline encryption, which
+bootstraps the first few messages of a conversation using public key
+crypto. The underlying cryptographic primitives are based on the NaCl
+toolkit, the proposal only specifies a protocol for continuously
+exchanging ephemeral keys in a way, that prohibits an archiving
+adversary to recover more messages from one compromised one.
+
+Mimicking the simple interface provided by the NaCl library, the
+protocol defines a context for each of the communicating peers and two
+public primitives:
+
+    cipher, nonce = ctx.send(msg)
+
+and
+    msg = ctx.receive(cipher, nonce)
+
+The context contains various parameters for the protocol:
+    e_out:       exponent for the DH exchange producing the outgoing key
+    e_in:        exponent for the DH exchange producing the incoming key
+    peer_pub::   the public component of the peer for the incoming key
+    out:         the currently active key for sending messages
+    in:          the currently active key for receiving messages
+    in_prev:     the previously  active key for receiving messages
+
+3.1 Send
+
+A sending party updates its context if it has received a message since
+last sending or has never established contact with the receiving party
+before.
+
+First we generate a new e_out exponent. Furthermore if peer_pub is set
+(this is only true after receiving a message, not on repeated sends
+without receiving context updates in response messages):
+1. randomly generate a new e_in exponent.
+2. storing the current incoming key in the previous slot (in_prev=in)
+   This ensures, that we can still receive messages that were sent before
+   this message arrived at the peer.
+3. calculate the incoming key 'in' by peer_pub^e_in
+4. reset peer_pub - so that repeated sends without context updates
+   from incoming response messages will not change state.
+
+After updating the context we construct the packet, by calculating two
+public DH components based on e_out and e_in, and concatenating them
+with the plaintext.
+
+Finally depending on whether outgoing key is set, we either use that
+or the peers public key to encrypt the packet. The result is a nonce,
+and ciphertext. The total overhead is 80 bytes, 16 for the nonce, and
+2x32 bytes for the two public components if we use NaCl and its
+primitives.
+
+3.2 Receive
+
+Upon receipt the reverse steps are performed as in the sending:
+decrypt, unpack, update context.
+
+Decryption is depending on the availability of an incoming key. In the
+absence of it, public key crypto is used to decrypt the packet.
+
+Unpacking isolates the peers DH public components from the plaintext.
+
+We update the context by setting peer_pub to the unpacked public
+component corresponding to the peers e_out exponent. If e_out is set,
+we also compute a new outgoing key 'out' using the other unpacked
+public DH component.
+
+Finally we return the plaintext.
+
+4. Properties
+
+4.1 Bootstrapping
+
+Public key crypto is used to encrypt the first 2 messages of a
+conversation. Starting with the first answer (message #3 - in an
+optimal case with messages going in alternating directions) from the
+originally initiating party ephemeral keys are used. The originally
+answering party can start using ephemeral keys beginning from their
+second response. Again all this assumes the optimal case where the
+first four messages are sent in alternating directions.
+
+4.2 Resilience
+
+Assuming the context is persistent, the protocol allows for losing or
+sending messages repeatedly without receiving key updates, in this
+case the two-step update of the context ensures that the same keys are
+re-used on both sides until a successful key update is made. Similarly
+out-of-order messages are handled but only using the current and the
+previous key.
+
+4.3 Ephemeral Context
+
+All parts of the context are constantly changing in case of
+alternating messages. The parameters of a context are generated
+independently of the previous keys, and thus a compromised key will
+only reveal the contents of the messages encrypted with this
+compromised key - but barring any possibility for active MITM attacks
+no further keying or other information can leak.
+
+4.4 Featureless
+
+Fingerprinting of the resulting ciphertext, nonce pair is
+hard. Utilizing the fact that the nonce is fixed size we can
+concatenate the ciphertext after it, and get a random bitstream, that
+has no distinguishing features besides having no distinguising
+features. Recovery is easy, the fixed size of the nonce allows to
+separate it from the ciphertext and attempt decryption based on the
+context.
+
+5. Example message exchange with contexts
+
+|-------+------+---------+------------+--------------+-----------+-------------------------------------+-------+------+---------+-----------+--------------+-----------|
+| Eout1 | Ein1 | PEERpub | OUT        | IN           | IN_prev   | op                                  | Eout2 | Ein2 | PEERpub | OUT       | IN           | IN_prev   |
+|-------+------+---------+------------+--------------+-----------+-------------------------------------+-------+------+---------+-----------+--------------+-----------|
+| e11   |      |         |            |              |           | -> C*(CP2, g^e11+0[32]+msg)     ->  |       |      | g^e11   |           |              |           |
+| rnd   |      |         |            |              |           | -> C*(CP2, Eout1+Ein1+msg)      ->  |       |      | dh1     |           |              |           |
+|-------+------+---------+------------+--------------+-----------+-------------------------------------+-------+------+---------+-----------+--------------+-----------|
+|-------+------+---------+------------+--------------+-----------+-------------------------------------+-------+------+---------+-----------+--------------+-----------|
+| e11   |      | g^e21   | g^e22*e11  |              |           | <- C*(CP1, g^e21+g^e22+msg)      <- | e21   | e22  |         |           | g^e11*e22    |           |
+|       |      | dh1     | dh2*Eout1  |              |           | <- C*(CP1, Eout2+Ein2+msg)       <- | rnd   | rnd  |delete   |           | PEERpub*Ein2 |           |
+|-------+------+---------+------------+--------------+-----------+-------------------------------------+-------+------+---------+-----------+--------------+-----------|
+|-------+------+---------+------------+--------------+-----------+-------------------------------------+-------+------+---------+-----------+--------------+-----------|
+| e12   | e13  |         | g^e22*e11  | g^e21*e13    |           | -> C(g^e22*e11, g^e12+g^e13+msg) -> | e21   | e22  | g^e12   | g^e13*e21 | g^e11*e22    |           |
+| rnd   | rnd  | delete  |            | PEERpub*Ein1 |           | -> C(OUT1, Eout1+Ein1+msg)       -> |       |      | dh1     | dh2*Eout2 |              |           |
+|-------+------+---------+------------+--------------+-----------+-------------------------------------+-------+------+---------+-----------+--------------+-----------|
+|-------+------+---------+------------+--------------+-----------+-------------------------------------+-------+------+---------+-----------+--------------+-----------|
+| e12   | e13  | g^e23   | g^e24*e12  | g^e21*e13    |           | <- C(g^e12*e21, g^e23+g^e24+msg) <- | e23   | e24  |         | g^e13*e21 | g^e12*e24    | g^e11*e22 |
+|       |      | dh1     | dh2*Eout1  |              |           | <- C(OUT2, Eout2+Ein2+msg)       <- | rnd   | rnd  |delete   |           | PEERpub*Ein2 | IN        |
+|-------+------+---------+------------+--------------+-----------+-------------------------------------+-------+------+---------+-----------+--------------+-----------|
+|-------+------+---------+------------+--------------+-----------+-------------------------------------+-------+------+---------+-----------+--------------+-----------|
+| e14   | e15  |         | g^e24*e12  | g^e23*e15    | g^e21*e13 | -> C(g^e24*e13, g^e14+g^e15+msg) -> | e23   | e24  | g^e14   | g^e15*e23 | g^e12*e24    | g^e11*e22 |
+| rnd   | rnd  | delete  |            | PEERpub*Ein1 | IN        | -> C(OUT1,      Eout1+Ein1+msg)  -> |       |      | dh1     | dh2*Eout2 |              |           |
+|-------+------+---------+------------+--------------+-----------+-------------------------------------+-------+------+---------+-----------+--------------+-----------|
+|-------+------+---------+------------+--------------+-----------+-------------------------------------+-------+------+---------+-----------+--------------+-----------|
+| e14   | e15  | g^e25   | g^e26*e14  | g^e23*e15    | g^e21*e13 | <- C(g^e15*e23, g^e25+g^e26+msg) <- | e25   | e26  |         | g^e15*e23 | g^e14*e26    | g^e12*e24 |
+|       |      | dh1     | dh2*Eout1  |              |           | <- C(OUT2, Eout2+Ein2+msg)       <- | rnd   | rnd  |delete   |           | PEERpub*Ein2 | IN        |
+|-------+------+---------+------------+--------------+-----------+-------------------------------------+-------+------+---------+-----------+--------------+-----------|
+|-------+------+---------+------------+--------------+-----------+-------------------------------------+-------+------+---------+-----------+--------------+-----------|
+| e14   | e15  | g^e25   | g^e26*e14  | g^e23*e15    | g^e21*e13 | <- C(g^e15*e23, g^e25+g^e26+msg) <- | e25   | e26  |         | g^e15*e23 | g^e14*e26    | g^e12*e24 |
+|       |      | dh1=    | dh2*Eout1= |              |           | <- C(OUT2, Eout2+Ein2+msg)       <- |       |      |delete   |           |              |           |
+|-------+------+---------+------------+--------------+-----------+-------------------------------------+-------+------+---------+-----------+--------------+-----------|
+|-------+------+---------+------------+--------------+-----------+-------------------------------------+-------+------+---------+-----------+--------------+-----------|
+
+Legend
+
+Nonces, and decryption operations have been omitted.
+C* denotes a public key encryption
++ denotes concatenation.
+
+each pair of lines denoting the same direction list the parameters
+with variables, and then in a 2nd line a generic form if this context
+field is modified, if the 2nd line is empty the context parameter is
+unchanged.
