@@ -1,0 +1,97 @@
+kotti_calendar browser tests
+============================
+
+Setup and Login
+---------------
+
+  >>> from kotti import testing
+  >>> tools = testing.setUpFunctional(
+  ...     **{'kotti.configurators': 'kotti_calendar.kotti_configure'})
+  >>> browser = tools['Browser']()
+  >>> ctrl = browser.getControl
+
+  >>> browser.open(testing.BASE_URL + '/edit')
+  >>> "Log in" in browser.contents
+  True
+  >>> ctrl("Username or email", index=0).value = "admin"
+  >>> ctrl("Password").value = "secret"
+  >>> ctrl(name="submit").click()
+  >>> "Welcome, Administrator" in browser.contents
+  True
+
+Add a calendar
+--------------
+
+  >>> browser.getLink("Add").click()
+  >>> browser.getLink("Calendar").click()
+  >>> ctrl("Title").value = "My Calendar"
+  >>> ctrl("save").click()
+  >>> "Item was added" in browser.contents
+  True
+  >>> browser.url == testing.BASE_URL + '/my-calendar/'
+  True
+
+Add events
+----------
+
+We still have to figure out a way to add or edit events within browser tests (or webtest) due to the way the widget depends on the strange behavior of the pickadate Javascript library.
+Let's instead add them with Python for now.
+
+  >>> from datetime import datetime
+  >>> from kotti.resources import get_root
+  >>> from kotti_calendar.resources import Event
+
+  >>> calendar = get_root()['my-calendar']
+  >>> calendar['meet-with-frank'] = Event(title=u"Meet with Frank", description=u"Discuss the latest", start=datetime(2010, 12, 13, 12), end=datetime(2010, 12, 13, 13))
+  >>> calendar['day-off'] = Event(title=u"Day off", start=datetime(2010, 11, 12), all_day=True)
+
+View calendar and event
+-----------------------
+
+  >>> browser.open(testing.BASE_URL + '/my-calendar/')
+  >>> pos = browser.contents.index
+  >>> pos("Meet with Frank") < pos("Day off")
+  True
+  >>> "Dec 13, 2010 1:00:00 PM" in browser.contents
+  True
+  >>> "Nov 12, 2010" in browser.contents
+  True
+  >>> browser.getLink("Day off").click()
+  >>> "Nov 12, 2010" in browser.contents
+  True
+
+
+Edit calendar and events
+------------------------
+  >>> browser.open(testing.BASE_URL + '/my-calendar/edit')
+  >>> ctrl("Title").value = "My personal Calendar"
+  >>> ctrl("save").click()
+  >>> "My personal Calendar" in browser.contents
+  True
+
+See above...
+
+  >>> calendar['day-off'].description = u"all day long"
+  >>> browser.open(testing.BASE_URL + '/my-calendar/day-off/')
+  >>> "all day long" in browser.contents
+  True
+
+Private events should not be shown in the calendar
+--------------------------------------------------
+
+  >>> browser.open(testing.BASE_URL + '/my-calendar/')
+  >>> browser.getLink("Make Public").click()
+  >>> browser_anonymous = tools['Browser']()
+  >>> browser_anonymous.open(testing.BASE_URL + '/my-calendar/')
+  >>> "Dec 13, 2010 1:00:00 PM" in browser_anonymous.contents
+  False
+  >>> "Nov 12, 2010" in browser_anonymous.contents
+  False
+
+  >>> browser.open(testing.BASE_URL + '/my-calendar/day-off')
+  >>> browser.getLink("Make Public").click()
+  >>> browser_anonymous.open(testing.BASE_URL + '/my-calendar/')
+  >>> "Dec 13, 2010 1:00:00 PM" in browser_anonymous.contents
+  False
+  >>> "Nov 12, 2010" in browser_anonymous.contents
+  True
