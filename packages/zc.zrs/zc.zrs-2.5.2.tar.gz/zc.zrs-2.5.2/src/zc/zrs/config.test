@@ -1,0 +1,156 @@
+Configuration with ZConfig
+==========================
+
+.. On ubuntu, there seems to be some problem with cleanup of
+   linux-domain sockets created in config-old.txt.  It's sad, but
+   without the following sleep, the this test hangs when run after
+   config.txt.
+
+    >>> import time; time.sleep(.1)
+
+ZRS supports configuration using
+ZConfig.  ZRS provides a zrs directive to create storages that can
+replicate from other storages and that can be replicated from. To
+use these, you have to import zc.zrs:
+
+    >>> import os, time, ZODB.config, shutil
+    >>> primary = ZODB.config.storageFromString("""
+    ...   %import zc.zrs
+    ...
+    ...   <zrs>
+    ...      replicate-to ./primary.sock
+    ...      <filestorage>
+    ...          path primary.fs
+    ...          blob-dir primary-blobs
+    ...      </filestorage>
+    ...   </zrs>
+    ... """)
+
+In this example, we created a primary storage that listens on a
+unix-domain socket. Normally, we'd use a TCP address instead, but we
+used a unix-domain socket to avoid having to pick an unused port. :)
+
+The primary storage wraps a file storage.
+
+    >>> primary
+    <zc.zrs.primary.Primary object at 0x2aaaab0c53f8>
+
+    >>> from ZEO.tests.forker import wait_until
+    >>> wait_until("server starts", lambda: os.path.exists('primary.sock'))
+    >>> os.path.exists('primary.fs')
+    True
+
+
+Defining a secondary storage is similar:
+
+    >>> secondary = ZODB.config.storageFromString("""
+    ...   %import zc.zrs
+    ...
+    ...   <zrs>
+    ...      replicate-from ./primary.sock
+    ...      <filestorage>
+    ...          path secondary.fs
+    ...          blob-dir secondary-blobs
+    ...      </filestorage>
+    ...   </zrs>
+    ... """)
+    >>> time.sleep(.01) # Wait for server to start
+
+    >>> secondary
+    <zc.zrs.secondary.Secondary object at 0x2aaaab0e8d40>
+
+    >>> os.path.exists('secondary.fs')
+    True
+
+   There're keep-alive and check-checksum options that default to 0
+   and False:
+
+    >>> secondary._factory.keep_alive_delay
+    0
+
+    >>> secondary._factory.check_checksums
+    True
+
+We can combine a primary and a secondary by providing both
+replicate-from and replicate-to:
+
+    >>> secondary.close()
+    >>> time.sleep(.01) # Wait for close (in separate thread)
+    >>> os.remove('secondary.fs')
+    >>> shutil.rmtree('secondary-blobs')
+
+    >>> secondary = ZODB.config.storageFromString("""
+    ...   %import zc.zrs
+    ...
+    ...   <zrs>
+    ...      replicate-from ./primary.sock
+    ...      replicate-to ./secondary.sock
+    ...      keep-alive-delay 60
+    ...      <filestorage>
+    ...         path secondary.fs
+    ...         blob-dir secondary-blobs
+    ...      </filestorage>
+    ...   </zrs>
+    ... """)
+    >>> time.sleep(.01) # Wait for server to start
+
+    >>> secondary
+    <zc.zrs.secondary.Secondary object at 0x2aaaab0f5680>
+
+    >>> os.path.exists('secondary.fs')
+    True
+    >>> os.path.exists('secondary.sock')
+    True
+
+    >>> secondary._factory.keep_alive_delay
+    60
+
+Let's create a secondary secondary and commit some data to the primary storage.
+
+    >>> secondary2 = ZODB.config.storageFromString("""
+    ...   %import zc.zrs
+    ...
+    ...   <zrs>
+    ...      replicate-from ./secondary.sock
+    ...      <filestorage>
+    ...         path secondary2.fs
+    ...         blob-dir secondary2-blobs
+    ...      </filestorage>
+    ...   </zrs>
+    ... """)
+    >>> time.sleep(.01) # Wait for server to start
+
+    >>> import time, transaction, ZODB, ZODB.blob
+    >>> db = ZODB.DB(primary)
+    >>> conn = db.open()
+    >>> conn.root()[1] = conn.root().__class__()
+    >>> conn.root()[2] = ZODB.blob.Blob()
+    >>> conn.root()[2].open('w').write("some blob data")
+    >>> transaction.commit()
+
+    >>> conn.root()
+    {1: {}, 2: <ZODB.blob.Blob object at 0xb6463cec>}
+
+.. wait a little while to replicate
+
+    >>> time.sleep(1)
+
+Now, we see that we have the data replicated to our secondary
+secondary:
+
+    >>> db2 = ZODB.DB(secondary2)
+    >>> conn2 = db2.open()
+    >>> conn2.root()
+    {1: {}, 2: <ZODB.blob.Blob object at 0xb63c8c6c>}
+
+    >>> conn.root()[2].open().read()
+    'some blob data'
+
+    >>> os.path.getsize('primary.fs') == os.path.getsize('secondary2.fs')
+    True
+
+.. cleanup
+
+   >>> db2.close()
+   >>> secondary.close()
+   >>> db.close()
