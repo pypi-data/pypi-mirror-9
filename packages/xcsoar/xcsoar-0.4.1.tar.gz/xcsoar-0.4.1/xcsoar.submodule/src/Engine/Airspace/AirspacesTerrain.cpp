@@ -1,0 +1,41 @@
+/* Copyright_License {
+
+  XCSoar Glide Computer - http://www.xcsoar.org/
+  Copyright (C) 2000-2014 The XCSoar Project
+  A detailed list of copyright holders can be found in the file "AUTHORS".
+
+  This program is free software; you can redistribute it and/or
+  modify it under the terms of the GNU General Public License
+  as published by the Free Software Foundation; either version 2
+  of the License, or (at your option) any later version.
+
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this program; if not, write to the Free Software
+  Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
+}
+*/
+
+#include "Airspaces.hpp"
+#include "Terrain/RasterTerrain.hpp"
+
+void 
+Airspaces::SetGroundLevels(const RasterTerrain &terrain)
+{
+  for (auto &v : airspace_tree) {
+    // If we don't need the ground level we don't have to calculate it
+    if (!v.NeedGroundLevel())
+      continue;
+
+    FlatGeoPoint c_flat = v.GetCenter();
+    GeoPoint g = task_projection.Unproject(c_flat);
+    short h = terrain.GetTerrainHeight(g);
+    if (!RasterBuffer::IsSpecial(h))
+      v.SetGroundLevel((fixed)h);
+  }
+}
+
