@@ -1,0 +1,340 @@
+<tal:block tal:define="inline view/isInline;
+                        enabled_chart python: True;
+                        chart view/get_chart;
+                        chart_id chart/id;
+                        chart_name chart/name;
+                        title view/context/Title;
+                        url view/context/absolute_url">
+<!DOCTYPE html>
+<html tal:condition="not:inline" tal:define="dummy python:request.RESPONSE.setHeader('X-UA-Compatible', 'IE=edge,chrome=1');">
+    <head>
+        <link href="collective.js.jqueryui.custom.min.css" rel="stylesheet" type="text/css"/>
+        <link href="++resource++eea.googlecharts.view.css" rel="stylesheet" type="text/css"/>
+        <link href="++resource++eea.googlecharts.print.css" rel="stylesheet" type="text/css" media="print"/>
+        <link href="++resource++eea.googlecharts.embed.css" rel="stylesheet" type="text/css"/>
+        <link tal:attributes="href string:${context/portal_url}/embed_custom.css" rel="stylesheet" type="text/css" tal:condition="exists:context/embed_custom.css"/>
+        <style type="text/css" tal:content="view/get_customstyle">
+        </style>
+        <meta property="og:type"   content="article" />
+        <meta property="og:image" tal:attributes="content string:${url}/${chart_id}.png/download" />
+        <meta property="og:url" tal:attributes="content string:${url}/embed-chart?chart=${chart_id}" />
+        <meta property="og:title" tal:attributes="content string:${title}" />
+        <script type="text/javascript" tal:attributes="src view/jquery_src"></script>
+        <script type="text/javascript" src="https://www.google.com/jsapi"></script>
+        <title tal:content="title"></title>
+    </head>
+    <body onhashchange="hashchanged();">
+
+      <metal:chart use-macro="here/embed-chart/macros/chart"/>
+    <div>
+        <!--? Data Sources -->
+        <tal:data tal:define="info view/context/@@data.info | python:{}" tal:condition="info">
+            <div class="googlechart-datasources-info">
+                <tal:provenances
+                        define="provenances info/provenances | python:[]">
+                    <tal:length define="indicator python:view.get_backward_relation('AssessmentPart');
+                                        has_provenances python:len(provenances);
+                                        has_many python: has_provenances > 1 or has_provenances >= 1 and indicator;
+                                        outerhtmltag python:'ul' if has_many else 'div';
+                                        htmltag python: 'li' if has_many else 'span class=googlechart-provenance-definition'">
+                    <p class="googlechart-datasource" tal:condition="python: has_provenances or indicator"><strong>Data sources:</strong></p>
+                    <p tal:replace="structure string:<$outerhtmltag id='googlechart-provenance-definitions' class='table-cell'>"></p>
+                        <tal:provenance repeat="provenance provenances">
+                            <li tal:replace="structure string:<$htmltag>"></li>
+                                <tal:owner
+                                        define="owner provenance/owner | python:{}; owner_url owner/url | nothing"
+                                        condition="owner_url" >
+                                    <span tal:define="acronym python:owner.get('acronym') or owner.get('title') or owner_url"
+                                          tal:content="python:acronym + '.'" />
+                                </tal:owner>
+
+                                <tal:source
+                                        define="source provenance/source | python:{}; source_url source/url | nothing"
+                                        condition="source_url">
+                                    <a tal:attributes="href source/url"
+                                            tal:content="python:source.get('title') or source_url" />
+                                </tal:source>
+
+                            <li tal:replace="structure string:</$htmltag>"></li>
+                        </tal:provenance>
+                        <!--? Indicator -->
+                        <li tal:condition="indicator">
+                            <span>EEA &ndash; </span>
+                            <a tal:attributes="href indicator/absolute_url; title indicator/Title"
+                                    tal:content="python:'Indicator ' + indicator.get_codes()[-1]" target="_top">content</a>
+                        </li>
+                        <!--? /Indicator -->
+                    <p tal:replace="structure string:</${outerhtmltag}>"></p>
+                    </tal:length>
+                </tal:provenances>
+            </div>
+        </tal:data>
+        <!--? /Data Sources -->
+    </div>
+        <script type="text/javascript" src="++resource++jquery-ui.min.js"></script>
+        <script type="text/javascript" src="++resource++collective.js.underscore/underscore.min.js"></script>
+        <script type="text/javascript" src="++resource++json2.js"></script>
+        <script type="text/javascript" src="++resource++eea.googlecharts.chart.js"></script>
+        <script type="text/javascript" src="++resource++eea.googlecharts.datatable.js"></script>
+        <script type="text/javascript" src="++resource++eea.googlecharts.embed_common.js"></script>
+        <script type="text/javascript" src="++resource++eea.googlecharts.embed_chart.js"></script>
+        <script type="text/javascript" src="++resource++eea.googlecharts.custom_filters.js"></script>
+    </body>
+</html>
+
+<tal:block tal:condition="inline">
+    <metal:chart use-macro="here/embed-chart/macros/chart"/>
+</tal:block>
+
+</tal:block>
+<tal:block tal:define="enabled_chart python:False">
+<metal:chart define-macro="chart" tal:condition="enabled_chart">
+    <tal:block tal:define="chart view/get_chart; vhash view/get_visualization_hash">
+    <script type="text/javascript"
+        tal:define="
+            sortFilter python: chart.get('sortFilter','__disabled__');
+            row_filters python: chart.get('row_filters','{}');
+            sortBy python: chart.get('sortBy','');
+            sortAsc python: chart.get('sortAsc','asc');
+            columnFilters python: view.get_columnfilters_js(chart);
+            ChartNotes python: view.get_all_notes_json();
+            GoogleChartsConfig view/get_chart_json;
+            unpivotSettings python:view.get_unpivotSettings(chart);
+            isPrint python:1 if ('pdf.' in request['URL0'] or '.pdf' in request['URL0']) else 0;"
+        tal:content="structure string:
+            EEAGoogleCharts = {};
+            EEAGoogleCharts.embed = {};
+            var chart_columns_$vhash = ${chart/columns};
+            var merged_rows_$vhash = ${chart/data};
+            var available_columns_$vhash = ${chart/available_columns};
+            var chart_json_$vhash = ${chart/config};
+            var width_$vhash = ${chart/chartWidth};
+            var height_$vhash = ${chart/chartHeight};
+            var name_$vhash = '${chart_name}';
+            var chart_options_$vhash = ${chart/options};
+            var chart_filterposition_$vhash = ${chart/filterposition}
+            var chart_filters_$vhash = ${chart/filters};
+            window.EEAGoogleCharts.embed.hash = '$vhash';
+            window.EEAGoogleCharts.embed.baseurl_$vhash = '${url}';
+            window.EEAGoogleCharts.embed.chart_id_$vhash = '${chart_id}';
+            jQuery(document).trigger('googlecharts.embed');
+            var qr_pos_$vhash = '${view/qr_position}';
+            var qr_size_$vhash = '${view/qr_size}';
+            var wm_pos_$vhash = '${view/wm_position}';
+            var wm_path_$vhash = '${view/wm_path}';
+            var iframe_qr_settings_$vhash = ${view/qr_iframe_settings};
+            var iframe_wm_settings_$vhash = ${view/wm_iframe_settings};
+            var main_title_$vhash = '${view/get_maintitle}';
+            var sortFilter_$vhash = '${sortFilter}';
+            var row_filters_str_$vhash = '$row_filters';
+            var sortBy_$vhash = '$sortBy';
+            var sortAsc_str_$vhash = '$sortAsc';
+            var chart_columnFilters_$vhash = $columnFilters;
+            var GoogleChartsConfig_$vhash = $GoogleChartsConfig;
+            var isInline_$vhash = '$inline';
+            var unpivotSettings_$vhash = $unpivotSettings;
+            var isPrint = $isPrint;
+            var ChartNotes_$vhash = $ChartNotes;
+
+            var googlechart_config_array_$vhash = [];
+            var settings_$vhash = [];
+            var other_options_$vhash = {};
+            function getIframeSizes(){
+                var resizableCharts = ['LineChart',
+                        'ComboChart',
+                        'AreaChart',
+                        'SteppedAreaChart',
+                        'ColumnChart',
+                        'BarChart',
+                        'ScatterChart',
+                        'BubbleChart',
+                        'PieChart'];
+
+                var settings = {
+                    chart:{
+                        top:0,
+                        left:0,
+                        width:0,
+                        height:0
+                    },
+                    chartArea:{
+                        top:'19.1%',
+                        left:'19.1%',
+                        width:'61.8%',
+                        height:'61.8%'
+                    },
+                }
+                var iframe_chart = jQuery('.googlechart_view');
+                settings.chart.top = iframe_chart.position().top;
+                settings.chart.left = iframe_chart.position().left;
+                settings.chart.width = iframe_chart.width();
+                settings.chart.height = iframe_chart.height();
+                if (settings_$vhash[7].chartArea !== undefined){
+                    settings.chartArea = settings_$vhash[7].chartArea;
+                }
+                if (resizableCharts.indexOf(settings_$vhash[1].chartType) === -1){
+                    settings.chartArea.width = 0;
+                    settings.chartArea.height = 0;
+                }
+                return settings;
+            }
+            google.setOnLoadCallback(function(){
+                settings_$vhash.push(GoogleChartsConfig_$vhash[0].id);
+                settings_$vhash.push(chart_json_$vhash);
+                settings_$vhash.push(chart_columns_$vhash);
+                settings_$vhash.push(chart_filters_$vhash);
+                settings_$vhash.push(width_$vhash);
+                settings_$vhash.push(height_$vhash);
+                settings_$vhash.push(chart_filterposition_$vhash);
+                settings_$vhash.push(chart_options_$vhash);
+                settings_$vhash.push(null);
+                settings_$vhash.push(sortFilter_$vhash);
+                settings_$vhash.push(null);
+                settings_$vhash.push(row_filters_str_$vhash);
+                settings_$vhash.push(sortBy_$vhash);
+                settings_$vhash.push(sortAsc_str_$vhash);
+                settings_$vhash.push(chart_columnFilters_$vhash);
+                if (isInline_$vhash === 'True'){
+                    var tmp_view_id = '#googlechart_dashboard_$vhash';
+                    var tmp_chart_id = GoogleChartsConfig_$vhash[0].id;
+                    var custom_settings = jQuery(tmp_view_id).closest('dd').find('.chart-custom-settings');
+                    custom_width = custom_settings.attr('chart_width');
+                    custom_height = custom_settings.attr('chart_height');
+                    custom_chartAreaWidth = custom_settings.attr('chart_chartAreaWidth');
+                    custom_chartAreaHeight = custom_settings.attr('chart_chartAreaHeight');
+                    custom_chartAreaTop = custom_settings.attr('chart_chartAreaTop');
+                    custom_chartAreaLeft = custom_settings.attr('chart_chartAreaLeft');
+                    if (custom_width !== ''){
+                        settings_$vhash[4] = parseInt(custom_width, 0);
+                    }
+                    if (custom_height !== ''){
+                        settings_$vhash[5] = parseInt(custom_height, 0);
+                    }
+                    if (custom_chartAreaWidth !== ''){
+                        var tmp_chartArea = {}
+                        tmp_chartArea = {
+                            width: custom_chartAreaWidth,
+                            height: custom_chartAreaHeight,
+                            top: custom_chartAreaTop,
+                            left: custom_chartAreaLeft
+                        }
+                        settings_$vhash[7].chartArea = tmp_chartArea;
+                    }
+                }
+                settings_$vhash.push(unpivotSettings_$vhash);
+                settings_$vhash.push(ChartNotes_$vhash);
+                guessSeries(settings_$vhash);
+                googlechart_config_array_$vhash.push(settings_$vhash);
+
+                other_options_$vhash = {
+                    merged_rows: merged_rows_$vhash,
+                    available_columns: available_columns_$vhash,
+                    googlechart_config_array: googlechart_config_array_$vhash,
+                    GoogleChartsConfig: GoogleChartsConfig_$vhash,
+                    main_title: main_title_$vhash,
+                    baseurl: window.EEAGoogleCharts.embed.baseurl_$vhash,
+                    qr_pos: qr_pos_$vhash,
+                    qr_size: qr_size_$vhash,
+                    wm_pos: wm_pos_$vhash,
+                    wm_path: wm_path_$vhash,
+                    iframe_qr_settings: iframe_qr_settings_$vhash,
+                    iframe_wm_settings: iframe_wm_settings_$vhash,
+                    vhash: '$vhash',
+                    name: name_$vhash,
+                    isInline: isInline_$vhash
+                };
+
+                if(isPrint){
+                    drawChart(settings_$vhash, other_options_$vhash);
+                }else if(jQuery('#googlechart_dashboard_$vhash').is(':visible')){
+                        if (isInline_$vhash !== 'True'){
+                            drawChart(settings_$vhash, other_options_$vhash);
+                            jQuery(document).trigger('googlecharts.embed.ready');
+                        }
+                        else{
+                            jQuery('#googlechart_dashboard_$vhash')
+                                .addClass('not_visible')
+                                .attr('google_hash', '$vhash')
+                                .data('settings', settings_$vhash)
+                                .data('other_options', other_options_$vhash);
+                        }
+                }
+            });
+            function hashchanged(){
+                if (jQuery('#googlechart_dashboard_$vhash').is(':visible')){
+                    drawChart(settings_$vhash, other_options_$vhash);
+                }
+            };
+
+            ">
+    </script>
+
+    <div tal:attributes="id string:googlechart_dashboard_$vhash" class="embedded-dashboard googlechart_dashboard isChart">
+    </div>
+        <!--? Share box -->
+    <div class="googlechart-share-box" metal:define-macro="share" tal:condition="python:not inline">
+        <div class="googlechart-share" style="opacity:0;">
+            <div class="pull-right">
+                <!--? Save -->
+                <div class="pull-left googlechart-downloads">
+                    <a href="#" class="open-dialog" data-dialog="#download-dialog"><span  class="sprite sprite-save"></span>Save</a>
+                    <div class="googlecharts-embed-dialog" id="download-dialog">
+                        <p><strong>Original Data</strong></p>
+                        <a tal:attributes="href string:${url}/download.csv">CSV</a>
+                        <a tal:attributes="href string:${url}/download.tsv">TSV</a>
+                        <p><strong>Image formats</strong></p>
+                        <a tal:attributes="href string:${chart_id}.png/download" target="_top">PNG</a>
+                        <a tal:attributes="href string:${chart_id}.svg/download" target="_top">SVG</a>
+
+                        <p><strong>Formats suitable for machine-to-machine communication</strong></p>
+                        <a tal:attributes="href string:${url}/download.json" target="_top">JSON</a>
+                        <a tal:attributes="href string:${url}/download.exhibit" target="_top">Exhibit JSON</a>
+                        <a tal:attributes="href string:${url}/download.xml" target="_top">XML</a>
+                        <a tal:attributes="href string:${url}/download.schema.xml" target="_top">
+                            XML with Schema
+                        </a>
+                    </div>
+                </div>
+                <!--? /Save -->
+
+                <!--? Explore Data -->
+                <div class="pull-left">
+                    <a class="go-to-original-link"
+                            tal:attributes="href url"
+                            i18n:translate="" target="_top"><span class="sprite sprite-explore"></span>Explore</a>
+                </div>
+                <!--? /Explore Data -->
+
+                <!--? Share -->
+                <div class="pull-left">
+                    <a href="#" class="open-dialog" data-dialog="#share-dialog"><span  class="sprite sprite-share"></span>Share</a>
+                    <div class="googlecharts-embed-dialog" id="share-dialog">
+                        <p><strong>Embed code:</strong></p>
+                        <textarea class="share-dialog-text" cols="69" rows="5"> </textarea>
+                        <p><strong>Share:</strong></p>
+                        <div class="googlechart googlechart-social">
+                            <a href="https://twitter.com/intent/tweet?url=" class="share-button share-button-twitter" target="_blank">Twitter</a>
+                            <a href="https://www.facebook.com/sharer/sharer.php?u=" class="share-button share-button-facebook" target="_blank">Facebook</a>
+                            <a href="https://plus.google.com/share?url=" class="share-button share-button-gplus" target="_blank">Google Plus</a>
+
+                        </div>
+                    </div>
+                </div>
+                <!--? /Share -->
+
+                <!--? Enlarge -->
+                <div class="pull-left">
+                    <a href="#" class="googlechart-enlarge" target="_top"><span  class="sprite sprite-enlarge"></span>Enlarge</a>
+                </div>
+                <!--? Enlarge -->
+
+            </div>
+
+        </div>
+    </div>
+        <!--? /Share box -->
+
+    </tal:block>
+
+</metal:chart>
+</tal:block>
