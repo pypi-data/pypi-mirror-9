@@ -1,0 +1,210 @@
+DropTheBeat
+===========
+
+Recommend songs to your friends and download their shared files to your
+computer.
+
+| |Build Status|
+| |Coverage Status|
+| |Scrutinizer Code Quality|
+| |PyPI Version|
+| |PyPI Downloads|
+
+Features
+--------
+
+-  Recommend songs to your friends
+-  Get a list of songs shared by your friends
+-  Download the songs to your computer
+
+|screenshot|
+
+Getting Started
+===============
+
+Requirements
+------------
+
+-  Python 3.3+
+
+Installation
+------------
+
+DropTheBeat can be installed with pip:
+
+::
+
+    $ pip3 install DropTheBeat
+
+or directly from the source code:
+
+::
+
+    $ git clone https://github.com/jacebrowning/dropthebeat.git
+    $ cd dropthebeat
+    $ python3 setup.py install
+
+Initial Setup
+-------------
+
+#. Create a folder named 'DropTheBeat' in your Dropbox
+#. Share this folder with your friends
+
+Graphical Interface
+===================
+
+Start the application:
+
+::
+
+    $ DropTheBeat
+
+Command-line Interface
+======================
+
+Create your user folder:
+
+::
+
+    $ dtb --new <"First Last">
+
+Recommend a song to friends:
+
+::
+
+    $ dtb --share <path/to/a/song>
+    $ dtb --share <path/to/a/song> --users "John Doe" "Jane Doe"
+
+Display recommended songs:
+
+::
+
+    $ dtb --incoming
+    $ dtb --outoing
+
+Download recommended songs:
+
+::
+
+    $ dtb
+    $ dtb --daemon
+
+Launch the GUI:
+
+::
+
+    $ dtb --gui
+
+For Contributors
+================
+
+Requirements
+------------
+
+-  Make:
+
+   -  Windows: http://cygwin.com/install.html
+   -  Mac: https://developer.apple.com/xcode
+   -  Linux: http://www.gnu.org/software/make (likely already installed)
+
+-  virtualenv: https://pypi.python.org/pypi/virtualenv#installation
+-  Pandoc: http://johnmacfarlane.net/pandoc/installing.html
+-  Graphviz: http://www.graphviz.org/Download.php
+
+Installation
+------------
+
+Create a virtualenv:
+
+::
+
+    $ make env
+
+Run the tests:
+
+::
+
+    $ make test
+    $ make tests  # includes integration tests
+
+Build the documentation:
+
+::
+
+    $ make doc
+
+Run static analysis:
+
+::
+
+    $ make pep8
+    $ make pep257
+    $ make pylint
+    $ make check  # includes all checks
+
+Prepare a release:
+
+::
+
+    $ make dist  # dry run
+    $ make upload
+
+Launch the GUI:
+
+::
+
+    $ make gui
+
+.. |Build Status| image:: http://img.shields.io/travis/jacebrowning/dropthebeat/master.svg
+   :target: https://travis-ci.org/jacebrowning/dropthebeat
+.. |Coverage Status| image:: http://img.shields.io/coveralls/jacebrowning/dropthebeat/master.svg
+   :target: https://coveralls.io/r/jacebrowning/dropthebeat
+.. |Scrutinizer Code Quality| image:: http://img.shields.io/scrutinizer/g/jacebrowning/dropthebeat.svg
+   :target: https://scrutinizer-ci.com/g/jacebrowning/dropthebeat/?branch=master
+.. |PyPI Version| image:: http://img.shields.io/pypi/v/DropTheBeat.svg
+   :target: https://pypi.python.org/pypi/DropTheBeat
+.. |PyPI Downloads| image:: http://img.shields.io/pypi/dm/DropTheBeat.svg
+   :target: https://pypi.python.org/pypi/DropTheBeat
+.. |screenshot| image:: docs/assets/screenshot.png
+
+Changelog
+=========
+
+0.1 (2015/01/20)
+----------------
+
+- Added the sharing location to the GUI
+- Added scrollbars to the GUI
+- Bug fixes
+
+0.0.6 (2014/01/25)
+------------------
+
+- General cleanup and bug fixes.
+
+0.0.5 (2013/12/07)
+------------------
+
+- Fixed a bug in the GUI for old info.yml format.
+
+0.0.4 (2013/12/06)
+------------------
+
+-  With the CLI dtb.log is created with the downloads.
+
+0.0.3 (2013/11/26)
+------------------
+
+- Bug fixes. Better handling of empty directories.
+
+0.0.2 (2013/11/25)
+------------------
+
+- Now supporting multiple users and download paths.
+
+0.0.1 (2013/11/22)
+------------------
+
+- Initial release.
+
+
