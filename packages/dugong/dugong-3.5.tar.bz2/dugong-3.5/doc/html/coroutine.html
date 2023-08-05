@@ -1,0 +1,249 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>Coroutine Support &mdash; dugong 1.0 documentation</title>
+    
+    <link rel="stylesheet" href="_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    './',
+        VERSION:     '1.0',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="top" title="dugong 1.0 documentation" href="index.html" />
+    <link rel="next" title="Known Issues" href="issues.html" />
+    <link rel="prev" title="100-Continue Support" href="expect100.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="issues.html" title="Known Issues"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="expect100.html" title="100-Continue Support"
+             accesskey="P">previous</a> |</li>
+        <li><a href="index.html">dugong 1.0 documentation</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="coroutine-support">
+<h1>Coroutine Support<a class="headerlink" href="#coroutine-support" title="Permalink to this headline">¶</a></h1>
+<p>The last point warrants slightly more explanation. When called with
+<tt class="docutils literal"><span class="pre">via_cofun=True</span></tt>, the <a class="reference internal" href="api.html#dugong.HTTPConnection.send_request" title="dugong.HTTPConnection.send_request"><tt class="xref py py-obj docutils literal"><span class="pre">send_request</span></tt></a> method does not
+send the request itself, but prepares and returns a cofunction (in
+form of a Python generator) that performs the actual transmission.  A
+cofunction is entered and resumed by passing it to the built-in <a class="reference external" href="http://docs.python.org/3/library/functions.html#next" title="(in Python v3.3)"><tt class="xref py py-obj docutils literal"><span class="pre">next</span></tt></a>
+function. Execution of the cofunction is completed (and all data has
+been sent) when the <a class="reference external" href="http://docs.python.org/3/library/functions.html#next" title="(in Python v3.3)"><tt class="xref py py-obj docutils literal"><span class="pre">next</span></tt></a> call raises <a class="reference external" href="http://docs.python.org/3/library/exceptions.html#StopIteration" title="(in Python v3.3)"><tt class="xref py py-obj docutils literal"><span class="pre">StopIteration</span></tt></a>. This means
+that a cofunction can be conviently used as iterator in a for loop:
+whenever the cofunction suspends, the loop body will be executed, and
+then the coroutine resumed.</p>
+<p>The confunction based API is suitable to avoid deadlocks, because the
+cofunctions returned by this class will suspend sending request data as soon
+as (even partial) response data has been received from the server. To avoid
+congestion of the transmit buffers (and eventual deadlock), the caller is
+expected to read the available response data (using one of the <tt class="docutils literal"><span class="pre">read*</span></tt>
+methods) before resuming the cofunction.</p>
+<p>In code, this looks as follows:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="n">documents</span> <span class="o">=</span> <span class="p">[</span> <span class="s">&#39;/file_{}.html&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span> <span class="p">]</span>
+<span class="n">conn</span> <span class="o">=</span> <span class="n">HTTPConnection</span><span class="p">(</span><span class="s">&#39;www.server.com&#39;</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">read_response</span><span class="p">():</span>
+    <span class="n">nonlocal</span> <span class="n">out_fh</span>
+    <span class="k">if</span> <span class="n">conn</span><span class="o">.</span><span class="n">get_current_response</span><span class="p">():</span>
+        <span class="c"># Active response, so we are reading body</span>
+        <span class="n">out_fh</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">conn</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="mi">8192</span><span class="p">))</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="c"># No active response</span>
+        <span class="p">(</span><span class="n">method</span><span class="p">,</span> <span class="n">url</span><span class="p">,</span> <span class="n">status</span><span class="p">,</span> <span class="n">reason</span><span class="p">,</span> <span class="n">header</span><span class="p">)</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">read_response</span><span class="p">()</span>
+        <span class="k">assert</span> <span class="n">status</span> <span class="o">==</span> <span class="mi">200</span>
+        <span class="n">out_fh</span> <span class="o">=</span> <span class="nb">open</span><span class="p">(</span><span class="n">url</span><span class="p">[</span><span class="mi">1</span><span class="p">:],</span> <span class="s">&#39;w&#39;</span><span class="p">)</span>
+
+<span class="c"># Try to send all the requests...</span>
+<span class="k">for</span> <span class="n">doc</span> <span class="ow">in</span> <span class="n">documents</span><span class="p">:</span>
+    <span class="n">cofun</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">send_request</span><span class="p">(</span><span class="s">&#39;GET&#39;</span><span class="p">,</span> <span class="n">doc</span><span class="p">,</span> <span class="n">via_cofun</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">cofun</span><span class="p">:</span> <span class="c"># value of _ is irrelevant and undefined</span>
+        <span class="c"># ..but interrupt if partial response data is available</span>
+        <span class="n">read_response</span><span class="p">()</span>
+
+<span class="c"># All requests send, now read rest of responses</span>
+<span class="k">while</span> <span class="n">conn</span><span class="o">.</span><span class="n">response_pending</span><span class="p">():</span>
+    <span class="n">read_response</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>If request body data needs to be transmitted as well, a bit more work
+is needed. In principle, the <a class="reference internal" href="api.html#dugong.HTTPConnection.write" title="dugong.HTTPConnection.write"><tt class="xref py py-obj docutils literal"><span class="pre">write</span></tt></a> method could
+return a cofunction as well. However, this typically does not make
+sense as <a class="reference internal" href="api.html#dugong.HTTPConnection.write" title="dugong.HTTPConnection.write"><tt class="xref py py-obj docutils literal"><span class="pre">write</span></tt></a> itself is already called repeatedly
+until all data has been written. Instead, <a class="reference internal" href="api.html#dugong.HTTPConnection.write" title="dugong.HTTPConnection.write"><tt class="xref py py-obj docutils literal"><span class="pre">write</span></tt></a>
+therefore accepts a <em>partial=True</em> argument, which causes it to write
+only as much data as currently fits into the transmit buffer (the
+actual number of bytes written is returned). As long as a prior
+<a class="reference external" href="http://docs.python.org/3/library/select.html#module-select" title="(in Python v3.3)"><tt class="xref py py-obj docutils literal"><span class="pre">select</span></tt></a> indicates that the connection is ready for writing, calls to
+<a class="reference internal" href="api.html#dugong.HTTPConnection.write" title="dugong.HTTPConnection.write"><tt class="xref py py-obj docutils literal"><span class="pre">write</span></tt></a> (with <tt class="docutils literal"><span class="pre">partial=True</span></tt>) are then guaranteed
+not to block.</p>
+<p>For example, a number of large files could be uploaded using pipelining with
+the following code:</p>
+<div class="highlight-python"><pre>from select import select
+from http.client import NO_CONTENT
+
+files = [ &#x27;file_{}.tgz&#x27;.format(x) for x range(10) ]
+conn = HTTPConnection(&#x27;www.server.com&#x27;)
+
+def read_response():
+    resp = conn.read_response()
+    assert resp.status == NO_CONTENT
+    assert conn.read(42) == b&#x27;&#x27;
+
+for name in files:
+    cofun = conn.send_request(&#x27;PUT&#x27;, &#x27;/&#x27; + name, via_cofun=True,
+                              body=BodyFollowing(os.path.getsize(name)))
+    for _ in cofun:
+        read_response()
+
+    with open(name, &#x27;rb&#x27;) as fh:
+        buf = b&#x27;&#x27;
+        while True:
+            (writeable, readable, _) = select((conn.socket_fileno(),),
+                                              (conn.socket_fileno(),), ())
+            if readable:
+                read_response()
+
+            if not writeable:
+                continue
+
+            if not buf:
+                buf = fh.read(8192)
+                if not buf:
+                    break
+
+            len_ = conn.write(buf, partial=True)
+            buf = buf[len_:]
+
+# All requests sent, now read rest of responses
+while conn.response_pending():
+    read_response()</pre>
+</div>
+<p>Since sending a file-like object as the request body is a rather
+common use case, there actually is a convenience
+<tt class="xref py py-obj docutils literal"><span class="pre">co_sendfile</span></tt> method that provides a cofunction for
+this special case. Using <tt class="xref py py-obj docutils literal"><span class="pre">co_sendfile</span></tt>, the outer loop
+in the above code can be written as:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">files</span><span class="p">:</span>
+    <span class="n">cofun</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">send_request</span><span class="p">(</span><span class="s">&#39;PUT&#39;</span><span class="p">,</span> <span class="s">&#39;/&#39;</span> <span class="o">+</span> <span class="n">name</span><span class="p">,</span> <span class="n">via_cofun</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span>
+                              <span class="n">body</span><span class="o">=</span><span class="n">BodyFollowing</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">getsize</span><span class="p">(</span><span class="n">name</span><span class="p">)))</span>
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">cofun</span><span class="p">:</span>
+        <span class="n">read_response</span><span class="p">()</span>
+
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="s">&#39;rb&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
+        <span class="n">cofun</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">co_sendfile</span><span class="p">(</span><span class="n">fh</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">cofun</span><span class="p">:</span>
+            <span class="n">read_response</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>The use of coroutines and <a class="reference external" href="http://docs.python.org/3/library/select.html#module-select" title="(in Python v3.3)"><tt class="xref py py-obj docutils literal"><span class="pre">select</span></tt></a> allows pipelining with low latency
+and high throughput. However, it should be noted that even when using
+the techniques described above <a class="reference internal" href="api.html#dugong.HTTPConnection" title="dugong.HTTPConnection"><tt class="xref py py-obj docutils literal"><span class="pre">HTTPConnection</span></tt></a> instances do not
+provide a fully non-blocking API. Both the <a class="reference internal" href="api.html#dugong.HTTPConnection.read" title="dugong.HTTPConnection.read"><tt class="xref py py-obj docutils literal"><span class="pre">read</span></tt></a> and
+<a class="reference internal" href="api.html#dugong.HTTPConnection.read_response" title="dugong.HTTPConnection.read_response"><tt class="xref py py-obj docutils literal"><span class="pre">read_response</span></tt></a> methods may still block if
+insufficient data is available in the receive buffer. This is because
+<a class="reference internal" href="api.html#dugong.HTTPConnection.read_response" title="dugong.HTTPConnection.read_response"><tt class="xref py py-obj docutils literal"><span class="pre">read_response</span></tt></a> always reads the entire response
+header, and <a class="reference internal" href="api.html#dugong.HTTPConnection.read" title="dugong.HTTPConnection.read"><tt class="xref py py-obj docutils literal"><span class="pre">read</span></tt></a> always retrieves chunk headers
+completely. It is expected that this will not significantly impact
+throughput, as response headers are typically short enough to be
+transmitted in a single TCP packet, and the likelihood of a chunk
+header being split among two packets is very small.</p>
+<p>It is also important that <a class="reference external" href="http://docs.python.org/3/library/select.html#module-select" title="(in Python v3.3)"><tt class="xref py py-obj docutils literal"><span class="pre">select</span></tt></a> should only be used with
+<a class="reference internal" href="api.html#dugong.HTTPConnection" title="dugong.HTTPConnection"><tt class="xref py py-obj docutils literal"><span class="pre">HTTPConnection</span></tt></a> instances to avoid congestion when pipelining
+multiple requests, i.e. to interrupt transmitting request data when
+response data is available. In particular, a <a class="reference external" href="http://docs.python.org/3/library/select.html#module-select" title="(in Python v3.3)"><tt class="xref py py-obj docutils literal"><span class="pre">select</span></tt></a> call MUST NOT
+must not be used to wait for incoming data. This can lead to a
+deadlock, since server responses are buffered internally by the
+<a class="reference internal" href="api.html#dugong.HTTPConnection" title="dugong.HTTPConnection"><tt class="xref py py-obj docutils literal"><span class="pre">HTTPConnection</span></tt></a> instance and may thus be available for retrieval even
+if <a class="reference external" href="http://docs.python.org/3/library/select.html#module-select" title="(in Python v3.3)"><tt class="xref py py-obj docutils literal"><span class="pre">select</span></tt></a> reports that no data is available for reading from the
+socket.</p>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper"><h3><a href="index.html">Table Of Contents</a></h3>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="intro.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="expect100.html">100-Continue Support</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="">Coroutine Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="issues.html">Known Issues</a></li>
+<li class="toctree-l1"><a class="reference internal" href="whatsnew.html">Changelog</a></li>
+</ul>
+
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="expect100.html"
+                        title="previous chapter">100-Continue Support</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="issues.html"
+                        title="next chapter">Known Issues</a></p>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="issues.html" title="Known Issues"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="expect100.html" title="100-Continue Support"
+             >previous</a> |</li>
+        <li><a href="index.html">dugong 1.0 documentation</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2013-2014, Nikolaus Rath.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.
+    </div>
+  </body>
+</html>

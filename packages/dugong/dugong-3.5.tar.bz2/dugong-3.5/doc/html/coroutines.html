@@ -1,0 +1,372 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>Coroutine API &mdash; Dugong 3.5 documentation</title>
+    
+    <link rel="stylesheet" href="_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    './',
+        VERSION:     '3.5',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="top" title="Dugong 3.5 documentation" href="index.html" />
+    <link rel="next" title="Known Issues" href="issues.html" />
+    <link rel="prev" title="API Reference" href="api.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="issues.html" title="Known Issues"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="api.html" title="API Reference"
+             accesskey="P">previous</a> |</li>
+        <li><a href="index.html">Dugong 3.5 documentation</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="coroutine-api">
+<span id="coroutines"></span><h1>Coroutine API<a class="headerlink" href="#coroutine-api" title="Permalink to this headline">¶</a></h1>
+<p>This section assumes some basic familiarity with coroutines. If you
+don&#8217;t know what they are, you are missing out a lot and should read up
+on them right away (e.g. on <a class="reference external" href="Wikipedia_Coroutine">Wikipedia</a>, <a class="reference external" href="http://legacy.python.org/dev/peps/pep-0342/">PEP
+342</a>, <a class="reference external" href="http://legacy.python.org/dev/peps/pep-0380/">PEP 380</a> and <a class="reference external" href="http://dabeaz.com/coroutines/">dabeaz.com</a>).</p>
+<p>To refresh your memory: coroutines in Python are generators, and are
+obtained by calling generator functions (i.e, functions that use
+<tt class="docutils literal"><span class="pre">yield</span></tt> in their definiton). A coroutine can be resumed by passing
+it to the built-in <a class="reference external" href="http://docs.python.org/3/library/functions.html#next" title="(in Python v3.4)"><tt class="xref py py-obj docutils literal"><span class="pre">next</span></tt></a> function, or calling its <a class="reference external" href="http://docs.python.org/3/reference/expressions.html#generator.send" title="(in Python v3.4)"><tt class="xref py py-obj docutils literal"><span class="pre">send</span></tt></a>
+method.  A coroutine can pass the control flow back to the caller by
+<a class="reference external" href="http://docs.python.org/3/reference/expressions.html#yieldexpr" title="(in Python v3.4)"><em class="xref std std-ref">yielding</em></a> values using the <tt class="docutils literal"><span class="pre">yield</span></tt>
+expression. When the coroutine eventually terminates, the last call to
+<a class="reference external" href="http://docs.python.org/3/library/functions.html#next" title="(in Python v3.4)"><tt class="xref py py-obj docutils literal"><span class="pre">next</span></tt></a> or <a class="reference external" href="http://docs.python.org/3/reference/expressions.html#generator.send" title="(in Python v3.4)"><tt class="xref py py-obj docutils literal"><span class="pre">send</span></tt></a> will raise a <a class="reference external" href="http://docs.python.org/3/library/exceptions.html#StopIteration" title="(in Python v3.4)"><tt class="xref py py-obj docutils literal"><span class="pre">StopIteration</span></tt></a> exception,
+whose <em>value</em> attribute holds the return value of the coroutine. A
+coroutine <em>A</em> may also <em>yield from</em> another coroutine <em>B</em> using the
+<tt class="docutils literal"><span class="pre">yield</span> <span class="pre">from</span></tt> expression. In this case, the control flow will pass
+between <em>A</em>&#8216;s caller and <em>B</em> until <em>B</em> terminates. When <em>B</em> has
+terminated, its return value becomes the result of the <tt class="docutils literal"><span class="pre">yield</span> <span class="pre">from</span></tt>
+expression in <em>A</em>, and execution continues in <em>A</em>.</p>
+<p>In Dugong, a method or function whose name begins with <tt class="docutils literal"><span class="pre">co_</span></tt> will
+return a coroutine. These coroutines are non-blocking. Whenever they
+need to perform an I/O operation that would block (ie., sending data
+to the server or receiving data from the server), they yield a
+<a class="reference internal" href="api.html#dugong.PollNeeded" title="dugong.PollNeeded"><tt class="xref py py-obj docutils literal"><span class="pre">PollNeeded</span></tt></a> instance instead, and expect to be resumed when the
+operation can be carried out without blocking.</p>
+<p>The <a class="reference internal" href="api.html#dugong.PollNeeded" title="dugong.PollNeeded"><tt class="xref py py-obj docutils literal"><span class="pre">PollNeeded</span></tt></a> instance contains information about the I/O request
+that the coroutine would like to perform. The <a class="reference internal" href="api.html#dugong.PollNeeded.fd" title="dugong.PollNeeded.fd"><tt class="xref py py-obj docutils literal"><span class="pre">fd</span></tt></a>
+attribute is a file descriptor, and the <a class="reference internal" href="api.html#dugong.PollNeeded.mask" title="dugong.PollNeeded.mask"><tt class="xref py py-obj docutils literal"><span class="pre">mask</span></tt></a> attribute
+is an <a class="reference external" href="http://docs.python.org/3/library/select.html#epoll-objects" title="(in Python v3.4)"><em class="xref std std-ref">epoll</em></a> compatible event mask. Therefore, a
+very simple way to wait for a coroutine to complete is to use a
+<a class="reference external" href="http://docs.python.org/3/library/select.html#select.select" title="(in Python v3.4)"><tt class="xref py py-obj docutils literal"><span class="pre">select</span></tt></a> loop:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">select</span> <span class="kn">import</span> <span class="n">select</span><span class="p">,</span> <span class="n">POLLIN</span>
+
+<span class="c"># establish connection, send request, read response header</span>
+
+<span class="c"># Create coroutine</span>
+<span class="n">crt</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">co_readall</span><span class="p">()</span>
+<span class="k">try</span><span class="p">:</span>
+    <span class="k">while</span> <span class="bp">True</span><span class="p">:</span>
+        <span class="c"># Resume coroutine</span>
+        <span class="n">io_req</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="n">crt</span><span class="p">)</span>
+
+        <span class="c"># Coroutine has returned because I/O is not ready,</span>
+        <span class="c"># prepare select call</span>
+        <span class="n">read_fds</span> <span class="o">=</span> <span class="p">(</span><span class="n">io_req</span><span class="o">.</span><span class="n">fd</span><span class="p">,)</span> <span class="k">if</span> <span class="n">io_req</span><span class="o">.</span><span class="n">mask</span> <span class="o">&amp;</span> <span class="n">POLLIN</span> <span class="k">else</span> <span class="p">()</span>
+        <span class="n">write_fds</span> <span class="o">=</span> <span class="p">(</span><span class="n">io_req</span><span class="o">.</span><span class="n">fd</span><span class="p">,)</span> <span class="k">if</span> <span class="n">io_req</span><span class="o">.</span><span class="n">mask</span> <span class="o">&amp;</span> <span class="n">POLLOUT</span> <span class="k">else</span> <span class="p">()</span>
+
+        <span class="c"># Wait for I/O readiness</span>
+        <span class="n">select</span><span class="p">(</span><span class="n">read_fds</span><span class="p">,</span> <span class="n">write_fds</span><span class="p">,</span> <span class="p">())</span>
+<span class="k">except</span> <span class="ne">StopIteration</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+    <span class="c"># Coroutine has completed, retrieve result</span>
+    <span class="n">body</span> <span class="o">=</span> <span class="n">exc</span><span class="o">.</span><span class="n">value</span>
+</pre></div>
+</div>
+<p>This loop is in fact fully equivalent to a simple</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="n">body</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">readall</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>so in this case there really wasn&#8217;t much point in using a
+coroutine. This is because coroutines really only make sense if you
+have more than one active coroutine. However, in that case the
+necessary loop construction becomes a lot more complicated. Luckily
+enough, Dugong is compatible with the <a class="reference external" href="http://docs.python.org/3/library/asyncio.html#module-asyncio" title="(in Python v3.4)"><tt class="xref py py-obj docutils literal"><span class="pre">asyncio</span></tt></a> module, so you can use
+the asyncio event loop to schedule your Dugong coroutines.</p>
+<div class="section" id="using-asyncio-event-loops">
+<h2>Using asyncio Event-Loops<a class="headerlink" href="#using-asyncio-event-loops" title="Permalink to this headline">¶</a></h2>
+<p>In order to schedule a Dugong coroutine in an asyncio event loop, you
+have to create an <a class="reference external" href="http://docs.python.org/3/library/asyncio-task.html#asyncio.Future" title="(in Python v3.4)"><tt class="xref py py-obj docutils literal"><span class="pre">asyncio.Future</span></tt></a> for the coroutine. This is done
+with the <a class="reference internal" href="api.html#dugong.AioFuture" title="dugong.AioFuture"><tt class="xref py py-obj docutils literal"><span class="pre">dugong.AioFuture</span></tt></a> class (which inherits from
+<a class="reference external" href="http://docs.python.org/3/library/asyncio-task.html#asyncio.Future" title="(in Python v3.4)"><tt class="xref py py-obj docutils literal"><span class="pre">asyncio.Future</span></tt></a>). The reason for this additional wrapper is that the
+asyncio event loop, even though very powerful, does not know how to
+interpret the <a class="reference internal" href="api.html#dugong.PollNeeded" title="dugong.PollNeeded"><tt class="xref py py-obj docutils literal"><span class="pre">PollNeeded</span></tt></a> instances that are yielded by Dugong
+coroutines. It would have been possible to have Dugong coroutines
+yield <a class="reference external" href="http://docs.python.org/3/library/asyncio-task.html#asyncio.Future" title="(in Python v3.4)"><tt class="xref py py-obj docutils literal"><span class="pre">asyncio.Future</span></tt></a> instances directly, but this would have meant
+to introduce a hard dependency on asyncio, which was deemend
+undesirable.</p>
+<p>Using asyncio, the above example becomes much simpler:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="kn">import</span> <span class="nn">asyncio</span>
+<span class="kn">import</span> <span class="nn">atexit</span>
+
+<span class="c"># establish connection, send request, read response header</span>
+
+<span class="c"># Create coroutine</span>
+<span class="n">crt</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">co_readall</span><span class="p">()</span>
+
+<span class="c"># Get a MainLoop instance from the asyncio module to switch</span>
+<span class="c"># between the coroutines as needed</span>
+<span class="n">loop</span> <span class="o">=</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">get_event_loop</span><span class="p">()</span>
+<span class="n">atexit</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">loop</span><span class="o">.</span><span class="n">close</span><span class="p">)</span>
+
+<span class="c"># Create and schedule asyncio future</span>
+<span class="n">fut</span> <span class="o">=</span> <span class="n">AioFuture</span><span class="p">(</span><span class="n">crt</span><span class="p">,</span> <span class="n">loop</span><span class="o">=</span><span class="n">loop</span><span class="p">)</span>
+
+<span class="c"># Run the event loop</span>
+<span class="n">loop</span><span class="o">.</span><span class="n">run_until_complete</span><span class="p">(</span><span class="n">fut</span><span class="p">)</span>
+
+<span class="c"># Get the result returned by the coroutine</span>
+<span class="n">body</span> <span class="o">=</span> <span class="n">fut</span><span class="o">.</span><span class="n">result</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>The generalization to multiple coroutines is now
+straightforward. Suppose you want to retrieve a number of documents
+from different servers. You could use threads, but this makes the
+program hard to debug, and probably most of the time the threads will
+be waiting for data from the server, so there is no real need to have
+a truly parallel program. In this situation, coroutines are a much
+better choice. They allow you to send and receive multiple requests
+simultaneously, but the program flow itself is still strictly
+sequential. Here&#8217;s how to do it (suppose the URLs you&#8217;d like to
+retrieve a stored in <em>url_list</em>):</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="kn">import</span> <span class="nn">asyncio</span>
+<span class="kn">import</span> <span class="nn">atexit</span>
+<span class="kn">from</span> <span class="nn">urllib.parse</span> <span class="kn">import</span> <span class="n">urlsplit</span><span class="p">,</span> <span class="n">urlunsplit</span>
+
+<span class="k">def</span> <span class="nf">get_url</span><span class="p">(</span><span class="n">host</span><span class="p">,</span> <span class="n">port</span><span class="p">,</span> <span class="n">path</span><span class="p">):</span>
+    <span class="n">conn</span> <span class="o">=</span> <span class="n">HTTPConnection</span><span class="p">(</span><span class="n">host</span><span class="p">,</span> <span class="n">port</span><span class="o">=</span><span class="n">port</span><span class="p">)</span>
+    <span class="k">yield from</span> <span class="n">conn</span><span class="o">.</span><span class="n">co_send_request</span><span class="p">(</span><span class="s">&#39;GET&#39;</span><span class="p">,</span> <span class="n">path</span><span class="p">)</span>
+    <span class="n">resp</span> <span class="o">=</span> <span class="k">yield from</span> <span class="n">conn</span><span class="o">.</span><span class="n">co_read_response</span><span class="p">()</span>
+    <span class="k">assert</span> <span class="n">resp</span><span class="o">.</span><span class="n">status</span> <span class="o">==</span> <span class="mi">200</span>
+    <span class="n">body</span> <span class="o">=</span> <span class="k">yield from</span> <span class="n">conn</span><span class="o">.</span><span class="n">co_readall</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">body</span>
+
+<span class="n">futures</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="k">for</span> <span class="n">url</span> <span class="ow">in</span> <span class="n">url_list</span><span class="p">:</span>
+    <span class="n">o</span> <span class="o">=</span> <span class="n">urlsplit</span><span class="p">(</span><span class="n">url</span><span class="p">)</span>
+    <span class="c"># Path is obtained by removing scheme, hostname and fragment</span>
+    <span class="c"># identifier from the url</span>
+    <span class="n">path</span> <span class="o">=</span> <span class="n">urlunsplit</span><span class="p">((</span><span class="s">&#39;&#39;</span><span class="p">,</span> <span class="s">&#39;&#39;</span><span class="p">)</span> <span class="o">+</span> <span class="n">o</span><span class="p">[</span><span class="mi">2</span><span class="p">:</span><span class="mi">4</span><span class="p">]</span> <span class="o">+</span> <span class="p">(</span><span class="s">&#39;&#39;</span><span class="p">,))</span>
+
+    <span class="c"># Create a coroutine and future for each URL</span>
+    <span class="n">futures</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">AioFuture</span><span class="p">(</span><span class="n">get_url</span><span class="p">(</span><span class="n">o</span><span class="o">.</span><span class="n">hostname</span><span class="p">,</span> <span class="n">o</span><span class="o">.</span><span class="n">port</span><span class="p">,</span> <span class="n">path</span><span class="p">)))</span>
+
+<span class="c"># Run coroutines</span>
+<span class="n">loop</span> <span class="o">=</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">get_event_loop</span><span class="p">()</span>
+<span class="n">atexit</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">loop</span><span class="o">.</span><span class="n">close</span><span class="p">)</span>
+<span class="n">loop</span><span class="o">.</span><span class="n">run_until_complete</span><span class="p">(</span><span class="n">asyncio</span><span class="o">.</span><span class="n">wait</span><span class="p">(</span><span class="n">futures</span><span class="p">))</span>
+
+<span class="c"># Get the results</span>
+<span class="n">bodies</span> <span class="o">=</span> <span class="p">[</span> <span class="n">x</span><span class="o">.</span><span class="n">result</span><span class="p">()</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">futures</span> <span class="p">]</span>
+</pre></div>
+</div>
+<div class="section" id="when-to-invoke-aiofuture">
+<h3>When to invoke <a class="reference internal" href="api.html#dugong.AioFuture" title="dugong.AioFuture"><tt class="xref py py-obj docutils literal"><span class="pre">AioFuture</span></tt></a><a class="headerlink" href="#when-to-invoke-aiofuture" title="Permalink to this headline">¶</a></h3>
+<p>When creating your own coroutines, you generally have two choices:</p>
+<ol class="arabic">
+<li><p class="first">You can create asyncio style coroutines, in which you wrap calls to
+Dugong coroutines into <a class="reference internal" href="api.html#dugong.AioFuture" title="dugong.AioFuture"><tt class="xref py py-obj docutils literal"><span class="pre">AioFuture</span></tt></a>, e.g.:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="c"># ...</span>
+
+<span class="nd">@asyncio.coroutine</span>
+<span class="k">def</span> <span class="nf">do_stuff</span><span class="p">():</span>
+    <span class="c"># ...</span>
+    <span class="k">yield from</span> <span class="n">AioFuture</span><span class="p">(</span><span class="n">conn</span><span class="o">.</span><span class="n">co_read_response</span><span class="p">())</span>
+    <span class="c"># ..</span>
+    <span class="n">buf</span> <span class="o">=</span> <span class="k">yield from</span> <span class="n">AioFuture</span><span class="p">(</span><span class="n">conn</span><span class="o">.</span><span class="n">co_read</span><span class="p">(</span><span class="mi">8192</span><span class="p">))</span>
+    <span class="c"># ...</span>
+
+    <span class="c"># May also call other asyncio compatible coroutines:</span>
+    <span class="k">yield from</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="c"># ..</span>
+
+<span class="n">task</span> <span class="o">=</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">Task</span><span class="p">(</span><span class="n">do_stuff</span><span class="p">)</span>
+<span class="n">loop</span><span class="o">.</span><span class="n">run_until_complete</span><span class="p">(</span><span class="n">task</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The advantage of this style is that even though you need to wrap
+every Dugong call into <a class="reference internal" href="api.html#dugong.AioFuture" title="dugong.AioFuture"><tt class="xref py py-obj docutils literal"><span class="pre">AioFuture</span></tt></a>, you can freely mix Dugong and
+other asyncio compatible coroutines.</p>
+</li>
+<li><p class="first">You create Dugong style coroutines, and wrap them into <a class="reference internal" href="api.html#dugong.AioFuture" title="dugong.AioFuture"><tt class="xref py py-obj docutils literal"><span class="pre">AioFuture</span></tt></a>
+just before adding them to the asyncio event loop, e.g.:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="c"># ...</span>
+
+<span class="k">def</span> <span class="nf">do_stuff</span><span class="p">():</span>
+    <span class="c"># ...</span>
+    <span class="k">yield from</span> <span class="n">conn</span><span class="o">.</span><span class="n">co_read_response</span><span class="p">()</span>
+    <span class="c"># ..</span>
+    <span class="n">buf</span> <span class="o">=</span> <span class="k">yield from</span> <span class="n">conn</span><span class="o">.</span><span class="n">co_read</span><span class="p">(</span><span class="mi">8192</span><span class="p">)</span>
+    <span class="c"># ...</span>
+    <span class="c"># Other coroutines must yield PollNeeded instance, so</span>
+    <span class="c"># we cannot yield from asyncio compatible coroutines:</span>
+    <span class="c">#yield from asyncio.sleep(1) # WON&#39;T WORK!</span>
+
+<span class="n">fut</span> <span class="o">=</span> <span class="n">AioFuture</span><span class="p">(</span><span class="n">do_stuf</span><span class="p">())</span>
+<span class="n">loop</span><span class="o">.</span><span class="n">run_until_complete</span><span class="p">(</span><span class="n">fut</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The advantage of this is that you need to call <a class="reference internal" href="api.html#dugong.AioFuture" title="dugong.AioFuture"><tt class="xref py py-obj docutils literal"><span class="pre">AioFuture</span></tt></a> only
+once. The disadvantage is that you can not yield from other asyncio
+coroutines in your coroutine.</p>
+</li>
+</ol>
+<p>Generally it&#8217;s recommended to use the style that produces more
+readable code.</p>
+</div>
+</div>
+<div class="section" id="building-your-own-event-loop">
+<h2>Building your own Event-Loop<a class="headerlink" href="#building-your-own-event-loop" title="Permalink to this headline">¶</a></h2>
+<p>As explained before, the easiest way to schedule coroutines is to use
+the asyncio module. However, Dugong coroutines have a well-defined
+interface, and you can just as well write your own coroutine
+scheduling loop. In this case, the asyncio module is not used at all.</p>
+<p>Below is a simple example that uses this technique to switch execution
+between two coroutines that send requests and read responses. The code
+tries to retrieve a number of documents (stored in <em>path_list</em>),
+stores the missing paths in <em>missing_documents</em>, and saves the
+contents of the existing documents to disk.</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="c"># Note: in a real application, don&#39;t forget to ensure that</span>
+<span class="c"># conn.disconnect() is called eventually</span>
+<span class="n">conn</span> <span class="o">=</span> <span class="n">HTTPConnection</span><span class="p">(</span><span class="s">&#39;somehost.com&#39;</span><span class="p">)</span>
+<span class="n">missing_documents</span> <span class="o">=</span> <span class="p">[]</span>
+
+<span class="c"># This function returns a coroutine that sends all requests</span>
+<span class="k">def</span> <span class="nf">send_requests</span><span class="p">():</span>
+    <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="n">path_list</span><span class="p">:</span>
+        <span class="k">yield from</span> <span class="n">conn</span><span class="o">.</span><span class="n">co_send_request</span><span class="p">(</span><span class="s">&#39;GET&#39;</span><span class="p">,</span> <span class="n">path</span><span class="p">)</span>
+
+<span class="c"># This functions returns a coroutine that reads all responses</span>
+<span class="k">def</span> <span class="nf">read_responses</span><span class="p">():</span>
+    <span class="k">for</span> <span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">path</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">path_list</span><span class="p">):</span>
+        <span class="n">resp</span> <span class="o">=</span> <span class="k">yield from</span> <span class="n">conn</span><span class="o">.</span><span class="n">co_read_response</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">resp</span><span class="o">.</span><span class="n">status</span> <span class="o">!=</span> <span class="mi">200</span><span class="p">:</span>
+            <span class="n">missing_documents</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">resp</span><span class="o">.</span><span class="n">path</span><span class="p">)</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s">&#39;doc_</span><span class="si">%i</span><span class="s">.dat&#39;</span> <span class="o">%</span> <span class="n">i</span><span class="p">,</span> <span class="s">&#39;wb&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
+            <span class="n">buf</span> <span class="o">=</span> <span class="k">yield from</span> <span class="n">conn</span><span class="o">.</span><span class="n">readall</span><span class="p">()</span>
+            <span class="n">fh</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">buf</span><span class="p">)</span>
+
+<span class="c"># Create coroutines</span>
+<span class="n">send_request_crt</span> <span class="o">=</span> <span class="n">send_requests</span><span class="p">()</span>
+<span class="n">read_response_crt</span> <span class="o">=</span> <span class="n">read_responses</span><span class="p">()</span>
+
+<span class="k">while</span> <span class="bp">True</span><span class="p">:</span>
+    <span class="c"># Send requests until we block</span>
+    <span class="k">if</span> <span class="n">send_request_crt</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">io_req_1</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="n">send_request_crt</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">StopIteration</span><span class="p">:</span>
+            <span class="c"># All requests sent</span>
+            <span class="n">send_request_crt</span> <span class="o">=</span> <span class="bp">None</span>
+
+    <span class="c"># Read responses until we block</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">io_req_2</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="n">read_response_crt</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">StopIteration</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+        <span class="c"># All responses read</span>
+        <span class="k">break</span>
+
+    <span class="c"># Wait for fds to become ready for I/O</span>
+    <span class="k">assert</span> <span class="n">io_req_1</span><span class="o">.</span><span class="n">mask</span> <span class="o">==</span> <span class="n">POLLOUT</span>
+    <span class="k">assert</span> <span class="n">io_req_2</span><span class="o">.</span><span class="n">mask</span> <span class="o">==</span> <span class="n">POLLIN</span>
+    <span class="n">select</span><span class="p">((</span><span class="n">io_req_2</span><span class="o">.</span><span class="n">fd</span><span class="p">,),</span> <span class="p">(</span><span class="n">io_req_1</span><span class="o">.</span><span class="n">fd</span><span class="p">,),</span> <span class="p">())</span>
+</pre></div>
+</div>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper"><h3><a href="index.html">Table Of Contents</a></h3>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="intro.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="">Coroutine API</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#using-asyncio-event-loops">Using asyncio Event-Loops</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#building-your-own-event-loop">Building your own Event-Loop</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="issues.html">Known Issues</a></li>
+<li class="toctree-l1"><a class="reference internal" href="whatsnew.html">Changelog</a></li>
+</ul>
+
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="api.html"
+                        title="previous chapter">API Reference</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="issues.html"
+                        title="next chapter">Known Issues</a></p>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="issues.html" title="Known Issues"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="api.html" title="API Reference"
+             >previous</a> |</li>
+        <li><a href="index.html">Dugong 3.5 documentation</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2013-2014, Nikolaus Rath.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

@@ -1,0 +1,1524 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>dugong &mdash; dugong 1.0 documentation</title>
+    
+    <link rel="stylesheet" href="../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../',
+        VERSION:     '1.0',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../_static/jquery.js"></script>
+    <script type="text/javascript" src="../_static/underscore.js"></script>
+    <script type="text/javascript" src="../_static/doctools.js"></script>
+    <link rel="top" title="dugong 1.0 documentation" href="../index.html" />
+    <link rel="up" title="Module code" href="index.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li><a href="../index.html">dugong 1.0 documentation</a> &raquo;</li>
+          <li><a href="index.html" accesskey="U">Module code</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <h1>Source code for dugong</h1><div class="highlight"><pre>
+<span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">dugong.py - Python HTTP Client Module</span>
+
+<span class="sd">Copyright (C) Nikolaus Rath &lt;Nikolaus@rath.org&gt;</span>
+
+<span class="sd">This module may be distributed under the terms of the Python Software Foundation</span>
+<span class="sd">License Version 2.</span>
+
+<span class="sd">The CaseInsensitiveDict implementation is copyright 2013 Kenneth Reitz and</span>
+<span class="sd">licensed under the Apache License, Version 2.0</span>
+<span class="sd">(http://www.apache.org/licenses/LICENSE-2.0)</span>
+<span class="sd">&#39;&#39;&#39;</span>
+
+<span class="kn">import</span> <span class="nn">socket</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">errno</span>
+<span class="kn">import</span> <span class="nn">ssl</span>
+<span class="kn">import</span> <span class="nn">hashlib</span>
+<span class="kn">from</span> <span class="nn">inspect</span> <span class="kn">import</span> <span class="n">getdoc</span>
+<span class="kn">import</span> <span class="nn">textwrap</span>
+<span class="kn">from</span> <span class="nn">base64</span> <span class="kn">import</span> <span class="n">b64encode</span>
+<span class="kn">from</span> <span class="nn">collections</span> <span class="kn">import</span> <span class="n">deque</span>
+<span class="kn">from</span> <span class="nn">collections.abc</span> <span class="kn">import</span> <span class="n">MutableMapping</span><span class="p">,</span> <span class="n">Mapping</span>
+<span class="kn">import</span> <span class="nn">email</span>
+<span class="kn">import</span> <span class="nn">email.policy</span>
+<span class="kn">from</span> <span class="nn">http.client</span> <span class="kn">import</span> <span class="p">(</span><span class="n">HTTPS_PORT</span><span class="p">,</span> <span class="n">HTTP_PORT</span><span class="p">,</span> <span class="n">NO_CONTENT</span><span class="p">,</span> <span class="n">NOT_MODIFIED</span><span class="p">)</span>
+<span class="kn">from</span> <span class="nn">select</span> <span class="kn">import</span> <span class="n">select</span><span class="p">,</span> <span class="n">EPOLLIN</span><span class="p">,</span> <span class="n">EPOLLOUT</span>
+
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">import</span> <span class="nn">asyncio</span>
+<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+    <span class="n">asyncio</span> <span class="o">=</span> <span class="bp">None</span>
+
+    
+<span class="n">__version__</span> <span class="o">=</span> <span class="s">&#39;1.0&#39;</span>
+
+<span class="n">log</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="n">__name__</span><span class="p">)</span>
+
+<span class="c">#: Internal buffer size</span>
+<span class="n">BUFFER_SIZE</span> <span class="o">=</span> <span class="mi">64</span><span class="o">*</span><span class="mi">1024</span>
+
+<span class="c">#: Maximal length of HTTP status line. If the server sends a line longer than</span>
+<span class="c">#: this value, `InvalidResponse` will be raised.</span>
+<span class="n">MAX_LINE_SIZE</span> <span class="o">=</span> <span class="n">BUFFER_SIZE</span><span class="o">-</span><span class="mi">1</span>
+
+<span class="c">#: Maximal length of a response header (i.e., for all header</span>
+<span class="c">#: lines together). If the server sends a header segment longer than</span>
+<span class="c">#: this value, `InvalidResponse` will be raised.</span>
+<span class="n">MAX_HEADER_SIZE</span> <span class="o">=</span> <span class="n">BUFFER_SIZE</span><span class="o">-</span><span class="mi">1</span>
+
+<span class="n">CHUNKED_ENCODING</span> <span class="o">=</span> <span class="s">&#39;chunked_encoding&#39;</span>
+<span class="n">IDENTITY_ENCODING</span> <span class="o">=</span> <span class="s">&#39;identity_encoding&#39;</span>
+
+<span class="c">#: Marker object for request body size when we&#39;re waiting</span>
+<span class="c">#: for a 100-continue response from the server</span>
+<span class="n">WAITING_FOR_100c</span> <span class="o">=</span> <span class="nb">object</span><span class="p">()</span>
+
+
+<div class="viewcode-block" id="PollNeeded"><a class="viewcode-back" href="../api.html#dugong.PollNeeded">[docs]</a><span class="k">class</span> <span class="nc">PollNeeded</span><span class="p">(</span><span class="nb">tuple</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">    This class encapsulates the requirements for a IO operation to continue.</span>
+<span class="sd">    `PollNeeded` instances are typically yielded by coroutines.</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    
+    <span class="n">__slots__</span> <span class="o">=</span> <span class="p">()</span>
+    
+    <span class="k">def</span> <span class="nf">__new__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fd</span><span class="p">,</span> <span class="n">mask</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">tuple</span><span class="o">.</span><span class="n">__new__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="p">(</span><span class="n">fd</span><span class="p">,</span> <span class="n">mask</span><span class="p">))</span>
+
+    <span class="nd">@property</span>
+<div class="viewcode-block" id="PollNeeded.fd"><a class="viewcode-back" href="../api.html#dugong.PollNeeded.fd">[docs]</a>    <span class="k">def</span> <span class="nf">fd</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;File descriptor that the IO operation depends on&#39;&#39;&#39;</span>
+        
+        <span class="k">return</span> <span class="bp">self</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+</div>
+    <span class="nd">@property</span>
+<div class="viewcode-block" id="PollNeeded.mask"><a class="viewcode-back" href="../api.html#dugong.PollNeeded.mask">[docs]</a>    <span class="k">def</span> <span class="nf">mask</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Event mask specifiying the type of required IO</span>
+
+<span class="sd">        This attribute defines what type of IO the provider of the `PollNeeded`</span>
+<span class="sd">        instance needs to perform on *fd*. It is expected that, when *fd* is</span>
+<span class="sd">        ready for IO of the specified type, operation will continue without</span>
+<span class="sd">        blocking.</span>
+
+<span class="sd">        The type of IO is specified as a :ref:`epoll &lt;epoll-objects&gt;` compatible</span>
+<span class="sd">        event mask, i.e. a bitwise combination of `!select.EPOLLIN` and</span>
+<span class="sd">        `!select.EPOLLOUT`.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        
+        <span class="k">return</span> <span class="bp">self</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+</div>
+<div class="viewcode-block" id="PollNeeded.poll"><a class="viewcode-back" href="../api.html#dugong.PollNeeded.poll">[docs]</a>    <span class="k">def</span> <span class="nf">poll</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Wait until fd is ready for requested IO</span>
+
+<span class="sd">        This is a convenince function that uses `~select.select` to wait until</span>
+<span class="sd">        `.fd` is ready for requested type of IO.</span>
+
+<span class="sd">        If *timeout* is specified, return `False` if the timeout is exceeded</span>
+<span class="sd">        without the file descriptor becoming ready.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+
+        <span class="n">read_fds</span> <span class="o">=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fd</span><span class="p">,)</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">mask</span> <span class="o">&amp;</span> <span class="n">EPOLLIN</span> <span class="k">else</span> <span class="p">()</span>
+        <span class="n">write_fds</span> <span class="o">=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fd</span><span class="p">,)</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">mask</span> <span class="o">&amp;</span> <span class="n">EPOLLOUT</span> <span class="k">else</span> <span class="p">()</span>
+
+        <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;calling select with </span><span class="si">%s</span><span class="s">, </span><span class="si">%s</span><span class="s">&#39;</span><span class="p">,</span> <span class="n">read_fds</span><span class="p">,</span> <span class="n">write_fds</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">timeout</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="p">(</span><span class="n">read_fds</span><span class="p">,</span> <span class="n">write_fds</span><span class="p">,</span> <span class="n">_</span><span class="p">)</span> <span class="o">=</span>  <span class="n">select</span><span class="p">(</span><span class="n">read_fds</span><span class="p">,</span> <span class="n">write_fds</span><span class="p">,</span> <span class="p">())</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="p">(</span><span class="n">read_fds</span><span class="p">,</span> <span class="n">write_fds</span><span class="p">,</span> <span class="n">_</span><span class="p">)</span> <span class="o">=</span>  <span class="n">select</span><span class="p">(</span><span class="n">read_fds</span><span class="p">,</span> <span class="n">write_fds</span><span class="p">,</span> <span class="p">(),</span> <span class="n">timeout</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="n">read_fds</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">bool</span><span class="p">(</span><span class="n">write_fds</span><span class="p">)</span>
+
+    </div></div>
+<div class="viewcode-block" id="HTTPResponse"><a class="viewcode-back" href="../api.html#dugong.HTTPResponse">[docs]</a><span class="k">class</span> <span class="nc">HTTPResponse</span><span class="p">:</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">    This class encapsulates information about HTTP response.  Instances of this</span>
+<span class="sd">    class are returned by the `HTTPConnection.read_response` method and have</span>
+<span class="sd">    access to response status, reason, and headers.  Response body data</span>
+<span class="sd">    has to be read directly from the `HTTPConnection` instance.</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">method</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">status</span><span class="p">,</span> <span class="n">reason</span><span class="p">,</span> <span class="n">headers</span><span class="p">,</span>
+                 <span class="n">length</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+
+        <span class="c">#: HTTP Method of the request this was response is associated with</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">method</span> <span class="o">=</span> <span class="n">method</span>
+
+        <span class="c">#: Path of the request this was response is associated with</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">path</span> <span class="o">=</span> <span class="n">path</span>
+
+        <span class="c">#: HTTP status code returned by the server</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">status</span> <span class="o">=</span> <span class="n">status</span>
+
+        <span class="c">#: HTTP reason phrase returned by the server</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">reason</span> <span class="o">=</span> <span class="n">reason</span>
+
+        <span class="c">#: HTTP Response headers, a `email.message.Message` instance</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">headers</span> <span class="o">=</span> <span class="n">headers</span>
+
+        <span class="c">#: Length of the response body or `None`, if not known</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">length</span> <span class="o">=</span> <span class="n">length</span>
+
+</div>
+<div class="viewcode-block" id="BodyFollowing"><a class="viewcode-back" href="../api.html#dugong.BodyFollowing">[docs]</a><span class="k">class</span> <span class="nc">BodyFollowing</span><span class="p">:</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">    Sentinel class for the *body* parameter of the</span>
+<span class="sd">    `~HTTPConnection.send_request` method. Passing an instance of this class</span>
+<span class="sd">    declares that body data is going to be provided in separate method calls.</span>
+
+<span class="sd">    If no length is specified in the constructor, the body data will be send</span>
+<span class="sd">    using chunked encoding.</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+
+    <span class="n">__slots__</span> <span class="o">=</span> <span class="s">&#39;length&#39;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">length</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="c">#: the length of the body data that is going to be send, or `None`</span>
+        <span class="c">#: to use chunked encoding.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">length</span> <span class="o">=</span> <span class="n">length</span>
+
+        </div>
+<span class="k">class</span> <span class="nc">_ChunkTooLong</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">    Raised by `_co_readstr_until` if the requested end pattern</span>
+<span class="sd">    cannot be found within the specified byte limit.</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    
+    <span class="k">pass</span>
+    
+
+<span class="k">class</span> <span class="nc">_GeneralError</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+    <span class="n">msg</span> <span class="o">=</span> <span class="s">&#39;General HTTP Error&#39;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">msg</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">msg</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">msg</span> <span class="o">=</span> <span class="n">msg</span>
+
+    <span class="k">def</span> <span class="nf">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">msg</span>
+
+
+<div class="viewcode-block" id="StateError"><a class="viewcode-back" href="../api.html#dugong.StateError">[docs]</a><span class="k">class</span> <span class="nc">StateError</span><span class="p">(</span><span class="n">_GeneralError</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">    Raised when attempting an operation that doesn&#39;t make</span>
+<span class="sd">    sense in the current connection state.</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+
+    <span class="n">msg</span> <span class="o">=</span> <span class="s">&#39;Operation invalid in current connection state&#39;</span>
+
+</div>
+<div class="viewcode-block" id="ExcessBodyData"><a class="viewcode-back" href="../api.html#dugong.ExcessBodyData">[docs]</a><span class="k">class</span> <span class="nc">ExcessBodyData</span><span class="p">(</span><span class="n">_GeneralError</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">    Raised when trying to send more data to the server than</span>
+<span class="sd">    announced.</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+
+    <span class="n">msg</span> <span class="o">=</span> <span class="s">&#39;Cannot send larger request body than announced&#39;</span>
+
+    </div>
+<div class="viewcode-block" id="InvalidResponse"><a class="viewcode-back" href="../api.html#dugong.InvalidResponse">[docs]</a><span class="k">class</span> <span class="nc">InvalidResponse</span><span class="p">(</span><span class="n">_GeneralError</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">    Raised if the server produced an invalid response (i.e, something</span>
+<span class="sd">    that is not proper HTTP 1.0 or 1.1).</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+
+    <span class="n">msg</span> <span class="o">=</span> <span class="s">&#39;Server sent invalid response&#39;</span>
+
+</div>
+<div class="viewcode-block" id="UnsupportedResponse"><a class="viewcode-back" href="../api.html#dugong.UnsupportedResponse">[docs]</a><span class="k">class</span> <span class="nc">UnsupportedResponse</span><span class="p">(</span><span class="n">_GeneralError</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">    This exception is raised if the server produced a response that is not</span>
+<span class="sd">    supported. This should not happen for servers that are HTTP 1.1 compatible.</span>
+
+<span class="sd">    If an `UnsupportedResponse` exception has been raised, this typically means</span>
+<span class="sd">    that synchronization with the server will be lost (i.e., dugong cannot</span>
+<span class="sd">    determine where the current response ends and the next response starts), so</span>
+<span class="sd">    the connection needs to be reset by calling the</span>
+<span class="sd">    :meth:`~HTTPConnection.disconnect` method.</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+
+    <span class="n">msg</span> <span class="o">=</span> <span class="s">&#39;Server sent unsupported response&#39;</span>
+
+</div>
+<div class="viewcode-block" id="ConnectionClosed"><a class="viewcode-back" href="../api.html#dugong.ConnectionClosed">[docs]</a><span class="k">class</span> <span class="nc">ConnectionClosed</span><span class="p">(</span><span class="n">_GeneralError</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">    Raised if the server unexpectedly closed the connection.</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+
+    <span class="n">msg</span> <span class="o">=</span> <span class="s">&#39;connection closed unexpectedly&#39;</span>
+
+    </div>
+<span class="k">class</span> <span class="nc">_Buffer</span><span class="p">:</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">    This class represents a buffer with a fixed size, but varying</span>
+<span class="sd">    fill level.</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    
+    <span class="n">__slots__</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;d&#39;</span><span class="p">,</span> <span class="s">&#39;b&#39;</span><span class="p">,</span> <span class="s">&#39;e&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">size</span><span class="p">):</span>
+
+        <span class="c">#: Holds the actual data</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">d</span> <span class="o">=</span> <span class="nb">bytearray</span><span class="p">(</span><span class="n">size</span><span class="p">)</span>
+
+        <span class="c">#: Position of the first buffered byte that has not yet</span>
+        <span class="c">#: been consumed (&quot;*b*eginning&quot;)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">b</span> <span class="o">=</span> <span class="mi">0</span>
+
+        <span class="c">#: Fill-level of the buffer (&quot;*e*nd&quot;)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">e</span> <span class="o">=</span> <span class="mi">0</span>
+
+    <span class="k">def</span> <span class="nf">__len__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Return amount of data ready for consumption&#39;&#39;&#39;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">e</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">b</span>
+
+    <span class="k">def</span> <span class="nf">clear</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Forget all buffered data&#39;&#39;&#39;</span>
+        
+        <span class="bp">self</span><span class="o">.</span><span class="n">b</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">e</span> <span class="o">=</span> <span class="mi">0</span>
+
+    <span class="k">def</span> <span class="nf">compact</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Ensure that buffer can be filled up to its maximum size</span>
+
+<span class="sd">        If part of the buffer data has been consumed, the unconsumed part is</span>
+<span class="sd">        copied to the beginning of the buffer to maximize the available space.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">b</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span>
+
+        <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;compacting buffer&#39;</span><span class="p">)</span>
+        <span class="n">buf</span> <span class="o">=</span> <span class="n">memoryview</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">d</span><span class="p">)[</span><span class="bp">self</span><span class="o">.</span><span class="n">b</span><span class="p">:</span><span class="bp">self</span><span class="o">.</span><span class="n">e</span><span class="p">]</span>
+        <span class="n">len_</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">buf</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">d</span> <span class="o">=</span> <span class="nb">bytearray</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">d</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">d</span><span class="p">[:</span><span class="n">len_</span><span class="p">]</span> <span class="o">=</span> <span class="n">buf</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">b</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">e</span> <span class="o">=</span> <span class="n">len_</span>
+
+    <span class="k">def</span> <span class="nf">exhaust</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Return (and consume) all available data&#39;&#39;&#39;</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">b</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;exhausting buffer (truncating)&#39;</span><span class="p">)</span>
+            <span class="c"># Return existing buffer after truncating it</span>
+            <span class="n">buf</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">d</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">d</span> <span class="o">=</span> <span class="nb">bytearray</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">d</span><span class="p">))</span>
+            <span class="n">buf</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">e</span><span class="p">:]</span> <span class="o">=</span> <span class="n">b</span><span class="s">&#39;&#39;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;exhausting buffer (copying)&#39;</span><span class="p">)</span>
+            <span class="n">buf</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">d</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">b</span><span class="p">:</span><span class="bp">self</span><span class="o">.</span><span class="n">e</span><span class="p">]</span>
+            
+        <span class="bp">self</span><span class="o">.</span><span class="n">b</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">e</span> <span class="o">=</span> <span class="mi">0</span>
+        
+        <span class="k">return</span> <span class="n">buf</span>
+
+    
+<div class="viewcode-block" id="HTTPConnection"><a class="viewcode-back" href="../api.html#dugong.HTTPConnection">[docs]</a><span class="k">class</span> <span class="nc">HTTPConnection</span><span class="p">:</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">    This class encapsulates a HTTP connection. Methods whose name begin with</span>
+<span class="sd">    ``co_`` return coroutines. Instead of blocking, a coroutines will yield</span>
+<span class="sd">    a `PollNeeded` instance that encapsulates information about the IO operation</span>
+<span class="sd">    that would block. The coroutine should be resumed once the operation can be</span>
+<span class="sd">    performed without blocking.</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">hostname</span><span class="p">,</span> <span class="n">port</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">ssl_context</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">proxy</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+
+        <span class="k">if</span> <span class="n">port</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">ssl_context</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">port</span> <span class="o">=</span> <span class="n">HTTP_PORT</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">port</span> <span class="o">=</span> <span class="n">HTTPS_PORT</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">port</span> <span class="o">=</span> <span class="n">port</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">ssl_context</span> <span class="o">=</span> <span class="n">ssl_context</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">hostname</span> <span class="o">=</span> <span class="n">hostname</span>
+
+        <span class="c">#: Socket object connecting to the server</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_sock</span> <span class="o">=</span> <span class="bp">None</span>
+
+        <span class="c">#: Read-buffer</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_rbuf</span> <span class="o">=</span> <span class="n">_Buffer</span><span class="p">(</span><span class="n">BUFFER_SIZE</span><span class="p">)</span>
+
+        <span class="c">#: a tuple ``(hostname, port)`` of the proxy server to use or `None`.</span>
+        <span class="c">#: Note that currently only CONNECT-style proxying is supported.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">proxy</span> <span class="o">=</span> <span class="n">proxy</span>
+
+        <span class="c">#: a deque of ``(method, path, body_len)`` tuples corresponding to</span>
+        <span class="c">#: requests whose response has not yet been read completely. Requests</span>
+        <span class="c">#: with Expect: 100-continue will be added twice to this queue, once</span>
+        <span class="c">#: after the request header has been sent, and once after the request</span>
+        <span class="c">#: body data has been sent. *body_len* is `None`, or the size of the</span>
+        <span class="c">#: **request** body that still has to be sent when using 100-continue.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_pending_requests</span> <span class="o">=</span> <span class="n">deque</span><span class="p">()</span>
+
+        <span class="c">#: This attribute is `None` when a request has been sent completely.  If</span>
+        <span class="c">#: request headers have been sent, but request body data is still</span>
+        <span class="c">#: pending, it is set to a ``(method, path, body_len)`` tuple. *body_len*</span>
+        <span class="c">#: is the number of bytes that that still need to send, or</span>
+        <span class="c">#: WAITING_FOR_100c if we are waiting for a 100 response from the server.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_out_remaining</span> <span class="o">=</span> <span class="bp">None</span>
+
+        <span class="c">#: Number of remaining bytes of the current response body (or current</span>
+        <span class="c">#: chunk), or `None` if the response header has not yet been read.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_in_remaining</span> <span class="o">=</span> <span class="bp">None</span>
+
+        <span class="c">#: Transfer encoding of the active response (if any).</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_encoding</span> <span class="o">=</span> <span class="bp">None</span>
+
+    <span class="c"># Implement bare-bones `io.BaseIO` interface, so that instances</span>
+    <span class="c"># can be wrapped in `io.TextIOWrapper` if desired.</span>
+    <span class="k">def</span> <span class="nf">writable</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">True</span>
+    <span class="k">def</span> <span class="nf">readable</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">True</span>
+    <span class="k">def</span> <span class="nf">seekable</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">False</span>
+
+    <span class="c"># We consider the stream closed if there is no active response</span>
+    <span class="c"># from which body data could be read.</span>
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">closed</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_in_remaining</span> <span class="ow">is</span> <span class="bp">None</span>
+        
+<div class="viewcode-block" id="HTTPConnection.connect"><a class="viewcode-back" href="../api.html#dugong.HTTPConnection.connect">[docs]</a>    <span class="k">def</span> <span class="nf">connect</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Connect to the remote server</span>
+
+<span class="sd">        This method generally does not need to be called manually.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;start&#39;</span><span class="p">)</span>
+        
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">proxy</span><span class="p">:</span>
+            <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;connecting to </span><span class="si">%s</span><span class="s">&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">proxy</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_sock</span> <span class="o">=</span> <span class="n">socket</span><span class="o">.</span><span class="n">create_connection</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">proxy</span><span class="p">)</span>
+            <span class="n">eval_coroutine</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_co_tunnel</span><span class="p">())</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;connecting to </span><span class="si">%s</span><span class="s">&#39;</span><span class="p">,</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">hostname</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">port</span><span class="p">))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_sock</span> <span class="o">=</span> <span class="n">socket</span><span class="o">.</span><span class="n">create_connection</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">hostname</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">port</span><span class="p">))</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">ssl_context</span><span class="p">:</span>
+            <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;establishing ssl layer&#39;</span><span class="p">)</span>
+            <span class="n">server_hostname</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hostname</span> <span class="k">if</span> <span class="n">ssl</span><span class="o">.</span><span class="n">HAS_SNI</span> <span class="k">else</span> <span class="bp">None</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_sock</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ssl_context</span><span class="o">.</span><span class="n">wrap_socket</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_sock</span><span class="p">,</span> <span class="n">server_hostname</span><span class="o">=</span><span class="n">server_hostname</span><span class="p">)</span>
+
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">ssl</span><span class="o">.</span><span class="n">match_hostname</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_sock</span><span class="o">.</span><span class="n">getpeercert</span><span class="p">(),</span> <span class="bp">self</span><span class="o">.</span><span class="n">hostname</span><span class="p">)</span>
+            <span class="k">except</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+                <span class="k">raise</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_sock</span><span class="o">.</span><span class="n">setblocking</span><span class="p">(</span><span class="bp">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_rbuf</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_out_remaining</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_in_remaining</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_pending_requests</span> <span class="o">=</span> <span class="n">deque</span><span class="p">()</span>
+
+        <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;done&#39;</span><span class="p">)</span>
+        </div>
+    <span class="k">def</span> <span class="nf">_co_tunnel</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Set up CONNECT tunnel to destination server&#39;&#39;&#39;</span>
+
+        <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;start connecting to </span><span class="si">%s</span><span class="s">:</span><span class="si">%d</span><span class="s">&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">hostname</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">port</span><span class="p">)</span>
+        
+        <span class="k">yield from</span> <span class="bp">self</span><span class="o">.</span><span class="n">_co_send</span><span class="p">((</span><span class="s">&quot;CONNECT </span><span class="si">%s</span><span class="s">:</span><span class="si">%d</span><span class="s"> HTTP/1.0</span><span class="se">\r\n\r\n</span><span class="s">&quot;</span>
+                                  <span class="o">%</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">hostname</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">port</span><span class="p">))</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s">&#39;latin1&#39;</span><span class="p">))</span>
+
+        <span class="p">(</span><span class="n">status</span><span class="p">,</span> <span class="n">reason</span><span class="p">)</span> <span class="o">=</span> <span class="k">yield from</span> <span class="bp">self</span><span class="o">.</span><span class="n">_co_read_status</span><span class="p">()</span>
+        <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;got </span><span class="si">%03d</span><span class="s"> </span><span class="si">%s</span><span class="s">&#39;</span><span class="p">,</span> <span class="n">status</span><span class="p">,</span> <span class="n">reason</span><span class="p">)</span>
+        <span class="k">yield from</span> <span class="bp">self</span><span class="o">.</span><span class="n">_co_read_header</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="n">status</span> <span class="o">!=</span> <span class="mi">200</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">disconnect</span><span class="p">()</span>
+            <span class="k">raise</span> <span class="n">ConnectionError</span><span class="p">(</span><span class="s">&quot;Tunnel connection failed: </span><span class="si">%d</span><span class="s"> </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">status</span><span class="p">,</span> <span class="n">reason</span><span class="p">))</span>
+
+<div class="viewcode-block" id="HTTPConnection.get_ssl_peercert"><a class="viewcode-back" href="../api.html#dugong.HTTPConnection.get_ssl_peercert">[docs]</a>    <span class="k">def</span> <span class="nf">get_ssl_peercert</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">binary_form</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Get peer SSL certificate</span>
+
+<span class="sd">        If plain HTTP is used, return `None`. Otherwise, the call is delegated</span>
+<span class="sd">        to the underlying SSL sockets `~ssl.SSLSocket.getpeercert` method.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">ssl_context</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">None</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sock</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">connect</span><span class="p">()</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sock</span><span class="o">.</span><span class="n">getpeercert</span><span class="p">()</span>
+</div>
+<div class="viewcode-block" id="HTTPConnection.get_ssl_cipher"><a class="viewcode-back" href="../api.html#dugong.HTTPConnection.get_ssl_cipher">[docs]</a>    <span class="k">def</span> <span class="nf">get_ssl_cipher</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Get active SSL cipher</span>
+
+<span class="sd">        If plain HTTP is used, return `None`. Otherwise, the call is delegated</span>
+<span class="sd">        to the underlying SSL sockets `~ssl.SSLSocket.cipher` method.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">ssl_context</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">None</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sock</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">connect</span><span class="p">()</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sock</span><span class="o">.</span><span class="n">cipher</span><span class="p">()</span>
+        </div>
+<div class="viewcode-block" id="HTTPConnection.send_request"><a class="viewcode-back" href="../api.html#dugong.HTTPConnection.send_request">[docs]</a>    <span class="k">def</span> <span class="nf">send_request</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">method</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">headers</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">body</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">expect100</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;placeholder, will be replaced dynamically&#39;&#39;&#39;</span>
+        <span class="n">eval_coroutine</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">co_send_request</span><span class="p">(</span><span class="n">method</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">headers</span><span class="o">=</span><span class="n">headers</span><span class="p">,</span>
+                                            <span class="n">body</span><span class="o">=</span><span class="n">body</span><span class="p">,</span> <span class="n">expect100</span><span class="o">=</span><span class="n">expect100</span><span class="p">))</span>
+        </div>
+<div class="viewcode-block" id="HTTPConnection.co_send_request"><a class="viewcode-back" href="../api.html#dugong.HTTPConnection.co_send_request">[docs]</a>    <span class="k">def</span> <span class="nf">co_send_request</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">method</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">headers</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">body</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">expect100</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Send a new HTTP request to the server</span>
+
+<span class="sd">        The message body may be passed in the *body* argument or be sent</span>
+<span class="sd">        separately. In the former case, *body* must be a :term:`bytes-like</span>
+<span class="sd">        object`. In the latter case, *body* must be an a `BodyFollowing`</span>
+<span class="sd">        instance specifying the length of the data that will be sent. If no</span>
+<span class="sd">        length is specified, the data will be send using chunked encoding.</span>
+
+<span class="sd">        *headers* should be a mapping containing the HTTP headers to be send</span>
+<span class="sd">        with the request. Multiple header lines with the same key are not</span>
+<span class="sd">        supported. It is recommended to pass a `CaseInsensitiveDict` instance,</span>
+<span class="sd">        other mappings will be converted to `CaseInsensitiveDict` automatically.</span>
+
+<span class="sd">        If *body* is a provided as a :term:`bytes-like object`, a</span>
+<span class="sd">        ``Content-MD5`` header is generated automatically unless it has been</span>
+<span class="sd">        provided in *headers* already.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+
+        <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;start&#39;</span><span class="p">)</span>
+        
+        <span class="k">if</span> <span class="n">expect100</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">body</span><span class="p">,</span> <span class="n">BodyFollowing</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&#39;expect100 only allowed for separate body&#39;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sock</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">connect</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_out_remaining</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">StateError</span><span class="p">(</span><span class="s">&#39;body data has not been sent completely yet&#39;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">headers</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">headers</span> <span class="o">=</span> <span class="n">CaseInsensitiveDict</span><span class="p">()</span>
+        <span class="k">elif</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">headers</span><span class="p">,</span> <span class="n">CaseInsensitiveDict</span><span class="p">):</span>
+            <span class="n">headers</span> <span class="o">=</span> <span class="n">CaseInsensitiveDict</span><span class="p">(</span><span class="n">headers</span><span class="p">)</span>
+
+        <span class="n">pending_body_size</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="k">if</span> <span class="n">body</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">headers</span><span class="p">[</span><span class="s">&#39;Content-Length&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;0&#39;</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">body</span><span class="p">,</span> <span class="n">BodyFollowing</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">body</span><span class="o">.</span><span class="n">length</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&#39;Chunked encoding not yet supported.&#39;</span><span class="p">)</span>
+            <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;preparing to send </span><span class="si">%d</span><span class="s"> bytes of body data&#39;</span><span class="p">,</span> <span class="n">body</span><span class="o">.</span><span class="n">length</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">expect100</span><span class="p">:</span>
+                <span class="n">headers</span><span class="p">[</span><span class="s">&#39;Expect&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;100-continue&#39;</span>
+                <span class="c"># Do not set _out_remaining, we must only send data once we&#39;ve</span>
+                <span class="c"># read the response. Instead, save body size in</span>
+                <span class="c"># _pending_requests so that it can be restored by</span>
+                <span class="c"># read_response().</span>
+                <span class="n">pending_body_size</span> <span class="o">=</span> <span class="n">body</span><span class="o">.</span><span class="n">length</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_out_remaining</span> <span class="o">=</span> <span class="p">(</span><span class="n">method</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">WAITING_FOR_100c</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_out_remaining</span> <span class="o">=</span> <span class="p">(</span><span class="n">method</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">body</span><span class="o">.</span><span class="n">length</span><span class="p">)</span>
+            <span class="n">headers</span><span class="p">[</span><span class="s">&#39;Content-Length&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">body</span><span class="o">.</span><span class="n">length</span><span class="p">)</span>
+            <span class="n">body</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">body</span><span class="p">,</span> <span class="p">(</span><span class="nb">bytes</span><span class="p">,</span> <span class="nb">bytearray</span><span class="p">,</span> <span class="n">memoryview</span><span class="p">)):</span>
+            <span class="n">headers</span><span class="p">[</span><span class="s">&#39;Content-Length&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">body</span><span class="p">))</span>
+            <span class="k">if</span> <span class="s">&#39;Content-MD5&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">headers</span><span class="p">:</span>
+                <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;computing content-md5&#39;</span><span class="p">)</span>
+                <span class="n">headers</span><span class="p">[</span><span class="s">&#39;Content-MD5&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">b64encode</span><span class="p">(</span><span class="n">hashlib</span><span class="o">.</span><span class="n">md5</span><span class="p">(</span><span class="n">body</span><span class="p">)</span><span class="o">.</span><span class="n">digest</span><span class="p">())</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="s">&#39;ascii&#39;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s">&#39;*body* must be None, bytes-like or BodyFollowing&#39;</span><span class="p">)</span>
+
+        <span class="c"># Generate host header</span>
+        <span class="n">host</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hostname</span>
+        <span class="k">if</span> <span class="n">host</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s">&#39;:&#39;</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">host</span> <span class="o">=</span> <span class="s">&#39;[{}]&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">host</span><span class="p">)</span>
+        <span class="n">default_port</span> <span class="o">=</span> <span class="n">HTTPS_PORT</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">ssl_context</span> <span class="k">else</span> <span class="n">HTTP_PORT</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">port</span> <span class="o">==</span> <span class="n">default_port</span><span class="p">:</span>
+            <span class="n">headers</span><span class="p">[</span><span class="s">&#39;Host&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">host</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">headers</span><span class="p">[</span><span class="s">&#39;Host&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;{}:{}&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">host</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">port</span><span class="p">)</span>
+
+        <span class="c"># Assemble request</span>
+        <span class="n">headers</span><span class="p">[</span><span class="s">&#39;Accept-Encoding&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;identity&#39;</span>
+        <span class="k">if</span> <span class="s">&#39;Connection&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">headers</span><span class="p">:</span>
+            <span class="n">headers</span><span class="p">[</span><span class="s">&#39;Connection&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;keep-alive&#39;</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="p">[</span> <span class="s">&#39;{} {} HTTP/1.1&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">method</span><span class="p">,</span> <span class="n">path</span><span class="p">)</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s">&#39;latin1&#39;</span><span class="p">)</span> <span class="p">]</span>
+        <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">val</span> <span class="ow">in</span> <span class="n">headers</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">request</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s">&#39;{}: {}&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">val</span><span class="p">)</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s">&#39;latin1&#39;</span><span class="p">))</span>
+        <span class="n">request</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">b</span><span class="s">&#39;&#39;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">body</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">request</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">body</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">request</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">b</span><span class="s">&#39;&#39;</span><span class="p">)</span>
+
+        <span class="n">buf</span> <span class="o">=</span> <span class="n">b</span><span class="s">&#39;</span><span class="se">\r\n</span><span class="s">&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+
+        <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;sending </span><span class="si">%s</span><span class="s"> </span><span class="si">%s</span><span class="s">&#39;</span><span class="p">,</span> <span class="n">method</span><span class="p">,</span> <span class="n">path</span><span class="p">)</span>
+        <span class="k">yield from</span> <span class="bp">self</span><span class="o">.</span><span class="n">_co_send</span><span class="p">(</span><span class="n">buf</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_out_remaining</span> <span class="ow">or</span> <span class="n">expect100</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_pending_requests</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">method</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">pending_body_size</span><span class="p">))</span>
+</div>
+    <span class="k">def</span> <span class="nf">_co_send</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">buf</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Send *buf* to server&#39;&#39;&#39;</span>
+
+        <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;trying to send </span><span class="si">%d</span><span class="s"> bytes&#39;</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">buf</span><span class="p">))</span>
+        
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">buf</span><span class="p">,</span> <span class="n">memoryview</span><span class="p">):</span>
+            <span class="n">buf</span> <span class="o">=</span> <span class="n">memoryview</span><span class="p">(</span><span class="n">buf</span><span class="p">)</span>
+
+        <span class="n">fd</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sock</span><span class="o">.</span><span class="n">fileno</span><span class="p">()</span>
+        <span class="k">while</span> <span class="bp">True</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">select</span><span class="p">((),</span> <span class="p">(</span><span class="n">fd</span><span class="p">,),</span> <span class="p">(),</span> <span class="mi">0</span><span class="p">)[</span><span class="mi">1</span><span class="p">]:</span>
+                <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;yielding&#39;</span><span class="p">)</span>
+                <span class="k">yield</span> <span class="n">PollNeeded</span><span class="p">(</span><span class="n">fd</span><span class="p">,</span> <span class="n">EPOLLOUT</span><span class="p">)</span>
+                <span class="k">continue</span>
+
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">len_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sock</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">buf</span><span class="p">)</span>
+            <span class="k">except</span> <span class="n">BrokenPipeError</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">ConnectionClosed</span><span class="p">(</span><span class="s">&#39;found closed when trying to write&#39;</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">OSError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">exc</span><span class="o">.</span><span class="n">errno</span> <span class="o">==</span> <span class="n">errno</span><span class="o">.</span><span class="n">EINVAL</span><span class="p">:</span>
+                    <span class="c"># Blackhole routing, according to ip(7)</span>
+                    <span class="k">raise</span> <span class="n">ConnectionClosed</span><span class="p">(</span><span class="s">&#39;ip route goes into black hole&#39;</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="k">raise</span>
+            <span class="k">except</span> <span class="n">InterruptedError</span><span class="p">:</span>
+                <span class="c"># According to send(2), this means that no data has been sent</span>
+                <span class="c"># at all before the interruption, so we just try again.</span>
+                <span class="k">pass</span>
+            <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;sent </span><span class="si">%d</span><span class="s"> bytes&#39;</span><span class="p">,</span> <span class="n">len_</span><span class="p">)</span>
+            <span class="n">buf</span> <span class="o">=</span> <span class="n">buf</span><span class="p">[</span><span class="n">len_</span><span class="p">:]</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">buf</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;done&#39;</span><span class="p">)</span>
+                <span class="k">return</span>
+            
+<div class="viewcode-block" id="HTTPConnection.write"><a class="viewcode-back" href="../api.html#dugong.HTTPConnection.write">[docs]</a>    <span class="k">def</span> <span class="nf">write</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">buf</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;placeholder, will be replaced dynamically&#39;&#39;&#39;</span>
+        <span class="n">eval_coroutine</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">co_write</span><span class="p">(</span><span class="n">buf</span><span class="p">))</span>
+</div>
+<div class="viewcode-block" id="HTTPConnection.co_write"><a class="viewcode-back" href="../api.html#dugong.HTTPConnection.co_write">[docs]</a>    <span class="k">def</span> <span class="nf">co_write</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">buf</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Write request body data</span>
+
+<span class="sd">        `ExcessBodyData` will be raised when attempting to send more data than</span>
+<span class="sd">        required to complete the request body of the active request.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+
+        <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;start (len=</span><span class="si">%d</span><span class="s">)&#39;</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">buf</span><span class="p">))</span>
+        
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_out_remaining</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">StateError</span><span class="p">(</span><span class="s">&#39;No active request with pending body data&#39;</span><span class="p">)</span>
+
+        <span class="p">(</span><span class="n">method</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">remaining</span><span class="p">)</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_out_remaining</span>
+        <span class="k">if</span> <span class="n">remaining</span> <span class="ow">is</span> <span class="n">WAITING_FOR_100c</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">StateError</span><span class="p">(</span><span class="s">&quot;can&#39;t write when waiting for 100-continue&quot;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">buf</span><span class="p">)</span> <span class="o">&gt;</span> <span class="n">remaining</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">ExcessBodyData</span><span class="p">(</span><span class="s">&#39;trying to write </span><span class="si">%d</span><span class="s"> bytes, but only </span><span class="si">%d</span><span class="s"> bytes pending&#39;</span>
+                                    <span class="o">%</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">buf</span><span class="p">),</span> <span class="n">remaining</span><span class="p">))</span>
+
+        <span class="k">yield from</span> <span class="bp">self</span><span class="o">.</span><span class="n">_co_send</span><span class="p">(</span><span class="n">buf</span><span class="p">)</span>
+
+        <span class="n">len_</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">buf</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">len_</span> <span class="o">==</span> <span class="n">remaining</span><span class="p">:</span>
+            <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;body sent fully&#39;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_out_remaining</span> <span class="o">=</span> <span class="bp">None</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_pending_requests</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">method</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="bp">None</span><span class="p">))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_out_remaining</span> <span class="o">=</span> <span class="p">(</span><span class="n">method</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">remaining</span> <span class="o">-</span> <span class="n">len_</span><span class="p">)</span>
+
+        <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;done&#39;</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="HTTPConnection.response_pending"><a class="viewcode-back" href="../api.html#dugong.HTTPConnection.response_pending">[docs]</a>    <span class="k">def</span> <span class="nf">response_pending</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Return `True` if there are still outstanding responses</span>
+
+<span class="sd">        This includes responses that have been partially read.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+
+        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_pending_requests</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span>
+</div>
+<div class="viewcode-block" id="HTTPConnection.read_response"><a class="viewcode-back" href="../api.html#dugong.HTTPConnection.read_response">[docs]</a>    <span class="k">def</span> <span class="nf">read_response</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;placeholder, will be replaced dynamically&#39;&#39;&#39;</span>
+        <span class="k">return</span> <span class="n">eval_coroutine</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">co_read_response</span><span class="p">())</span>
+</div>
+<div class="viewcode-block" id="HTTPConnection.co_read_response"><a class="viewcode-back" href="../api.html#dugong.HTTPConnection.co_read_response">[docs]</a>    <span class="k">def</span> <span class="nf">co_read_response</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Read response status line and headers</span>
+
+<span class="sd">        Return a `HTTPResponse` instance containing information about response</span>
+<span class="sd">        status, reason, and headers. The response body data must be retrieved</span>
+<span class="sd">        separately (e.g. using `.read` or `.readall`).</span>
+
+<span class="sd">        Even for a response with empty body, one of the body reading method must</span>
+<span class="sd">        be called once before the next response can be processed.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+
+        <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;start&#39;</span><span class="p">)</span>
+        
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_pending_requests</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">StateError</span><span class="p">(</span><span class="s">&#39;No pending requests&#39;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_in_remaining</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">StateError</span><span class="p">(</span><span class="s">&#39;Previous response not read completely&#39;</span><span class="p">)</span>
+
+        <span class="p">(</span><span class="n">method</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">body_size</span><span class="p">)</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pending_requests</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+        <span class="c"># Need to loop to handle any 1xx responses</span>
+        <span class="k">while</span> <span class="bp">True</span><span class="p">:</span>
+            <span class="p">(</span><span class="n">status</span><span class="p">,</span> <span class="n">reason</span><span class="p">)</span> <span class="o">=</span> <span class="k">yield from</span> <span class="bp">self</span><span class="o">.</span><span class="n">_co_read_status</span><span class="p">()</span>
+            <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;got </span><span class="si">%03d</span><span class="s"> </span><span class="si">%s</span><span class="s">&#39;</span><span class="p">,</span> <span class="n">status</span><span class="p">,</span> <span class="n">reason</span><span class="p">)</span>
+            
+            <span class="n">hstring</span> <span class="o">=</span> <span class="k">yield from</span> <span class="bp">self</span><span class="o">.</span><span class="n">_co_read_header</span><span class="p">()</span>
+            <span class="n">header</span> <span class="o">=</span> <span class="n">email</span><span class="o">.</span><span class="n">message_from_string</span><span class="p">(</span><span class="n">hstring</span><span class="p">,</span> <span class="n">policy</span><span class="o">=</span><span class="n">email</span><span class="o">.</span><span class="n">policy</span><span class="o">.</span><span class="n">HTTP</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">status</span> <span class="o">&lt;</span> <span class="mi">100</span> <span class="ow">or</span> <span class="n">status</span> <span class="o">&gt;</span> <span class="mi">199</span><span class="p">:</span>
+                <span class="k">break</span>
+
+            <span class="c"># We are waiting for 100-continue</span>
+            <span class="k">if</span> <span class="n">body_size</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span> <span class="ow">and</span> <span class="n">status</span> <span class="o">==</span> <span class="mi">100</span><span class="p">:</span>
+                <span class="k">break</span>
+
+        <span class="c"># Handle (expected) 100-continue</span>
+        <span class="k">if</span> <span class="n">status</span> <span class="o">==</span> <span class="mi">100</span><span class="p">:</span>
+            <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_out_remaining</span> <span class="o">==</span> <span class="p">(</span><span class="n">method</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">WAITING_FOR_100c</span><span class="p">)</span>
+
+            <span class="c"># We&#39;re ready to sent request body now</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_out_remaining</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pending_requests</span><span class="o">.</span><span class="n">popleft</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_in_remaining</span> <span class="o">=</span> <span class="bp">None</span>
+
+            <span class="c"># Return early, because we don&#39;t have to prepare</span>
+            <span class="c"># for reading the response body at this time</span>
+            <span class="k">return</span> <span class="n">HTTPResponse</span><span class="p">(</span><span class="n">method</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">status</span><span class="p">,</span> <span class="n">reason</span><span class="p">,</span> <span class="n">header</span><span class="p">,</span> <span class="n">length</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="c"># Handle non-100 status when waiting for 100-continue</span>
+        <span class="k">elif</span> <span class="n">body_size</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_out_remaining</span> <span class="o">==</span> <span class="p">(</span><span class="n">method</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">WAITING_FOR_100c</span><span class="p">)</span>
+            <span class="c"># RFC 2616 actually states that the server MAY continue to read</span>
+            <span class="c"># the request body after it has sent a final status code</span>
+            <span class="c"># (http://tools.ietf.org/html/rfc2616#section-8.2.3). However,</span>
+            <span class="c"># that totally defeats the purpose of 100-continue, so we hope</span>
+            <span class="c"># that the server behaves sanely and does not attempt to read</span>
+            <span class="c"># the body of a request it has already handled. (As a side note,</span>
+            <span class="c"># this ambuigity in the RFC also totally breaks HTTP pipelining,</span>
+            <span class="c"># as we can never be sure if the server is going to expect the</span>
+            <span class="c"># request or some request body data).</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_out_remaining</span> <span class="o">=</span> <span class="bp">None</span>
+
+        <span class="c">#</span>
+        <span class="c"># Prepare to read body</span>
+        <span class="c">#</span>
+        <span class="n">body_length</span> <span class="o">=</span> <span class="bp">None</span>
+
+        <span class="n">tc</span> <span class="o">=</span> <span class="n">header</span><span class="p">[</span><span class="s">&#39;Transfer-Encoding&#39;</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">tc</span><span class="p">:</span>
+            <span class="n">tc</span> <span class="o">=</span> <span class="n">tc</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">tc</span> <span class="ow">and</span> <span class="n">tc</span> <span class="o">==</span> <span class="s">&#39;chunked&#39;</span><span class="p">:</span>
+            <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;Chunked encoding detected&#39;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_encoding</span> <span class="o">=</span> <span class="n">CHUNKED_ENCODING</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_in_remaining</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">elif</span> <span class="n">tc</span> <span class="ow">and</span> <span class="n">tc</span> <span class="o">!=</span> <span class="s">&#39;identity&#39;</span><span class="p">:</span>
+            <span class="c"># Server must not sent anything other than identity or chunked, so</span>
+            <span class="c"># we raise InvalidResponse rather than UnsupportedResponse. We defer</span>
+            <span class="c"># raising the exception to read(), so that we can still return the</span>
+            <span class="c"># headers and status (and don&#39;t fail if the response body is empty).</span>
+            <span class="n">log</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s">&#39;Server uses invalid response encoding &quot;</span><span class="si">%s</span><span class="s">&quot;&#39;</span><span class="p">,</span> <span class="n">tc</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_encoding</span> <span class="o">=</span> <span class="n">InvalidResponse</span><span class="p">(</span><span class="s">&#39;Cannot handle </span><span class="si">%s</span><span class="s"> encoding&#39;</span> <span class="o">%</span> <span class="n">tc</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;identity encoding detected&#39;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_encoding</span> <span class="o">=</span> <span class="n">IDENTITY_ENCODING</span>
+
+        <span class="c"># does the body have a fixed length? (of zero)</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">status</span> <span class="o">==</span> <span class="n">NO_CONTENT</span> <span class="ow">or</span> <span class="n">status</span> <span class="o">==</span> <span class="n">NOT_MODIFIED</span> <span class="ow">or</span>
+            <span class="mi">100</span> <span class="o">&lt;=</span> <span class="n">status</span> <span class="o">&lt;</span> <span class="mi">200</span> <span class="ow">or</span> <span class="n">method</span> <span class="o">==</span> <span class="s">&#39;HEAD&#39;</span><span class="p">):</span>
+            <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;no content by RFC&#39;</span><span class="p">)</span>
+            <span class="n">body_length</span> <span class="o">=</span> <span class="mi">0</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_in_remaining</span> <span class="o">=</span> <span class="mi">0</span>
+            <span class="c"># for these cases, there isn&#39;t even a zero chunk we could read</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_encoding</span> <span class="o">=</span> <span class="n">IDENTITY_ENCODING</span>
+
+        <span class="c"># Chunked doesn&#39;t require content-length</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">_encoding</span> <span class="ow">is</span> <span class="n">CHUNKED_ENCODING</span><span class="p">:</span>
+            <span class="k">pass</span>
+
+        <span class="c"># Otherwise we require a content-length. We defer raising the exception</span>
+        <span class="c"># to read(), so that we can still return the headers and status.</span>
+        <span class="k">elif</span> <span class="p">(</span><span class="s">&#39;Content-Length&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">header</span>
+              <span class="ow">and</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_encoding</span><span class="p">,</span> <span class="n">InvalidResponse</span><span class="p">)):</span>
+            <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;no content length and no chunkend encoding, will raise on read&#39;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_encoding</span> <span class="o">=</span> <span class="n">UnsupportedResponse</span><span class="p">(</span><span class="s">&#39;No content-length and no chunked encoding&#39;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_in_remaining</span> <span class="o">=</span> <span class="mi">0</span>
+
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_in_remaining</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">header</span><span class="p">[</span><span class="s">&#39;Content-Length&#39;</span><span class="p">])</span>
+            <span class="n">body_length</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_in_remaining</span>
+
+        <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;done (in_remaining=</span><span class="si">%d</span><span class="s">)&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_in_remaining</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">HTTPResponse</span><span class="p">(</span><span class="n">method</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">status</span><span class="p">,</span> <span class="n">reason</span><span class="p">,</span> <span class="n">header</span><span class="p">,</span> <span class="n">body_length</span><span class="p">)</span>
+    </div>
+    <span class="k">def</span> <span class="nf">_co_read_status</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Read response line&#39;&#39;&#39;</span>
+
+        <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;start&#39;</span><span class="p">)</span>
+
+        <span class="c"># read status</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">line</span> <span class="o">=</span> <span class="k">yield from</span> <span class="bp">self</span><span class="o">.</span><span class="n">_co_readstr_until</span><span class="p">(</span><span class="n">b</span><span class="s">&#39;</span><span class="se">\r\n</span><span class="s">&#39;</span><span class="p">,</span> <span class="n">MAX_LINE_SIZE</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">_ChunkTooLong</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">InvalidResponse</span><span class="p">(</span><span class="s">&#39;server send ridicously long status line&#39;</span><span class="p">)</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">version</span><span class="p">,</span> <span class="n">status</span><span class="p">,</span> <span class="n">reason</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="bp">None</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">version</span><span class="p">,</span> <span class="n">status</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="bp">None</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+                <span class="n">reason</span> <span class="o">=</span> <span class="s">&quot;&quot;</span>
+            <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+                <span class="c"># empty version will cause next test to fail.</span>
+                <span class="n">version</span> <span class="o">=</span> <span class="s">&quot;&quot;</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">version</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s">&quot;HTTP/1&quot;</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="n">UnsupportedResponse</span><span class="p">(</span><span class="s">&#39;</span><span class="si">%s</span><span class="s"> not supported&#39;</span> <span class="o">%</span> <span class="n">version</span><span class="p">)</span>
+
+        <span class="c"># The status code is a three-digit number</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">status</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">status</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">status</span> <span class="o">&lt;</span> <span class="mi">100</span> <span class="ow">or</span> <span class="n">status</span> <span class="o">&gt;</span> <span class="mi">999</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">InvalidResponse</span><span class="p">(</span><span class="s">&#39;</span><span class="si">%d</span><span class="s"> is not a valid status&#39;</span> <span class="o">%</span> <span class="n">status</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">InvalidResponse</span><span class="p">(</span><span class="s">&#39;</span><span class="si">%s</span><span class="s"> is not a valid status&#39;</span> <span class="o">%</span> <span class="n">status</span><span class="p">)</span>
+
+        <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;done&#39;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">(</span><span class="n">status</span><span class="p">,</span> <span class="n">reason</span><span class="o">.</span><span class="n">strip</span><span class="p">())</span>
+    
+    <span class="k">def</span> <span class="nf">_co_read_header</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Read response header&#39;&#39;&#39;</span>
+
+        <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;start&#39;</span><span class="p">)</span>
+
+        <span class="c"># Peek into buffer. If the first characters are \r\n, then the header </span>
+        <span class="c"># is empty (so our search for \r\n\r\n would fail)</span>
+        <span class="n">rbuf</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_rbuf</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">rbuf</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="k">yield from</span> <span class="bp">self</span><span class="o">.</span><span class="n">_co_fill_buffer</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">rbuf</span><span class="o">.</span><span class="n">d</span><span class="p">[</span><span class="n">rbuf</span><span class="o">.</span><span class="n">b</span><span class="p">:</span><span class="n">rbuf</span><span class="o">.</span><span class="n">b</span><span class="o">+</span><span class="mi">2</span><span class="p">]</span> <span class="o">==</span> <span class="n">b</span><span class="s">&#39;</span><span class="se">\r\n</span><span class="s">&#39;</span><span class="p">:</span>
+            <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;done (empty header)&#39;</span><span class="p">)</span>
+            <span class="n">rbuf</span><span class="o">.</span><span class="n">b</span> <span class="o">+=</span> <span class="mi">2</span>
+            <span class="k">return</span> <span class="s">&#39;&#39;</span>
+            
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">hstring</span> <span class="o">=</span> <span class="k">yield from</span> <span class="bp">self</span><span class="o">.</span><span class="n">_co_readstr_until</span><span class="p">(</span><span class="n">b</span><span class="s">&#39;</span><span class="se">\r\n\r\n</span><span class="s">&#39;</span><span class="p">,</span> <span class="n">MAX_HEADER_SIZE</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">_ChunkTooLong</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">InvalidResponse</span><span class="p">(</span><span class="s">&#39;server sent ridicously long header&#39;</span><span class="p">)</span>
+
+        <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;done (</span><span class="si">%d</span><span class="s"> characters)&#39;</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">hstring</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">hstring</span>
+
+<div class="viewcode-block" id="HTTPConnection.read"><a class="viewcode-back" href="../api.html#dugong.HTTPConnection.read">[docs]</a>    <span class="k">def</span> <span class="nf">read</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">len_</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;placeholder, will be replaced dynamically&#39;&#39;&#39;</span>
+        <span class="k">if</span> <span class="n">len_</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">readall</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">eval_coroutine</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">co_read</span><span class="p">(</span><span class="n">len_</span><span class="p">))</span>
+</div>
+<div class="viewcode-block" id="HTTPConnection.co_read"><a class="viewcode-back" href="../api.html#dugong.HTTPConnection.co_read">[docs]</a>    <span class="k">def</span> <span class="nf">co_read</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">len_</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Read up to *len_* bytes of response body data</span>
+
+<span class="sd">        This method may return less than *len_* bytes, but will return ``b&#39;&#39;`` only</span>
+<span class="sd">        if the response body has been read completely. Further attempts to read</span>
+<span class="sd">        more data after ``b&#39;&#39;`` has been returned will result in `StateError` being</span>
+<span class="sd">        raised.</span>
+
+<span class="sd">        If *len_* is `None`, this method returns the entire response body. Further</span>
+<span class="sd">        calls will not return ``b&#39;&#39;`` but directly raise `StateError`.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+
+        <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;start (len=</span><span class="si">%d</span><span class="s">)&#39;</span><span class="p">,</span> <span class="n">len_</span><span class="p">)</span>
+        
+        <span class="k">if</span> <span class="n">len_</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">(</span><span class="k">yield from</span> <span class="bp">self</span><span class="o">.</span><span class="n">co_readall</span><span class="p">())</span>
+
+        <span class="k">if</span> <span class="n">len_</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">b</span><span class="s">&#39;&#39;</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_in_remaining</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">StateError</span><span class="p">(</span><span class="s">&#39;No active response with body&#39;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_encoding</span> <span class="ow">is</span> <span class="n">IDENTITY_ENCODING</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">(</span><span class="k">yield from</span> <span class="bp">self</span><span class="o">.</span><span class="n">_co_read_id</span><span class="p">(</span><span class="n">len_</span><span class="p">))</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">_encoding</span> <span class="ow">is</span> <span class="n">CHUNKED_ENCODING</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">(</span><span class="k">yield from</span> <span class="bp">self</span><span class="o">.</span><span class="n">_co_read_chunked</span><span class="p">(</span><span class="n">len_</span><span class="o">=</span><span class="n">len_</span><span class="p">))</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_encoding</span><span class="p">,</span> <span class="ne">Exception</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_encoding</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s">&#39;ooops, this should not be possible&#39;</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="HTTPConnection.readinto"><a class="viewcode-back" href="../api.html#dugong.HTTPConnection.readinto">[docs]</a>    <span class="k">def</span> <span class="nf">readinto</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">buf</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;placeholder, will be replaced dynamically&#39;&#39;&#39;</span>
+        <span class="k">return</span> <span class="n">eval_coroutine</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">co_readinto</span><span class="p">(</span><span class="n">buf</span><span class="p">))</span>
+ </div>
+<div class="viewcode-block" id="HTTPConnection.co_readinto"><a class="viewcode-back" href="../api.html#dugong.HTTPConnection.co_readinto">[docs]</a>    <span class="k">def</span> <span class="nf">co_readinto</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">buf</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Read response body data into *buf*</span>
+
+<span class="sd">        Return the number of bytes written or zero if the response body has been</span>
+<span class="sd">        read completely. Further attempts to read more data after zero has been</span>
+<span class="sd">        returned will result in `StateError` being raised.</span>
+
+<span class="sd">        *buf* must implement the memoryview protocol.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+
+        <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;start (buflen=</span><span class="si">%d</span><span class="s">)&#39;</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">buf</span><span class="p">))</span>
+        
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">buf</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mi">0</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_in_remaining</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">StateError</span><span class="p">(</span><span class="s">&#39;No active response with body&#39;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_encoding</span> <span class="ow">is</span> <span class="n">IDENTITY_ENCODING</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">(</span><span class="k">yield from</span> <span class="bp">self</span><span class="o">.</span><span class="n">_co_readinto_id</span><span class="p">(</span><span class="n">buf</span><span class="p">))</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">_encoding</span> <span class="ow">is</span> <span class="n">CHUNKED_ENCODING</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">(</span><span class="k">yield from</span> <span class="bp">self</span><span class="o">.</span><span class="n">_co_read_chunked</span><span class="p">(</span><span class="n">buf</span><span class="o">=</span><span class="n">buf</span><span class="p">))</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_encoding</span><span class="p">,</span> <span class="ne">Exception</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">_encoding</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s">&#39;ooops, this should not be possible&#39;</span><span class="p">)</span>
+</div>
+    <span class="k">def</span> <span class="nf">_co_read_id</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">len_</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Read up to *len* bytes of response body assuming identity encoding&#39;&#39;&#39;</span>
+
+        <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;start (len=</span><span class="si">%d</span><span class="s">)&#39;</span><span class="p">,</span> <span class="n">len_</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_in_remaining</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span>
+        
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_in_remaining</span><span class="p">:</span>
+            <span class="c"># Body retrieved completely, clean up</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_in_remaining</span> <span class="o">=</span> <span class="bp">None</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_pending_requests</span><span class="o">.</span><span class="n">popleft</span><span class="p">()</span>
+            <span class="k">return</span> <span class="n">b</span><span class="s">&#39;&#39;</span>
+
+        <span class="n">sock_fd</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sock</span><span class="o">.</span><span class="n">fileno</span><span class="p">()</span>
+        <span class="n">rbuf</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_rbuf</span>
+        <span class="n">len_</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">len_</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_in_remaining</span><span class="p">)</span>
+        <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;updated len_=</span><span class="si">%d</span><span class="s">&#39;</span><span class="p">,</span> <span class="n">len_</span><span class="p">)</span>
+
+        <span class="c"># Buffer might be empty, but have no capacity. This is handled</span>
+        <span class="c"># in _try_fill_buffer(), but we have to take this into account</span>
+        <span class="c"># in the while condition already.</span>
+        <span class="k">if</span> <span class="n">rbuf</span><span class="o">.</span><span class="n">b</span> <span class="o">==</span> <span class="n">rbuf</span><span class="o">.</span><span class="n">e</span><span class="p">:</span>
+            <span class="n">rbuf</span><span class="o">.</span><span class="n">b</span> <span class="o">=</span> <span class="mi">0</span>
+            <span class="n">rbuf</span><span class="o">.</span><span class="n">e</span> <span class="o">=</span> <span class="mi">0</span>
+            
+        <span class="c"># Loop while we could return more data than we have buffered</span>
+        <span class="c"># and buffer is not full</span>
+        <span class="k">while</span> <span class="nb">len</span><span class="p">(</span><span class="n">rbuf</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">len_</span> <span class="ow">and</span> <span class="n">rbuf</span><span class="o">.</span><span class="n">e</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">rbuf</span><span class="o">.</span><span class="n">d</span><span class="p">):</span>
+            <span class="n">got_data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_try_fill_buffer</span><span class="p">()</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">got_data</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">rbuf</span><span class="p">:</span>
+                <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;buffer empty and nothing to read, yielding..&#39;</span><span class="p">)</span>
+                <span class="k">yield</span> <span class="n">PollNeeded</span><span class="p">(</span><span class="n">sock_fd</span><span class="p">,</span> <span class="n">EPOLLIN</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="ow">not</span> <span class="n">got_data</span><span class="p">:</span>
+                <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;nothing more to read&#39;</span><span class="p">)</span>
+                <span class="k">break</span>
+
+        <span class="n">len_</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">len_</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">rbuf</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_in_remaining</span> <span class="o">-=</span> <span class="n">len_</span>
+
+        <span class="k">if</span> <span class="n">len_</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">rbuf</span><span class="p">):</span>
+            <span class="n">buf</span> <span class="o">=</span> <span class="n">rbuf</span><span class="o">.</span><span class="n">d</span><span class="p">[</span><span class="n">rbuf</span><span class="o">.</span><span class="n">b</span><span class="p">:</span><span class="n">rbuf</span><span class="o">.</span><span class="n">b</span><span class="o">+</span><span class="n">len_</span><span class="p">]</span>
+            <span class="n">rbuf</span><span class="o">.</span><span class="n">b</span> <span class="o">+=</span> <span class="n">len_</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">buf</span> <span class="o">=</span> <span class="n">rbuf</span><span class="o">.</span><span class="n">exhaust</span><span class="p">()</span>
+
+        <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;done (</span><span class="si">%d</span><span class="s"> bytes)&#39;</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">buf</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">buf</span>
+
+    <span class="k">def</span> <span class="nf">_co_readinto_id</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">buf</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Read response body into *buf* assuming identity encoding&#39;&#39;&#39;</span>
+
+        <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;start (buflen=</span><span class="si">%d</span><span class="s">)&#39;</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">buf</span><span class="p">))</span>
+        
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_in_remaining</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_in_remaining</span><span class="p">:</span>
+            <span class="c"># Body retrieved completely, clean up</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_in_remaining</span> <span class="o">=</span> <span class="bp">None</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_pending_requests</span><span class="o">.</span><span class="n">popleft</span><span class="p">()</span>
+            <span class="k">return</span> <span class="mi">0</span>
+
+        <span class="n">sock_fd</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sock</span><span class="o">.</span><span class="n">fileno</span><span class="p">()</span>
+        <span class="n">rbuf</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_rbuf</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">buf</span><span class="p">,</span> <span class="n">memoryview</span><span class="p">):</span>
+            <span class="n">buf</span> <span class="o">=</span> <span class="n">memoryview</span><span class="p">(</span><span class="n">buf</span><span class="p">)</span>
+        <span class="n">len_</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">buf</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">_in_remaining</span><span class="p">)</span>
+        <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;updated len_=</span><span class="si">%d</span><span class="s">&#39;</span><span class="p">,</span> <span class="n">len_</span><span class="p">)</span>
+
+        <span class="c"># First use read buffer contents</span>
+        <span class="n">pos</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">rbuf</span><span class="p">),</span> <span class="n">len_</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">pos</span><span class="p">:</span>
+            <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;using buffered data&#39;</span><span class="p">)</span>
+            <span class="n">buf</span><span class="p">[:</span><span class="n">pos</span><span class="p">]</span> <span class="o">=</span> <span class="n">rbuf</span><span class="o">.</span><span class="n">d</span><span class="p">[</span><span class="n">rbuf</span><span class="o">.</span><span class="n">b</span><span class="p">:</span><span class="n">rbuf</span><span class="o">.</span><span class="n">b</span><span class="o">+</span><span class="n">pos</span><span class="p">]</span>
+            <span class="n">rbuf</span><span class="o">.</span><span class="n">b</span> <span class="o">+=</span> <span class="n">pos</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_in_remaining</span> <span class="o">-=</span> <span class="n">pos</span>
+            
+            <span class="c"># If we&#39;ve read enough, return immediately</span>
+            <span class="k">if</span> <span class="n">pos</span> <span class="o">==</span> <span class="n">len_</span><span class="p">:</span>
+                <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;done (got all we need, </span><span class="si">%d</span><span class="s"> bytes)&#39;</span><span class="p">,</span> <span class="n">pos</span><span class="p">)</span>
+                <span class="k">return</span> <span class="n">pos</span>
+
+            <span class="c"># Otherwise, prepare to read more from socket</span>
+            <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;got </span><span class="si">%d</span><span class="s"> bytes from buffer&#39;</span><span class="p">,</span> <span class="n">pos</span><span class="p">)</span>
+            <span class="k">assert</span> <span class="ow">not</span> <span class="nb">len</span><span class="p">(</span><span class="n">rbuf</span><span class="p">)</span>
+
+        <span class="k">while</span> <span class="bp">True</span><span class="p">:</span>
+            <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;trying to read from socket&#39;</span><span class="p">)</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">read</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sock</span><span class="o">.</span><span class="n">recv_into</span><span class="p">(</span><span class="n">buf</span><span class="p">[</span><span class="n">pos</span><span class="p">:</span><span class="n">len_</span><span class="p">])</span>
+            <span class="k">except</span> <span class="p">(</span><span class="n">socket</span><span class="o">.</span><span class="n">timeout</span><span class="p">,</span> <span class="n">ssl</span><span class="o">.</span><span class="n">SSLWantReadError</span><span class="p">,</span> <span class="n">BlockingIOError</span><span class="p">):</span>
+                <span class="k">if</span> <span class="n">pos</span><span class="p">:</span>
+                    <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;done (nothing more to read, got </span><span class="si">%d</span><span class="s"> bytes)&#39;</span><span class="p">,</span> <span class="n">pos</span><span class="p">)</span>
+                    <span class="k">return</span> <span class="n">pos</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;no data yet and nothing to read, yielding..&#39;</span><span class="p">)</span>
+                    <span class="k">yield</span> <span class="n">PollNeeded</span><span class="p">(</span><span class="n">sock_fd</span><span class="p">,</span> <span class="n">EPOLLIN</span><span class="p">)</span>
+                    <span class="k">continue</span>
+
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">read</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">ConnectionClosed</span><span class="p">(</span><span class="s">&#39;connection closed unexpectedly&#39;</span><span class="p">)</span>
+            
+            <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;got </span><span class="si">%d</span><span class="s"> bytes&#39;</span><span class="p">,</span> <span class="n">read</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_in_remaining</span> <span class="o">-=</span> <span class="n">read</span>
+            <span class="n">pos</span> <span class="o">+=</span> <span class="n">read</span>
+            <span class="k">if</span> <span class="n">pos</span> <span class="o">==</span> <span class="n">len_</span><span class="p">:</span>
+                <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;done (got all we need, </span><span class="si">%d</span><span class="s"> bytes)&#39;</span><span class="p">,</span> <span class="n">pos</span><span class="p">)</span>
+                <span class="k">return</span> <span class="n">pos</span>
+
+    <span class="k">def</span> <span class="nf">_co_read_chunked</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">len_</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">buf</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Read response body assuming chunked encoding</span>
+
+<span class="sd">        If *len_* is not `None`, reads up to *len_* bytes of data and returns</span>
+<span class="sd">        a `bytes-like object`. If *buf* is not `None`, reads data into *buf*.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+
+        <span class="c"># TODO: In readinto mode, we always need an extra sock.recv()</span>
+        <span class="c"># to get the chunk trailer.. is there some way to avoid that? And</span>
+        <span class="c"># maybe also put the beginning of the next chunk into the read buffer right away?</span>
+
+        <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;start (</span><span class="si">%s</span><span class="s"> mode)&#39;</span><span class="p">,</span> <span class="s">&#39;readinto&#39;</span> <span class="k">if</span> <span class="n">buf</span> <span class="k">else</span> <span class="s">&#39;read&#39;</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="p">(</span><span class="n">len_</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">)</span> <span class="o">!=</span> <span class="p">(</span><span class="n">buf</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="nb">bool</span><span class="p">(</span><span class="n">len_</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">bool</span><span class="p">(</span><span class="n">buf</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_in_remaining</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span>
+        
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_in_remaining</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;starting next chunk&#39;</span><span class="p">)</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">line</span> <span class="o">=</span> <span class="k">yield from</span> <span class="bp">self</span><span class="o">.</span><span class="n">_co_readstr_until</span><span class="p">(</span><span class="n">b</span><span class="s">&#39;</span><span class="se">\r\n</span><span class="s">&#39;</span><span class="p">,</span> <span class="n">MAX_LINE_SIZE</span><span class="p">)</span>
+            <span class="k">except</span> <span class="n">_ChunkTooLong</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">InvalidResponse</span><span class="p">(</span><span class="s">&#39;could not find next chunk marker&#39;</span><span class="p">)</span>
+
+            <span class="n">i</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s">&quot;;&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">i</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;stripping chunk extensions: </span><span class="si">%s</span><span class="s">&#39;</span><span class="p">,</span> <span class="n">line</span><span class="p">[</span><span class="n">i</span><span class="p">:])</span>
+                <span class="n">line</span> <span class="o">=</span> <span class="n">line</span><span class="p">[:</span><span class="n">i</span><span class="p">]</span> <span class="c"># strip chunk-extensions</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_in_remaining</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">line</span><span class="p">,</span> <span class="mi">16</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">InvalidResponse</span><span class="p">(</span><span class="s">&#39;Cannot read chunk size </span><span class="si">%r</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">line</span><span class="p">[:</span><span class="mi">20</span><span class="p">])</span>
+
+            <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;chunk size is </span><span class="si">%d</span><span class="s">&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_in_remaining</span><span class="p">)</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_in_remaining</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_in_remaining</span> <span class="o">=</span> <span class="bp">None</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_pending_requests</span><span class="o">.</span><span class="n">popleft</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_in_remaining</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">res</span> <span class="o">=</span> <span class="mi">0</span> <span class="k">if</span> <span class="n">buf</span> <span class="k">else</span> <span class="n">b</span><span class="s">&#39;&#39;</span>
+        <span class="k">elif</span> <span class="n">buf</span><span class="p">:</span>
+            <span class="n">res</span> <span class="o">=</span> <span class="k">yield from</span> <span class="bp">self</span><span class="o">.</span><span class="n">_co_readinto_id</span><span class="p">(</span><span class="n">buf</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">res</span> <span class="o">=</span> <span class="k">yield from</span> <span class="bp">self</span><span class="o">.</span><span class="n">_co_read_id</span><span class="p">(</span><span class="n">len_</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_in_remaining</span><span class="p">:</span>
+            <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;chunk complete&#39;</span><span class="p">)</span>
+            <span class="k">yield from</span> <span class="bp">self</span><span class="o">.</span><span class="n">_co_read_header</span><span class="p">()</span>
+
+        <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;done&#39;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">res</span>
+    
+    <span class="k">def</span> <span class="nf">_co_readstr_until</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">substr</span><span class="p">,</span> <span class="n">maxsize</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Read from server until *substr*, and decode to latin1</span>
+
+<span class="sd">        If *substr* cannot be found in the next *maxsize* bytes,</span>
+<span class="sd">        raises `_ChunkTooLong`.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">substr</span><span class="p">,</span> <span class="p">(</span><span class="nb">bytes</span><span class="p">,</span> <span class="nb">bytearray</span><span class="p">,</span> <span class="n">memoryview</span><span class="p">)):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s">&#39;*substr* must be bytes-like&#39;</span><span class="p">)</span>
+
+        <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;reading until </span><span class="si">%s</span><span class="s">&#39;</span><span class="p">,</span> <span class="n">substr</span><span class="p">)</span>
+        
+        <span class="n">sock_fd</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sock</span><span class="o">.</span><span class="n">fileno</span><span class="p">()</span>
+        <span class="n">rbuf</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_rbuf</span>
+        <span class="n">sub_len</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">substr</span><span class="p">)</span>
+
+        <span class="c"># Make sure that substr cannot be split over more than one part</span>
+        <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">rbuf</span><span class="o">.</span><span class="n">d</span><span class="p">)</span> <span class="o">&gt;</span> <span class="n">sub_len</span>
+        
+        <span class="n">parts</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">while</span> <span class="bp">True</span><span class="p">:</span>
+            <span class="c"># substr may be split between last part and current buffer</span>
+            <span class="c"># This isn&#39;t very performant, but it should be pretty rare</span>
+            <span class="k">if</span> <span class="n">parts</span> <span class="ow">and</span> <span class="n">sub_len</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="n">buf</span> <span class="o">=</span> <span class="n">_join</span><span class="p">((</span><span class="n">parts</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">][</span><span class="o">-</span><span class="n">sub_len</span><span class="p">:],</span>
+                            <span class="n">rbuf</span><span class="o">.</span><span class="n">d</span><span class="p">[</span><span class="n">rbuf</span><span class="o">.</span><span class="n">b</span><span class="p">:</span><span class="nb">min</span><span class="p">(</span><span class="n">rbuf</span><span class="o">.</span><span class="n">e</span><span class="p">,</span> <span class="n">rbuf</span><span class="o">.</span><span class="n">b</span><span class="o">+</span><span class="n">sub_len</span><span class="o">-</span><span class="mi">1</span><span class="p">)]))</span>
+                <span class="n">idx</span> <span class="o">=</span> <span class="n">buf</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="n">substr</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">idx</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="n">idx</span> <span class="o">-=</span> <span class="n">sub_len</span>
+                    <span class="k">break</span>
+                
+            <span class="c">#log.debug(&#39;rbuf is: %s&#39;, rbuf.d[rbuf.b:min(rbuf.e, rbuf.b+512)])</span>
+            <span class="n">stop</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">rbuf</span><span class="o">.</span><span class="n">e</span><span class="p">,</span> <span class="n">rbuf</span><span class="o">.</span><span class="n">b</span> <span class="o">+</span> <span class="n">maxsize</span><span class="p">)</span>
+            <span class="n">idx</span> <span class="o">=</span> <span class="n">rbuf</span><span class="o">.</span><span class="n">d</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="n">substr</span><span class="p">,</span> <span class="n">rbuf</span><span class="o">.</span><span class="n">b</span><span class="p">,</span> <span class="n">stop</span><span class="p">)</span>
+            
+            <span class="k">if</span> <span class="n">idx</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">:</span> <span class="c"># found</span>
+                <span class="k">break</span>
+            <span class="k">if</span> <span class="n">stop</span> <span class="o">!=</span> <span class="n">rbuf</span><span class="o">.</span><span class="n">e</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">_ChunkTooLong</span><span class="p">()</span>
+
+            <span class="c"># If buffer is full, store away the part that we need for sure</span>
+            <span class="k">if</span> <span class="n">rbuf</span><span class="o">.</span><span class="n">e</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">rbuf</span><span class="o">.</span><span class="n">d</span><span class="p">):</span>
+                <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;buffer is full, storing part&#39;</span><span class="p">)</span>
+                <span class="n">buf</span> <span class="o">=</span> <span class="n">rbuf</span><span class="o">.</span><span class="n">exhaust</span><span class="p">()</span>
+                <span class="n">parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">buf</span><span class="p">)</span>
+                <span class="n">maxsize</span> <span class="o">-=</span> <span class="nb">len</span><span class="p">(</span><span class="n">buf</span><span class="p">)</span>
+
+            <span class="c"># Refill buffer</span>
+            <span class="k">while</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_try_fill_buffer</span><span class="p">():</span>
+                <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;need more data, yielding&#39;</span><span class="p">)</span>
+                <span class="k">yield</span> <span class="n">PollNeeded</span><span class="p">(</span><span class="n">sock_fd</span><span class="p">,</span> <span class="n">EPOLLIN</span><span class="p">)</span>
+
+        <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;found substr at </span><span class="si">%d</span><span class="s">&#39;</span><span class="p">,</span> <span class="n">idx</span><span class="p">)</span>
+        <span class="n">idx</span> <span class="o">+=</span> <span class="nb">len</span><span class="p">(</span><span class="n">substr</span><span class="p">)</span>
+        <span class="n">buf</span> <span class="o">=</span> <span class="n">rbuf</span><span class="o">.</span><span class="n">d</span><span class="p">[</span><span class="n">rbuf</span><span class="o">.</span><span class="n">b</span><span class="p">:</span><span class="n">idx</span><span class="p">]</span>
+        <span class="n">rbuf</span><span class="o">.</span><span class="n">b</span> <span class="o">=</span> <span class="n">idx</span>
+
+        <span class="k">if</span> <span class="n">parts</span><span class="p">:</span>
+            <span class="n">parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">buf</span><span class="p">)</span>
+            <span class="n">buf</span> <span class="o">=</span> <span class="n">_join</span><span class="p">(</span><span class="n">parts</span><span class="p">)</span>
+            
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">buf</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="s">&#39;latin1&#39;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">UnicodeDecodeError</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">InvalidResponse</span><span class="p">(</span><span class="s">&#39;server response cannot be decoded to latin1&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_try_fill_buffer</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Try to fill up read buffer</span>
+
+<span class="sd">        Returns the number of bytes read into buffer, or `None` if no</span>
+<span class="sd">        data was available on the socket. May raise `ConnectionClosed`.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+
+        <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;start&#39;</span><span class="p">)</span>
+        <span class="n">rbuf</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_rbuf</span>
+
+        <span class="c"># If no capacity or empty, reset</span>
+        <span class="c"># (this clause cover *both* cases)</span>
+        <span class="k">if</span> <span class="n">rbuf</span><span class="o">.</span><span class="n">d</span> <span class="o">==</span> <span class="n">rbuf</span><span class="o">.</span><span class="n">e</span><span class="p">:</span>
+            <span class="n">rbuf</span><span class="o">.</span><span class="n">e</span> <span class="o">=</span> <span class="mi">0</span>
+            <span class="n">rbuf</span><span class="o">.</span><span class="n">d</span> <span class="o">=</span> <span class="mi">0</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">len_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sock</span><span class="o">.</span><span class="n">recv_into</span><span class="p">(</span><span class="n">memoryview</span><span class="p">(</span><span class="n">rbuf</span><span class="o">.</span><span class="n">d</span><span class="p">)[</span><span class="n">rbuf</span><span class="o">.</span><span class="n">e</span><span class="p">:])</span>
+        <span class="k">except</span> <span class="p">(</span><span class="n">socket</span><span class="o">.</span><span class="n">timeout</span><span class="p">,</span> <span class="n">ssl</span><span class="o">.</span><span class="n">SSLWantReadError</span><span class="p">,</span> <span class="n">BlockingIOError</span><span class="p">):</span>
+            <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;done (nothing ready)&#39;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="bp">None</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">len_</span><span class="p">:</span>
+            <span class="k">assert</span> <span class="n">rbuf</span><span class="o">.</span><span class="n">e</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">rbuf</span><span class="o">.</span><span class="n">d</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="n">ConnectionClosed</span><span class="p">(</span><span class="s">&#39;connection closed unexpectedly&#39;</span><span class="p">)</span>
+
+        <span class="n">rbuf</span><span class="o">.</span><span class="n">e</span> <span class="o">+=</span> <span class="n">len_</span>
+        <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;done (got </span><span class="si">%d</span><span class="s"> bytes)&#39;</span><span class="p">,</span> <span class="n">len_</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">len_</span>
+
+    <span class="k">def</span> <span class="nf">_co_fill_buffer</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">len_</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Make sure that there are at least *len_* bytes in buffer&#39;&#39;&#39;</span>
+
+        <span class="n">rbuf</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_rbuf</span>
+        <span class="n">sock_fd</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sock</span><span class="o">.</span><span class="n">fileno</span><span class="p">()</span>
+        <span class="k">while</span> <span class="nb">len</span><span class="p">(</span><span class="n">rbuf</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">len_</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">rbuf</span><span class="o">.</span><span class="n">d</span><span class="p">)</span> <span class="o">-</span> <span class="n">rbuf</span><span class="o">.</span><span class="n">b</span> <span class="o">&lt;</span> <span class="n">len_</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_rbuf</span><span class="o">.</span><span class="n">compact</span><span class="p">()</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_try_fill_buffer</span><span class="p">():</span>
+                <span class="k">yield</span> <span class="n">PollNeeded</span><span class="p">(</span><span class="n">sock_fd</span><span class="p">,</span> <span class="n">EPOLLIN</span><span class="p">)</span>
+
+<div class="viewcode-block" id="HTTPConnection.readall"><a class="viewcode-back" href="../api.html#dugong.HTTPConnection.readall">[docs]</a>    <span class="k">def</span> <span class="nf">readall</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;placeholder, will be replaced dynamically&#39;&#39;&#39;</span>
+        <span class="k">return</span> <span class="n">eval_coroutine</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">co_readall</span><span class="p">())</span>
+</div>
+<div class="viewcode-block" id="HTTPConnection.co_readall"><a class="viewcode-back" href="../api.html#dugong.HTTPConnection.co_readall">[docs]</a>    <span class="k">def</span> <span class="nf">co_readall</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Read and return complete response body</span>
+
+<span class="sd">        After this function has returned, attemps to read more body data</span>
+<span class="sd">        for the same response will raise `StateError`.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+
+        <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;start&#39;</span><span class="p">)</span>
+        <span class="n">parts</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">while</span> <span class="bp">True</span><span class="p">:</span>
+            <span class="n">buf</span> <span class="o">=</span> <span class="k">yield from</span> <span class="bp">self</span><span class="o">.</span><span class="n">co_read</span><span class="p">(</span><span class="n">BUFFER_SIZE</span><span class="p">)</span>
+            <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;got </span><span class="si">%d</span><span class="s"> bytes&#39;</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">buf</span><span class="p">))</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">buf</span><span class="p">:</span>
+                <span class="k">break</span>
+            <span class="n">parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">buf</span><span class="p">)</span>
+
+            
+        <span class="n">buf</span> <span class="o">=</span> <span class="n">_join</span><span class="p">(</span><span class="n">parts</span><span class="p">)</span>
+        <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;done (</span><span class="si">%d</span><span class="s"> bytes)&#39;</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">buf</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">buf</span>
+</div>
+<div class="viewcode-block" id="HTTPConnection.discard"><a class="viewcode-back" href="../api.html#dugong.HTTPConnection.discard">[docs]</a>    <span class="k">def</span> <span class="nf">discard</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;placeholder, will be replaced dynamically&#39;&#39;&#39;</span>
+        <span class="k">return</span> <span class="n">eval_coroutine</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">co_discard</span><span class="p">())</span>
+    </div>
+<div class="viewcode-block" id="HTTPConnection.co_discard"><a class="viewcode-back" href="../api.html#dugong.HTTPConnection.co_discard">[docs]</a>    <span class="k">def</span> <span class="nf">co_discard</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Read and discard current response body</span>
+
+<span class="sd">        After this function has returned, attempts to read more body data</span>
+<span class="sd">        for the same response will raise `StateError`.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+
+        <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;start&#39;</span><span class="p">)</span>
+        <span class="n">buf</span> <span class="o">=</span> <span class="n">memoryview</span><span class="p">(</span><span class="nb">bytearray</span><span class="p">(</span><span class="n">BUFFER_SIZE</span><span class="p">))</span>
+        <span class="k">while</span> <span class="bp">True</span><span class="p">:</span>
+            <span class="n">len_</span> <span class="o">=</span> <span class="k">yield from</span> <span class="bp">self</span><span class="o">.</span><span class="n">co_readinto</span><span class="p">(</span><span class="n">buf</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">len_</span><span class="p">:</span>
+                <span class="k">break</span>
+            <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;discarding </span><span class="si">%d</span><span class="s"> bytes&#39;</span><span class="p">,</span> <span class="n">len_</span><span class="p">)</span>
+        <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;done&#39;</span><span class="p">)</span>
+        </div>
+<div class="viewcode-block" id="HTTPConnection.disconnect"><a class="viewcode-back" href="../api.html#dugong.HTTPConnection.disconnect">[docs]</a>    <span class="k">def</span> <span class="nf">disconnect</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Close HTTP connection&#39;&#39;&#39;</span>
+
+        <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;start&#39;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sock</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_sock</span><span class="o">.</span><span class="n">shutdown</span><span class="p">(</span><span class="n">socket</span><span class="o">.</span><span class="n">SHUT_RDWR</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">OSError</span><span class="p">:</span>
+                <span class="c"># When called to reset after connection problems, socket</span>
+                <span class="c"># may have shut down already.</span>
+                <span class="k">pass</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_sock</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_sock</span> <span class="o">=</span> <span class="bp">None</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_rbuf</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;already closed&#39;</span><span class="p">)</span>
+
+</div></div>
+<span class="k">def</span> <span class="nf">_extend_HTTPConnection_docstrings</span><span class="p">():</span>
+
+    <span class="n">co_suffix</span> <span class="o">=</span> <span class="s">&#39;</span><span class="se">\n\n</span><span class="s">&#39;</span> <span class="o">+</span> <span class="n">textwrap</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span>
+        <span class="s">&#39;This method returns a coroutine. `.</span><span class="si">%s</span><span class="s">` is a regular method &#39;</span>
+        <span class="s">&#39;implementing the same functionality.&#39;</span><span class="p">,</span> <span class="n">width</span><span class="o">=</span><span class="mi">78</span><span class="p">)</span>
+    <span class="n">reg_suffix</span> <span class="o">=</span> <span class="s">&#39;</span><span class="se">\n\n</span><span class="s">&#39;</span> <span class="o">+</span> <span class="n">textwrap</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span>
+        <span class="s">&#39;This method may block. `.co_</span><span class="si">%s</span><span class="s">` provides a coroutine &#39;</span>
+        <span class="s">&#39;implementing the same functionality without blocking.&#39;</span><span class="p">,</span> <span class="n">width</span><span class="o">=</span><span class="mi">78</span><span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="p">(</span><span class="s">&#39;read&#39;</span><span class="p">,</span> <span class="s">&#39;read_response&#39;</span><span class="p">,</span> <span class="s">&#39;readall&#39;</span><span class="p">,</span> <span class="s">&#39;readinto&#39;</span><span class="p">,</span> <span class="s">&#39;send_request&#39;</span><span class="p">,</span>
+                 <span class="s">&#39;write&#39;</span><span class="p">,</span> <span class="s">&#39;discard&#39;</span><span class="p">):</span>
+        <span class="n">fn</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">HTTPConnection</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+        <span class="n">cofn</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">HTTPConnection</span><span class="p">,</span> <span class="s">&#39;co_&#39;</span> <span class="o">+</span> <span class="n">name</span><span class="p">)</span>
+
+        <span class="n">fn</span><span class="o">.</span><span class="n">__doc__</span> <span class="o">=</span> <span class="n">getdoc</span><span class="p">(</span><span class="n">cofn</span><span class="p">)</span> <span class="o">+</span> <span class="n">reg_suffix</span> <span class="o">%</span> <span class="n">name</span>
+        <span class="n">cofn</span><span class="o">.</span><span class="n">__doc__</span> <span class="o">=</span> <span class="n">getdoc</span><span class="p">(</span><span class="n">cofn</span><span class="p">)</span> <span class="o">+</span> <span class="n">co_suffix</span> <span class="o">%</span> <span class="n">name</span>
+
+<span class="n">_extend_HTTPConnection_docstrings</span><span class="p">()</span>
+
+<span class="k">def</span> <span class="nf">_join</span><span class="p">(</span><span class="n">parts</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;Join a sequence of byte-like objects</span>
+
+<span class="sd">    This method is necessary because `bytes.join` does not work with</span>
+<span class="sd">    memoryviews.</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+
+    <span class="n">size</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">part</span> <span class="ow">in</span> <span class="n">parts</span><span class="p">:</span>
+        <span class="n">size</span> <span class="o">+=</span> <span class="nb">len</span><span class="p">(</span><span class="n">parts</span><span class="p">)</span>
+
+    <span class="n">buf</span> <span class="o">=</span> <span class="nb">bytearray</span><span class="p">(</span><span class="n">size</span><span class="p">)</span>
+    <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">part</span> <span class="ow">in</span> <span class="n">parts</span><span class="p">:</span>
+        <span class="n">len_</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">part</span><span class="p">)</span>
+        <span class="n">buf</span><span class="p">[</span><span class="n">i</span><span class="p">:</span><span class="n">i</span><span class="o">+</span><span class="n">len_</span><span class="p">]</span> <span class="o">=</span> <span class="n">part</span>
+        <span class="n">i</span> <span class="o">+=</span> <span class="n">len_</span>
+
+    <span class="k">return</span> <span class="n">buf</span>
+        
+<span class="k">def</span> <span class="nf">eval_coroutine</span><span class="p">(</span><span class="n">crt</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;Evaluate *crt* (polling as needed) and return its result&#39;&#39;&#39;</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">while</span> <span class="bp">True</span><span class="p">:</span>
+            <span class="k">assert</span> <span class="nb">next</span><span class="p">(</span><span class="n">crt</span><span class="p">)</span><span class="o">.</span><span class="n">poll</span><span class="p">()</span>
+            <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;polling&#39;</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">StopIteration</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">exc</span><span class="o">.</span><span class="n">value</span>
+
+<div class="viewcode-block" id="is_temp_network_error"><a class="viewcode-back" href="../api.html#dugong.is_temp_network_error">[docs]</a><span class="k">def</span> <span class="nf">is_temp_network_error</span><span class="p">(</span><span class="n">exc</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;Return true if *exc* represents a potentially temporary network problem&#39;&#39;&#39;</span>
+
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">exc</span><span class="p">,</span> <span class="p">(</span><span class="n">socket</span><span class="o">.</span><span class="n">timeout</span><span class="p">,</span> <span class="n">ConnectionError</span><span class="p">,</span> <span class="n">TimeoutError</span><span class="p">,</span> <span class="n">InterruptedError</span><span class="p">,</span>
+                        <span class="n">ConnectionClosed</span><span class="p">,</span> <span class="n">ssl</span><span class="o">.</span><span class="n">SSLZeroReturnError</span><span class="p">,</span> <span class="n">ssl</span><span class="o">.</span><span class="n">SSLEOFError</span><span class="p">,</span>
+                        <span class="n">ssl</span><span class="o">.</span><span class="n">SSLSyscallError</span><span class="p">)):</span>
+        <span class="k">return</span> <span class="bp">True</span>
+
+    <span class="c"># Formally this is a permanent error. However, it may also indicate</span>
+    <span class="c"># that there is currently no network connection to the DNS server</span>
+    <span class="k">elif</span> <span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">exc</span><span class="p">,</span> <span class="p">(</span><span class="n">socket</span><span class="o">.</span><span class="n">gaierror</span><span class="p">,</span> <span class="n">socket</span><span class="o">.</span><span class="n">herror</span><span class="p">))</span>
+          <span class="ow">and</span> <span class="n">exc</span><span class="o">.</span><span class="n">errno</span> <span class="ow">in</span> <span class="p">(</span><span class="n">socket</span><span class="o">.</span><span class="n">EAI_AGAIN</span><span class="p">,</span> <span class="n">socket</span><span class="o">.</span><span class="n">EAI_NONAME</span><span class="p">)):</span>
+        <span class="k">return</span> <span class="bp">True</span>
+
+    <span class="k">return</span> <span class="bp">False</span>
+
+</div>
+<div class="viewcode-block" id="CaseInsensitiveDict"><a class="viewcode-back" href="../api.html#dugong.CaseInsensitiveDict">[docs]</a><span class="k">class</span> <span class="nc">CaseInsensitiveDict</span><span class="p">(</span><span class="n">MutableMapping</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;A case-insensitive `dict`-like object.</span>
+
+<span class="sd">    Implements all methods and operations of</span>
+<span class="sd">    :class:`collections.abc.MutableMapping` as well as `.copy`.</span>
+
+<span class="sd">    All keys are expected to be strings. The structure remembers the case of the</span>
+<span class="sd">    last key to be set, and :meth:`!iter`, :meth:`!keys` and :meth:`!items` will</span>
+<span class="sd">    contain case-sensitive keys. However, querying and contains testing is case</span>
+<span class="sd">    insensitive::</span>
+
+<span class="sd">        cid = CaseInsensitiveDict()</span>
+<span class="sd">        cid[&#39;Accept&#39;] = &#39;application/json&#39;</span>
+<span class="sd">        cid[&#39;aCCEPT&#39;] == &#39;application/json&#39; # True</span>
+<span class="sd">        list(cid) == [&#39;Accept&#39;] # True</span>
+
+<span class="sd">    For example, ``headers[&#39;content-encoding&#39;]`` will return the value of a</span>
+<span class="sd">    ``&#39;Content-Encoding&#39;`` response header, regardless of how the header name</span>
+<span class="sd">    was originally stored.</span>
+
+<span class="sd">    If the constructor, :meth:`!update`, or equality comparison operations are</span>
+<span class="sd">    given multiple keys that have equal lower-case representions, the behavior</span>
+<span class="sd">    is undefined.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_store</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">data</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">data</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__setitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="c"># Use the lowercased key for lookups, but store the actual</span>
+        <span class="c"># key alongside the value.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_store</span><span class="p">[</span><span class="n">key</span><span class="o">.</span><span class="n">lower</span><span class="p">()]</span> <span class="o">=</span> <span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__getitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_store</span><span class="p">[</span><span class="n">key</span><span class="o">.</span><span class="n">lower</span><span class="p">()][</span><span class="mi">1</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">__delitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">):</span>
+        <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">_store</span><span class="p">[</span><span class="n">key</span><span class="o">.</span><span class="n">lower</span><span class="p">()]</span>
+
+    <span class="k">def</span> <span class="nf">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">(</span><span class="n">casedkey</span> <span class="k">for</span> <span class="n">casedkey</span><span class="p">,</span> <span class="n">mappedvalue</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_store</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
+
+    <span class="k">def</span> <span class="nf">__len__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_store</span><span class="p">)</span>
+
+<div class="viewcode-block" id="CaseInsensitiveDict.lower_items"><a class="viewcode-back" href="../api.html#dugong.CaseInsensitiveDict.lower_items">[docs]</a>    <span class="k">def</span> <span class="nf">lower_items</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Like :meth:`!items`, but with all lowercase keys.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">(</span>
+            <span class="p">(</span><span class="n">lowerkey</span><span class="p">,</span> <span class="n">keyval</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+            <span class="k">for</span> <span class="p">(</span><span class="n">lowerkey</span><span class="p">,</span> <span class="n">keyval</span><span class="p">)</span>
+            <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_store</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+        <span class="p">)</span>
+</div>
+    <span class="k">def</span> <span class="nf">__eq__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">other</span><span class="p">,</span> <span class="n">Mapping</span><span class="p">):</span>
+            <span class="n">other</span> <span class="o">=</span> <span class="n">CaseInsensitiveDict</span><span class="p">(</span><span class="n">other</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">NotImplemented</span>
+        <span class="c"># Compare insensitively</span>
+        <span class="k">return</span> <span class="nb">dict</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">lower_items</span><span class="p">())</span> <span class="o">==</span> <span class="nb">dict</span><span class="p">(</span><span class="n">other</span><span class="o">.</span><span class="n">lower_items</span><span class="p">())</span>
+
+    <span class="c"># Copy is required</span>
+    <span class="k">def</span> <span class="nf">copy</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+         <span class="k">return</span> <span class="n">CaseInsensitiveDict</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_store</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
+
+    <span class="k">def</span> <span class="nf">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s">&#39;</span><span class="si">%s</span><span class="s">(</span><span class="si">%r</span><span class="s">)&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">__class__</span><span class="o">.</span><span class="n">__name__</span><span class="p">,</span> <span class="nb">dict</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">items</span><span class="p">()))</span>
+
+</div>
+<span class="k">if</span> <span class="n">asyncio</span><span class="p">:</span>
+    <span class="k">class</span> <span class="nc">AioFuture</span><span class="p">(</span><span class="n">asyncio</span><span class="o">.</span><span class="n">Future</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        This class wraps a coroutine that yields `PollNeeded` instances</span>
+<span class="sd">        into an `asyncio` compatible `~asyncio.Future`.</span>
+<span class="sd">        </span>
+<span class="sd">        This is done by registering a callback with the event loop that resumes</span>
+<span class="sd">        the coroutine when the requested IO is available.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+
+        <span class="c">#: Set of fds that that any `_Future` instance currently has</span>
+        <span class="c">#: read callbacks registered for (class attribute)</span>
+        <span class="n">_read_fds</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">()</span>
+        
+        <span class="c">#: Set of fds that that any `_Future` instance currently has</span>
+        <span class="c">#: write callbacks registered for (class attribute)</span>
+        <span class="n">_write_fds</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">()</span>
+        
+        <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">crt</span><span class="p">,</span> <span class="n">loop</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+            <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="n">loop</span><span class="o">=</span><span class="n">loop</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_crt</span> <span class="o">=</span> <span class="n">crt</span>
+
+            <span class="c">#: The currently pending io request (that we have registered</span>
+            <span class="c">#: callbacks for).</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_io_req</span> <span class="o">=</span> <span class="bp">None</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">_loop</span><span class="o">.</span><span class="n">call_soon</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_resume_crt</span><span class="p">)</span>
+            
+        <span class="k">def</span> <span class="nf">_resume_crt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">exc</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+            <span class="sd">&#39;&#39;&#39;Resume coroutine</span>
+
+<span class="sd">            If coroutine has completed, mark self as done. Otherwise, reschedule</span>
+<span class="sd">            call when requested io is available. If *exc* is specified, raise</span>
+<span class="sd">            *exc* in coroutine.</span>
+<span class="sd">            &#39;&#39;&#39;</span>
+            
+            <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;start&#39;</span><span class="p">)</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">exc</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+                    <span class="n">io_req</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_crt</span><span class="o">.</span><span class="n">throw</span><span class="p">(</span><span class="n">exc</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">io_req</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_crt</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">exc</span><span class="p">,</span> <span class="ne">StopIteration</span><span class="p">):</span>
+                    <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;coroutine completed&#39;</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">set_result</span><span class="p">(</span><span class="n">exc</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;coroutine raised exception&#39;</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">set_exception</span><span class="p">(</span><span class="n">exc</span><span class="p">)</span>
+                <span class="n">io_req</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_io_req</span>
+                <span class="k">if</span> <span class="n">io_req</span><span class="p">:</span>
+                    <span class="c"># This is a bit fragile.. what if there is more than one</span>
+                    <span class="c"># reader or writer? However, in practice this should not be</span>
+                    <span class="c"># the case: they would read or write unpredictable parts of</span>
+                    <span class="c"># the input/output.</span>
+                    <span class="k">if</span> <span class="n">io_req</span><span class="o">.</span><span class="n">mask</span> <span class="o">&amp;</span> <span class="n">EPOLLIN</span><span class="p">:</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">_loop</span><span class="o">.</span><span class="n">remove_reader</span><span class="p">(</span><span class="n">io_req</span><span class="o">.</span><span class="n">fd</span><span class="p">)</span>
+                        <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">_read_fds</span><span class="p">[</span><span class="n">io_req</span><span class="o">.</span><span class="n">fd</span><span class="p">]</span>
+                    <span class="k">if</span> <span class="n">io_req</span><span class="o">.</span><span class="n">mask</span> <span class="o">&amp;</span> <span class="n">EPOLLOUT</span><span class="p">:</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">_loop</span><span class="o">.</span><span class="n">remove_writer</span><span class="p">(</span><span class="n">io_req</span><span class="o">.</span><span class="n">fd</span><span class="p">)</span>
+                        <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">_write_fds</span><span class="p">[</span><span class="n">io_req</span><span class="o">.</span><span class="n">fd</span><span class="p">]</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_io_req</span> <span class="o">=</span> <span class="bp">None</span>
+                <span class="k">return</span>
+
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">io_req</span><span class="p">,</span> <span class="n">PollNeeded</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_loop</span><span class="o">.</span><span class="n">call_soon</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_resume_crt</span><span class="p">,</span> 
+                                     <span class="ne">TypeError</span><span class="p">(</span><span class="s">&#39;Coroutine passed to asyncio_future did not yield &#39;</span>
+                                               <span class="s">&#39;PollNeeded instance!&#39;</span><span class="p">))</span>
+                <span class="k">return</span>
+
+            <span class="k">if</span> <span class="n">io_req</span><span class="o">.</span><span class="n">mask</span> <span class="o">&amp;</span> <span class="n">EPOLLIN</span><span class="p">:</span>
+                <span class="n">reader</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_read_fds</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">io_req</span><span class="o">.</span><span class="n">fd</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">reader</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+                    <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;got poll needed, registering reader&#39;</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_loop</span><span class="o">.</span><span class="n">add_reader</span><span class="p">(</span><span class="n">io_req</span><span class="o">.</span><span class="n">fd</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resume_crt</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_read_fds</span><span class="p">[</span><span class="n">io_req</span><span class="o">.</span><span class="n">fd</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span>
+                <span class="k">elif</span> <span class="n">reader</span> <span class="ow">is</span> <span class="bp">self</span><span class="p">:</span>
+                    <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;got poll needed, reusing read callback&#39;</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_loop</span><span class="o">.</span><span class="n">call_soon</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_resume_crt</span><span class="p">,</span>
+                                         <span class="ne">RuntimeError</span><span class="p">(</span><span class="s">&#39;There is already a read callback for this socket&#39;</span><span class="p">))</span>
+                    <span class="k">return</span>
+                
+            <span class="k">if</span> <span class="n">io_req</span><span class="o">.</span><span class="n">mask</span> <span class="o">&amp;</span> <span class="n">EPOLLOUT</span><span class="p">:</span>
+                <span class="n">writer</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_read_fds</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">io_req</span><span class="o">.</span><span class="n">fd</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">writer</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+                    <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;got poll needed, registering writer&#39;</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_loop</span><span class="o">.</span><span class="n">add_writer</span><span class="p">(</span><span class="n">io_req</span><span class="o">.</span><span class="n">fd</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resume_crt</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_write_fds</span><span class="p">[</span><span class="n">io_req</span><span class="o">.</span><span class="n">fd</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span>
+                <span class="k">elif</span> <span class="n">writer</span> <span class="ow">is</span> <span class="bp">self</span><span class="p">:</span>
+                    <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;got poll needed, reusing write callback&#39;</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_loop</span><span class="o">.</span><span class="n">call_soon</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_resume_crt</span><span class="p">,</span>
+                                         <span class="ne">RuntimeError</span><span class="p">(</span><span class="s">&#39;There is already a write callback for this socket&#39;</span><span class="p">))</span>
+                    <span class="k">return</span>
+                
+            <span class="bp">self</span><span class="o">.</span><span class="n">_io_req</span> <span class="o">=</span> <span class="n">io_req</span>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper"><h3><a href="../index.html">Table Of Contents</a></h3>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../intro.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../api.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../issues.html">Known Issues</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../whatsnew.html">Changelog</a></li>
+</ul>
+
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             >index</a></li>
+        <li><a href="../index.html">dugong 1.0 documentation</a> &raquo;</li>
+          <li><a href="index.html" >Module code</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2013-2014, Nikolaus Rath.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.
+    </div>
+  </body>
+</html>
