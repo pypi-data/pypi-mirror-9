@@ -1,0 +1,4 @@
+
+
+class SmartPagerResourceParseError(Exception):
+    pass

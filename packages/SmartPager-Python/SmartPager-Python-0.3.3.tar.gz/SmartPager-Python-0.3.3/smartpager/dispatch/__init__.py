@@ -1,0 +1,4 @@
+
+
+class DispatchException(Exception):
+    pass
