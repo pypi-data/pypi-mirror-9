@@ -1,0 +1,64 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+
+import sys
+import argh
+import pandas
+import dateutil.parser
+
+import flask_bigtempo.store.defaults as defaults
+import flask_bigtempo.store.clients as clients
+
+
+@argh.named('save')
+def rest_save(reference, symbol,
+	          jsondata,
+	          jsonformat=defaults.DEFAULT_JSON_FORMAT,
+	          host=defaults.DEFAULT_HOST):
+	data = pandas.read_json(jsondata, orient=jsonformat)
+
+	if not clients.StoreRestClient(host).save(data, reference, symbol, jsonformat=jsonformat):
+		sys.exit(1)
+
+
+
+@argh.named('retrieve')
+def rest_retrieve(reference, symbol, start=None, end=None,
+	              jsonformat=defaults.DEFAULT_JSON_FORMAT,
+	              host=defaults.DEFAULT_HOST):
+	start = _parse_datetime_str(start)
+	end = _parse_datetime_str(end)
+
+	data = clients.StoreRestClient(host).retrieve(reference, symbol,
+		                                          start=start, end=end,
+		                                          jsonformat=jsonformat)
+	if data is None:
+		print 'ERROR: No data returned'
+		sys.exit(1)
+
+	print data.to_json(orient=jsonformat, date_format='iso')
+
+
+@argh.named('delete')
+def rest_delete(reference, symbol, host=defaults.DEFAULT_HOST):
+    if not clients.StoreRestClient(host).delete(reference, symbol):
+        print 'ERROR: Could not delete'
+        sys.exit(1)
+
+
+def _parse_datetime_str(date_str):
+	if date_str is None:
+		return None
+	return dateutil.parser.parse(date_str)
+
+
+if __name__ == '__main__':
+    parser = argh.ArghParser()
+    parser.add_commands([rest_save,
+                         rest_retrieve,
+                         rest_delete],
+                        namespace='rest',
+                        title='REST interface client commands')
+
+    parser.dispatch()
