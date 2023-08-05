@@ -1,0 +1,10 @@
+__version__ = "0.4.4"
+__git_commiter_name__ = "Guy Rozendorn"
+__git_commiter_email__ = "guy@rzn.co.il"
+__git_branch__ = '(detached from v0.4.4)'
+__git_remote_tracking_branch__ = '(No remote tracking)'
+__git_remote_url__ = '(Not remote tracking)'
+__git_head_hash__ = 'f68be3ea5f04723a7545ede4afd8e8b8036b672b'
+__git_head_subject__ = 'TRIVIAL script_logging_decorator: fixing a bug where func is None'
+__git_head_message__ = ''
+__git_dirty_diff__ = ''
