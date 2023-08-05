@@ -1,0 +1,59 @@
+#!/usr/bin/env python
+"""
+qirest
+
+Starts the Quantitaive Imaging Profile REST server.
+"""
+
+import sys
+import os
+import argparse
+from subprocess import (Popen, PIPE, STDOUT)
+
+APP = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'run.py'))
+"""The Python script to run."""
+
+
+def main(argv=sys.argv):
+    # Parse the command line arguments.
+    opts = _parse_arguments()
+    
+    # Set the environment.
+    env = opts.get('env', None)
+    if env:
+      os.environ['NODE_ENV'] = env
+
+    # Start the server.
+    # The cumbersome but apparently necessary idiom below is required to continuously
+    # pipe the server output to the console
+    # (cf. http://stackoverflow.com/questions/4417546/constantly-print-subprocess-output-while-process-is-running).
+    proc = Popen([APP], stdout=PIPE, stderr=STDOUT)
+    while True:
+        line = proc.stdout.readline()
+        if line == '' and proc.poll() != None:
+            break
+        sys.stdout.write(line)
+        sys.stdout.flush()
+    out, _ = proc.communicate()
+    rc = proc.returncode
+    
+    return rc
+
+
+def _parse_arguments():
+    """Parses the command line arguments."""
+    parser = argparse.ArgumentParser()
+    env_grp = parser.add_mutually_exclusive_group()
+    env_grp.add_argument('--production', help="Production environment (the default)",
+                         dest='env', action='store_const', const='production')
+    env_grp.add_argument('--development', help="Test environment",
+                         dest='env', action='store_const', const='development')
+
+    args = vars(parser.parse_args())
+    nonempty_args = dict((k, v) for k, v in args.iteritems() if v != None)
+
+    return nonempty_args
+
+
+if __name__ == '__main__':
+    sys.exit(main())
