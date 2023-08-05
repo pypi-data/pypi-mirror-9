@@ -1,0 +1,78 @@
+{% extends "contentpage.html" %}
+{% block title %}Salt Observer: {{ request.view_args.get('function') }} {% endblock %}
+{% set active_page = request.view_args.get('function') %}
+
+{% block list %}
+<div id="list" class="pure-u-1">
+   {% for (minion, jid, time) in functions %}
+    <div id="minion-item-{{ minion }}" class="minion-item pure-g">
+        <div class="pure-u-3-4">
+            <h4 class="minion-name">{{ minion }}</h4>
+            <p class="jid-time">{{ time }}</p>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}
+
+{% block default_content %}
+<div id="default-content" class="centered-content">
+    <div class="pure-g">
+        <div class="pure-u-1">
+            <div class="count-box">
+                <h1>{{ functions|length }}</h1>
+                <div class="count-title">
+                    Minion{{ functions|length|pluralize }} ha{{ functions|length|pluralize("s", "ve") }} run this function...
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="pure-g">
+        <div class="pure-u-1">
+            <div class="count-box">
+                <h1>{{ average_run|round(1) }}</h1>
+                <div class="count-title">
+                    ...time{{ average_run|pluralize }}{{ functions|length|pluralize("", " on average") }}.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content_buttons %}
+    <a id="jid-btn" class="pure-button">Go to Job</a>
+    <a id="hist-btn" class="pure-button-primary pure-button">View Execution History</a>
+{% endblock %}
+
+{% block morescripts %}
+    <script type=text/javascript>
+    {% for (minion, jid, time) in functions %}
+        $("#minion-item-{{ minion|replace(".", "\\\\.") }}").click(function() {
+            $.ajax({ url:"{{ url_for('get_function_data', minion=minion, jid=jid) }}", success:function(result) {generate_content(result, '{{ time }}'); }});
+            $(this).siblings('div').removeClass('minion-item-selected');
+            $(this).removeClass('minion-item-new');
+            $(this).addClass('minion-item-selected');
+        });
+    {% endfor %}
+
+    {% if config.USE_LIVEUPDATES %}
+    incoming = new WebSocket("ws://" + location.host + SCRIPT_ROOT + "/subscribe");
+        incoming.onopen = function() {
+            incoming.send("{{ request.view_args.get('function') }}");
+        };
+        incoming.onmessage = function (message) {
+            var data = JSON.parse(message.data);
+            $("#minion-item-" + data['minion_id'].replace(/\./g, "\\.")).addClass("minion-item-new");
+            $("#minion-item-" + data['minion_id'].replace(/\./g, "\\.")).find('.jid-time').html(data['time']);
+            $("#minion-item-" + data['minion_id'].replace(/\./g, "\\.")).off('click');
+            $("#minion-item-" + data['minion_id'].replace(/\./g, "\\.")).click(function() {
+                $.ajax({ url:SCRIPT_ROOT + '/_get_function_data/' + data['minion_id'] + '/' + data['jid'], success:function(result) {generate_content(result, data['time']); }});
+                $(this).siblings('div').removeClass('minion-item-selected');
+                $(this).removeClass('minion-item-new');
+                $(this).addClass('minion-item-selected');
+            });
+        };
+    {% endif %}
+    </script>
+{% endblock %}
