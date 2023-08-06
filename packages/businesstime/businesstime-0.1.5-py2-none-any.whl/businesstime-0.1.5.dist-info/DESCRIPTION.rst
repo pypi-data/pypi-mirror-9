@@ -1,0 +1,63 @@
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+
+Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+
+Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+Description: businesstime
+        ============
+        
+        .. image:: https://badge.fury.io/py/businesstime.png
+            :target: http://badge.fury.io/py/businesstime
+        
+        .. image:: https://travis-ci.org/seatgeek/businesstime.png?branch=master
+                :target: https://travis-ci.org/seatgeek/businesstime
+        
+        BusinessTime is a simple utility for calculating business time aware timedeltas between two datetimes. BusinessTime's understanding of weekends, holidays and business hours can be easily configured in code.
+        
+        .. code-block:: pycon
+        
+            >>> datetime(2013, 12, 26, 5) - datetime(2013, 12, 23, 12)
+            datetime.timedelta(2, 61200)
+            >>> bt = businesstime.BusinessTime(holidays=businesstime.USFederalHolidays())
+            >>> bt.businesstimedelta(datetime(2013, 12, 23, 12), datetime(2013, 12, 26, 5))
+            datetime.timedelta(1, 18000)
+        
+        Features
+        --------
+        
+        - Simple, pythonic, business-time-aware datetime math
+        - A simple declarative format for defining holidays
+        - A number of useful iterators/predicate functions related to holidays/weekends/business hours
+        
+        
+        0.1.5
+        ========
+        * Fixed a bug (#7) where a datetime after business hours and a datetime during business hours were handled incorrectly
+        
+        0.1.4
+        ========
+        * Fixed a bug (#6) where two datetimes on the same day but before business hours were handled incorrectly
+        
+        0.1.3
+        ========
+        * Fixed a bug (#3) where the first instant of a business day was not considered part of that day
+        
+        0.1.2
+        =====
+        * Fix changelog
+        
+        0.1.1
+        =====
+        * Fix pypi package
+        
+        0.1.0
+        =====
+        * Public Release
+        
+Platform: UNKNOWN
+Classifier: Programming Language :: Python :: 2.7
