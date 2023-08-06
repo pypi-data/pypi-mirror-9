@@ -1,0 +1,777 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>zope.interface.interface &mdash; persistent 3.10b1 documentation</title>
+    
+    <link rel="stylesheet" href="../../../_static/classic.css" type="text/css" />
+    <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../../',
+        VERSION:     '3.10b1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../../_static/doctools.js"></script>
+    <link rel="top" title="persistent 3.10b1 documentation" href="../../../index.html" />
+    <link rel="up" title="Module code" href="../../index.html" /> 
+  </head>
+  <body role="document">
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../../../index.html">persistent 3.10b1 documentation</a> &raquo;</li>
+          <li class="nav-item nav-item-1"><a href="../../index.html" accesskey="U">Module code</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for zope.interface.interface</h1><div class="highlight"><pre>
+<span class="c">##############################################################################</span>
+<span class="c">#</span>
+<span class="c"># Copyright (c) 2001, 2002 Zope Foundation and Contributors.</span>
+<span class="c"># All Rights Reserved.</span>
+<span class="c">#</span>
+<span class="c"># This software is subject to the provisions of the Zope Public License,</span>
+<span class="c"># Version 2.1 (ZPL).  A copy of the ZPL should accompany this distribution.</span>
+<span class="c"># THIS SOFTWARE IS PROVIDED &quot;AS IS&quot; AND ANY AND ALL EXPRESS OR IMPLIED</span>
+<span class="c"># WARRANTIES ARE DISCLAIMED, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED</span>
+<span class="c"># WARRANTIES OF TITLE, MERCHANTABILITY, AGAINST INFRINGEMENT, AND FITNESS</span>
+<span class="c"># FOR A PARTICULAR PURPOSE.</span>
+<span class="c">#</span>
+<span class="c">##############################################################################</span>
+<span class="sd">&quot;&quot;&quot;Interface object implementation</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">generators</span>
+
+<span class="kn">import</span> <span class="nn">sys</span>
+<span class="kn">from</span> <span class="nn">types</span> <span class="kn">import</span> <span class="n">MethodType</span>
+<span class="kn">from</span> <span class="nn">types</span> <span class="kn">import</span> <span class="n">FunctionType</span>
+<span class="kn">import</span> <span class="nn">warnings</span>
+<span class="kn">import</span> <span class="nn">weakref</span>
+
+<span class="kn">from</span> <span class="nn">zope.interface.exceptions</span> <span class="kn">import</span> <span class="n">Invalid</span>
+<span class="kn">from</span> <span class="nn">zope.interface.ro</span> <span class="kn">import</span> <span class="n">ro</span>
+
+
+<span class="n">CO_VARARGS</span> <span class="o">=</span> <span class="mi">4</span>
+<span class="n">CO_VARKEYWORDS</span> <span class="o">=</span> <span class="mi">8</span>
+<span class="n">TAGGED_DATA</span> <span class="o">=</span> <span class="s">&#39;__interface_tagged_values__&#39;</span>
+
+<span class="n">_decorator_non_return</span> <span class="o">=</span> <span class="nb">object</span><span class="p">()</span>
+
+<span class="k">def</span> <span class="nf">invariant</span><span class="p">(</span><span class="n">call</span><span class="p">):</span>
+    <span class="n">f_locals</span> <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">_getframe</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">f_locals</span>
+    <span class="n">tags</span> <span class="o">=</span> <span class="n">f_locals</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">TAGGED_DATA</span><span class="p">,</span> <span class="p">{})</span>
+    <span class="n">invariants</span> <span class="o">=</span> <span class="n">tags</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s">&#39;invariants&#39;</span><span class="p">,</span> <span class="p">[])</span>
+    <span class="n">invariants</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">call</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">_decorator_non_return</span>
+
+
+<span class="k">def</span> <span class="nf">taggedValue</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Attaches a tagged value to an interface at definition time.&quot;&quot;&quot;</span>
+    <span class="n">f_locals</span> <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">_getframe</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">f_locals</span>
+    <span class="n">tagged_values</span> <span class="o">=</span> <span class="n">f_locals</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">TAGGED_DATA</span><span class="p">,</span> <span class="p">{})</span>
+    <span class="n">tagged_values</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+    <span class="k">return</span> <span class="n">_decorator_non_return</span>
+
+
+<span class="k">class</span> <span class="nc">Element</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+
+    <span class="c"># We can&#39;t say this yet because we don&#39;t have enough</span>
+    <span class="c"># infrastructure in place.</span>
+    <span class="c">#</span>
+    <span class="c">#implements(IElement)</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">__name__</span><span class="p">,</span> <span class="n">__doc__</span><span class="o">=</span><span class="s">&#39;&#39;</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Create an &#39;attribute&#39; description</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">__doc__</span> <span class="ow">and</span> <span class="n">__name__</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s">&#39; &#39;</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">__doc__</span> <span class="o">=</span> <span class="n">__name__</span>
+            <span class="n">__name__</span> <span class="o">=</span> <span class="bp">None</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">__name__</span><span class="o">=</span><span class="n">__name__</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">__doc__</span><span class="o">=</span><span class="n">__doc__</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">__tagged_values</span> <span class="o">=</span> <span class="p">{}</span>
+
+    <span class="k">def</span> <span class="nf">getName</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot; Returns the name of the object. &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">__name__</span>
+
+    <span class="k">def</span> <span class="nf">getDoc</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot; Returns the documentation for the object. &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">__doc__</span>
+
+    <span class="k">def</span> <span class="nf">getTaggedValue</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tag</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot; Returns the value associated with &#39;tag&#39;. &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">__tagged_values</span><span class="p">[</span><span class="n">tag</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">queryTaggedValue</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tag</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot; Returns the value associated with &#39;tag&#39;. &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">__tagged_values</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">tag</span><span class="p">,</span> <span class="n">default</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">getTaggedValueTags</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot; Returns a list of all tags. &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">__tagged_values</span><span class="o">.</span><span class="n">keys</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">setTaggedValue</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tag</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot; Associates &#39;value&#39; with &#39;key&#39;. &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">__tagged_values</span><span class="p">[</span><span class="n">tag</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+
+<span class="k">class</span> <span class="nc">SpecificationBasePy</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+
+    <span class="k">def</span> <span class="nf">providedBy</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ob</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Is the interface implemented by an object</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">spec</span> <span class="o">=</span> <span class="n">providedBy</span><span class="p">(</span><span class="n">ob</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span> <span class="ow">in</span> <span class="n">spec</span><span class="o">.</span><span class="n">_implied</span>
+
+    <span class="k">def</span> <span class="nf">implementedBy</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cls</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Test whether the specification is implemented by a class or factory.</span>
+
+<span class="sd">        Raise TypeError if argument is neither a class nor a callable.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">spec</span> <span class="o">=</span> <span class="n">implementedBy</span><span class="p">(</span><span class="n">cls</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span> <span class="ow">in</span> <span class="n">spec</span><span class="o">.</span><span class="n">_implied</span>
+
+    <span class="k">def</span> <span class="nf">isOrExtends</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">interface</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Is the interface the same as or extend the given interface</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">interface</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_implied</span>
+
+    <span class="n">__call__</span> <span class="o">=</span> <span class="n">isOrExtends</span>
+
+<span class="n">SpecificationBase</span> <span class="o">=</span> <span class="n">SpecificationBasePy</span>
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">from</span> <span class="nn">_zope_interface_coptimizations</span> <span class="kn">import</span> <span class="n">SpecificationBase</span>
+<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span> <span class="c">#pragma NO COVER</span>
+    <span class="k">pass</span>
+
+<span class="n">_marker</span> <span class="o">=</span> <span class="nb">object</span><span class="p">()</span>
+<span class="k">class</span> <span class="nc">InterfaceBasePy</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Base class that wants to be replaced with a C base :)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">obj</span><span class="p">,</span> <span class="n">alternate</span><span class="o">=</span><span class="n">_marker</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Adapt an object to the interface</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">conform</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="s">&#39;__conform__&#39;</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">conform</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">adapter</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_call_conform</span><span class="p">(</span><span class="n">conform</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">adapter</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">adapter</span>
+
+        <span class="n">adapter</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">__adapt__</span><span class="p">(</span><span class="n">obj</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">adapter</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">adapter</span>
+        <span class="k">elif</span> <span class="n">alternate</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">_marker</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">alternate</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s">&quot;Could not adapt&quot;</span><span class="p">,</span> <span class="n">obj</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__adapt__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">obj</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Adapt an object to the reciever</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">providedBy</span><span class="p">(</span><span class="n">obj</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">obj</span>
+
+        <span class="k">for</span> <span class="n">hook</span> <span class="ow">in</span> <span class="n">adapter_hooks</span><span class="p">:</span>
+            <span class="n">adapter</span> <span class="o">=</span> <span class="n">hook</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">obj</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">adapter</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">adapter</span>
+
+    
+<span class="n">InterfaceBase</span> <span class="o">=</span> <span class="n">InterfaceBasePy</span>
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">from</span> <span class="nn">_zope_interface_coptimizations</span> <span class="kn">import</span> <span class="n">InterfaceBase</span>
+<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span> <span class="c">#pragma NO COVER</span>
+    <span class="k">pass</span>
+
+
+<span class="n">adapter_hooks</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">from</span> <span class="nn">_zope_interface_coptimizations</span> <span class="kn">import</span> <span class="n">adapter_hooks</span>
+<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span> <span class="c">#pragma NO COVER</span>
+    <span class="k">pass</span>
+
+
+<span class="k">class</span> <span class="nc">Specification</span><span class="p">(</span><span class="n">SpecificationBase</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Specifications</span>
+
+<span class="sd">    An interface specification is used to track interface declarations</span>
+<span class="sd">    and component registrations.</span>
+
+<span class="sd">    This class is a base class for both interfaces themselves and for</span>
+<span class="sd">    interface specifications (declarations).</span>
+
+<span class="sd">    Specifications are mutable.  If you reassign their bases, their</span>
+<span class="sd">    relations with other specifications are adjusted accordingly.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="c"># Copy some base class methods for speed</span>
+    <span class="n">isOrExtends</span> <span class="o">=</span> <span class="n">SpecificationBase</span><span class="o">.</span><span class="n">isOrExtends</span>
+    <span class="n">providedBy</span> <span class="o">=</span> <span class="n">SpecificationBase</span><span class="o">.</span><span class="n">providedBy</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">bases</span><span class="o">=</span><span class="p">()):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_implied</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">dependents</span> <span class="o">=</span> <span class="n">weakref</span><span class="o">.</span><span class="n">WeakKeyDictionary</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">__bases__</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">bases</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">subscribe</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dependent</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">dependents</span><span class="p">[</span><span class="n">dependent</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">dependents</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">dependent</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
+
+    <span class="k">def</span> <span class="nf">unsubscribe</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dependent</span><span class="p">):</span>
+        <span class="n">n</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">dependents</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">dependent</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">n</span><span class="p">:</span>
+            <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">dependents</span><span class="p">[</span><span class="n">dependent</span><span class="p">]</span>
+        <span class="k">elif</span> <span class="n">n</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">dependents</span><span class="p">[</span><span class="n">dependent</span><span class="p">]</span> <span class="o">=</span> <span class="n">n</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">KeyError</span><span class="p">(</span><span class="n">dependent</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__setBases</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">bases</span><span class="p">):</span>
+        <span class="c"># Register ourselves as a dependent of our old bases</span>
+        <span class="k">for</span> <span class="n">b</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">__bases__</span><span class="p">:</span>
+            <span class="n">b</span><span class="o">.</span><span class="n">unsubscribe</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+
+        <span class="c"># Register ourselves as a dependent of our bases</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">__dict__</span><span class="p">[</span><span class="s">&#39;__bases__&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">bases</span>
+        <span class="k">for</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">bases</span><span class="p">:</span>
+            <span class="n">b</span><span class="o">.</span><span class="n">subscribe</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">changed</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+
+    <span class="n">__bases__</span> <span class="o">=</span> <span class="nb">property</span><span class="p">(</span>
+
+        <span class="k">lambda</span> <span class="bp">self</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">__dict__</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;__bases__&#39;</span><span class="p">,</span> <span class="p">()),</span>
+        <span class="n">__setBases</span><span class="p">,</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">changed</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">originally_changed</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;We, or something we depend on, have changed</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">_v_attrs</span>
+        <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span>
+            <span class="k">pass</span>
+
+        <span class="n">implied</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_implied</span>
+        <span class="n">implied</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+
+        <span class="n">ancestors</span> <span class="o">=</span> <span class="n">ro</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">Interface</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">ancestors</span><span class="p">:</span>
+                <span class="n">ancestors</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">Interface</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">NameError</span><span class="p">:</span>
+            <span class="k">pass</span> <span class="c"># defining Interface itself</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">__sro__</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">ancestors</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">__iro__</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">([</span><span class="n">ancestor</span> <span class="k">for</span> <span class="n">ancestor</span> <span class="ow">in</span> <span class="n">ancestors</span>
+                              <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">ancestor</span><span class="p">,</span> <span class="n">InterfaceClass</span><span class="p">)</span>
+                              <span class="p">])</span>
+
+        <span class="k">for</span> <span class="n">ancestor</span> <span class="ow">in</span> <span class="n">ancestors</span><span class="p">:</span>
+            <span class="c"># We directly imply our ancestors:</span>
+            <span class="n">implied</span><span class="p">[</span><span class="n">ancestor</span><span class="p">]</span> <span class="o">=</span> <span class="p">()</span>
+
+        <span class="c"># Now, advise our dependents of change:</span>
+        <span class="k">for</span> <span class="n">dependent</span> <span class="ow">in</span> <span class="nb">tuple</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">dependents</span><span class="o">.</span><span class="n">keys</span><span class="p">()):</span>
+            <span class="n">dependent</span><span class="o">.</span><span class="n">changed</span><span class="p">(</span><span class="n">originally_changed</span><span class="p">)</span>
+
+
+    <span class="k">def</span> <span class="nf">interfaces</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Return an iterator for the interfaces in the specification.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">seen</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">base</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">__bases__</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">interface</span> <span class="ow">in</span> <span class="n">base</span><span class="o">.</span><span class="n">interfaces</span><span class="p">():</span>
+                <span class="k">if</span> <span class="n">interface</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">seen</span><span class="p">:</span>
+                    <span class="n">seen</span><span class="p">[</span><span class="n">interface</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1</span>
+                    <span class="k">yield</span> <span class="n">interface</span>
+
+
+    <span class="k">def</span> <span class="nf">extends</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">interface</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Does the specification extend the given interface?</span>
+
+<span class="sd">        Test whether an interface in the specification extends the</span>
+<span class="sd">        given interface</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">((</span><span class="n">interface</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_implied</span><span class="p">)</span>
+                <span class="ow">and</span>
+                <span class="p">((</span><span class="ow">not</span> <span class="n">strict</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="bp">self</span> <span class="o">!=</span> <span class="n">interface</span><span class="p">))</span>
+                <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">weakref</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">callback</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">weakref</span><span class="o">.</span><span class="n">ref</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">callback</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">get</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Query for an attribute description</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">attrs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_v_attrs</span>
+        <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span>
+            <span class="n">attrs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_v_attrs</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">attr</span> <span class="o">=</span> <span class="n">attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">attr</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">iface</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">__iro__</span><span class="p">:</span>
+                <span class="n">attr</span> <span class="o">=</span> <span class="n">iface</span><span class="o">.</span><span class="n">direct</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">attr</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+                    <span class="n">attrs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">attr</span>
+                    <span class="k">break</span>
+
+        <span class="k">if</span> <span class="n">attr</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">default</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">attr</span>
+
+<span class="k">class</span> <span class="nc">InterfaceClass</span><span class="p">(</span><span class="n">Element</span><span class="p">,</span> <span class="n">InterfaceBase</span><span class="p">,</span> <span class="n">Specification</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Prototype (scarecrow) Interfaces Implementation.&quot;&quot;&quot;</span>
+
+    <span class="c"># We can&#39;t say this yet because we don&#39;t have enough</span>
+    <span class="c"># infrastructure in place.</span>
+    <span class="c">#</span>
+    <span class="c">#implements(IInterface)</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">bases</span><span class="o">=</span><span class="p">(),</span> <span class="n">attrs</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">__doc__</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+                 <span class="n">__module__</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+
+        <span class="k">if</span> <span class="n">attrs</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">attrs</span> <span class="o">=</span> <span class="p">{}</span>
+
+        <span class="k">if</span> <span class="n">__module__</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">__module__</span> <span class="o">=</span> <span class="n">attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;__module__&#39;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">__module__</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+                <span class="k">del</span> <span class="n">attrs</span><span class="p">[</span><span class="s">&#39;__module__&#39;</span><span class="p">]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="c"># Figure out what module defined the interface.</span>
+                    <span class="c"># This is how cPython figures out the module of</span>
+                    <span class="c"># a class, but of course it does it in C. :-/</span>
+                    <span class="n">__module__</span> <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">_getframe</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">f_globals</span><span class="p">[</span><span class="s">&#39;__name__&#39;</span><span class="p">]</span>
+                <span class="k">except</span> <span class="p">(</span><span class="ne">AttributeError</span><span class="p">,</span> <span class="ne">KeyError</span><span class="p">):</span> <span class="c">#pragma NO COVERAGE</span>
+                    <span class="k">pass</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">__module__</span> <span class="o">=</span> <span class="n">__module__</span>
+
+        <span class="n">d</span> <span class="o">=</span> <span class="n">attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;__doc__&#39;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">d</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">Attribute</span><span class="p">):</span>
+                <span class="k">if</span> <span class="n">__doc__</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+                    <span class="n">__doc__</span> <span class="o">=</span> <span class="n">d</span>
+                <span class="k">del</span> <span class="n">attrs</span><span class="p">[</span><span class="s">&#39;__doc__&#39;</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="n">__doc__</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">__doc__</span> <span class="o">=</span> <span class="s">&#39;&#39;</span>
+
+        <span class="n">Element</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">__doc__</span><span class="p">)</span>
+
+        <span class="n">tagged_data</span> <span class="o">=</span> <span class="n">attrs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">TAGGED_DATA</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">tagged_data</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">val</span> <span class="ow">in</span> <span class="n">tagged_data</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">setTaggedValue</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">val</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">base</span> <span class="ow">in</span> <span class="n">bases</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">base</span><span class="p">,</span> <span class="n">InterfaceClass</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s">&#39;Expected base interfaces&#39;</span><span class="p">)</span>
+
+        <span class="n">Specification</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">bases</span><span class="p">)</span>
+
+        <span class="c"># Make sure that all recorded attributes (and methods) are of type</span>
+        <span class="c"># `Attribute` and `Method`</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">attr</span> <span class="ow">in</span> <span class="nb">list</span><span class="p">(</span><span class="n">attrs</span><span class="o">.</span><span class="n">items</span><span class="p">()):</span>
+            <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="p">(</span><span class="s">&#39;__locals__&#39;</span><span class="p">,</span> <span class="s">&#39;__qualname__&#39;</span><span class="p">):</span>
+                <span class="c"># __locals__: Python 3 sometimes adds this.</span>
+                <span class="c"># __qualname__: PEP 3155 (Python 3.3+)</span>
+                <span class="k">del</span> <span class="n">attrs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
+                <span class="k">continue</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">attr</span><span class="p">,</span> <span class="n">Attribute</span><span class="p">):</span>
+                <span class="n">attr</span><span class="o">.</span><span class="n">interface</span> <span class="o">=</span> <span class="bp">self</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">attr</span><span class="o">.</span><span class="n">__name__</span><span class="p">:</span>
+                    <span class="n">attr</span><span class="o">.</span><span class="n">__name__</span> <span class="o">=</span> <span class="n">name</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">attr</span><span class="p">,</span> <span class="n">FunctionType</span><span class="p">):</span>
+                <span class="n">attrs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">fromFunction</span><span class="p">(</span><span class="n">attr</span><span class="p">,</span> <span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">attr</span> <span class="ow">is</span> <span class="n">_decorator_non_return</span><span class="p">:</span>
+                <span class="k">del</span> <span class="n">attrs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">InvalidInterface</span><span class="p">(</span><span class="s">&quot;Concrete attribute, &quot;</span> <span class="o">+</span> <span class="n">name</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">__attrs</span> <span class="o">=</span> <span class="n">attrs</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">__identifier__</span> <span class="o">=</span> <span class="s">&quot;</span><span class="si">%s</span><span class="s">.</span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">__module__</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">__name__</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">interfaces</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Return an iterator for the interfaces in the specification.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">yield</span> <span class="bp">self</span>
+
+    <span class="k">def</span> <span class="nf">getBases</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">__bases__</span>
+
+    <span class="k">def</span> <span class="nf">isEqualOrExtendedBy</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Same interface or extends?&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span> <span class="o">==</span> <span class="n">other</span> <span class="ow">or</span> <span class="n">other</span><span class="o">.</span><span class="n">extends</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">names</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="nb">all</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Return the attribute names defined by the interface.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">all</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">__attrs</span><span class="o">.</span><span class="n">keys</span><span class="p">()</span>
+
+        <span class="n">r</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">__attrs</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+
+        <span class="k">for</span> <span class="n">base</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">__bases__</span><span class="p">:</span>
+            <span class="n">r</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="nb">dict</span><span class="o">.</span><span class="n">fromkeys</span><span class="p">(</span><span class="n">base</span><span class="o">.</span><span class="n">names</span><span class="p">(</span><span class="nb">all</span><span class="p">)))</span>
+
+        <span class="k">return</span> <span class="n">r</span><span class="o">.</span><span class="n">keys</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">iter</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">names</span><span class="p">(</span><span class="nb">all</span><span class="o">=</span><span class="bp">True</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">namesAndDescriptions</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="nb">all</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Return attribute names and descriptions defined by interface.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">all</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">__attrs</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+
+        <span class="n">r</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">base</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">__bases__</span><span class="p">[::</span><span class="o">-</span><span class="mi">1</span><span class="p">]:</span>
+            <span class="n">r</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="nb">dict</span><span class="p">(</span><span class="n">base</span><span class="o">.</span><span class="n">namesAndDescriptions</span><span class="p">(</span><span class="nb">all</span><span class="p">)))</span>
+
+        <span class="n">r</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">__attrs</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">r</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">getDescriptionFor</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Return the attribute description for the given name.&quot;&quot;&quot;</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">r</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">r</span>
+
+        <span class="k">raise</span> <span class="ne">KeyError</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+
+    <span class="n">__getitem__</span> <span class="o">=</span> <span class="n">getDescriptionFor</span>
+
+    <span class="k">def</span> <span class="nf">__contains__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span>
+
+    <span class="k">def</span> <span class="nf">direct</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">__attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">queryDescriptionFor</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">default</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">validateInvariants</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">obj</span><span class="p">,</span> <span class="n">errors</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;validate object to defined invariants.&quot;&quot;&quot;</span>
+        <span class="k">for</span> <span class="n">call</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">queryTaggedValue</span><span class="p">(</span><span class="s">&#39;invariants&#39;</span><span class="p">,</span> <span class="p">[]):</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">call</span><span class="p">(</span><span class="n">obj</span><span class="p">)</span>
+            <span class="k">except</span> <span class="n">Invalid</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">errors</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+                    <span class="k">raise</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">errors</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">e</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">base</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">__bases__</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">base</span><span class="o">.</span><span class="n">validateInvariants</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">errors</span><span class="p">)</span>
+            <span class="k">except</span> <span class="n">Invalid</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">errors</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+                    <span class="k">raise</span>
+        <span class="k">if</span> <span class="n">errors</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">Invalid</span><span class="p">(</span><span class="n">errors</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>  <span class="c"># pragma: no cover</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_v_repr</span>
+        <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span>
+            <span class="n">name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">__name__</span>
+            <span class="n">m</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">__module__</span>
+            <span class="k">if</span> <span class="n">m</span><span class="p">:</span>
+                <span class="n">name</span> <span class="o">=</span> <span class="s">&#39;</span><span class="si">%s</span><span class="s">.</span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+            <span class="n">r</span> <span class="o">=</span> <span class="s">&quot;&lt;</span><span class="si">%s</span><span class="s"> </span><span class="si">%s</span><span class="s">&gt;&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">__class__</span><span class="o">.</span><span class="n">__name__</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_v_repr</span> <span class="o">=</span> <span class="n">r</span>
+            <span class="k">return</span> <span class="n">r</span>
+
+    <span class="k">def</span> <span class="nf">_call_conform</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">conform</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">conform</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">TypeError</span><span class="p">:</span> <span class="c">#pragma NO COVER</span>
+            <span class="c"># We got a TypeError. It might be an error raised by</span>
+            <span class="c"># the __conform__ implementation, or *we* may have</span>
+            <span class="c"># made the TypeError by calling an unbound method</span>
+            <span class="c"># (object is a class).  In the later case, we behave</span>
+            <span class="c"># as though there is no __conform__ method. We can</span>
+            <span class="c"># detect this case by checking whether there is more</span>
+            <span class="c"># than one traceback object in the traceback chain:</span>
+            <span class="k">if</span> <span class="n">sys</span><span class="o">.</span><span class="n">exc_info</span><span class="p">()[</span><span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">tb_next</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+                <span class="c"># There is more than one entry in the chain, so</span>
+                <span class="c"># reraise the error:</span>
+                <span class="k">raise</span>
+            <span class="c"># This clever trick is from Phillip Eby</span>
+
+        <span class="k">return</span> <span class="bp">None</span> <span class="c">#pragma NO COVER</span>
+
+    <span class="k">def</span> <span class="nf">__reduce__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">__name__</span>
+
+    <span class="k">def</span> <span class="nf">__cmp</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">):</span>
+        <span class="c"># Yes, I did mean to name this __cmp, rather than __cmp__.</span>
+        <span class="c"># It is a private method used by __lt__ and __gt__.</span>
+        <span class="c"># I don&#39;t want to override __eq__ because I want the default</span>
+        <span class="c"># __eq__, which is really fast.</span>
+        <span class="sd">&quot;&quot;&quot;Make interfaces sortable</span>
+
+<span class="sd">        TODO: It would ne nice if:</span>
+
+<span class="sd">           More specific interfaces should sort before less specific ones.</span>
+<span class="sd">           Otherwise, sort on name and module.</span>
+
+<span class="sd">           But this is too complicated, and we&#39;re going to punt on it</span>
+<span class="sd">           for now.</span>
+
+<span class="sd">        For now, sort on interface and module name.</span>
+
+<span class="sd">        None is treated as a pseudo interface that implies the loosest</span>
+<span class="sd">        contact possible, no contract. For that reason, all interfaces</span>
+<span class="sd">        sort before None.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">other</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="o">-</span><span class="mi">1</span>
+
+        <span class="n">n1</span> <span class="o">=</span> <span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s">&#39;__name__&#39;</span><span class="p">,</span> <span class="s">&#39;&#39;</span><span class="p">),</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span>  <span class="s">&#39;__module__&#39;</span><span class="p">,</span> <span class="s">&#39;&#39;</span><span class="p">))</span>
+        <span class="n">n2</span> <span class="o">=</span> <span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">other</span><span class="p">,</span> <span class="s">&#39;__name__&#39;</span><span class="p">,</span> <span class="s">&#39;&#39;</span><span class="p">),</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">other</span><span class="p">,</span>  <span class="s">&#39;__module__&#39;</span><span class="p">,</span> <span class="s">&#39;&#39;</span><span class="p">))</span>
+
+        <span class="c"># This spelling works under Python3, which doesn&#39;t have cmp().</span>
+        <span class="k">return</span> <span class="p">(</span><span class="n">n1</span> <span class="o">&gt;</span> <span class="n">n2</span><span class="p">)</span> <span class="o">-</span> <span class="p">(</span><span class="n">n1</span> <span class="o">&lt;</span> <span class="n">n2</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__hash__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">d</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">__dict__</span>
+        <span class="k">if</span> <span class="s">&#39;__module__&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">d</span> <span class="ow">or</span> <span class="s">&#39;__name__&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">d</span><span class="p">:</span> <span class="c">#pragma NO COVER</span>
+            <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s">&#39;Hashing uninitialized InterfaceClass instance&#39;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="mi">1</span>
+        <span class="k">return</span> <span class="nb">hash</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">__name__</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">__module__</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">__eq__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">):</span>
+        <span class="n">c</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">__cmp</span><span class="p">(</span><span class="n">other</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">c</span> <span class="o">==</span> <span class="mi">0</span>
+
+    <span class="k">def</span> <span class="nf">__ne__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">):</span>
+        <span class="n">c</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">__cmp</span><span class="p">(</span><span class="n">other</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">c</span> <span class="o">!=</span> <span class="mi">0</span>
+
+    <span class="k">def</span> <span class="nf">__lt__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">):</span>
+        <span class="n">c</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">__cmp</span><span class="p">(</span><span class="n">other</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">c</span> <span class="o">&lt;</span> <span class="mi">0</span>
+
+    <span class="k">def</span> <span class="nf">__le__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">):</span>
+        <span class="n">c</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">__cmp</span><span class="p">(</span><span class="n">other</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">c</span> <span class="o">&lt;=</span> <span class="mi">0</span>
+
+    <span class="k">def</span> <span class="nf">__gt__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">):</span>
+        <span class="n">c</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">__cmp</span><span class="p">(</span><span class="n">other</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">c</span> <span class="o">&gt;</span> <span class="mi">0</span>
+
+    <span class="k">def</span> <span class="nf">__ge__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">):</span>
+        <span class="n">c</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">__cmp</span><span class="p">(</span><span class="n">other</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">c</span> <span class="o">&gt;=</span> <span class="mi">0</span>
+
+
+<span class="n">Interface</span> <span class="o">=</span> <span class="n">InterfaceClass</span><span class="p">(</span><span class="s">&quot;Interface&quot;</span><span class="p">,</span> <span class="n">__module__</span> <span class="o">=</span> <span class="s">&#39;zope.interface&#39;</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">Attribute</span><span class="p">(</span><span class="n">Element</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Attribute descriptions</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="c"># We can&#39;t say this yet because we don&#39;t have enough</span>
+    <span class="c"># infrastructure in place.</span>
+    <span class="c">#</span>
+    <span class="c"># implements(IAttribute)</span>
+
+    <span class="n">interface</span> <span class="o">=</span> <span class="bp">None</span>
+
+
+<span class="k">class</span> <span class="nc">Method</span><span class="p">(</span><span class="n">Attribute</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Method interfaces</span>
+
+<span class="sd">    The idea here is that you have objects that describe methods.</span>
+<span class="sd">    This provides an opportunity for rich meta-data.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="c"># We can&#39;t say this yet because we don&#39;t have enough</span>
+    <span class="c"># infrastructure in place.</span>
+    <span class="c">#</span>
+    <span class="c"># implements(IMethod)</span>
+
+    <span class="n">positional</span> <span class="o">=</span> <span class="n">required</span> <span class="o">=</span> <span class="p">()</span>
+    <span class="n">_optional</span> <span class="o">=</span> <span class="n">varargs</span> <span class="o">=</span> <span class="n">kwargs</span> <span class="o">=</span> <span class="bp">None</span>
+    <span class="k">def</span> <span class="nf">_get_optional</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_optional</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">{}</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_optional</span>
+    <span class="k">def</span> <span class="nf">_set_optional</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">opt</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_optional</span> <span class="o">=</span> <span class="n">opt</span>
+    <span class="k">def</span> <span class="nf">_del_optional</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_optional</span> <span class="o">=</span> <span class="bp">None</span>
+    <span class="n">optional</span> <span class="o">=</span> <span class="nb">property</span><span class="p">(</span><span class="n">_get_optional</span><span class="p">,</span> <span class="n">_set_optional</span><span class="p">,</span> <span class="n">_del_optional</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kw</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="n">BrokenImplementation</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">interface</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">__name__</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">getSignatureInfo</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">{</span><span class="s">&#39;positional&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">positional</span><span class="p">,</span>
+                <span class="s">&#39;required&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">required</span><span class="p">,</span>
+                <span class="s">&#39;optional&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">optional</span><span class="p">,</span>
+                <span class="s">&#39;varargs&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">varargs</span><span class="p">,</span>
+                <span class="s">&#39;kwargs&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">kwargs</span><span class="p">,</span>
+                <span class="p">}</span>
+
+    <span class="k">def</span> <span class="nf">getSignatureString</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">sig</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">positional</span><span class="p">:</span>
+            <span class="n">sig</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">v</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">v</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">optional</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+                <span class="n">sig</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+=</span> <span class="s">&quot;=&quot;</span> <span class="o">+</span> <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">optional</span><span class="p">[</span><span class="n">v</span><span class="p">])</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">varargs</span><span class="p">:</span>
+            <span class="n">sig</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s">&quot;*&quot;</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">varargs</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">kwargs</span><span class="p">:</span>
+            <span class="n">sig</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s">&quot;**&quot;</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">kwargs</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="s">&quot;(</span><span class="si">%s</span><span class="s">)&quot;</span> <span class="o">%</span> <span class="s">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">sig</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">fromFunction</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="n">interface</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">imlevel</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="n">name</span> <span class="ow">or</span> <span class="n">func</span><span class="o">.</span><span class="n">__name__</span>
+    <span class="n">method</span> <span class="o">=</span> <span class="n">Method</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">func</span><span class="o">.</span><span class="n">__doc__</span><span class="p">)</span>
+    <span class="n">defaults</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="s">&#39;__defaults__&#39;</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span> <span class="ow">or</span> <span class="p">()</span>
+    <span class="n">code</span> <span class="o">=</span> <span class="n">func</span><span class="o">.</span><span class="n">__code__</span>
+    <span class="c"># Number of positional arguments</span>
+    <span class="n">na</span> <span class="o">=</span> <span class="n">code</span><span class="o">.</span><span class="n">co_argcount</span><span class="o">-</span><span class="n">imlevel</span>
+    <span class="n">names</span> <span class="o">=</span> <span class="n">code</span><span class="o">.</span><span class="n">co_varnames</span><span class="p">[</span><span class="n">imlevel</span><span class="p">:]</span>
+    <span class="n">opt</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="c"># Number of required arguments</span>
+    <span class="n">nr</span> <span class="o">=</span> <span class="n">na</span><span class="o">-</span><span class="nb">len</span><span class="p">(</span><span class="n">defaults</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">nr</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">defaults</span><span class="o">=</span><span class="n">defaults</span><span class="p">[</span><span class="o">-</span><span class="n">nr</span><span class="p">:]</span>
+        <span class="n">nr</span> <span class="o">=</span> <span class="mi">0</span>
+
+    <span class="c"># Determine the optional arguments.</span>
+    <span class="n">opt</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="nb">dict</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">names</span><span class="p">[</span><span class="n">nr</span><span class="p">:],</span> <span class="n">defaults</span><span class="p">)))</span>
+
+    <span class="n">method</span><span class="o">.</span><span class="n">positional</span> <span class="o">=</span> <span class="n">names</span><span class="p">[:</span><span class="n">na</span><span class="p">]</span>
+    <span class="n">method</span><span class="o">.</span><span class="n">required</span> <span class="o">=</span> <span class="n">names</span><span class="p">[:</span><span class="n">nr</span><span class="p">]</span>
+    <span class="n">method</span><span class="o">.</span><span class="n">optional</span> <span class="o">=</span> <span class="n">opt</span>
+
+    <span class="n">argno</span> <span class="o">=</span> <span class="n">na</span>
+
+    <span class="c"># Determine the function&#39;s variable argument&#39;s name (i.e. *args)</span>
+    <span class="k">if</span> <span class="n">code</span><span class="o">.</span><span class="n">co_flags</span> <span class="o">&amp;</span> <span class="n">CO_VARARGS</span><span class="p">:</span>
+        <span class="n">method</span><span class="o">.</span><span class="n">varargs</span> <span class="o">=</span> <span class="n">names</span><span class="p">[</span><span class="n">argno</span><span class="p">]</span>
+        <span class="n">argno</span> <span class="o">=</span> <span class="n">argno</span> <span class="o">+</span> <span class="mi">1</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">method</span><span class="o">.</span><span class="n">varargs</span> <span class="o">=</span> <span class="bp">None</span>
+
+    <span class="c"># Determine the function&#39;s keyword argument&#39;s name (i.e. **kw)</span>
+    <span class="k">if</span> <span class="n">code</span><span class="o">.</span><span class="n">co_flags</span> <span class="o">&amp;</span> <span class="n">CO_VARKEYWORDS</span><span class="p">:</span>
+        <span class="n">method</span><span class="o">.</span><span class="n">kwargs</span> <span class="o">=</span> <span class="n">names</span><span class="p">[</span><span class="n">argno</span><span class="p">]</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">method</span><span class="o">.</span><span class="n">kwargs</span> <span class="o">=</span> <span class="bp">None</span>
+
+    <span class="n">method</span><span class="o">.</span><span class="n">interface</span> <span class="o">=</span> <span class="n">interface</span>
+
+    <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">func</span><span class="o">.</span><span class="n">__dict__</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="n">method</span><span class="o">.</span><span class="n">setTaggedValue</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">method</span>
+
+
+<span class="k">def</span> <span class="nf">fromMethod</span><span class="p">(</span><span class="n">meth</span><span class="p">,</span> <span class="n">interface</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">meth</span><span class="p">,</span> <span class="n">MethodType</span><span class="p">):</span>
+        <span class="n">func</span> <span class="o">=</span> <span class="n">meth</span><span class="o">.</span><span class="n">__func__</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">func</span> <span class="o">=</span> <span class="n">meth</span>
+    <span class="k">return</span> <span class="n">fromFunction</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="n">interface</span><span class="p">,</span> <span class="n">imlevel</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">)</span>
+
+
+<span class="c"># Now we can create the interesting interfaces and wire them up:</span>
+<span class="k">def</span> <span class="nf">_wire</span><span class="p">():</span>
+    <span class="kn">from</span> <span class="nn">zope.interface.declarations</span> <span class="kn">import</span> <span class="n">classImplements</span>
+
+    <span class="kn">from</span> <span class="nn">zope.interface.interfaces</span> <span class="kn">import</span> <span class="n">IAttribute</span>
+    <span class="n">classImplements</span><span class="p">(</span><span class="n">Attribute</span><span class="p">,</span> <span class="n">IAttribute</span><span class="p">)</span>
+
+    <span class="kn">from</span> <span class="nn">zope.interface.interfaces</span> <span class="kn">import</span> <span class="n">IMethod</span>
+    <span class="n">classImplements</span><span class="p">(</span><span class="n">Method</span><span class="p">,</span> <span class="n">IMethod</span><span class="p">)</span>
+
+    <span class="kn">from</span> <span class="nn">zope.interface.interfaces</span> <span class="kn">import</span> <span class="n">IInterface</span>
+    <span class="n">classImplements</span><span class="p">(</span><span class="n">InterfaceClass</span><span class="p">,</span> <span class="n">IInterface</span><span class="p">)</span>
+
+    <span class="kn">from</span> <span class="nn">zope.interface.interfaces</span> <span class="kn">import</span> <span class="n">ISpecification</span>
+    <span class="n">classImplements</span><span class="p">(</span><span class="n">Specification</span><span class="p">,</span> <span class="n">ISpecification</span><span class="p">)</span>
+
+<span class="c"># We import this here to deal with module dependencies.</span>
+<span class="kn">from</span> <span class="nn">zope.interface.declarations</span> <span class="kn">import</span> <span class="n">implementedBy</span>
+<span class="kn">from</span> <span class="nn">zope.interface.declarations</span> <span class="kn">import</span> <span class="n">providedBy</span>
+<span class="kn">from</span> <span class="nn">zope.interface.exceptions</span> <span class="kn">import</span> <span class="n">InvalidInterface</span>
+<span class="kn">from</span> <span class="nn">zope.interface.exceptions</span> <span class="kn">import</span> <span class="n">BrokenImplementation</span>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../../../index.html">persistent 3.10b1 documentation</a> &raquo;</li>
+          <li class="nav-item nav-item-1"><a href="../../index.html" >Module code</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer" role="contentinfo">
+        &copy; Copyright 2011, ZODB Developers &lt;zope-dev@zope.org&gt;.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.3.1.
+    </div>
+  </body>
+</html>

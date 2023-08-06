@@ -1,0 +1,652 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>persistent.interfaces &mdash; persistent 3.10b1 documentation</title>
+    
+    <link rel="stylesheet" href="../_static/classic.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../',
+        VERSION:     '3.10b1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../_static/jquery.js"></script>
+    <script type="text/javascript" src="../_static/underscore.js"></script>
+    <script type="text/javascript" src="../_static/doctools.js"></script>
+    <link rel="top" title="persistent 3.10b1 documentation" href="../index.html" />
+    <link rel="up" title="persistent API documentation" href="../api.html" />
+    <link rel="next" title="Customizing Attribute Access" href="attributes.html" />
+    <link rel="prev" title="persistent API documentation" href="../api.html" /> 
+  </head>
+  <body role="document">
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="attributes.html" title="Customizing Attribute Access"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="../api.html" title="persistent API documentation"
+             accesskey="P">previous</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../index.html">persistent 3.10b1 documentation</a> &raquo;</li>
+          <li class="nav-item nav-item-1"><a href="../api.html" accesskey="U"><code class="docutils literal"><span class="pre">persistent</span></code> API documentation</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <div class="section" id="module-persistent.interfaces">
+<span id="persistent-interfaces"></span><h1><a class="reference internal" href="#module-persistent.interfaces" title="persistent.interfaces"><code class="xref py py-mod docutils literal"><span class="pre">persistent.interfaces</span></code></a><a class="headerlink" href="#module-persistent.interfaces" title="Permalink to this headline">¶</a></h1>
+<p>Persistence Interfaces</p>
+<dl class="interface">
+<dt id="persistent.interfaces.IPersistent">
+<em class="property">interface </em><code class="descclassname">persistent.interfaces.</code><code class="descname">IPersistent</code><a class="reference internal" href="../_modules/persistent/interfaces.html#IPersistent"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#persistent.interfaces.IPersistent" title="Permalink to this definition">¶</a></dt>
+<dd><p>Python persistent interface</p>
+<p>A persistent object can be in one of several states:</p>
+<ul>
+<li><p class="first">Unsaved</p>
+<p>The object has been created but not saved in a data manager.</p>
+<p>In this state, the _p_changed attribute is non-None and false
+and the _p_jar attribute is None.</p>
+</li>
+<li><p class="first">Saved</p>
+<p>The object has been saved and has not been changed since it was saved.</p>
+<p>In this state, the _p_changed attribute is non-None and false
+and the _p_jar attribute is set to a data manager.</p>
+</li>
+<li><p class="first">Sticky</p>
+<p>This state is identical to the saved state except that the
+object cannot transition to the ghost state.  This is a special
+state used by C methods of persistent objects to make sure that
+state is not unloaded in the middle of computation.</p>
+<p>In this state, the _p_changed attribute is non-None and false
+and the _p_jar attribute is set to a data manager.</p>
+<p>There is no Python API for detecting whether an object is in the
+sticky state.</p>
+</li>
+<li><p class="first">Changed</p>
+<p>The object has been changed.</p>
+<p>In this state, the _p_changed attribute is true
+and the _p_jar attribute is set to a data manager.</p>
+</li>
+<li><p class="first">Ghost</p>
+<p>the object is in memory but its state has not been loaded from
+the database (or its state has been unloaded).  In this state,
+the object doesn&#8217;t contain any application data.</p>
+<p>In this state, the _p_changed attribute is None, and the _p_jar
+attribute is set to the data manager from which the object was
+obtained.</p>
+</li>
+</ul>
+<p>In all the above, _p_oid (the persistent object id) is set when
+_p_jar first gets set.</p>
+<p>The following state transitions are possible:</p>
+<ul>
+<li><p class="first">Unsaved -&gt; Saved</p>
+<p>This transition occurs when an object is saved in the
+database.  This usually happens when an unsaved object is added
+to (e.g. as an attribute or item of) a saved (or changed) object
+and the transaction is committed.</p>
+</li>
+<li><p class="first">Saved  -&gt; Changed
+Sticky -&gt; Changed
+Ghost  -&gt; Changed</p>
+<p>This transition occurs when someone sets an attribute or sets
+_p_changed to a true value on a saved, sticky or ghost object.  When
+the transition occurs, the persistent object is required to call the
+register() method on its data manager, passing itself as the
+only argument.</p>
+<p>Prior to ZODB 3.6, setting _p_changed to a true value on a ghost object
+was ignored (the object remained a ghost, and getting its _p_changed
+attribute continued to return None).</p>
+</li>
+<li><p class="first">Saved -&gt; Sticky</p>
+<p>This transition occurs when C code marks the object as sticky to
+prevent its deactivation.</p>
+</li>
+<li><p class="first">Saved -&gt; Ghost</p>
+<p>This transition occurs when a saved object is deactivated or
+invalidated.  See discussion below.</p>
+</li>
+<li><p class="first">Sticky -&gt; Saved</p>
+<p>This transition occurs when C code unmarks the object as sticky to
+allow its deactivation.</p>
+</li>
+<li><p class="first">Changed -&gt; Saved</p>
+<p>This transition occurs when a transaction is committed.  After
+saving the state of a changed object during transaction commit,
+the data manager sets the object&#8217;s _p_changed to a non-None false
+value.</p>
+</li>
+<li><p class="first">Changed -&gt; Ghost</p>
+<p>This transition occurs when a transaction is aborted.  All changed
+objects are invalidated by the data manager by an abort.</p>
+</li>
+<li><p class="first">Ghost -&gt; Saved</p>
+<p>This transition occurs when an attribute or operation of a ghost
+is accessed and the object&#8217;s state is loaded from the database.</p>
+</li>
+</ul>
+<p>Note that there is a separate C API that is not included here.
+The C API requires a specific data layout and defines the sticky
+state.</p>
+<p>About Invalidation, Deactivation and the Sticky &amp; Ghost States</p>
+<p>The sticky state is intended to be a short-lived state, to prevent
+an object&#8217;s state from being discarded while we&#8217;re in C routines.  It
+is an error to invalidate an object in the sticky state.</p>
+<p>Deactivation is a request that an object discard its state (become
+a ghost).  Deactivation is an optimization, and a request to
+deactivate may be ignored.  There are two equivalent ways to
+request deactivation:</p>
+<blockquote>
+<div><ul class="simple">
+<li>call _p_deactivate()</li>
+<li>set _p_changed to None</li>
+</ul>
+</div></blockquote>
+<p>There are two ways to invalidate an object:  call the
+_p_invalidate() method (preferred) or delete its _p_changed
+attribute.  This cannot be ignored, and is used when semantics
+require invalidation.  Normally, an invalidated object transitions
+to the ghost state.  However, some objects cannot be ghosts.  When
+these objects are invalidated, they immediately reload their state
+from their data manager, and are then in the saved state.</p>
+<dl class="attribute">
+<dt id="persistent.interfaces.IPersistent._p_jar">
+<code class="descname">_p_jar</code><a class="headerlink" href="#persistent.interfaces.IPersistent._p_jar" title="Permalink to this definition">¶</a></dt>
+<dd><p>The data manager for the object.</p>
+<p>The data manager should implement IPersistentDataManager (note that
+this constraint is not enforced).</p>
+<p>If there is no data manager, then this is None.</p>
+<p>Once assigned to a data manager, an object cannot be re-assigned
+to another.</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="persistent.interfaces.IPersistent._p_oid">
+<code class="descname">_p_oid</code><a class="headerlink" href="#persistent.interfaces.IPersistent._p_oid" title="Permalink to this definition">¶</a></dt>
+<dd><p>The object id.</p>
+<p>It is up to the data manager to assign this.</p>
+<p>The special value None is reserved to indicate that an object
+id has not been assigned.  Non-None object ids must be non-empty
+strings.  The 8-byte string consisting of 8 NUL bytes
+(&#8216;&#8217;) is reserved to identify the
+database root object.</p>
+<p>Once assigned an OID, an object cannot be re-assigned another.</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="persistent.interfaces.IPersistent._p_changed">
+<code class="descname">_p_changed</code><a class="headerlink" href="#persistent.interfaces.IPersistent._p_changed" title="Permalink to this definition">¶</a></dt>
+<dd><p>The persistent state of the object.</p>
+<p>This is one of:</p>
+<p>None &#8211; The object is a ghost.</p>
+<p>false but not None &#8211; The object is saved (or has never been saved).</p>
+<p>true &#8211; The object has been modified since it was last saved.</p>
+<p>The object state may be changed by assigning or deleting this
+attribute; however, assigning None is ignored if the object is
+not in the saved state, and may be ignored even if the object is
+in the saved state.</p>
+<p>At and after ZODB 3.6, setting _p_changed to a true value for a ghost
+object activates the object; prior to 3.6, setting _p_changed to a
+true value on a ghost object was ignored.</p>
+<p>Note that an object can transition to the changed state only if
+it has a data manager.  When such a state change occurs, the
+&#8216;register&#8217; method of the data manager must be called, passing the
+persistent object.</p>
+<p>Deleting this attribute forces invalidation independent of
+existing state, although it is an error if the sticky state is
+current.</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="persistent.interfaces.IPersistent._p_serial">
+<code class="descname">_p_serial</code><a class="headerlink" href="#persistent.interfaces.IPersistent._p_serial" title="Permalink to this definition">¶</a></dt>
+<dd><p>The object serial number.</p>
+<p>This member is used by the data manager to distiguish distinct
+revisions of a given persistent object.</p>
+<p>This is an 8-byte string (not Unicode).</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="persistent.interfaces.IPersistent._p_mtime">
+<code class="descname">_p_mtime</code><a class="headerlink" href="#persistent.interfaces.IPersistent._p_mtime" title="Permalink to this definition">¶</a></dt>
+<dd><p>The object&#8217;s modification time (read-only).</p>
+<p>This is a float, representing seconds since the epoch (as returned
+by time.time).</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="persistent.interfaces.IPersistent._p_state">
+<code class="descname">_p_state</code><a class="headerlink" href="#persistent.interfaces.IPersistent._p_state" title="Permalink to this definition">¶</a></dt>
+<dd><p>The object&#8217;s persistence state token.</p>
+<p>Must be one of GHOST, UPTODATE, CHANGED, or STICKY.</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="persistent.interfaces.IPersistent._p_estimated_size">
+<code class="descname">_p_estimated_size</code><a class="headerlink" href="#persistent.interfaces.IPersistent._p_estimated_size" title="Permalink to this definition">¶</a></dt>
+<dd><p>An estimate of the object&#8217;s size in bytes.</p>
+<p>May be set by the data manager.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="persistent.interfaces.IPersistent.__getattribute__">
+<code class="descname">__getattribute__</code><span class="sig-paren">(</span><em>name</em><span class="sig-paren">)</span><a class="headerlink" href="#persistent.interfaces.IPersistent.__getattribute__" title="Permalink to this definition">¶</a></dt>
+<dd><p>Handle activating ghosts before returning an attribute value.</p>
+<p>&#8220;Special&#8221; attributes and &#8216;_p_*&#8217; attributes don&#8217;t require activation.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="persistent.interfaces.IPersistent.__setattr__">
+<code class="descname">__setattr__</code><span class="sig-paren">(</span><em>name</em>, <em>value</em><span class="sig-paren">)</span><a class="headerlink" href="#persistent.interfaces.IPersistent.__setattr__" title="Permalink to this definition">¶</a></dt>
+<dd><p>Handle activating ghosts before setting an attribute value.</p>
+<p>&#8220;Special&#8221; attributes and &#8216;_p_*&#8217; attributes don&#8217;t require activation.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="persistent.interfaces.IPersistent.__delattr__">
+<code class="descname">__delattr__</code><span class="sig-paren">(</span><em>name</em><span class="sig-paren">)</span><a class="headerlink" href="#persistent.interfaces.IPersistent.__delattr__" title="Permalink to this definition">¶</a></dt>
+<dd><p>Handle activating ghosts before deleting an attribute value.</p>
+<p>&#8220;Special&#8221; attributes and &#8216;_p_*&#8217; attributes don&#8217;t require activation.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="persistent.interfaces.IPersistent.__getstate__">
+<code class="descname">__getstate__</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#persistent.interfaces.IPersistent.__getstate__" title="Permalink to this definition">¶</a></dt>
+<dd><p>Get the object data.</p>
+<p>The state should not include persistent attributes (&#8220;_p_name&#8221;).
+The result must be picklable.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="persistent.interfaces.IPersistent.__setstate__">
+<code class="descname">__setstate__</code><span class="sig-paren">(</span><em>state</em><span class="sig-paren">)</span><a class="headerlink" href="#persistent.interfaces.IPersistent.__setstate__" title="Permalink to this definition">¶</a></dt>
+<dd><p>Set the object data.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="persistent.interfaces.IPersistent.__reduce__">
+<code class="descname">__reduce__</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#persistent.interfaces.IPersistent.__reduce__" title="Permalink to this definition">¶</a></dt>
+<dd><p>Reduce an object to contituent parts for serialization.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="persistent.interfaces.IPersistent._p_activate">
+<code class="descname">_p_activate</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#persistent.interfaces.IPersistent._p_activate" title="Permalink to this definition">¶</a></dt>
+<dd><p>Activate the object.</p>
+<p>Change the object to the saved state if it is a ghost.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="persistent.interfaces.IPersistent._p_deactivate">
+<code class="descname">_p_deactivate</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#persistent.interfaces.IPersistent._p_deactivate" title="Permalink to this definition">¶</a></dt>
+<dd><p>Deactivate the object.</p>
+<p>Possibly change an object in the saved state to the
+ghost state.  It may not be possible to make some persistent
+objects ghosts, and, for optimization reasons, the implementation
+may choose to keep an object in the saved state.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="persistent.interfaces.IPersistent._p_invalidate">
+<code class="descname">_p_invalidate</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#persistent.interfaces.IPersistent._p_invalidate" title="Permalink to this definition">¶</a></dt>
+<dd><p>Invalidate the object.</p>
+<p>Invalidate the object.  This causes any data to be thrown
+away, even if the object is in the changed state.  The object
+is moved to the ghost state; further accesses will cause
+object data to be reloaded.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="persistent.interfaces.IPersistent._p_getattr">
+<code class="descname">_p_getattr</code><span class="sig-paren">(</span><em>name</em><span class="sig-paren">)</span><a class="headerlink" href="#persistent.interfaces.IPersistent._p_getattr" title="Permalink to this definition">¶</a></dt>
+<dd><p>Test whether the base class must handle the name</p>
+<p>The method unghostifies the object, if necessary.
+The method records the object access, if necessary.</p>
+<p>This method should be called by subclass __getattribute__
+implementations before doing anything else. If the method
+returns True, then __getattribute__ implementations must delegate
+to the base class, Persistent.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="persistent.interfaces.IPersistent._p_setattr">
+<code class="descname">_p_setattr</code><span class="sig-paren">(</span><em>name</em>, <em>value</em><span class="sig-paren">)</span><a class="headerlink" href="#persistent.interfaces.IPersistent._p_setattr" title="Permalink to this definition">¶</a></dt>
+<dd><p>Save persistent meta data</p>
+<p>This method should be called by subclass __setattr__ implementations
+before doing anything else.  If it returns true, then the attribute
+was handled by the base class.</p>
+<p>The method unghostifies the object, if necessary.
+The method records the object access, if necessary.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="persistent.interfaces.IPersistent._p_delattr">
+<code class="descname">_p_delattr</code><span class="sig-paren">(</span><em>name</em><span class="sig-paren">)</span><a class="headerlink" href="#persistent.interfaces.IPersistent._p_delattr" title="Permalink to this definition">¶</a></dt>
+<dd><p>Delete persistent meta data</p>
+<p>This method should be called by subclass __delattr__ implementations
+before doing anything else.  If it returns true, then the attribute
+was handled by the base class.</p>
+<p>The method unghostifies the object, if necessary.
+The method records the object access, if necessary.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="interface">
+<dt id="persistent.interfaces.IPersistentDataManager">
+<em class="property">interface </em><code class="descclassname">persistent.interfaces.</code><code class="descname">IPersistentDataManager</code><a class="reference internal" href="../_modules/persistent/interfaces.html#IPersistentDataManager"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#persistent.interfaces.IPersistentDataManager" title="Permalink to this definition">¶</a></dt>
+<dd><p>Provide services for managing persistent state.</p>
+<p>This interface is used by a persistent object to interact with its
+data manager in the context of a transaction.</p>
+<dl class="attribute">
+<dt id="persistent.interfaces.IPersistentDataManager._cache">
+<code class="descname">_cache</code><a class="headerlink" href="#persistent.interfaces.IPersistentDataManager._cache" title="Permalink to this definition">¶</a></dt>
+<dd><p>The pickle cache associated with this connection.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="persistent.interfaces.IPersistentDataManager.setstate">
+<code class="descname">setstate</code><span class="sig-paren">(</span><em>object</em><span class="sig-paren">)</span><a class="headerlink" href="#persistent.interfaces.IPersistentDataManager.setstate" title="Permalink to this definition">¶</a></dt>
+<dd><p>Load the state for the given object.</p>
+<p>The object should be in the ghost state. The object&#8217;s state will be
+set and the object will end up in the saved state.</p>
+<p>The object must provide the IPersistent interface.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="persistent.interfaces.IPersistentDataManager.oldstate">
+<code class="descname">oldstate</code><span class="sig-paren">(</span><em>obj</em>, <em>tid</em><span class="sig-paren">)</span><a class="headerlink" href="#persistent.interfaces.IPersistentDataManager.oldstate" title="Permalink to this definition">¶</a></dt>
+<dd><p>Return copy of &#8216;obj&#8217; that was written by transaction &#8216;tid&#8217;.</p>
+<p>The returned object does not have the typical metadata (_p_jar, _p_oid,
+_p_serial) set. I&#8217;m not sure how references to other peristent objects
+are handled.</p>
+<p>Parameters
+obj: a persistent object from this Connection.
+tid: id of a transaction that wrote an earlier revision.</p>
+<p>Raises KeyError if tid does not exist or if tid deleted a revision of
+obj.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="persistent.interfaces.IPersistentDataManager.register">
+<code class="descname">register</code><span class="sig-paren">(</span><em>object</em><span class="sig-paren">)</span><a class="headerlink" href="#persistent.interfaces.IPersistentDataManager.register" title="Permalink to this definition">¶</a></dt>
+<dd><p>Register an IPersistent with the current transaction.</p>
+<p>This method must be called when the object transitions to
+the changed state.</p>
+<p>A subclass could override this method to customize the default
+policy of one transaction manager for each thread.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="interface">
+<dt id="persistent.interfaces.IPickleCache">
+<em class="property">interface </em><code class="descclassname">persistent.interfaces.</code><code class="descname">IPickleCache</code><a class="reference internal" href="../_modules/persistent/interfaces.html#IPickleCache"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#persistent.interfaces.IPickleCache" title="Permalink to this definition">¶</a></dt>
+<dd><p>API of the cache for a ZODB connection.</p>
+<dl class="method">
+<dt id="persistent.interfaces.IPickleCache.__getitem__">
+<code class="descname">__getitem__</code><span class="sig-paren">(</span><em>oid</em><span class="sig-paren">)</span><a class="headerlink" href="#persistent.interfaces.IPickleCache.__getitem__" title="Permalink to this definition">¶</a></dt>
+<dd><p>-&gt; the persistent object for OID.</p>
+<p>o Raise KeyError if not found.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="persistent.interfaces.IPickleCache.__setitem__">
+<code class="descname">__setitem__</code><span class="sig-paren">(</span><em>oid</em>, <em>value</em><span class="sig-paren">)</span><a class="headerlink" href="#persistent.interfaces.IPickleCache.__setitem__" title="Permalink to this definition">¶</a></dt>
+<dd><p>Save the persistent object under OID.</p>
+<p>o &#8216;oid&#8217; must be a string, else raise ValueError.</p>
+<p>o Raise KeyError on duplicate</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="persistent.interfaces.IPickleCache.__delitem__">
+<code class="descname">__delitem__</code><span class="sig-paren">(</span><em>oid</em><span class="sig-paren">)</span><a class="headerlink" href="#persistent.interfaces.IPickleCache.__delitem__" title="Permalink to this definition">¶</a></dt>
+<dd><p>Remove the persistent object for OID.</p>
+<p>o &#8216;oid&#8217; must be a string, else raise ValueError.</p>
+<p>o Raise KeyError if not found.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="persistent.interfaces.IPickleCache.get">
+<code class="descname">get</code><span class="sig-paren">(</span><em>oid</em>, <em>default=None</em><span class="sig-paren">)</span><a class="headerlink" href="#persistent.interfaces.IPickleCache.get" title="Permalink to this definition">¶</a></dt>
+<dd><p>-&gt; the persistent object for OID.</p>
+<p>o Return &#8216;default&#8217; if not found.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="persistent.interfaces.IPickleCache.mru">
+<code class="descname">mru</code><span class="sig-paren">(</span><em>oid</em><span class="sig-paren">)</span><a class="headerlink" href="#persistent.interfaces.IPickleCache.mru" title="Permalink to this definition">¶</a></dt>
+<dd><p>Move the element corresonding to &#8216;oid&#8217; to the head.</p>
+<p>o Raise KeyError if no element is found.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="persistent.interfaces.IPickleCache.__len__">
+<code class="descname">__len__</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#persistent.interfaces.IPickleCache.__len__" title="Permalink to this definition">¶</a></dt>
+<dd><p>-&gt; the number of OIDs in the cache.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="persistent.interfaces.IPickleCache.items">
+<code class="descname">items</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#persistent.interfaces.IPickleCache.items" title="Permalink to this definition">¶</a></dt>
+<dd><p>-&gt; a sequence of tuples (oid, value) for cached objects.</p>
+<p>o Only includes items in &#8216;data&#8217; (no p-classes).</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="persistent.interfaces.IPickleCache.ringlen">
+<code class="descname">ringlen</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#persistent.interfaces.IPickleCache.ringlen" title="Permalink to this definition">¶</a></dt>
+<dd><p>-&gt; the number of persistent objects in the ring.</p>
+<p>o Only includes items in the ring (no ghosts or p-classes).</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="persistent.interfaces.IPickleCache.lru_items">
+<code class="descname">lru_items</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#persistent.interfaces.IPickleCache.lru_items" title="Permalink to this definition">¶</a></dt>
+<dd><p>-&gt; a sequence of tuples (oid, value) for cached objects.</p>
+<p>o Tuples will be in LRU order.</p>
+<p>o Only includes items in the ring (no ghosts or p-classes).</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="persistent.interfaces.IPickleCache.klass_items">
+<code class="descname">klass_items</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#persistent.interfaces.IPickleCache.klass_items" title="Permalink to this definition">¶</a></dt>
+<dd><p>-&gt; a sequence of tuples (oid, value) for cached p-classes.</p>
+<p>o Only includes persistent classes.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="persistent.interfaces.IPickleCache.incrgc">
+<code class="descname">incrgc</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#persistent.interfaces.IPickleCache.incrgc" title="Permalink to this definition">¶</a></dt>
+<dd><p>Perform an incremental garbage collection sweep.</p>
+<p>o Reduce number of non-ghosts to &#8216;cache_size&#8217;, if possible.</p>
+<p>o Ghostify in LRU order.</p>
+<p>o Skip dirty or sticky objects.</p>
+<p>o Quit once we get down to &#8216;cache_size&#8217;.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="persistent.interfaces.IPickleCache.full_sweep">
+<code class="descname">full_sweep</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#persistent.interfaces.IPickleCache.full_sweep" title="Permalink to this definition">¶</a></dt>
+<dd><p>Perform a full garbage collection sweep.</p>
+<p>o Reduce number of non-ghosts to 0, if possible.</p>
+<p>o Ghostify all non-sticky / non-changed objecs.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="persistent.interfaces.IPickleCache.minimize">
+<code class="descname">minimize</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#persistent.interfaces.IPickleCache.minimize" title="Permalink to this definition">¶</a></dt>
+<dd><p>Alias for &#8216;full_sweep&#8217;.</p>
+<p>o XXX?</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="persistent.interfaces.IPickleCache.new_ghost">
+<code class="descname">new_ghost</code><span class="sig-paren">(</span><em>oid</em>, <em>obj</em><span class="sig-paren">)</span><a class="headerlink" href="#persistent.interfaces.IPickleCache.new_ghost" title="Permalink to this definition">¶</a></dt>
+<dd><p>Add the given (ghost) object to the cache.</p>
+<p>Also, set its _p_jar and _p_oid, and ensure it is in the
+GHOST state.</p>
+<p>If the object doesn&#8217;t define &#8216;_p_oid&#8217; / &#8216;_p_jar&#8217;, raise.</p>
+<p>If the object&#8217;s &#8216;_p_oid&#8217; is not None, raise.</p>
+<p>If the object&#8217;s &#8216;_p_jar&#8217; is not None, raise.</p>
+<p>If &#8216;oid&#8217; is already in the cache, raise.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="persistent.interfaces.IPickleCache.reify">
+<code class="descname">reify</code><span class="sig-paren">(</span><em>to_reify</em><span class="sig-paren">)</span><a class="headerlink" href="#persistent.interfaces.IPickleCache.reify" title="Permalink to this definition">¶</a></dt>
+<dd><p>Reify the indicated objects.</p>
+<p>o If &#8216;to_reify&#8217; is a string, treat it as an OID.</p>
+<p>o Otherwise, iterate over it as a sequence of OIDs.</p>
+<p>o For each OID, if present in &#8216;data&#8217; and in GHOST state:</p>
+<blockquote>
+<div><p>o Call &#8216;_p_activate&#8217; on the object.</p>
+<p>o Add it to the ring.</p>
+</div></blockquote>
+<p>o If any OID is present but not in GHOST state, skip it.</p>
+<p>o Raise KeyErrory if any OID is not present.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="persistent.interfaces.IPickleCache.invalidate">
+<code class="descname">invalidate</code><span class="sig-paren">(</span><em>to_invalidate</em><span class="sig-paren">)</span><a class="headerlink" href="#persistent.interfaces.IPickleCache.invalidate" title="Permalink to this definition">¶</a></dt>
+<dd><p>Invalidate the indicated objects.</p>
+<p>o If &#8216;to_invalidate&#8217; is a string, treat it as an OID.</p>
+<p>o Otherwise, iterate over it as a sequence of OIDs.</p>
+<dl class="docutils">
+<dt>o Any OID corresponding to a p-class will cause the corresponding</dt>
+<dd>p-class to be removed from the cache.</dd>
+<dt>o For all other OIDs, ghostify the corrsponding object and </dt>
+<dd>remove it from the ring.</dd>
+</dl>
+</dd></dl>
+
+<dl class="method">
+<dt id="persistent.interfaces.IPickleCache.debug_info">
+<code class="descname">debug_info</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#persistent.interfaces.IPickleCache.debug_info" title="Permalink to this definition">¶</a></dt>
+<dd><p>Return debugging data about objects in the cache.</p>
+<p>o Return a sequence of tuples, (oid, refcount, typename, state).</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="persistent.interfaces.IPickleCache.update_object_size_estimation">
+<code class="descname">update_object_size_estimation</code><span class="sig-paren">(</span><em>oid</em>, <em>new_size</em><span class="sig-paren">)</span><a class="headerlink" href="#persistent.interfaces.IPickleCache.update_object_size_estimation" title="Permalink to this definition">¶</a></dt>
+<dd><p>Update the cache&#8217;s size estimation for &#8216;oid&#8217;, if known to the cache.</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="persistent.interfaces.IPickleCache.cache_size">
+<code class="descname">cache_size</code><a class="headerlink" href="#persistent.interfaces.IPickleCache.cache_size" title="Permalink to this definition">¶</a></dt>
+<dd><p>Target size of the cache</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="persistent.interfaces.IPickleCache.cache_drain_resistance">
+<code class="descname">cache_drain_resistance</code><a class="headerlink" href="#persistent.interfaces.IPickleCache.cache_drain_resistance" title="Permalink to this definition">¶</a></dt>
+<dd><p>Factor for draining cache below target size</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="persistent.interfaces.IPickleCache.cache_non_ghost_count">
+<code class="descname">cache_non_ghost_count</code><a class="headerlink" href="#persistent.interfaces.IPickleCache.cache_non_ghost_count" title="Permalink to this definition">¶</a></dt>
+<dd><p>Number of non-ghosts in the cache (XXX how is it different from ringlen?</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="persistent.interfaces.IPickleCache.cache_data">
+<code class="descname">cache_data</code><a class="headerlink" href="#persistent.interfaces.IPickleCache.cache_data" title="Permalink to this definition">¶</a></dt>
+<dd><p>Property:  copy of our &#8216;data&#8217; dict</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="persistent.interfaces.IPickleCache.cache_klass_count">
+<code class="descname">cache_klass_count</code><a class="headerlink" href="#persistent.interfaces.IPickleCache.cache_klass_count" title="Permalink to this definition">¶</a></dt>
+<dd><p>Property: len of &#8216;persistent_classes&#8217;</p>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="../api.html"
+                        title="previous chapter"><code class="docutils literal"><span class="pre">persistent</span></code> API documentation</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="attributes.html"
+                        title="next chapter">Customizing Attribute Access</a></p>
+  <div role="note" aria-label="source link">
+    <h3>This Page</h3>
+    <ul class="this-page-menu">
+      <li><a href="../_sources/api/interfaces.txt"
+            rel="nofollow">Show Source</a></li>
+    </ul>
+   </div>
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <form class="search" action="../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="attributes.html" title="Customizing Attribute Access"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="../api.html" title="persistent API documentation"
+             >previous</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../index.html">persistent 3.10b1 documentation</a> &raquo;</li>
+          <li class="nav-item nav-item-1"><a href="../api.html" ><code class="docutils literal"><span class="pre">persistent</span></code> API documentation</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer" role="contentinfo">
+        &copy; Copyright 2011, ZODB Developers &lt;zope-dev@zope.org&gt;.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.3.1.
+    </div>
+  </body>
+</html>

@@ -1,0 +1,652 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>persistent.interfaces &mdash; persistent 3.10b1 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/classic.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '3.10b1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <link rel="top" title="persistent 3.10b1 documentation" href="../../index.html" />
+    <link rel="up" title="Module code" href="../index.html" /> 
+  </head>
+  <body role="document">
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../../index.html">persistent 3.10b1 documentation</a> &raquo;</li>
+          <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for persistent.interfaces</h1><div class="highlight"><pre>
+<span class="c">##############################################################################</span>
+<span class="c">#</span>
+<span class="c"># Copyright (c) 2001, 2002 Zope Foundation and Contributors.</span>
+<span class="c"># All Rights Reserved.</span>
+<span class="c">#</span>
+<span class="c"># This software is subject to the provisions of the Zope Public License,</span>
+<span class="c"># Version 2.1 (ZPL).  A copy of the ZPL should accompany this distribution.</span>
+<span class="c"># THIS SOFTWARE IS PROVIDED &quot;AS IS&quot; AND ANY AND ALL EXPRESS OR IMPLIED</span>
+<span class="c"># WARRANTIES ARE DISCLAIMED, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED</span>
+<span class="c"># WARRANTIES OF TITLE, MERCHANTABILITY, AGAINST INFRINGEMENT, AND FITNESS</span>
+<span class="c"># FOR A PARTICULAR PURPOSE.</span>
+<span class="c">#</span>
+<span class="c">##############################################################################</span>
+<span class="sd">&quot;&quot;&quot;Persistence Interfaces</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span> <span class="nn">zope.interface</span> <span class="kn">import</span> <span class="n">Interface</span>
+<span class="kn">from</span> <span class="nn">zope.interface</span> <span class="kn">import</span> <span class="n">Attribute</span>
+
+<span class="c"># Allowed values for _p_state</span>
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">from</span> <span class="nn">persistent.cPersistence</span> <span class="kn">import</span> <span class="n">GHOST</span>
+    <span class="kn">from</span> <span class="nn">persistent.cPersistence</span> <span class="kn">import</span> <span class="n">UPTODATE</span>
+    <span class="kn">from</span> <span class="nn">persistent.cPersistence</span> <span class="kn">import</span> <span class="n">CHANGED</span>
+    <span class="kn">from</span> <span class="nn">persistent.cPersistence</span> <span class="kn">import</span> <span class="n">STICKY</span>
+<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span> <span class="c">#pragma NO COVER</span>
+    <span class="n">GHOST</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
+    <span class="n">UPTODATE</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">CHANGED</span> <span class="o">=</span> <span class="mi">1</span>
+    <span class="n">STICKY</span> <span class="o">=</span> <span class="mi">2</span>
+
+
+<span class="n">OID_TYPE</span> <span class="o">=</span> <span class="n">SERIAL_TYPE</span> <span class="o">=</span> <span class="nb">bytes</span>
+
+<div class="viewcode-block" id="IPersistent"><a class="viewcode-back" href="../../api/interfaces.html#persistent.interfaces.IPersistent">[docs]</a><span class="k">class</span> <span class="nc">IPersistent</span><span class="p">(</span><span class="n">Interface</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Python persistent interface</span>
+
+<span class="sd">    A persistent object can be in one of several states:</span>
+
+<span class="sd">    - Unsaved</span>
+
+<span class="sd">      The object has been created but not saved in a data manager.</span>
+
+<span class="sd">      In this state, the _p_changed attribute is non-None and false</span>
+<span class="sd">      and the _p_jar attribute is None.</span>
+
+<span class="sd">    - Saved</span>
+
+<span class="sd">      The object has been saved and has not been changed since it was saved.</span>
+
+<span class="sd">      In this state, the _p_changed attribute is non-None and false</span>
+<span class="sd">      and the _p_jar attribute is set to a data manager.</span>
+
+<span class="sd">    - Sticky</span>
+
+<span class="sd">      This state is identical to the saved state except that the</span>
+<span class="sd">      object cannot transition to the ghost state.  This is a special</span>
+<span class="sd">      state used by C methods of persistent objects to make sure that</span>
+<span class="sd">      state is not unloaded in the middle of computation.</span>
+
+<span class="sd">      In this state, the _p_changed attribute is non-None and false</span>
+<span class="sd">      and the _p_jar attribute is set to a data manager.</span>
+
+<span class="sd">      There is no Python API for detecting whether an object is in the</span>
+<span class="sd">      sticky state.</span>
+
+<span class="sd">    - Changed</span>
+
+<span class="sd">      The object has been changed.</span>
+
+<span class="sd">      In this state, the _p_changed attribute is true</span>
+<span class="sd">      and the _p_jar attribute is set to a data manager.</span>
+
+<span class="sd">    - Ghost</span>
+
+<span class="sd">      the object is in memory but its state has not been loaded from</span>
+<span class="sd">      the database (or its state has been unloaded).  In this state,</span>
+<span class="sd">      the object doesn&#39;t contain any application data.</span>
+
+<span class="sd">      In this state, the _p_changed attribute is None, and the _p_jar</span>
+<span class="sd">      attribute is set to the data manager from which the object was</span>
+<span class="sd">      obtained.</span>
+
+<span class="sd">    In all the above, _p_oid (the persistent object id) is set when</span>
+<span class="sd">    _p_jar first gets set.</span>
+
+<span class="sd">    The following state transitions are possible:</span>
+
+<span class="sd">    - Unsaved -&gt; Saved</span>
+
+<span class="sd">      This transition occurs when an object is saved in the</span>
+<span class="sd">      database.  This usually happens when an unsaved object is added</span>
+<span class="sd">      to (e.g. as an attribute or item of) a saved (or changed) object</span>
+<span class="sd">      and the transaction is committed.</span>
+
+<span class="sd">    - Saved  -&gt; Changed</span>
+<span class="sd">      Sticky -&gt; Changed</span>
+<span class="sd">      Ghost  -&gt; Changed</span>
+
+<span class="sd">      This transition occurs when someone sets an attribute or sets</span>
+<span class="sd">      _p_changed to a true value on a saved, sticky or ghost object.  When</span>
+<span class="sd">      the transition occurs, the persistent object is required to call the</span>
+<span class="sd">      register() method on its data manager, passing itself as the</span>
+<span class="sd">      only argument.</span>
+
+<span class="sd">      Prior to ZODB 3.6, setting _p_changed to a true value on a ghost object</span>
+<span class="sd">      was ignored (the object remained a ghost, and getting its _p_changed</span>
+<span class="sd">      attribute continued to return None).</span>
+
+<span class="sd">    - Saved -&gt; Sticky</span>
+
+<span class="sd">      This transition occurs when C code marks the object as sticky to</span>
+<span class="sd">      prevent its deactivation.</span>
+
+<span class="sd">    - Saved -&gt; Ghost</span>
+
+<span class="sd">      This transition occurs when a saved object is deactivated or</span>
+<span class="sd">      invalidated.  See discussion below.</span>
+
+<span class="sd">    - Sticky -&gt; Saved</span>
+
+<span class="sd">      This transition occurs when C code unmarks the object as sticky to</span>
+<span class="sd">      allow its deactivation.</span>
+
+<span class="sd">    - Changed -&gt; Saved</span>
+
+<span class="sd">      This transition occurs when a transaction is committed.  After</span>
+<span class="sd">      saving the state of a changed object during transaction commit,</span>
+<span class="sd">      the data manager sets the object&#39;s _p_changed to a non-None false</span>
+<span class="sd">      value.</span>
+
+<span class="sd">    - Changed -&gt; Ghost</span>
+
+<span class="sd">      This transition occurs when a transaction is aborted.  All changed</span>
+<span class="sd">      objects are invalidated by the data manager by an abort.</span>
+
+<span class="sd">    - Ghost -&gt; Saved</span>
+
+<span class="sd">      This transition occurs when an attribute or operation of a ghost</span>
+<span class="sd">      is accessed and the object&#39;s state is loaded from the database.</span>
+
+<span class="sd">    Note that there is a separate C API that is not included here.</span>
+<span class="sd">    The C API requires a specific data layout and defines the sticky</span>
+<span class="sd">    state.</span>
+
+
+<span class="sd">    About Invalidation, Deactivation and the Sticky &amp; Ghost States</span>
+
+<span class="sd">    The sticky state is intended to be a short-lived state, to prevent</span>
+<span class="sd">    an object&#39;s state from being discarded while we&#39;re in C routines.  It</span>
+<span class="sd">    is an error to invalidate an object in the sticky state.</span>
+
+<span class="sd">    Deactivation is a request that an object discard its state (become</span>
+<span class="sd">    a ghost).  Deactivation is an optimization, and a request to</span>
+<span class="sd">    deactivate may be ignored.  There are two equivalent ways to</span>
+<span class="sd">    request deactivation:</span>
+
+<span class="sd">          - call _p_deactivate()</span>
+<span class="sd">          - set _p_changed to None</span>
+
+<span class="sd">    There are two ways to invalidate an object:  call the</span>
+<span class="sd">    _p_invalidate() method (preferred) or delete its _p_changed</span>
+<span class="sd">    attribute.  This cannot be ignored, and is used when semantics</span>
+<span class="sd">    require invalidation.  Normally, an invalidated object transitions</span>
+<span class="sd">    to the ghost state.  However, some objects cannot be ghosts.  When</span>
+<span class="sd">    these objects are invalidated, they immediately reload their state</span>
+<span class="sd">    from their data manager, and are then in the saved state.</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">_p_jar</span> <span class="o">=</span> <span class="n">Attribute</span><span class="p">(</span>
+        <span class="sd">&quot;&quot;&quot;The data manager for the object.</span>
+
+<span class="sd">        The data manager should implement IPersistentDataManager (note that</span>
+<span class="sd">        this constraint is not enforced).</span>
+
+<span class="sd">        If there is no data manager, then this is None.</span>
+
+<span class="sd">        Once assigned to a data manager, an object cannot be re-assigned</span>
+<span class="sd">        to another.</span>
+<span class="sd">        &quot;&quot;&quot;</span><span class="p">)</span>
+
+    <span class="n">_p_oid</span> <span class="o">=</span> <span class="n">Attribute</span><span class="p">(</span>
+        <span class="sd">&quot;&quot;&quot;The object id.</span>
+
+<span class="sd">        It is up to the data manager to assign this.</span>
+
+<span class="sd">        The special value None is reserved to indicate that an object</span>
+<span class="sd">        id has not been assigned.  Non-None object ids must be non-empty</span>
+<span class="sd">        strings.  The 8-byte string consisting of 8 NUL bytes</span>
+<span class="sd">        (&#39;\x00\x00\x00\x00\x00\x00\x00\x00&#39;) is reserved to identify the</span>
+<span class="sd">        database root object.</span>
+
+<span class="sd">        Once assigned an OID, an object cannot be re-assigned another.</span>
+<span class="sd">        &quot;&quot;&quot;</span><span class="p">)</span>
+
+    <span class="n">_p_changed</span> <span class="o">=</span> <span class="n">Attribute</span><span class="p">(</span>
+        <span class="sd">&quot;&quot;&quot;The persistent state of the object.</span>
+
+<span class="sd">        This is one of:</span>
+
+<span class="sd">        None -- The object is a ghost.</span>
+
+<span class="sd">        false but not None -- The object is saved (or has never been saved).</span>
+
+<span class="sd">        true -- The object has been modified since it was last saved.</span>
+
+<span class="sd">        The object state may be changed by assigning or deleting this</span>
+<span class="sd">        attribute; however, assigning None is ignored if the object is</span>
+<span class="sd">        not in the saved state, and may be ignored even if the object is</span>
+<span class="sd">        in the saved state.</span>
+
+<span class="sd">        At and after ZODB 3.6, setting _p_changed to a true value for a ghost</span>
+<span class="sd">        object activates the object; prior to 3.6, setting _p_changed to a</span>
+<span class="sd">        true value on a ghost object was ignored.</span>
+
+<span class="sd">        Note that an object can transition to the changed state only if</span>
+<span class="sd">        it has a data manager.  When such a state change occurs, the</span>
+<span class="sd">        &#39;register&#39; method of the data manager must be called, passing the</span>
+<span class="sd">        persistent object.</span>
+
+<span class="sd">        Deleting this attribute forces invalidation independent of</span>
+<span class="sd">        existing state, although it is an error if the sticky state is</span>
+<span class="sd">        current.</span>
+<span class="sd">        &quot;&quot;&quot;</span><span class="p">)</span>
+
+    <span class="n">_p_serial</span> <span class="o">=</span> <span class="n">Attribute</span><span class="p">(</span>
+        <span class="sd">&quot;&quot;&quot;The object serial number.</span>
+
+<span class="sd">        This member is used by the data manager to distiguish distinct</span>
+<span class="sd">        revisions of a given persistent object.</span>
+
+<span class="sd">        This is an 8-byte string (not Unicode).</span>
+<span class="sd">        &quot;&quot;&quot;</span><span class="p">)</span>
+
+    <span class="n">_p_mtime</span> <span class="o">=</span> <span class="n">Attribute</span><span class="p">(</span>
+        <span class="sd">&quot;&quot;&quot;The object&#39;s modification time (read-only).</span>
+
+<span class="sd">        This is a float, representing seconds since the epoch (as returned</span>
+<span class="sd">        by time.time).</span>
+<span class="sd">        &quot;&quot;&quot;</span><span class="p">)</span>
+
+    <span class="n">_p_state</span> <span class="o">=</span> <span class="n">Attribute</span><span class="p">(</span>
+        <span class="sd">&quot;&quot;&quot;The object&#39;s persistence state token.</span>
+
+<span class="sd">        Must be one of GHOST, UPTODATE, CHANGED, or STICKY.</span>
+<span class="sd">        &quot;&quot;&quot;</span><span class="p">)</span>
+
+    <span class="n">_p_estimated_size</span> <span class="o">=</span> <span class="n">Attribute</span><span class="p">(</span>
+        <span class="sd">&quot;&quot;&quot;An estimate of the object&#39;s size in bytes.</span>
+
+<span class="sd">        May be set by the data manager.</span>
+<span class="sd">        &quot;&quot;&quot;</span><span class="p">)</span>
+
+    <span class="c"># Attribute access protocol</span>
+    <span class="k">def</span> <span class="nf">__getattribute__</span><span class="p">(</span><span class="n">name</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot; Handle activating ghosts before returning an attribute value.</span>
+
+<span class="sd">        &quot;Special&quot; attributes and &#39;_p_*&#39; attributes don&#39;t require activation.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">__setattr__</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot; Handle activating ghosts before setting an attribute value.</span>
+
+<span class="sd">        &quot;Special&quot; attributes and &#39;_p_*&#39; attributes don&#39;t require activation.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">__delattr__</span><span class="p">(</span><span class="n">name</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot; Handle activating ghosts before deleting an attribute value.</span>
+
+<span class="sd">        &quot;Special&quot; attributes and &#39;_p_*&#39; attributes don&#39;t require activation.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+    <span class="c"># Pickling protocol.</span>
+    <span class="k">def</span> <span class="nf">__getstate__</span><span class="p">():</span>
+        <span class="sd">&quot;&quot;&quot;Get the object data.</span>
+
+<span class="sd">        The state should not include persistent attributes (&quot;_p_name&quot;).</span>
+<span class="sd">        The result must be picklable.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">__setstate__</span><span class="p">(</span><span class="n">state</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Set the object data.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">__reduce__</span><span class="p">():</span>
+        <span class="sd">&quot;&quot;&quot;Reduce an object to contituent parts for serialization.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+    <span class="c"># Custom methods</span>
+    <span class="k">def</span> <span class="nf">_p_activate</span><span class="p">():</span>
+        <span class="sd">&quot;&quot;&quot;Activate the object.</span>
+
+<span class="sd">        Change the object to the saved state if it is a ghost.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">_p_deactivate</span><span class="p">():</span>
+        <span class="sd">&quot;&quot;&quot;Deactivate the object.</span>
+
+<span class="sd">        Possibly change an object in the saved state to the</span>
+<span class="sd">        ghost state.  It may not be possible to make some persistent</span>
+<span class="sd">        objects ghosts, and, for optimization reasons, the implementation</span>
+<span class="sd">        may choose to keep an object in the saved state.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">_p_invalidate</span><span class="p">():</span>
+        <span class="sd">&quot;&quot;&quot;Invalidate the object.</span>
+
+<span class="sd">        Invalidate the object.  This causes any data to be thrown</span>
+<span class="sd">        away, even if the object is in the changed state.  The object</span>
+<span class="sd">        is moved to the ghost state; further accesses will cause</span>
+<span class="sd">        object data to be reloaded.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">_p_getattr</span><span class="p">(</span><span class="n">name</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Test whether the base class must handle the name</span>
+<span class="sd">   </span>
+<span class="sd">        The method unghostifies the object, if necessary.</span>
+<span class="sd">        The method records the object access, if necessary.</span>
+<span class="sd"> </span>
+<span class="sd">        This method should be called by subclass __getattribute__</span>
+<span class="sd">        implementations before doing anything else. If the method</span>
+<span class="sd">        returns True, then __getattribute__ implementations must delegate</span>
+<span class="sd">        to the base class, Persistent.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">_p_setattr</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Save persistent meta data</span>
+
+<span class="sd">        This method should be called by subclass __setattr__ implementations</span>
+<span class="sd">        before doing anything else.  If it returns true, then the attribute</span>
+<span class="sd">        was handled by the base class.</span>
+
+<span class="sd">        The method unghostifies the object, if necessary.</span>
+<span class="sd">        The method records the object access, if necessary.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">_p_delattr</span><span class="p">(</span><span class="n">name</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Delete persistent meta data</span>
+
+<span class="sd">        This method should be called by subclass __delattr__ implementations</span>
+<span class="sd">        before doing anything else.  If it returns true, then the attribute</span>
+<span class="sd">        was handled by the base class.</span>
+
+<span class="sd">        The method unghostifies the object, if necessary.</span>
+<span class="sd">        The method records the object access, if necessary.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+<span class="c"># TODO:  document conflict resolution.</span>
+</div>
+<div class="viewcode-block" id="IPersistentDataManager"><a class="viewcode-back" href="../../api/interfaces.html#persistent.interfaces.IPersistentDataManager">[docs]</a><span class="k">class</span> <span class="nc">IPersistentDataManager</span><span class="p">(</span><span class="n">Interface</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Provide services for managing persistent state.</span>
+
+<span class="sd">    This interface is used by a persistent object to interact with its</span>
+<span class="sd">    data manager in the context of a transaction.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">_cache</span> <span class="o">=</span> <span class="n">Attribute</span><span class="p">(</span><span class="s">&quot;The pickle cache associated with this connection.&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">setstate</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Load the state for the given object.</span>
+
+<span class="sd">        The object should be in the ghost state. The object&#39;s state will be</span>
+<span class="sd">        set and the object will end up in the saved state.</span>
+
+<span class="sd">        The object must provide the IPersistent interface.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">oldstate</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">tid</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Return copy of &#39;obj&#39; that was written by transaction &#39;tid&#39;.</span>
+
+<span class="sd">        The returned object does not have the typical metadata (_p_jar, _p_oid,</span>
+<span class="sd">        _p_serial) set. I&#39;m not sure how references to other peristent objects</span>
+<span class="sd">        are handled.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        obj: a persistent object from this Connection.</span>
+<span class="sd">        tid: id of a transaction that wrote an earlier revision.</span>
+
+<span class="sd">        Raises KeyError if tid does not exist or if tid deleted a revision of</span>
+<span class="sd">        obj.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">register</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Register an IPersistent with the current transaction.</span>
+
+<span class="sd">        This method must be called when the object transitions to</span>
+<span class="sd">        the changed state.</span>
+
+<span class="sd">        A subclass could override this method to customize the default</span>
+<span class="sd">        policy of one transaction manager for each thread.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+<span class="c"># Maybe later:</span>
+<span class="c">##     def mtime(object):</span>
+<span class="c">##         &quot;&quot;&quot;Return the modification time of the object.</span>
+
+<span class="c">##         The modification time may not be known, in which case None</span>
+<span class="c">##         is returned.  If non-None, the return value is the kind of</span>
+<span class="c">##         timestamp supplied by Python&#39;s time.time().</span>
+<span class="c">##         &quot;&quot;&quot;</span>
+
+</div>
+<div class="viewcode-block" id="IPickleCache"><a class="viewcode-back" href="../../api/interfaces.html#persistent.interfaces.IPickleCache">[docs]</a><span class="k">class</span> <span class="nc">IPickleCache</span><span class="p">(</span><span class="n">Interface</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot; API of the cache for a ZODB connection.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">__getitem__</span><span class="p">(</span><span class="n">oid</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot; -&gt; the persistent object for OID.</span>
+
+<span class="sd">        o Raise KeyError if not found.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">__setitem__</span><span class="p">(</span><span class="n">oid</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot; Save the persistent object under OID.</span>
+
+<span class="sd">        o &#39;oid&#39; must be a string, else raise ValueError.</span>
+
+<span class="sd">        o Raise KeyError on duplicate</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">__delitem__</span><span class="p">(</span><span class="n">oid</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot; Remove the persistent object for OID.</span>
+
+<span class="sd">        o &#39;oid&#39; must be a string, else raise ValueError.</span>
+
+<span class="sd">        o Raise KeyError if not found.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">get</span><span class="p">(</span><span class="n">oid</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot; -&gt; the persistent object for OID.</span>
+
+<span class="sd">        o Return &#39;default&#39; if not found.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">mru</span><span class="p">(</span><span class="n">oid</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot; Move the element corresonding to &#39;oid&#39; to the head.</span>
+
+<span class="sd">        o Raise KeyError if no element is found.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">__len__</span><span class="p">():</span>
+        <span class="sd">&quot;&quot;&quot; -&gt; the number of OIDs in the cache.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">items</span><span class="p">():</span>
+        <span class="sd">&quot;&quot;&quot;-&gt; a sequence of tuples (oid, value) for cached objects.</span>
+
+<span class="sd">        o Only includes items in &#39;data&#39; (no p-classes).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">ringlen</span><span class="p">():</span>
+        <span class="sd">&quot;&quot;&quot; -&gt; the number of persistent objects in the ring.</span>
+
+<span class="sd">        o Only includes items in the ring (no ghosts or p-classes).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">lru_items</span><span class="p">():</span>
+        <span class="sd">&quot;&quot;&quot; -&gt; a sequence of tuples (oid, value) for cached objects.</span>
+
+<span class="sd">        o Tuples will be in LRU order.</span>
+
+<span class="sd">        o Only includes items in the ring (no ghosts or p-classes).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">klass_items</span><span class="p">():</span>
+        <span class="sd">&quot;&quot;&quot;-&gt; a sequence of tuples (oid, value) for cached p-classes.</span>
+
+<span class="sd">        o Only includes persistent classes.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">incrgc</span><span class="p">():</span>
+        <span class="sd">&quot;&quot;&quot; Perform an incremental garbage collection sweep.</span>
+
+<span class="sd">        o Reduce number of non-ghosts to &#39;cache_size&#39;, if possible.</span>
+<span class="sd">        </span>
+<span class="sd">        o Ghostify in LRU order.</span>
+
+<span class="sd">        o Skip dirty or sticky objects.</span>
+
+<span class="sd">        o Quit once we get down to &#39;cache_size&#39;.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">full_sweep</span><span class="p">():</span>
+        <span class="sd">&quot;&quot;&quot; Perform a full garbage collection sweep.</span>
+
+<span class="sd">        o Reduce number of non-ghosts to 0, if possible.</span>
+
+<span class="sd">        o Ghostify all non-sticky / non-changed objecs.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">minimize</span><span class="p">():</span>
+        <span class="sd">&quot;&quot;&quot; Alias for &#39;full_sweep&#39;.</span>
+
+<span class="sd">        o XXX?</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">new_ghost</span><span class="p">(</span><span class="n">oid</span><span class="p">,</span> <span class="n">obj</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot; Add the given (ghost) object to the cache.</span>
+
+<span class="sd">        Also, set its _p_jar and _p_oid, and ensure it is in the</span>
+<span class="sd">        GHOST state.</span>
+
+<span class="sd">        If the object doesn&#39;t define &#39;_p_oid&#39; / &#39;_p_jar&#39;, raise.</span>
+
+<span class="sd">        If the object&#39;s &#39;_p_oid&#39; is not None, raise.</span>
+
+<span class="sd">        If the object&#39;s &#39;_p_jar&#39; is not None, raise.</span>
+
+<span class="sd">        If &#39;oid&#39; is already in the cache, raise. </span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">reify</span><span class="p">(</span><span class="n">to_reify</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot; Reify the indicated objects.</span>
+
+<span class="sd">        o If &#39;to_reify&#39; is a string, treat it as an OID.</span>
+
+<span class="sd">        o Otherwise, iterate over it as a sequence of OIDs.</span>
+
+<span class="sd">        o For each OID, if present in &#39;data&#39; and in GHOST state:</span>
+
+<span class="sd">            o Call &#39;_p_activate&#39; on the object.</span>
+
+<span class="sd">            o Add it to the ring.</span>
+
+<span class="sd">        o If any OID is present but not in GHOST state, skip it.</span>
+
+<span class="sd">        o Raise KeyErrory if any OID is not present.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">invalidate</span><span class="p">(</span><span class="n">to_invalidate</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot; Invalidate the indicated objects.</span>
+
+<span class="sd">        o If &#39;to_invalidate&#39; is a string, treat it as an OID.</span>
+
+<span class="sd">        o Otherwise, iterate over it as a sequence of OIDs.</span>
+
+<span class="sd">        o Any OID corresponding to a p-class will cause the corresponding</span>
+<span class="sd">            p-class to be removed from the cache.</span>
+
+<span class="sd">        o For all other OIDs, ghostify the corrsponding object and </span>
+<span class="sd">            remove it from the ring.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">debug_info</span><span class="p">():</span>
+        <span class="sd">&quot;&quot;&quot;Return debugging data about objects in the cache.</span>
+
+<span class="sd">        o Return a sequence of tuples, (oid, refcount, typename, state).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">update_object_size_estimation</span><span class="p">(</span><span class="n">oid</span><span class="p">,</span> <span class="n">new_size</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Update the cache&#39;s size estimation for &#39;oid&#39;, if known to the cache.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+    <span class="n">cache_size</span> <span class="o">=</span> <span class="n">Attribute</span><span class="p">(</span><span class="s">&#39;Target size of the cache&#39;</span><span class="p">)</span>
+    <span class="n">cache_drain_resistance</span> <span class="o">=</span> <span class="n">Attribute</span><span class="p">(</span><span class="s">&#39;Factor for draining cache below &#39;</span>
+                                        <span class="s">&#39;target size&#39;</span><span class="p">)</span>
+    <span class="n">cache_non_ghost_count</span> <span class="o">=</span> <span class="n">Attribute</span><span class="p">(</span><span class="s">&#39;Number of non-ghosts in the cache &#39;</span>
+                                        <span class="s">&#39;(XXX how is it different from &#39;</span>
+                                        <span class="s">&#39;ringlen?&#39;</span><span class="p">)</span>
+    <span class="n">cache_data</span> <span class="o">=</span> <span class="n">Attribute</span><span class="p">(</span><span class="s">&quot;Property:  copy of our &#39;data&#39; dict&quot;</span><span class="p">)</span>
+    <span class="n">cache_klass_count</span> <span class="o">=</span> <span class="n">Attribute</span><span class="p">(</span><span class="s">&quot;Property: len of &#39;persistent_classes&#39;&quot;</span><span class="p">)</span></div>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../../index.html">persistent 3.10b1 documentation</a> &raquo;</li>
+          <li class="nav-item nav-item-1"><a href="../index.html" >Module code</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer" role="contentinfo">
+        &copy; Copyright 2011, ZODB Developers &lt;zope-dev@zope.org&gt;.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.3.1.
+    </div>
+  </body>
+</html>

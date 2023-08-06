@@ -1,0 +1,504 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>Using persistent in your application &mdash; persistent 3.10b1 documentation</title>
+    
+    <link rel="stylesheet" href="_static/classic.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    './',
+        VERSION:     '3.10b1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="top" title="persistent 3.10b1 documentation" href="index.html" />
+    <link rel="next" title="persistent API documentation" href="api.html" />
+    <link rel="prev" title="persistent: automatic persistence for Python objects" href="index.html" /> 
+  </head>
+  <body role="document">
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="api.html" title="persistent API documentation"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="index.html" title="persistent: automatic persistence for Python objects"
+             accesskey="P">previous</a> |</li>
+        <li class="nav-item nav-item-0"><a href="index.html">persistent 3.10b1 documentation</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <div class="section" id="using-persistent-in-your-application">
+<h1>Using <code class="xref py py-mod docutils literal"><span class="pre">persistent</span></code> in your application<a class="headerlink" href="#using-persistent-in-your-application" title="Permalink to this headline">¶</a></h1>
+<div class="section" id="inheriting-from-persistent-persistent">
+<h2>Inheriting from <code class="xref py py-class docutils literal"><span class="pre">persistent.Persistent</span></code><a class="headerlink" href="#inheriting-from-persistent-persistent" title="Permalink to this headline">¶</a></h2>
+<p>The basic mechanism for making your application&#8217;s objects persistent
+is mix-in interitance.  Instances whose classes derive from
+<code class="xref py py-class docutils literal"><span class="pre">persistent.Persistent</span></code> are automatically capable of being
+created as <a class="reference internal" href="glossary.html#term-ghost"><span class="xref std std-term">ghost</span></a> instances, being associated with a database
+connection (called the <a class="reference internal" href="glossary.html#term-jar"><span class="xref std std-term">jar</span></a>), and notifying the connection when
+they have been changed.</p>
+</div>
+<div class="section" id="relationship-to-a-data-manager-and-its-cache">
+<h2>Relationship to a Data Manager and its Cache<a class="headerlink" href="#relationship-to-a-data-manager-and-its-cache" title="Permalink to this headline">¶</a></h2>
+<p>Except immediately after their creation, persistent objects are normally
+associated with a <a class="reference internal" href="glossary.html#term-data-manager"><span class="xref std std-term">data manager</span></a> (also referred to as a <a class="reference internal" href="glossary.html#term-jar"><span class="xref std std-term">jar</span></a>).
+An object&#8217;s data manager is stored in its <code class="docutils literal"><span class="pre">_p_jar</span></code> attribute.
+The data manager is responsible for loading and saving the state of the
+persistent object to some sort of backing store, including managing any
+interactions with transaction machinery.</p>
+<p>Each data manager maintains an <a class="reference internal" href="glossary.html#term-object-cache"><span class="xref std std-term">object cache</span></a>, which keeps track of
+the currently loaded objects, as well as any objects they reference which
+have not yet been loaded:  such an object is called a <a class="reference internal" href="glossary.html#term-ghost"><span class="xref std std-term">ghost</span></a>.
+The cache is stored on the data manager in its <code class="docutils literal"><span class="pre">_cache</span></code> attribute.</p>
+<p>A persistent object remains in the ghost state until the application
+attempts to access or mutate one of its attributes:  at that point, the
+object requests that its data manager load its state.  The persistent
+object also notifies the cache that it has been loaded, as well as on
+each subsequent attribute access.  The cache keeps a &#8220;most-recently-used&#8221;
+list of its objects, and removes objects in least-recently-used order
+when it is asked to reduce its working set.</p>
+<p>The examples below use a stub data manager class, and its stub cache class:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="k">class</span> <span class="nc">Cache</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+<span class="gp">... </span>    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="gp">... </span>        <span class="bp">self</span><span class="o">.</span><span class="n">_mru</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="gp">... </span>    <span class="k">def</span> <span class="nf">mru</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">oid</span><span class="p">):</span>
+<span class="gp">... </span>        <span class="bp">self</span><span class="o">.</span><span class="n">_mru</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">oid</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span> <span class="nn">zope.interface</span> <span class="kn">import</span> <span class="n">implements</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span> <span class="nn">persistent.interfaces</span> <span class="kn">import</span> <span class="n">IPersistentDataManager</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">class</span> <span class="nc">DM</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+<span class="gp">... </span>    <span class="n">implements</span><span class="p">(</span><span class="n">IPersistentDataManager</span><span class="p">)</span>
+<span class="gp">... </span>    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="gp">... </span>        <span class="bp">self</span><span class="o">.</span><span class="n">_cache</span> <span class="o">=</span> <span class="n">Cache</span><span class="p">()</span>
+<span class="gp">... </span>        <span class="bp">self</span><span class="o">.</span><span class="n">registered</span> <span class="o">=</span> <span class="mi">0</span>
+<span class="gp">... </span>    <span class="k">def</span> <span class="nf">register</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ob</span><span class="p">):</span>
+<span class="gp">... </span>        <span class="bp">self</span><span class="o">.</span><span class="n">registered</span> <span class="o">+=</span> <span class="mi">1</span>
+<span class="gp">... </span>    <span class="k">def</span> <span class="nf">setstate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ob</span><span class="p">):</span>
+<span class="gp">... </span>        <span class="n">ob</span><span class="o">.</span><span class="n">__setstate__</span><span class="p">({</span><span class="s">&#39;x&#39;</span><span class="p">:</span> <span class="mi">42</span><span class="p">})</span>
+</pre></div>
+</div>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">Notic that the <code class="docutils literal"><span class="pre">DM</span></code> class always sets the <code class="docutils literal"><span class="pre">x</span></code> attribute to the value
+<code class="docutils literal"><span class="pre">42</span></code> when activating an object.</p>
+</div>
+</div>
+<div class="section" id="persistent-objects-without-a-data-manager">
+<h2>Persistent objects without a Data Manager<a class="headerlink" href="#persistent-objects-without-a-data-manager" title="Permalink to this headline">¶</a></h2>
+<p>Before aersistent instance has been associtated with a a data manager (
+i.e., its <code class="docutils literal"><span class="pre">_p_jar</span></code> is still <code class="docutils literal"><span class="pre">None</span></code>).</p>
+<p>The examples below use a class, <code class="docutils literal"><span class="pre">P</span></code>, defined as:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span> <span class="nn">persistent</span> <span class="kn">import</span> <span class="n">Persistent</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span> <span class="nn">persistent.interfaces</span> <span class="kn">import</span> <span class="n">GHOST</span><span class="p">,</span> <span class="n">UPTODATE</span><span class="p">,</span> <span class="n">CHANGED</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">class</span> <span class="nc">P</span><span class="p">(</span><span class="n">Persistent</span><span class="p">):</span>
+<span class="gp">... </span>   <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="gp">... </span>       <span class="bp">self</span><span class="o">.</span><span class="n">x</span> <span class="o">=</span> <span class="mi">0</span>
+<span class="gp">... </span>   <span class="k">def</span> <span class="nf">inc</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="gp">... </span>       <span class="bp">self</span><span class="o">.</span><span class="n">x</span> <span class="o">+=</span> <span class="mi">1</span>
+</pre></div>
+</div>
+<p>Instances of the derived <code class="docutils literal"><span class="pre">P</span></code> class which are not (yet) assigned to
+a <a class="reference internal" href="glossary.html#term-data-manager"><span class="xref std std-term">data manager</span></a> behave as other Python instances, except that
+they have some extra attributes:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="n">p</span> <span class="o">=</span> <span class="n">P</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">x</span>
+<span class="go">0</span>
+</pre></div>
+</div>
+<p>The <code class="xref py py-attr docutils literal"><span class="pre">_p_changed</span></code> attribute is a three-state flag:  it can be
+one of <code class="docutils literal"><span class="pre">None</span></code> (the object is not loaded), <code class="docutils literal"><span class="pre">False</span></code> (the object has
+not been changed since it was loaded) or <code class="docutils literal"><span class="pre">True</span></code> (the object has been
+changed).  Until the object is assigned a <a class="reference internal" href="glossary.html#term-jar"><span class="xref std std-term">jar</span></a>, this attribute
+will always be <code class="docutils literal"><span class="pre">False</span></code>.</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_changed</span>
+<span class="go">False</span>
+</pre></div>
+</div>
+<p>The <code class="xref py py-attr docutils literal"><span class="pre">_p_state</span></code> attribute is an integaer, representing which of the
+&#8220;persistent lifecycle&#8221; states the object is in.  Until the object is assigned
+a <a class="reference internal" href="glossary.html#term-jar"><span class="xref std std-term">jar</span></a>, this attribute will always be <code class="docutils literal"><span class="pre">0</span></code> (the <code class="docutils literal"><span class="pre">UPTODATE</span></code>
+constant):</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_state</span> <span class="o">==</span> <span class="n">UPTODATE</span>
+<span class="go">True</span>
+</pre></div>
+</div>
+<p>The <code class="xref py py-attr docutils literal"><span class="pre">_p_jar</span></code> attribute is the object&#8217;s <a class="reference internal" href="glossary.html#term-data-manager"><span class="xref std std-term">data manager</span></a>.  Since
+it has not yet been assigned, its value is <code class="docutils literal"><span class="pre">None</span></code>:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="k">print</span> <span class="n">p</span><span class="o">.</span><span class="n">_p_jar</span>
+<span class="go">None</span>
+</pre></div>
+</div>
+<p>The <code class="xref py py-attr docutils literal"><span class="pre">_p_oid</span></code> attribute is the <span class="xref std std-term">object id</span>, a unique value
+normally assigned by the object&#8217;s <a class="reference internal" href="glossary.html#term-data-manager"><span class="xref std std-term">data manager</span></a>.  Since the object
+has not yet been associated with its <a class="reference internal" href="glossary.html#term-jar"><span class="xref std std-term">jar</span></a>, its value is <code class="docutils literal"><span class="pre">None</span></code>:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="k">print</span> <span class="n">p</span><span class="o">.</span><span class="n">_p_oid</span>
+<span class="go">None</span>
+</pre></div>
+</div>
+<p>Without a data manager, modifying a persistent object has no effect on
+its <code class="docutils literal"><span class="pre">_p_state</span></code> or <code class="docutils literal"><span class="pre">_p_changed</span></code>.</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">inc</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">inc</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">x</span>
+<span class="go">2</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_changed</span>
+<span class="go">False</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_state</span>
+<span class="go">0</span>
+</pre></div>
+</div>
+<p>Try all sorts of different ways to change the object&#8217;s state:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_deactivate</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_state</span>
+<span class="go">0</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_changed</span>
+<span class="go">False</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_changed</span> <span class="o">=</span> <span class="bp">True</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_changed</span>
+<span class="go">False</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_state</span>
+<span class="go">0</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">del</span> <span class="n">p</span><span class="o">.</span><span class="n">_p_changed</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_changed</span>
+<span class="go">False</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_state</span>
+<span class="go">0</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">x</span>
+<span class="go">2</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="associating-an-object-with-a-data-manager">
+<h2>Associating an Object with a Data Manager<a class="headerlink" href="#associating-an-object-with-a-data-manager" title="Permalink to this headline">¶</a></h2>
+<p>Once associated with a data manager, a persistent object&#8217;s behavior changes:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="n">p</span> <span class="o">=</span> <span class="n">P</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">dm</span> <span class="o">=</span> <span class="n">DM</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_oid</span> <span class="o">=</span> <span class="s">&quot;00000012&quot;</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_jar</span> <span class="o">=</span> <span class="n">dm</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_changed</span>
+<span class="go">False</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_state</span>
+<span class="go">0</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">__dict__</span>
+<span class="go">{&#39;x&#39;: 0}</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">dm</span><span class="o">.</span><span class="n">registered</span>
+<span class="go">0</span>
+</pre></div>
+</div>
+<p>Modifying the object marks it as changed and registers it with the data
+manager.  Subsequent modifications don&#8217;t have additional side-effects.</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">inc</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">x</span>
+<span class="go">1</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">__dict__</span>
+<span class="go">{&#39;x&#39;: 1}</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_changed</span>
+<span class="go">True</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_state</span>
+<span class="go">1</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">dm</span><span class="o">.</span><span class="n">registered</span>
+<span class="go">1</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">inc</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_changed</span>
+<span class="go">True</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_state</span>
+<span class="go">1</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">dm</span><span class="o">.</span><span class="n">registered</span>
+<span class="go">1</span>
+</pre></div>
+</div>
+<p>Object which register themselves with the data manager are candidates
+for storage to the backing store at a later point in time.</p>
+</div>
+<div class="section" id="explicitly-controlling-p-state">
+<h2>Explicitly controlling <code class="docutils literal"><span class="pre">_p_state</span></code><a class="headerlink" href="#explicitly-controlling-p-state" title="Permalink to this headline">¶</a></h2>
+<p>Persistent objects expose three methods for moving an object into and out
+of the &#8220;ghost&#8221; state::  <code class="xref py py-meth docutils literal"><span class="pre">persistent.Persistent._p_activate()</span></code>,
+<code class="xref py py-meth docutils literal"><span class="pre">persistent.Persistent._p_activate_p_deactivate()</span></code>, and
+<code class="xref py py-meth docutils literal"><span class="pre">persistent.Persistent._p_invalidate()</span></code>:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="n">p</span> <span class="o">=</span> <span class="n">P</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_oid</span> <span class="o">=</span> <span class="s">&#39;00000012&#39;</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_jar</span> <span class="o">=</span> <span class="n">DM</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>After being assigned a jar, the object is initially in the <code class="docutils literal"><span class="pre">UPTODATE</span></code>
+state:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_state</span>
+<span class="go">0</span>
+</pre></div>
+</div>
+<p>From that state, <code class="docutils literal"><span class="pre">_p_deactivate</span></code> rests the object to the <code class="docutils literal"><span class="pre">GHOST</span></code> state:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_deactivate</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_state</span>
+<span class="go">-1</span>
+</pre></div>
+</div>
+<p>From the <code class="docutils literal"><span class="pre">GHOST</span></code> state, <code class="docutils literal"><span class="pre">_p_activate</span></code> reloads the object&#8217;s data and
+moves it to the <code class="docutils literal"><span class="pre">UPTODATE</span></code> state:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_activate</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_state</span>
+<span class="go">0</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">x</span>
+<span class="go">42</span>
+</pre></div>
+</div>
+<p>Changing the object puts it in the <code class="docutils literal"><span class="pre">CHANGED</span></code> state:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">inc</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">x</span>
+<span class="go">43</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_state</span>
+<span class="go">1</span>
+</pre></div>
+</div>
+<p>Attempting to deactivate in the <code class="docutils literal"><span class="pre">CHANGED</span></code> state is a no-op:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_deactivate</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">__dict__</span>
+<span class="go">{&#39;x&#39;: 43}</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_changed</span>
+<span class="go">True</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_state</span>
+<span class="go">1</span>
+</pre></div>
+</div>
+<p><code class="docutils literal"><span class="pre">_p_invalidate</span></code> forces objects into the <code class="docutils literal"><span class="pre">GHOST</span></code> state;  it works even on
+objects in the <code class="docutils literal"><span class="pre">CHANGED</span></code> state, which is the key difference between
+deactivation and invalidation:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_invalidate</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">__dict__</span>
+<span class="go">{}</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_state</span>
+<span class="go">-1</span>
+</pre></div>
+</div>
+<p>You can manually reset the <code class="docutils literal"><span class="pre">_p_changed</span></code> field to <code class="docutils literal"><span class="pre">False</span></code>:  in this case,
+the object changes to the <code class="docutils literal"><span class="pre">UPTODATE</span></code> state but retains its modifications:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">inc</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">x</span>
+<span class="go">43</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_changed</span> <span class="o">=</span> <span class="bp">False</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_state</span>
+<span class="go">0</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_changed</span>
+<span class="go">False</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">x</span>
+<span class="go">43</span>
+</pre></div>
+</div>
+<p>For an object in the &#8220;ghost&#8221; state, assigning <code class="docutils literal"><span class="pre">True</span></code> (or any value which is
+coercible to <code class="docutils literal"><span class="pre">True</span></code>) to its <code class="docutils literal"><span class="pre">_p_changed</span></code> attributes activates the object,
+which is exactly the same as calling <code class="docutils literal"><span class="pre">_p_activate</span></code>:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_invalidate</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_state</span>
+<span class="go">-1</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_changed</span> <span class="o">=</span> <span class="bp">True</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_changed</span>
+<span class="go">True</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_state</span>
+<span class="go">1</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">x</span>
+<span class="go">42</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="the-pickling-protocol">
+<h2>The pickling protocol<a class="headerlink" href="#the-pickling-protocol" title="Permalink to this headline">¶</a></h2>
+<p>Because persistent objects need to control how they are pickled and
+unpickled, the <code class="xref py py-class docutils literal"><span class="pre">persistent.Persistent</span></code> base class overrides
+the implementations of <code class="docutils literal"><span class="pre">__getstate__()</span></code> and <code class="docutils literal"><span class="pre">__setstate__()</span></code>:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="n">p</span> <span class="o">=</span> <span class="n">P</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">dm</span> <span class="o">=</span> <span class="n">DM</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_oid</span> <span class="o">=</span> <span class="s">&quot;00000012&quot;</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_jar</span> <span class="o">=</span> <span class="n">dm</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">__getstate__</span><span class="p">()</span>
+<span class="go">{&#39;x&#39;: 0}</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_state</span>
+<span class="go">0</span>
+</pre></div>
+</div>
+<p>Calling <code class="docutils literal"><span class="pre">__setstate__</span></code> always leaves the object in the uptodate state.</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">__setstate__</span><span class="p">({</span><span class="s">&#39;x&#39;</span><span class="p">:</span> <span class="mi">5</span><span class="p">})</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_state</span>
+<span class="go">0</span>
+</pre></div>
+</div>
+<p>A <a class="reference internal" href="glossary.html#term-volatile-attribute"><span class="xref std std-term">volatile attribute</span></a> is an attribute those whose name begins with a
+special prefix (<code class="docutils literal"><span class="pre">_v__</span></code>).  Unlike normal attributes, volatile attributes do
+not get stored in the object&#8217;s <a class="reference internal" href="glossary.html#term-pickled-data"><span class="xref std std-term">pickled data</span></a>.</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_v_foo</span> <span class="o">=</span> <span class="mi">2</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">__getstate__</span><span class="p">()</span>
+<span class="go">{&#39;x&#39;: 5}</span>
+</pre></div>
+</div>
+<p>Assigning to volatile attributes doesn&#8217;t cause the object to be marked as
+changed:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_state</span>
+<span class="go">0</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal"><span class="pre">_p_serial</span></code> attribute is not affected by calling setstate.</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_serial</span> <span class="o">=</span> <span class="s">&quot;00000012&quot;</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">__setstate__</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">__getstate__</span><span class="p">())</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_serial</span>
+<span class="go">&#39;00000012&#39;</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="estimated-object-size">
+<h2>Estimated Object Size<a class="headerlink" href="#estimated-object-size" title="Permalink to this headline">¶</a></h2>
+<p>We can store a size estimation in <code class="docutils literal"><span class="pre">_p_estimated_size</span></code>. Its default is 0.
+The size estimation can be used by a cache associated with the data manager
+to help in the implementation of its replacement strategy or its size bounds.</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_estimated_size</span>
+<span class="go">0</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_estimated_size</span> <span class="o">=</span> <span class="mi">1000</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span><span class="o">.</span><span class="n">_p_estimated_size</span>
+<span class="go">1024</span>
+</pre></div>
+</div>
+<p>Huh?  Why is the estimated size coming out different than what we put
+in? The reason is that the size isn&#8217;t stored exactly.  For backward
+compatibility reasons, the size needs to fit in 24 bits, so,
+internally, it is adjusted somewhat.</p>
+<p>Of course, the estimated size must not be negative.</p>
+<div class="highlight-python"><div class="highlight"><pre>&gt;&gt;&gt; p._p_estimated_size = -1
+Traceback (most recent call last):
+....
+ValueError: _p_estimated_size must not be negative
+</pre></div>
+</div>
+</div>
+<div class="section" id="overriding-the-attribute-protocol">
+<h2>Overriding the attribute protocol<a class="headerlink" href="#overriding-the-attribute-protocol" title="Permalink to this headline">¶</a></h2>
+<p>Subclasses which override the attribute-management methods provided by
+<code class="xref py py-class docutils literal"><span class="pre">persistent.Persistent</span></code>, but must obey some constraints:</p>
+<dl class="docutils">
+<dt><code class="xref py py-meth docutils literal"><span class="pre">__getattribute__`()</span></code></dt>
+<dd>When overriding <code class="docutils literal"><span class="pre">__getattribute__</span></code>, the derived class implementation
+<strong>must</strong> first call <code class="xref py py-meth docutils literal"><span class="pre">persistent.Persistent._p_getattr()</span></code>, passing the
+name being accessed.  This method ensures that the object is activated,
+if needed, and handles the &#8220;special&#8221; attributes which do not require
+activation (e.g., <code class="docutils literal"><span class="pre">_p_oid</span></code>, <code class="docutils literal"><span class="pre">__class__</span></code>, <code class="docutils literal"><span class="pre">__dict__</span></code>, etc.)
+If <code class="docutils literal"><span class="pre">_p_getattr</span></code> returns <code class="docutils literal"><span class="pre">True</span></code>, the derived class implementation
+<strong>must</strong> delegate to the base class implementation for the attribute.</dd>
+<dt><code class="xref py py-meth docutils literal"><span class="pre">__setattr__()</span></code></dt>
+<dd>When overriding <code class="docutils literal"><span class="pre">__setattr__</span></code>, the derived class implementation
+<strong>must</strong> first call <code class="xref py py-meth docutils literal"><span class="pre">persistent.Persistent._p_setattr()</span></code>, passing the
+name being accessed and the value.  This method ensures that the object is
+activated, if needed, and handles the &#8220;special&#8221; attributes which do not
+require activation (<code class="docutils literal"><span class="pre">_p_*</span></code>).  If <code class="docutils literal"><span class="pre">_p_setattr</span></code> returns <code class="docutils literal"><span class="pre">True</span></code>, the
+derived implementation must assume that the attribute value has been set by
+the base class.</dd>
+<dt><code class="xref py py-meth docutils literal"><span class="pre">__detattr__()</span></code></dt>
+<dd>When overriding <code class="docutils literal"><span class="pre">__detattr__</span></code>, the derived class implementation
+<strong>must</strong> first call <code class="xref py py-meth docutils literal"><span class="pre">persistent.Persistent._p_detattr()</span></code>, passing the
+name being accessed.  This method ensures that the object is
+activated, if needed, and handles the &#8220;special&#8221; attributes which do not
+require activation (<code class="docutils literal"><span class="pre">_p_*</span></code>).  If <code class="docutils literal"><span class="pre">_p_delattr</span></code> returns <code class="docutils literal"><span class="pre">True</span></code>, the
+derived implementation must assume that the attribute has been deleted
+base class.</dd>
+<dt><code class="xref py py-meth docutils literal"><span class="pre">__getattr__()</span></code></dt>
+<dd>For the <cite>__getattr__</cite> method, the behavior is like that for regular Python
+classes and for earlier versions of ZODB 3.</dd>
+</dl>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+  <h3><a href="index.html">Table Of Contents</a></h3>
+  <ul>
+<li><a class="reference internal" href="#">Using <code class="docutils literal"><span class="pre">persistent</span></code> in your application</a><ul>
+<li><a class="reference internal" href="#inheriting-from-persistent-persistent">Inheriting from <code class="docutils literal"><span class="pre">persistent.Persistent</span></code></a></li>
+<li><a class="reference internal" href="#relationship-to-a-data-manager-and-its-cache">Relationship to a Data Manager and its Cache</a></li>
+<li><a class="reference internal" href="#persistent-objects-without-a-data-manager">Persistent objects without a Data Manager</a></li>
+<li><a class="reference internal" href="#associating-an-object-with-a-data-manager">Associating an Object with a Data Manager</a></li>
+<li><a class="reference internal" href="#explicitly-controlling-p-state">Explicitly controlling <code class="docutils literal"><span class="pre">_p_state</span></code></a></li>
+<li><a class="reference internal" href="#the-pickling-protocol">The pickling protocol</a></li>
+<li><a class="reference internal" href="#estimated-object-size">Estimated Object Size</a></li>
+<li><a class="reference internal" href="#overriding-the-attribute-protocol">Overriding the attribute protocol</a></li>
+</ul>
+</li>
+</ul>
+
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="index.html"
+                        title="previous chapter"><code class="docutils literal"><span class="pre">persistent</span></code>:  automatic persistence for Python objects</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="api.html"
+                        title="next chapter"><code class="docutils literal"><span class="pre">persistent</span></code> API documentation</a></p>
+  <div role="note" aria-label="source link">
+    <h3>This Page</h3>
+    <ul class="this-page-menu">
+      <li><a href="_sources/using.txt"
+            rel="nofollow">Show Source</a></li>
+    </ul>
+   </div>
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="api.html" title="persistent API documentation"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="index.html" title="persistent: automatic persistence for Python objects"
+             >previous</a> |</li>
+        <li class="nav-item nav-item-0"><a href="index.html">persistent 3.10b1 documentation</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer" role="contentinfo">
+        &copy; Copyright 2011, ZODB Developers &lt;zope-dev@zope.org&gt;.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.3.1.
+    </div>
+  </body>
+</html>

@@ -1,0 +1,181 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>Caching Persistent Objects &mdash; persistent 3.10b1 documentation</title>
+    
+    <link rel="stylesheet" href="../_static/classic.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../',
+        VERSION:     '3.10b1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../_static/jquery.js"></script>
+    <script type="text/javascript" src="../_static/underscore.js"></script>
+    <script type="text/javascript" src="../_static/doctools.js"></script>
+    <link rel="top" title="persistent 3.10b1 documentation" href="../index.html" />
+    <link rel="up" title="persistent API documentation" href="../api.html" />
+    <link rel="next" title="Glossary" href="../glossary.html" />
+    <link rel="prev" title="Pickling Persistent Objects" href="pickling.html" /> 
+  </head>
+  <body role="document">
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="../glossary.html" title="Glossary"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="pickling.html" title="Pickling Persistent Objects"
+             accesskey="P">previous</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../index.html">persistent 3.10b1 documentation</a> &raquo;</li>
+          <li class="nav-item nav-item-1"><a href="../api.html" accesskey="U"><code class="docutils literal"><span class="pre">persistent</span></code> API documentation</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <div class="section" id="caching-persistent-objects">
+<h1>Caching Persistent Objects<a class="headerlink" href="#caching-persistent-objects" title="Permalink to this headline">¶</a></h1>
+<div class="section" id="creating-objects-de-novo">
+<h2>Creating Objects <code class="docutils literal"><span class="pre">de</span> <span class="pre">novo</span></code><a class="headerlink" href="#creating-objects-de-novo" title="Permalink to this headline">¶</a></h2>
+<p>Creating ghosts from scratch, as opposed to ghostifying a non-ghost
+is rather tricky. <code class="xref py py-class docutils literal"><span class="pre">IPeristent</span></code> doesn&#8217;t
+really provide the right interface given that:</p>
+<ul class="simple">
+<li><code class="xref py py-meth docutils literal"><span class="pre">_p_deactivate()</span></code> and <code class="xref py py-meth docutils literal"><span class="pre">_p_invalidate()</span></code> are overridable, and
+could assume that the object&#8217;s state is properly initialized.</li>
+<li>Assigning <code class="xref py py-attr docutils literal"><span class="pre">_p_changed</span></code> to None just calls <code class="xref py py-meth docutils literal"><span class="pre">_p_deactivate()</span></code>.</li>
+<li>Deleting <code class="xref py py-attr docutils literal"><span class="pre">_p_changed</span></code> just calls <code class="xref py py-meth docutils literal"><span class="pre">_p_invalidate()</span></code>.</li>
+</ul>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p>The current cache implementation is intimately tied up with the
+persistence implementation and has internal access to the persistence
+state.  The cache implementation can update the persistence state for
+newly created and ininitialized objects directly.</p>
+<p class="last">The future persistence and cache implementations will be far more
+decoupled. The persistence implementation will only manage object
+state and generate object-usage events.  The cache implemnentation(s)
+will be rersponsible for managing persistence-related (meta-)state,
+such as _p_state, _p_changed, _p_oid, etc.  So in that future
+implemention, the cache will be more central to managing object
+persistence information.</p>
+</div>
+<p>Caches have a <code class="xref py py-meth docutils literal"><span class="pre">new_ghost()</span></code> method that:</p>
+<ul class="simple">
+<li>adds an object to the cache, and</li>
+<li>initializes its persistence data.</li>
+</ul>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="kn">import</span> <span class="nn">persistent</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span> <span class="nn">persistent.tests.utils</span> <span class="kn">import</span> <span class="n">ResettingJar</span>
+
+<span class="gp">&gt;&gt;&gt; </span><span class="k">class</span> <span class="nc">C</span><span class="p">(</span><span class="n">persistent</span><span class="o">.</span><span class="n">Persistent</span><span class="p">):</span>
+<span class="gp">... </span>    <span class="k">pass</span>
+
+<span class="gp">&gt;&gt;&gt; </span><span class="n">jar</span> <span class="o">=</span> <span class="n">ResettingJar</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">cache</span> <span class="o">=</span> <span class="n">persistent</span><span class="o">.</span><span class="n">PickleCache</span><span class="p">(</span><span class="n">jar</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">100</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">ob</span> <span class="o">=</span> <span class="n">C</span><span class="o">.</span><span class="n">__new__</span><span class="p">(</span><span class="n">C</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">cache</span><span class="o">.</span><span class="n">new_ghost</span><span class="p">(</span><span class="s">&#39;1&#39;</span><span class="p">,</span> <span class="n">ob</span><span class="p">)</span>
+
+<span class="gp">&gt;&gt;&gt; </span><span class="n">ob</span><span class="o">.</span><span class="n">_p_changed</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">ob</span><span class="o">.</span><span class="n">_p_jar</span> <span class="ow">is</span> <span class="n">jar</span>
+<span class="go">True</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">ob</span><span class="o">.</span><span class="n">_p_oid</span>
+<span class="go">&#39;1&#39;</span>
+
+<span class="gp">&gt;&gt;&gt; </span><span class="n">cache</span><span class="o">.</span><span class="n">cache_non_ghost_count</span>
+<span class="go">0</span>
+</pre></div>
+</div>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+  <h3><a href="../index.html">Table Of Contents</a></h3>
+  <ul>
+<li><a class="reference internal" href="#">Caching Persistent Objects</a><ul>
+<li><a class="reference internal" href="#creating-objects-de-novo">Creating Objects <code class="docutils literal"><span class="pre">de</span> <span class="pre">novo</span></code></a></li>
+</ul>
+</li>
+</ul>
+
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="pickling.html"
+                        title="previous chapter">Pickling Persistent Objects</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="../glossary.html"
+                        title="next chapter">Glossary</a></p>
+  <div role="note" aria-label="source link">
+    <h3>This Page</h3>
+    <ul class="this-page-menu">
+      <li><a href="../_sources/api/cache.txt"
+            rel="nofollow">Show Source</a></li>
+    </ul>
+   </div>
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <form class="search" action="../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="../glossary.html" title="Glossary"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="pickling.html" title="Pickling Persistent Objects"
+             >previous</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../index.html">persistent 3.10b1 documentation</a> &raquo;</li>
+          <li class="nav-item nav-item-1"><a href="../api.html" ><code class="docutils literal"><span class="pre">persistent</span></code> API documentation</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer" role="contentinfo">
+        &copy; Copyright 2011, ZODB Developers &lt;zope-dev@zope.org&gt;.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.3.1.
+    </div>
+  </body>
+</html>
