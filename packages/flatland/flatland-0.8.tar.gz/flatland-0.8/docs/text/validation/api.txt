@@ -1,0 +1,310 @@
+
+Validator API
+*************
+
+The "Validator" class implements the validator callable interface and
+adds conveniences for messaging, internationalization, and
+customization.
+
+To use it, subclass "Validator" and implement "validate()".
+
+   from flatland.validation import Validator
+
+   class NoShouting(Validator):
+       """Disallow ALL CAPS TEXT."""
+
+       has_shouting = "NO SHOUTING in %(label)s, please."
+
+       def validate(self, element, state):
+           if element.value.isupper():
+               self.note_error(element, state, 'has_shouting')
+               return False
+           return True
+
+   from flatland import String
+
+   schema = String.using(validators=[NoShouting()])
+
+Above is a "Validator" version of the basic Customizing Validators
+example.  In this version, the
+"flatland.validation.Validator.note_error()" method allows the
+messaging to be separated from the validation logic.  "note_error" has
+some useful features, including templating and automatic I18N
+translation.
+
+
+Customizing Validators
+======================
+
+The base constructor of the "Validator" class has a twist that makes
+customizing existing Validators on the fly a breeze.  The constructor
+can be passed keyword arguments matching any class attribute, and they
+will be overridden on the instance.
+
+   schema = String.using(validators=[NoShouting(has_shouting='shh.')])
+
+Subclassing achieves the same effect.
+
+   class QuietPlease(NoShouting):
+       has_shouting = 'shh.'
+
+   schema = String.using(validators=[QuietPlease()])
+
+The validators that ship with Flatland place all of their messaging
+and as much configurable behavior as possible in class attributes to
+support easy customization.
+
+
+Message Templating
+==================
+
+Messages prepared by "Validator.note_error()" and
+"Validator.note_warning()" may be templated using keywords in the
+sprintf-style Python string format syntax.
+
+Possible keys are taken from multiple sources.  In order of priority:
+
+* Keyword arguments sent to the "note_error" and "note_warning"
+  methods.
+
+* Elements of "state", if "state" is dict-like or supports "[index]"
+  access.
+
+* Attributes of "state".
+
+* Attributes of the "Validator" instance.
+
+* Attributes of the "element".
+
+
+Message Pluralization
+=====================
+
+Flatland supports "ngettext"-style message pluralization.  For this
+style, messages are specified as a 3-tuple of ("singular message",
+"plural message", "n-key").  "n_key" is any valid templating keyword,
+and its value "n" will be looked up using the same resolution rules.
+If the value "n" equals 1, the singular form will be used.  Otherwise
+the plural.
+
+   from flatland.validation import Validator
+
+   class MinLength(Validator):
+
+       min_length = 2
+
+       too_short = (
+         "%(label)s must be at least one character long.",
+         "%(label)s must be at least %(min_length)s characters long.",
+         "min_length")
+
+       def validate(self, element, state):
+           if len(element.value) < self.min_length:
+               self.note_error(element, state, "too_short")
+               return False
+           return True
+
+Conditional pluralization functions with or without I18N configured.
+
+
+Message Internationalization
+============================
+
+Messages can be translated using gettext-compatible functions.
+Translation works in conjunction with message templating features: the
+message itself is translated, and strings substituted into the message
+are also translated individually.
+
+Translation uses "ugettext" and optionally "ungettext" functions that
+you provide.  You may place these functions in the "state", place them
+on the "element" or its schema, or place them in Python's builtins.
+
+An element's ancestry will be searched for these functions.  If you
+like, you may assign them solely to the top-most element or its schema
+and they will be used to translate all of its child elements.
+
+If you opt to supply "ugettext" but not "ungettext", Flatland's built-
+in pluralization will kick in if a pluralized message is found.
+Flatland will choose the correct form internally, and the result will
+be fed through "ugettext" for translation.
+
+
+Dynamic Messages
+================
+
+Dynamic generated messages can also take advantage of the templating
+and internationalization features.  There are two options for dynamic
+messages through "Validator.note_error()" and
+"Validator.note_warning()":
+
+   1. Supply the message directly to "note_error" using
+      "message="..."" instead of a message key.
+
+   2. Messages looked up by key may also be callables.  The
+      callable will be invoked with "element" and "state", and should
+      return either a message string or a 3-tuple as described in
+      pluralization.
+
+
+The Validator Class
+===================
+
+class class Validator(**kw)
+
+   Base class for fancy validators.
+
+   Construct a validator.
+
+   Parameters:
+      ****kw** -- override any extant class attribute on this
+      instance.
+
+   validate(element, state)
+
+      Validate an element returning True if valid.
+
+      Abstract.
+
+      Parameters:
+         * **element** -- an "Element" instance.
+
+         * **state** -- an arbitrary object.  Supplied by
+           "Element.validate".
+
+      Returns:
+         True if valid
+
+   note_error(element, state, key=None, message=None, **info)
+
+      Record a validation error message on an element.
+
+      Parameters:
+         * **element** -- An "Element" instance.
+
+         * **state** -- an arbitrary object.  Supplied by
+           "Element.validate".
+
+         * **key** -- semi-optional, default None. The name of a
+           message-holding attribute on this instance.  Will be used
+           to "message = getattr(self, key)".
+
+         * **message** -- semi-optional, default None.  A validation
+           message.  Use to provide a specific message rather than
+           look one up by *key*.
+
+         * ****info** -- optional. Additional data to make available
+           to validation message string formatting.
+
+      Returns:
+         False
+
+      Either *key* or *message* is required.  The message will have
+      formatting expanded by "expand_message()" and be appended to
+      "element.errors".
+
+      Always returns False.  This enables a convenient shorthand when
+      writing validators:
+
+         from flatland.validation import Validator
+
+         class MyValidator(Validator):
+             my_message = 'Oh noes!'
+
+             def validate(self, element, state):
+                 if not element.value:
+                     return self.note_error(element, state, 'my_message')
+                 else:
+                     return True
+
+   note_warning(element, state, key=None, message=None, **info)
+
+      Record a validation warning message on an element.
+
+      Parameters:
+         * **element** -- An "Element" instance.
+
+         * **state** -- an arbitrary object.  Supplied by
+           "Element.validate".
+
+         * **key** -- semi-optional, default None. The name of a
+           message-holding attribute on this instance.  Will be used
+           to "message = getattr(self, key)".
+
+         * **message** -- semi-optional, default None.  A validation
+           message.  Use to provide a specific message rather than
+           look one up by *key*.
+
+         * ****info** -- optional. Additional data to make available
+           to validation message string formatting.
+
+      Returns:
+         False
+
+      Either *key* or *message* is required.  The message will have
+      formatting expanded by "expand_message()" and be appended to
+      "element.warnings".
+
+      Always returns False.
+
+   find_transformer(type, element, state, message)
+
+      Locate a message-transforming function, such as ugettext.
+
+      Returns None or a callable.  The callable must return a message.
+      The call signature of the callable is expected to match
+      "ugettext" or "ungettext":
+
+      * If *type* is 'ugettext', the callable should take a message
+        as a positional argument.
+
+      * If *type* is 'ungettext', the callable should take three
+        positional arguments: a message for the singular form, a
+        message for the plural form, and an integer.
+
+      Subclasses may override this method to provide advanced message
+      transformation and translation functionality, on a per-element
+      or per-message granularity if desired.
+
+      The default implementation uses the following logic to locate a
+      transformer:
+
+      1. If *state* has an attribute or item named *type*, return
+         that.
+
+      2. If the *element* or any of its parents have an attribute
+         named *type*, return that.
+
+      3. If the schema of *element* or the schema of any of its
+         parents have an attribute named *type*, return that.
+
+      4. If *type* is in "__builtin__", return that.
+
+      5. Otherwise return "None".
+
+   expand_message(element, state, message, **extra_format_args)
+
+      Apply formatting to a validation message.
+
+      Parameters:
+         * **element** -- an "Element" instance.
+
+         * **state** -- an arbitrary object.  Supplied by
+           "Element.validate".
+
+         * **message** --
+
+           a string, 3-tuple or callable. If a 3-tuple, must be of the
+           form ('single form', 'plural form', n_key).
+
+           If callable, will be called with 2 positional arguments
+           (*element*, *state*) and must return a string or 3-tuple.
+
+         * ****extra_format_args** -- optional. Additional data to
+           make available to validation message string formatting.
+
+      Returns:
+         the formatted string
+
+      See Message Templating, Message Pluralization and Message
+      Internationalization for full information on how messages are
+      expanded.

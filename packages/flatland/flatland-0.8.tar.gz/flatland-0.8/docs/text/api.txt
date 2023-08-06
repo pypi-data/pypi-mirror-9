@@ -1,0 +1,449 @@
+class class Scalar(value=Unspecified, **kw)
+
+   Bases: "flatland.schema.base.Element"
+
+   The base implementation of simple values such as a string or
+   number.
+
+   Scalar subclasses are responsible for translating the most common
+   data types in and out of Python-native form: strings, numbers,
+   dates, times, Boolean values, etc.  Any data which can be
+   represented by a single "(name, value)" pair is a likely Scalar.
+
+   Scalar subclasses have two responsibilities: provide a method to
+   adapt a value to native Python form, and provide a method to
+   serialize the native form to a string.
+
+   This class is abstract.
+
+   set(obj)
+
+      Process *obj* and assign the native and text values.
+
+      Returns:
+         True if adaptation of *obj* was successful.
+
+      Attempts to adapt the given object and assigns this element's
+      "value" and "u" attributes in tandem.
+
+      If adaptation succeeds, ".value" will contain the "adapted"
+      native Python value and ".u" will contain a text "serialized"
+      version of it.  A native value of "None" will be represented as
+      "u''" in ".u".
+
+      If adaptation fails, ".value" will be "None" and ".u" will
+      contain "str(obj)" (or unicode), or "u''" for none.
+
+   adapt(obj)
+
+      Given any object *obj*, try to coerce it into native format.
+
+      Returns:
+         the native format or raises AdaptationError on failure.
+
+      This abstract method is called by "set()".
+
+   serialize(obj)
+
+      Given any object *obj*, coerce it into a text representation.
+
+      Returns:
+         **Must** return a Unicode text object, always.
+
+      No special effort is made to coerce values not of native or a
+      compatible type.
+
+      This semi-abstract method is called by "set()".  The base
+      implementation returns "str(obj)" (or unicode).
+
+   set_default()
+
+      set() the element to the schema default.
+
+class class Number(value=Unspecified, **kw)
+
+   Bases: "flatland.schema.scalars.Scalar"
+
+   Base for numeric fields.
+
+   Subclasses provide "type_" and "format" attributes for "adapt()"
+   and "serialize()".
+
+   type_ = None
+
+      The Python type for values, such as "int" or "float".
+
+   signed = True
+
+      If true, allow negative numbers.  Default "True".
+
+   format = u'%s'
+
+      The "text" serialization format.
+
+   adapt(value)
+
+      Generic numeric coercion.
+
+      Returns:
+         an instance of "type_" or "None"
+
+      Attempt to convert *value* using the class's "type_" callable.
+
+   serialize(value)
+
+      Generic numeric serialization.
+
+      Returns:
+         Unicode text formatted with "format" or the "str()" (or
+         unicode) of *value* if *value* is not of "type_"
+
+      Converts *value* to a string using Python's string formatting
+      function and the "format" as the template.  The *value* is
+      provided to the format as a single, positional format argument.
+
+class class Temporal(value=Unspecified, **kw)
+
+   Bases: "flatland.schema.scalars.Scalar"
+
+   Base for datetime-based date and time fields.
+
+   type_
+
+      Abstract. The native type for element values, will be called
+      with positional arguments per "used" below.
+
+   regex
+
+      Abstract. A regular expression to parse datetime values from a
+      string.  Must supply named groupings.
+
+   used
+
+      Abstract. A sequence of regex match group names.  These matches
+      will be converted to ints and supplied to the "type_"
+      constructor in the order specified.
+
+   format
+
+      Abstract.  A Python string format for serializing the native
+      value.  The format will be supplied a dict containing all
+      attributes of the native type.
+
+   adapt(value)
+
+      Coerces value to a native type.
+
+      If *value* is an instance of "type_", returns it unchanged.  If
+      a string, attempts to parse it and construct a "type" as
+      described in the attribute documentation.
+
+   serialize(value)
+
+      Serializes value to string.
+
+      If *value* is an instance of "type", formats it as described in
+      the attribute documentation.  Otherwise returns "str(value)" (or
+      unicode).
+
+class class Container(value=Unspecified, **kw)
+
+   Bases: "flatland.schema.base.Element"
+
+   Holds other schema items.
+
+   Base class for elements that can contain other elements, such as
+   "List" and "Dict".
+
+   Parameters:
+      * **descent_validators** -- optional, a sequence of validators
+        that will be run before contained elements are validated.
+
+      * **validators** -- optional, a sequence of validators that
+        will be run after contained elements are validated.
+
+      * ****kw** -- other arguments common to "Element".
+
+   descent_validators = ()
+
+      Todo: doc descent_validators
+
+   classmethod descent_validated_by(*validators)
+
+      Return a class with descent validators set to **validators*.
+
+      Parameters:
+         ***validators** -- one or more validator functions, replacing
+         any descent validators present on the class.
+
+      Returns:
+         a new class
+
+   classmethod including_descent_validators(*validators, **kw)
+
+      Return a class with additional descent **validators*.
+
+      Parameters:
+         * ***validators** -- one or more validator functions
+
+         * **position** -- defaults to -1.  By default, additional
+           validators are placed after existing descent validators.
+           Use 0 for before, or any other list index to splice in
+           *validators* at that point.
+
+      Returns:
+         a new class
+
+class class Sequence(value=Unspecified, **kw)
+
+   Bases: "flatland.schema.containers.Container", "list"
+
+   Abstract base of sequence-like Containers.
+
+   Instances of "Sequence" hold other elements and operate like Python
+   lists.  Each sequence member will be an instance of
+   "member_schema".
+
+   Python list methods and operators may be passed instances of
+   "member_schema" or plain Python values.  Using plain values is a
+   shorthand for creating an "member_schema" instance and "set()ting"
+   it with the value:
+
+      >>> from flatland import Array, Integer
+      >>> Numbers = Array.of(Integer)
+      >>> ones = Numbers()
+      >>> ones.append(1)
+      >>> ones
+      [<Integer None; value=1>]
+      >>> another_one = Integer()
+      >>> another_one.set(1)
+      True
+      >>> ones.append(another_one)
+      >>> ones
+      [<Integer None; value=1>, <Integer None; value=1>]
+
+   member_schema = None
+
+      An "Element" class for sequence members.
+
+   prune_empty = True
+
+      If true, skip missing index numbers in "set_flat()". Default
+      True.
+
+      See >>`Sequences`_<< for more information.
+
+   classmethod of(*schema)
+
+      Declare the class to hold a sequence of **schema*.
+
+      Params *schema:
+         one or more "Element" classes
+
+      Returns:
+         *cls*
+
+      Configures the "member_schema" of *cls* to hold instances of
+      **schema*.
+
+         >>> from flatland import Array, String
+         >>> Names = Array.of(String.named('name'))
+         >>> Names.member_schema
+         <class 'flatland.schema.scalars.String'>
+         >>> el = Names(['Bob', 'Biff'])
+         >>> el
+         [<String u'name'; value=u'Bob'>, <String u'name'; value=u'Biff'>]
+
+      If more than one "Element" is specified in **schema*, an
+      anonymous "Dict" is created to hold them.
+
+         >>> from flatland import Integer
+         >>> Points = Array.of(Integer.named('x'), Integer.named('y'))
+         >>> Points.member_schema
+         <class 'flatland.schema.containers.Dict'>
+         >>> el = Points([dict(x=1, y=2)])
+         >>> el
+         [{u'y': <Integer u'y'; value=2>, u'x': <Integer u'x'; value=1>}]
+
+   set(iterable)
+
+      Assign the native and Unicode value.
+
+      Attempts to adapt the given *iterable* and assigns this
+      element's "value" and "u" attributes in tandem.  Returns True if
+      the adaptation was successful.  See "Element.set()".
+
+      Set must be supplied a Python sequence or iterable:
+
+         >>> from flatland import Integer, List
+         >>> Numbers = List.of(Integer)
+         >>> nums = Numbers()
+         >>> nums.set([1, 2, 3, 4])
+         True
+         >>> nums.value
+         [1, 2, 3, 4]
+
+   set_default()
+
+      set() the element to the schema default.
+
+   append(value)
+
+      Append *value* to end.
+
+      If *value* is not an instance of "member_schema", it will be
+      wrapped in a new element of that type before appending.
+
+   extend(iterable)
+
+      Append *iterable* values to the end.
+
+      If values of *iterable* are not instances of "member_schema",
+      they will be wrapped in a new element of that type before
+      extending.
+
+   insert(index, value)
+
+      Insert *value* at *index*.
+
+      If *value* is not an instance of "member_schema", it will be
+      wrapped in a new element of that type before inserting.
+
+   remove(value)
+
+      Remove member with value *value*.
+
+      If *value* is not an instance of "member_schema", it will be
+      wrapped in a new element of that type before searching for a
+      matching element to remove.
+
+   index(value)
+
+      Return first index of *value*.
+
+      If *value* is not an instance of "member_schema", it will be
+      wrapped in a new element of that type before searching for a
+      matching element in the sequence.
+
+   count(value)
+
+      Return number of occurrences of *value*.
+
+      If *value* is not an instance of "member_schema", it will be
+      wrapped in a new element of that type before searching for
+      matching elements in the sequence.
+
+class class Mapping(value=Unspecified, **kw)
+
+   Bases: "flatland.schema.containers.Container", "dict"
+
+   Base of mapping-like Containers.
+
+   field_schema = ()
+
+      Todo: doc field_schema
+
+   may_contain(key)
+
+      Return True if the element schema allows a field named **key**.
+
+   clear() -> None.  Remove all items from D.
+
+   popitem() -> (k, v), remove and return some (key, value) pair as a
+
+      2-tuple; but raise KeyError if D is empty.
+
+   pop(k[, d]) -> v, remove specified key and return the corresponding value.
+
+      If key is not found, d is returned if given, otherwise KeyError
+      is raised
+
+   update(*dictish, **kwargs)
+
+      Update with keys from dict-like **dictish* and ***kwargs*
+
+   setdefault(k[, d]) -> D.get(k,d), also set D[k]=d if k not in D
+
+   get(k[, d]) -> D[k] if k in D, else d.  d defaults to None.
+
+   set(value)
+
+      Todo: doc set()
+
+   set_default()
+
+      set() the element to the schema default.
+
+   u
+
+      A string repr of the element.
+
+   value
+
+      The element as a regular Python dictionary.
+
+   is_empty
+
+      Mappings are never empty.
+
+class class Compound(value=Unspecified, **kw)
+
+   Bases: "flatland.schema.containers.Mapping",
+   "flatland.schema.scalars.Scalar"
+
+   A mapping container that acts like a scalar value.
+
+   Compound fields are dictionary-like fields that can assemble a "u"
+   and "value" from their children, and can decompose a structured
+   value passed to a "set()" into values for its children.
+
+   A simple example is a logical calendar date field composed of 3
+   separate Integer component fields, year, month and day.  The
+   Compound can wrap the 3 parts up into a single logical field that
+   handles "datetime.date" values.  Set a "date" on the logical field
+   and its component fields will be set with year, month and day;
+   alter the int value of the year component field and the logical
+   field updates the "date" to match.
+
+   "Compound" is an abstract class.  Subclasses must implement
+   "compose()" and "explode()".
+
+   Composites run validation after their children.
+
+   compose()
+
+      Return a text, native tuple built from children's state.
+
+      Returns:
+         a 2-tuple of text representation, native value. These
+         correspond to the "serialize_element()" and "adapt_element()"
+         methods of "Scalar" objects.
+
+      For example, a compound date field may return a '-' delimited
+      string of year, month and day digits and a "datetime.date".
+
+   explode(value)
+
+      Given a compound value, assign values to children.
+
+      Parameters:
+         **value** -- a value to be adapted and exploded
+
+      For example, a compound date field may read attributes from a
+      "datetime.date" value and "set()" them on child fields.
+
+      The decision to perform type checking on *value* is completely
+      up to you and you may find you want different rules for
+      different compound types.
+
+   serialize(value)
+
+      Not implemented for Compound types.
+
+   set(value)
+
+      Todo: doc set()
+
+   is_empty
+
+      True if all subfields are empty.

@@ -1,0 +1,304 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>Custom Validation &mdash; flatland 0.0.hg-tip documentation</title>
+    
+    <link rel="stylesheet" href="../_static/flatland.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../',
+        VERSION:     '0.0.hg-tip',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../_static/jquery.js"></script>
+    <script type="text/javascript" src="../_static/underscore.js"></script>
+    <script type="text/javascript" src="../_static/doctools.js"></script>
+    <link rel="top" title="flatland 0.0.hg-tip documentation" href="../index.html" />
+    <link rel="up" title="Validation" href="index.html" />
+    <link rel="next" title="Validator API" href="api.html" />
+    <link rel="prev" title="Basic Validation" href="basic.html" /> 
+  </head>
+  <body>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="custom-validation">
+<h1>Custom Validation<a class="headerlink" href="#custom-validation" title="Permalink to this headline">¶</a></h1>
+<p>The default validation support is useful for some tasks, however in many cases
+you will want to provide your own validation rules tailored to your schema.</p>
+<p>Flatland provides a low level interface for custom validation logic, based on
+a simple callable.  Also provided is a higher level, class-based interface
+that provides conveniences for messaging, i18n and validator reuse.  A library
+of commonly needed validators is included.</p>
+<div class="section" id="custom-validation-basics">
+<h2>Custom Validation Basics<a class="headerlink" href="#custom-validation-basics" title="Permalink to this headline">¶</a></h2>
+<p>To use custom validation, assign a list of one or more validators to a field&#8217;s
+<tt class="xref py py-attr docutils literal"><span class="pre">validators</span></tt> attribute.  Each validator will be
+evaluated in sequence until a validator returns false or the list of
+validators is exhausted.  If the list is exhausted and all have returned true,
+the element is considered valid.</p>
+<p>A validator is a callable of the form:</p>
+<dl class="function">
+<dt id="validator">
+<tt class="descname">validator</tt><big>(</big><em>element</em>, <em>state</em><big>)</big> &rarr; bool<a class="headerlink" href="#validator" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<p><tt class="docutils literal"><span class="pre">element</span></tt> is the element being validated, and <tt class="docutils literal"><span class="pre">state</span></tt> is the value passed
+into <tt class="xref py py-meth docutils literal"><span class="pre">validate()</span></tt>, which defaults to <tt class="docutils literal"><span class="pre">None</span></tt>.</p>
+<p>A typical validator will examine the <tt class="xref py py-attr docutils literal"><span class="pre">value</span></tt> of the
+element:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="k">def</span> <span class="nf">no_shouting</span><span class="p">(</span><span class="n">element</span><span class="p">,</span> <span class="n">state</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Disallow ALL CAPS TEXT.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">element</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">isupper</span><span class="p">():</span>
+        <span class="k">return</span> <span class="bp">False</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">True</span>
+
+<span class="c"># Try out the validator</span>
+<span class="kn">from</span> <span class="nn">flatland</span> <span class="kn">import</span> <span class="n">String</span>
+<span class="n">form</span> <span class="o">=</span> <span class="n">String</span><span class="p">(</span><span class="n">validators</span><span class="o">=</span><span class="p">[</span><span class="n">no_shouting</span><span class="p">])</span>
+<span class="n">form</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s">&#39;OH HAI&#39;</span><span class="p">)</span>
+<span class="k">assert</span> <span class="ow">not</span> <span class="n">form</span><span class="o">.</span><span class="n">validate</span><span class="p">()</span>
+<span class="k">assert</span> <span class="ow">not</span> <span class="n">form</span><span class="o">.</span><span class="n">valid</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="validation-phases">
+<h2>Validation Phases<a class="headerlink" href="#validation-phases" title="Permalink to this headline">¶</a></h2>
+<p>There are two phases when validating an element or container of elements.
+First, each element is visited once descending down the container,
+breadth-first.  Then each is visited again ascending back up the container.</p>
+<p>The simple, scalar types such as <tt class="xref py py-class docutils literal"><span class="pre">String</span></tt> and
+<tt class="xref py py-class docutils literal"><span class="pre">Integer</span></tt> process their
+<tt class="xref py py-attr docutils literal"><span class="pre">validators</span></tt> on the <strong>descent</strong> phase.  The
+containers, such as <tt class="xref py py-class docutils literal"><span class="pre">Form</span></tt> and <tt class="xref py py-class docutils literal"><span class="pre">List</span></tt> process
+<tt class="xref py py-attr docutils literal"><span class="pre">validators</span></tt> on the <strong>ascent</strong> phase.</p>
+<p>The upshot of the phased evaluation is that container validators fire after
+their children, allowing container validation logic that considers the
+validity and status of child elements.</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span> <span class="nn">flatland</span> <span class="kn">import</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">String</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">def</span> <span class="nf">tattle</span><span class="p">(</span><span class="n">element</span><span class="p">,</span> <span class="n">state</span><span class="p">):</span>
+<span class="gp">... </span>    <span class="k">print</span> <span class="n">element</span><span class="o">.</span><span class="n">name</span>
+<span class="gp">... </span>    <span class="k">return</span> <span class="bp">True</span>
+<span class="gp">...</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">schema</span> <span class="o">=</span> <span class="p">(</span><span class="n">Dict</span><span class="o">.</span><span class="n">named</span><span class="p">(</span><span class="s">&#39;outer&#39;</span><span class="p">)</span><span class="o">.</span>
+<span class="gp">... </span>               <span class="n">of</span><span class="p">(</span><span class="n">String</span><span class="o">.</span><span class="n">named</span><span class="p">(</span><span class="s">&#39;inner&#39;</span><span class="p">)</span><span class="o">.</span>
+<span class="gp">... </span>                         <span class="n">using</span><span class="p">(</span><span class="n">validators</span><span class="o">=</span><span class="p">[</span><span class="n">tattle</span><span class="p">]))</span><span class="o">.</span>
+<span class="gp">... </span>               <span class="n">using</span><span class="p">(</span><span class="n">validators</span><span class="o">=</span><span class="p">[</span><span class="n">tattle</span><span class="p">]))</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">form</span> <span class="o">=</span> <span class="n">schema</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">form</span><span class="o">.</span><span class="n">validate</span><span class="p">()</span>
+<span class="go">inner</span>
+<span class="go">outer</span>
+<span class="go">True</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="short-circuiting-descent-validation">
+<h2>Short-Circuiting Descent Validation<a class="headerlink" href="#short-circuiting-descent-validation" title="Permalink to this headline">¶</a></h2>
+<p>Descent validation can be aborted early by returning <tt class="xref py py-obj docutils literal"><span class="pre">SkipAll</span></tt>
+or <tt class="xref py py-obj docutils literal"><span class="pre">SkipAllFalse</span></tt> from a validator.  Children will not be
+validated or have their <tt class="xref py py-attr docutils literal"><span class="pre">valid</span></tt> attribute assigned.
+This capability comes in handy in a web environment when designing rich UIs.</p>
+<p>Containers will run any validators in their
+<tt class="xref py py-attr docutils literal"><span class="pre">descent_validators</span></tt> list during the descent phase.
+Descent validation is the only phase that may be short-circuited.</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span> <span class="nn">flatland</span> <span class="kn">import</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">SkipAll</span><span class="p">,</span> <span class="n">String</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">def</span> <span class="nf">skip_children</span><span class="p">(</span><span class="n">element</span><span class="p">,</span> <span class="n">state</span><span class="p">):</span>
+<span class="gp">... </span>    <span class="k">return</span> <span class="n">SkipAll</span>
+<span class="gp">...</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">def</span> <span class="nf">always_fail</span><span class="p">(</span><span class="n">element</span><span class="p">,</span> <span class="n">state</span><span class="p">):</span>
+<span class="gp">... </span>    <span class="k">return</span> <span class="bp">False</span>
+<span class="gp">...</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">schema</span> <span class="o">=</span> <span class="n">Dict</span><span class="o">.</span><span class="n">of</span><span class="p">(</span><span class="n">String</span><span class="o">.</span><span class="n">named</span><span class="p">(</span><span class="s">&#39;child&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">using</span><span class="p">(</span><span class="n">validators</span><span class="o">=</span><span class="p">[</span><span class="n">always_fail</span><span class="p">]))</span><span class="o">.</span>\
+<span class="gp">... </span>              <span class="n">using</span><span class="p">(</span><span class="n">descent_validators</span><span class="o">=</span><span class="p">[</span><span class="n">skip_children</span><span class="p">])</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">form</span> <span class="o">=</span> <span class="n">schema</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">form</span><span class="o">.</span><span class="n">validate</span><span class="p">()</span>
+<span class="go">True</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">form</span><span class="p">[</span><span class="s">&#39;child&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">valid</span>
+<span class="go">Unevaluated</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="messaging">
+<h2>Messaging<a class="headerlink" href="#messaging" title="Permalink to this headline">¶</a></h2>
+<p>A form that fails to submit without a clear reason is frustrating.  Messages
+may be stashed in the <tt class="xref py py-attr docutils literal"><span class="pre">errors</span></tt> and
+<tt class="xref py py-attr docutils literal"><span class="pre">warnings</span></tt> lists on elements.  In your UI or template
+code, these can be used to flag individual form elements that failed
+validation and the reason(s) why.</p>
+<div class="highlight-python" id="no-shouting"><div class="highlight"><pre><span class="k">def</span> <span class="nf">no_shouting</span><span class="p">(</span><span class="n">element</span><span class="p">,</span> <span class="n">state</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Disallow ALL CAPS TEXT.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">element</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">isupper</span><span class="p">():</span>
+        <span class="n">element</span><span class="o">.</span><span class="n">errors</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s">&quot;NO SHOUTING!&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">False</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">True</span>
+</pre></div>
+</div>
+<p>See also <tt class="xref py py-meth docutils literal"><span class="pre">add_error()</span></tt>, a wrapper around
+<tt class="docutils literal"><span class="pre">errors.append</span></tt> that ensures that identical messages aren&#8217;t added to an
+element more than once.</p>
+<p>A powerful and i18n-capable interface to validation and messaging is available
+in the higher level <a class="reference internal" href="index.html#validation"><em>Validation</em></a> API.</p>
+</div>
+<div class="section" id="normalization">
+<h2>Normalization<a class="headerlink" href="#normalization" title="Permalink to this headline">¶</a></h2>
+<p>If you want to tweak the element&#8217;s <tt class="xref py py-attr docutils literal"><span class="pre">value</span></tt> or
+<tt class="xref py py-attr docutils literal"><span class="pre">u</span></tt> string representation, validators are free to
+assign directly to those attributes.  There is no special enforcement of
+assignment to these attributes, however the convention is to consider them
+immutable outside of normalizing validators.</p>
+</div>
+<div class="section" id="validation-state">
+<h2>Validation <tt class="docutils literal"><span class="pre">state</span></tt><a class="headerlink" href="#validation-state" title="Permalink to this headline">¶</a></h2>
+<p><tt class="xref py py-meth docutils literal"><span class="pre">validate()</span></tt> accepts an optional <tt class="docutils literal"><span class="pre">state</span></tt> argument.
+<tt class="docutils literal"><span class="pre">state</span></tt> can be anything you like, such as a dictionary, an object, or a
+string.  Whatever you choose, it will be supplied to each and every validator
+that&#8217;s called.</p>
+<p><tt class="docutils literal"><span class="pre">state</span></tt> can be a convenient way of passing transient information to
+validators that require additional information to make their decision.  For
+example, in a web environment, one may need to supply the client&#8217;s IP address
+or the logged-in user for some validators to function.</p>
+<p>A dictionary is a good place to start if you&#8217;re considering passing
+information in <tt class="docutils literal"><span class="pre">state</span></tt>.  None of the validators that ship with flatland
+access <tt class="docutils literal"><span class="pre">state</span></tt>, so no worries about type conflicts there.</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="k">class</span> <span class="nc">User</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;A mock website user class.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">check_password</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">plaintext</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Mock comparing a password to one stored in a database.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">plaintext</span> <span class="o">==</span> <span class="s">&#39;secret&#39;</span>
+
+<span class="k">def</span> <span class="nf">password_validator</span><span class="p">(</span><span class="n">element</span><span class="p">,</span> <span class="n">state</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Check that a field matches the user&#39;s current password.&quot;&quot;&quot;</span>
+    <span class="n">user</span> <span class="o">=</span> <span class="n">state</span><span class="p">[</span><span class="s">&#39;user&#39;</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">user</span><span class="o">.</span><span class="n">check_password</span><span class="p">(</span><span class="n">element</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
+
+<span class="kn">from</span> <span class="nn">flatland</span> <span class="kn">import</span> <span class="n">String</span>
+<span class="n">form</span> <span class="o">=</span> <span class="n">String</span><span class="p">(</span><span class="n">validators</span><span class="o">=</span><span class="p">[</span><span class="n">password_validator</span><span class="p">])</span>
+<span class="n">form</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s">&#39;WrongPassword&#39;</span><span class="p">)</span>
+<span class="n">state</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">user</span><span class="o">=</span><span class="n">User</span><span class="p">())</span>
+<span class="k">assert</span> <span class="ow">not</span> <span class="n">form</span><span class="o">.</span><span class="n">validate</span><span class="p">(</span><span class="n">state</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="examining-other-elements">
+<h2>Examining Other Elements<a class="headerlink" href="#examining-other-elements" title="Permalink to this headline">¶</a></h2>
+<p><tt class="xref py py-class docutils literal"><span class="pre">Element</span></tt> provides a rich API for accessing a form&#8217;s members,
+an element&#8217;s parents, children, etc.  Writing simple validators such as
+requiring two fields to match is easy, and complex validations are not much
+harder.</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="k">def</span> <span class="nf">passwords_must_match</span><span class="p">(</span><span class="n">element</span><span class="p">,</span> <span class="n">state</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Both password fields must match for a password change to succeed.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">element</span><span class="o">.</span><span class="n">value</span> <span class="o">==</span> <span class="n">element</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s">&#39;../password2&#39;</span><span class="p">,</span> <span class="n">single</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span><span class="o">.</span><span class="n">value</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">True</span>
+    <span class="n">element</span><span class="o">.</span><span class="n">errors</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s">&quot;Passwords must match.&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="bp">False</span>
+
+<span class="kn">from</span> <span class="nn">flatland</span> <span class="kn">import</span> <span class="n">Form</span><span class="p">,</span> <span class="n">String</span>
+<span class="k">class</span> <span class="nc">ChangePassword</span><span class="p">(</span><span class="n">Form</span><span class="p">):</span>
+    <span class="n">password</span> <span class="o">=</span> <span class="n">String</span><span class="o">.</span><span class="n">using</span><span class="p">(</span><span class="n">validators</span><span class="o">=</span><span class="p">[</span><span class="n">passwords_must_match</span><span class="p">])</span>
+    <span class="n">password2</span> <span class="o">=</span> <span class="n">String</span>
+    <span class="n">new_password</span> <span class="o">=</span> <span class="n">String</span>
+
+<span class="n">form</span> <span class="o">=</span> <span class="n">ChangePassword</span><span class="p">()</span>
+<span class="n">form</span><span class="o">.</span><span class="n">set</span><span class="p">({</span><span class="s">&#39;password&#39;</span><span class="p">:</span> <span class="s">&#39;foo&#39;</span><span class="p">,</span> <span class="s">&#39;password2&#39;</span><span class="p">:</span> <span class="s">&#39;f00&#39;</span><span class="p">,</span> <span class="s">&#39;new_password&#39;</span><span class="p">:</span> <span class="s">&#39;bar&#39;</span><span class="p">})</span>
+<span class="k">assert</span> <span class="ow">not</span> <span class="n">form</span><span class="o">.</span><span class="n">validate</span><span class="p">()</span>
+<span class="k">assert</span> <span class="n">form</span><span class="p">[</span><span class="s">&#39;password&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">errors</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="short-circuiting-validation">
+<h2>Short-Circuiting Validation<a class="headerlink" href="#short-circuiting-validation" title="Permalink to this headline">¶</a></h2>
+<p>To stop validation of an element &amp; skip any remaining members of
+<tt class="xref py py-attr docutils literal"><span class="pre">flatland.Element.validators</span></tt>, return <tt class="xref py py-obj docutils literal"><span class="pre">flatland.Skip</span></tt> from the
+validator:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">flatland</span> <span class="kn">import</span> <span class="n">Skip</span>
+
+<span class="k">def</span> <span class="nf">succeed_early</span><span class="p">(</span><span class="n">element</span><span class="p">,</span> <span class="n">state</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">Skip</span>
+
+<span class="k">def</span> <span class="nf">always_fails</span><span class="p">(</span><span class="n">element</span><span class="p">,</span> <span class="n">state</span><span class="p">):</span>
+    <span class="k">return</span> <span class="bp">False</span>
+
+<span class="kn">from</span> <span class="nn">flatland</span> <span class="kn">import</span> <span class="n">String</span>
+<span class="n">form</span> <span class="o">=</span> <span class="n">String</span><span class="p">(</span><span class="n">validators</span><span class="o">=</span><span class="p">[</span><span class="n">succeed_early</span><span class="p">,</span> <span class="n">always_fails</span><span class="p">])</span>
+<span class="k">assert</span> <span class="n">form</span><span class="o">.</span><span class="n">validate</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>Above, <tt class="docutils literal"><span class="pre">always_fails</span></tt> is never invoked.</p>
+<p>To stop validation early with a failure, simply return False.</p>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+            <p class="logo"><a href="../index.html">
+              <img class="logo" src="../_static/flatland.png" alt="Logo"/>
+            </a></p>
+  <h3>Contents</h3>
+  <ul>
+    <li><ul>
+<li><a class="reference internal" href="#">Custom Validation</a><ul>
+<li><a class="reference internal" href="#custom-validation-basics">Custom Validation Basics</a></li>
+<li><a class="reference internal" href="#validation-phases">Validation Phases</a></li>
+<li><a class="reference internal" href="#short-circuiting-descent-validation">Short-Circuiting Descent Validation</a></li>
+<li><a class="reference internal" href="#messaging">Messaging</a></li>
+<li><a class="reference internal" href="#normalization">Normalization</a></li>
+<li><a class="reference internal" href="#validation-state">Validation <tt class="docutils literal"><span class="pre">state</span></tt></a></li>
+<li><a class="reference internal" href="#examining-other-elements">Examining Other Elements</a></li>
+<li><a class="reference internal" href="#short-circuiting-validation">Short-Circuiting Validation</a></li>
+</ul>
+</li>
+</ul>
+</li>
+  </ul>
+<h3>Topics</h3>
+<ul>
+  <li><ul>
+  <li><a href="index.html">Validation</a><ul>
+      <li>Previous: <a href="basic.html" title="previous chapter">Basic Validation</a></li>
+      <li>Next: <a href="api.html" title="next chapter">Validator API</a></li>
+  </ul></li>
+  </ul></li>
+</ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2008-2013, the flatland authors and contributors.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2b1.
+    </div>
+  </body>
+</html>

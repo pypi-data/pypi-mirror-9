@@ -1,0 +1,483 @@
+
+Elements
+********
+
+Elements describe the possible fields of a form; their names,
+structure, Python types and rules for validation.  A typical schema
+consists of at least one *container* type and one or more *scalar*
+types:
+
+   from flatland import Dict, String
+   SearchSchema = Dict.named('search').of(String.named(u'keywords'))
+
+Todo: FIXME UPDATE:FieldSchemas are a bit like Python "class"
+definitions: they need be defined only once and don't do much on their
+own. "FieldSchema.create_element()" produces "Elements"; closely
+related objects that hold and manipulate form data.  Much like a
+Python "class", a single "FieldSchema" may produce an unlimited number
+of "Element" instances.
+
+   >>> form = SearchSchema({u'keywords': u'foo bar baz'})
+   >>> form.value
+   {u'keywords': u'foo bar baz'}
+
+Todo: FIXME UPDATE:FieldSchema instances may be freely composed and
+shared among many containers.
+
+   >>> from flatland import List
+   >>> ComposedSchema = Dict.of(SearchSchema,
+   ...                          List.named(u'many_searches').of(SearchSchema))
+   >>> form = ComposedSchema()
+   >>> sorted(form.value.keys())
+   [u'many_searches', u'search']
+
+Todo: FIXME UPDATE:Elements can be supplied to template environments
+and used to great effect there: elements contain all of the
+information needed to display or redisplay a HTML form field,
+including errors specific to a field.The "u", "x", "xa" and "el()"
+members are especially useful in templates and have shortened names to
+help preserve your sanity when used in markup.
+
+
+"Element"
+=========
+
+class class Element(value=Unspecified, **kw)
+
+   Base class for form fields.
+
+   A data node that stores a Python and a text value plus added state.
+
+   -[ Instance Attributes ]-
+
+   parent
+
+      An owning element, or None if element is topmost or not a member
+      of a hierarchy.
+
+   valid
+
+   errors
+
+      A list of validation error messages.
+
+   warnings
+
+      A list of validation warning messages.
+
+   -[ Members ]-
+
+   name = None
+
+      The string name of the element.
+
+   optional = False
+
+      If True, "validate()" will return True when no value has been
+      set.
+
+      "validators" are not called for optional, empty elements.
+
+   validators = ()
+
+      A sequence of validators, invoked by "validate()".
+
+      See *Validation*.
+
+   default = None
+
+      The default value of this element.
+
+   default_factory = None
+
+      A callable to generate default element values.  Passed an
+      element.
+
+      *default_factory* will be used preferentially over "default".
+
+   ugettext = None
+
+      If set, provides translation support to validation messages.
+
+      See *Message Internationalization*.
+
+   ungettext = None
+
+      If set, provides translation support to validation messages.
+
+      See *Message Internationalization*.
+
+   value = None
+
+      The element's native Python value.
+
+      Only validation routines should write this attribute directly:
+      use "set()" to update the element's value.
+
+   raw = Unset
+
+      The element's raw, unadapted value from input.
+
+   u = u''
+
+      A string representation of the element's value.
+
+      As in "value", writing directly to this attribute should be
+      restricted to validation routines.
+
+   properties = {}
+
+      A mapping of arbitrary data associated with the element.
+
+   classmethod named(name)
+
+      Return a class with "name" = *name*
+
+      Parameters:
+         **name** -- a string or None.
+
+      Returns:
+         a new class
+
+   classmethod using(**overrides)
+
+      Return a class with attributes set from ***overrides*.
+
+      Parameters:
+         ****overrides** -- new values for any attributes already
+         present on the class.  A "TypeError" is raised for unknown
+         attributes.
+
+      Returns:
+         a new class
+
+   classmethod validated_by(*validators)
+
+      Return a class with validators set to **validators*.
+
+      Parameters:
+         ***validators** -- one or more validator functions, replacing
+         any validators present on the class.
+
+      Returns:
+         a new class
+
+   classmethod including_validators(*validators, **kw)
+
+      Return a class with additional **validators*.
+
+      Parameters:
+         * ***validators** -- one or more validator functions
+
+         * **position** -- defaults to -1.  By default, additional
+           validators are placed after existing validators.  Use 0 for
+           before, or any other list index to splice in *validators*
+           at that point.
+
+      Returns:
+         a new class
+
+   classmethod with_properties(*iterable, **properties)
+
+      Return a class with ***properties* set.
+
+      Param :
+         optional positional parameter, an iterable of property name /
+         value pairs
+
+      Parameters:
+         ****properties** -- property names and values as keyword
+         arguments
+
+      Returns:
+         a new class
+
+   classmethod from_flat(pairs, **kw)
+
+      Return a new element with its value initialized from *pairs*.
+
+      Parameters:
+         ****kw** -- passed through to the "element_type".
+
+      This is a convenience constructor for:
+
+         element = cls(**kw)
+         element.set_flat(pairs)
+
+   classmethod from_defaults(**kw)
+
+      Return a new element with its value initialized from field
+      defaults.
+
+      Parameters:
+         ****kw** -- passed through to the "element_type".
+
+      This is a convenience constructor for:
+
+         element = cls(**kw)
+         element.set_default()
+
+   all_valid
+
+      True if this element and all children are valid.
+
+   root
+
+      The top-most parent of the element.
+
+   parents
+
+      An iterator of all parent elements.
+
+   path
+
+      An iterator of all elements from root to the Element, inclusive.
+
+   children
+
+      An iterator of immediate child elements.
+
+   all_children
+
+      An iterator of all child elements, breadth-first.
+
+   fq_name()
+
+      Return the fully qualified path name of the element.
+
+      Returns "find()" compatible element path string from the
+      "Element.root" ("/") down to the element.
+
+      >>> from flatland import Dict, Integer
+      >>> Point = Dict.named(u'point').of(Integer.named(u'x'),
+      ...                                 Integer.named(u'y'))
+      >>> p = Point(dict(x=10, y=20))
+      >>> p.name
+      u'point'
+      >>> p.fq_name()
+      u'/'
+      >>> p['x'].name
+      u'x'
+      >>> p['x'].fq_name()
+      u'/x'
+
+      The index used in a path may not be the "name" of the element.
+      For example, sequence members are referenced by their numeric
+      index.
+
+      >>> from flatland import List, String
+      >>> Addresses = List.named('addresses').of(String.named('address'))
+      >>> form = Addresses([u'uptown', u'downtown'])
+      >>> form.name
+      u'addresses'
+      >>> form.fq_name()
+      u'/'
+      >>> form[0].name
+      u'address'
+      >>> form[0].fq_name()
+      u'/0'
+
+   find(path, single=False, strict=True)
+
+      Find child elements by string path.
+
+      Parameters:
+         * **path** -- a /-separated string specifying elements to
+           select, such as 'child/grandchild/great grandchild'.
+           Relative & absolute paths are supported, as well as
+           container expansion.  See *Path Lookups*.
+
+         * **single** -- if true, return a scalar result rather than
+           a list of elements.  If no elements match *path*, "None" is
+           returned.  If multiple elements match, a "LookupError" is
+           raised.  If multiple elements are found and *strict* is
+           false, an unspecified element from the result set is
+           returned.
+
+         * **strict** -- defaults to True.  If *path* specifies
+           children or sequence indexes that do not exist, a
+           "LookupError" is raised.
+
+      Returns:
+         a list of "Element" instances, an "Element" if *single* is
+         true, or raises "LookupError".
+
+         >>> cities = form.find('/contact/addresses[:]/city')
+         >>> [el.value for el in cities]
+         [u'Kingsport', u'Dunwich']
+         >>> form.find('/contact/name', single=True)
+         <String u'name'; value=u'Obed Marsh'>
+
+   find_one(path)
+
+      Find a single element at *path*.
+
+      An alias for "find()".  Equivalent to "find(path, single=True,
+      strict=True)".
+
+   add_error(message)
+
+      Register an error message on this element, ignoring duplicates.
+
+   add_warning(message)
+
+      Register a warning message on this element, ignoring duplicates.
+
+   flattened_name(sep=u'_')
+
+      Return the element's complete flattened name as a string.
+
+      Joins this element's "path" with *sep* and returns the fully
+      qualified, flattened name.  Encodes all "Container" and other
+      structures into a single string.
+
+      Example:
+
+         >>> import flatland
+         >>> form = flatland.List('addresses',
+         ...                      flatland.String('address'))
+         >>> element = form()
+         >>> element.set([u'uptown', u'downtown'])
+         >>> element[0].value
+         u'uptown'
+         >>> element['0'].flattened_name()
+         u'addresses_0_address'
+
+   flatten(sep=u'_', value=<operator.attrgetter object at 0x1057cc050>)
+
+      Export an element hierarchy as a flat sequence of key, value
+      pairs.
+
+      Parameters:
+         * **sep** -- a string, will join together element names.
+
+         * **value** -- a 1-arg callable called once for each
+           element. Defaults to a callable that returns the "u" of
+           each element.
+
+      Encodes the element hierarchy in a *sep*-separated name string,
+      paired with any representation of the element you like.  The
+      default is the text value of the element, and the output of the
+      default "flatten()" can be round-tripped with "set_flat()".
+
+      Given a simple form with a string field and a nested dictionary:
+
+         >>> from flatland import Schema, Dict, String
+         >>> class Nested(Schema):
+         ...     contact = Dict.of(String.named(u'name'),
+         ...                       Dict.named(u'address').
+         ...                            of(String.named(u'email')))
+         ...
+         >>> element = Nested()
+         >>> element.flatten()
+         [(u'contact_name', u''), (u'contact_address_email', u'')]
+
+      The value of each pair can be customized with the *value*
+      callable:
+
+         >>> element.flatten(value=operator.attrgetter('u'))
+         [(u'contact_name', u''), (u'contact_address_email', u'')]
+         >>> element.flatten(value=lambda el: el.value)
+         [(u'contact_name', None), (u'contact_address_email', None)]
+
+      Solo elements will return a sequence containing a single pair:
+
+         >>> element['name'].flatten()
+         [(u'contact_name', u'')]
+
+   set(obj)
+
+      Process *obj* and assign the native and text values.
+
+      Attempts to adapt the given *obj* and assigns this element's
+      "value" and "u" attributes in tandem.  Returns True if the
+      adaptation was successful.
+
+      If adaptation succeeds, "value" will contain the adapted native
+      value and "u" will contain a text serialized version of it. A
+      native value of None will be represented as u'' in "u".
+
+      If adaptation fails, "value" will be "None" and "u" will contain
+      "str(value)" (or unicode), or "u''" for None.
+
+      >>> from flatland import Integer
+      >>> el = Integer()
+      >>> el.u, el.value
+      (u'', None)
+
+      >>> el.set('123')
+      True
+      >>> el.u, el.value
+      (u'123', 123)
+
+      >>> el.set(456)
+      True
+      >>> el.u, el.value
+      (u'456', 456)
+
+      >>> el.set('abc')
+      False
+      >>> el.u, el.value
+      (u'abc', None)
+
+      >>> el.set(None)
+      True
+      >>> el.u, el.value
+      (u'', None)
+
+   set_flat(pairs, sep=u'_')
+
+      Set element values from pairs, expanding the element tree as
+      needed.
+
+      Given a sequence of name/value tuples or a dict, build out a
+      structured tree of value elements.
+
+   set_default()
+
+      set() the element to the schema default.
+
+   is_empty
+
+      True if the element has no value.
+
+   validate(state=None, recurse=True)
+
+      Assess the validity of this element and its children.
+
+      Parameters:
+         * **state** -- optional, will be passed unchanged to all
+           validator callables.
+
+         * **recurse** -- if False, do not validate children.
+
+      Returns:
+         True or False.
+
+      Iterates through this element and all of its children, invoking
+      each validation on each.  Each element will be visited twice:
+      once heading down the tree, breadth-first, and again heading
+      back up in reverse order.
+
+      Returns True if all validations pass, False if one or more fail.
+
+   default_value
+
+      A calculated "default" value.
+
+      If "default_factory" is present, it will be called with the
+      element as a single positional argument.  The result of the call
+      will be returned.
+
+      Otherwise, returns "default".
+
+      When comparing an element's "value" to its default value, use
+      this property in the comparison.
+
+   x
+
+      Sugar, the XML-escaped value of "u".
+
+   xa
+
+      Sugar, the XML-attribute-escaped quoted value of "u".
