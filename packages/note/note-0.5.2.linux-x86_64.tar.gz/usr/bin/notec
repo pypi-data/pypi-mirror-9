@@ -1,0 +1,631 @@
+#!/home/devin/bin/python
+
+import re
+import os
+import sys
+import json
+import time
+import string
+import argparse
+import subprocess as SP
+from note import Note_Client
+from note import scrubID
+from note import Note_Printer
+from dateparser.date import DateDataParser
+
+__author__ = "Devin Kelly"
+
+
+class Runner(object):
+    """
+    """
+
+    def __init__(self):
+        """
+
+        """
+        self.tmpNote = "/tmp/note"
+        self.note_template = u"NOTE\n\n{0}\n\nTAGS\n\n{1}\n"
+        self.place_template = u"PLACE\n\n{0}\n\n" +\
+                              u"ADDRESS\n\n{1}\n\n" +\
+                              u"NOTE\n\n{2}\n\n" +\
+                              u"TAGS\n\n{3}\n"
+        self.todo_template = u"TODO\n\n{0}\n\nDONE\n\n{1}\n\n" +\
+                             u"DATE\n\n{2}\n\nTAGS\n\n{3}\n"
+        self.contact_template = u"NAME\n\n{0}"  # FIXME
+
+        self.editor = os.getenv('EDITOR')
+        self.inside = r"[!\"#$%^&@?'_()*+,\.\-\s\d:;<=>a-zA-Z\[\]`\{\}|~'\/]"
+
+        return
+
+    def startEditor(self, startingLine=1):
+        """
+
+        """
+        editor_paths = ['/usr/bin/vim', '/usr/local/bin/vim']
+        if any([self.editor in ii for ii in editor_paths]):
+            SP.call([self.editor, "+{0}".format(startingLine),
+                     "-c", "startinsert", self.tmpNote])
+            try:
+                os.remove("{0}.swp".format(self.tmpNote))
+                os.remove("{0}".format(self.tmpNote))
+            except OSError:
+                pass
+        else:
+            SP.call([self.editor, self.tmpNote])
+
+    def ParseOpts(self):
+        """
+
+        """
+        parser = argparse.ArgumentParser(description="note")
+
+        defaultConfigPath = os.path.expanduser('~/.config/note.json')
+        parser.add_argument('--configFile',
+                            type=str,
+                            help='Path to config file',
+                            default=defaultConfigPath)
+        parser.add_argument('-q',
+                            '--quiet',
+                            help='Print only titles',
+                            action='store_true',
+                            default=False)
+
+        commandHelp = 'note: eligible commands are: {0}'
+        commandHelp = commandHelp.format(', '.join(self.commands))
+        parser.add_argument('command', metavar='cmd', type=str, nargs='+',
+                            help=commandHelp)
+
+        args = parser.parse_args()
+        self.quiet = args.quiet
+
+        self.configFile = args.configFile
+        self.command = args.command[0]
+
+        self.commandArgs = ' '.join(args.command[1:])
+
+    def Run(self):
+        """
+
+        """
+
+        self.client = Note_Client()
+        self.commands = dict()
+        self.commands['add'] = self.Add
+        self.commands['edit'] = self.Edit
+        self.commands['place'] = self.Place
+        self.commands['contact'] = self.Contact
+        self.commands['todo'] = self.todo
+
+        self.commands['search'] = self.Search
+        self.commands['delete'] = self.Delete
+        self.commands['showDone'] = self.ShowDone
+        self.commands['showUndone'] = self.ShowUndone
+        self.commands['backup'] = self.Backup
+        self.commands['encrypt'] = self.Encrypt
+        self.commands['dropbox'] = self.Dropbox
+        self.commands['lastMonth'] = self.LastMonth
+        self.commands['thisMonth'] = self.ThisMonth
+        self.commands['info'] = self.Info
+        self.commands['verifyDB'] = self.Verify
+        self.commands['sID'] = self.SID
+        self.commands['sdate'] = self.SDate
+        self.commands['srelevance'] = self.SRelevance
+        self.commands['encrypt'] = self.Encrypt
+        self.commands['label'] = self.Label
+        self.commands['link'] = self.Link
+
+        # These are shortcuts
+        self.shortcuts = {}
+        self.shortcuts['a'] = 'add'
+        self.shortcuts['s'] = 'search'
+        self.shortcuts['D'] = 'delete'
+        self.shortcuts['e'] = 'edit'
+        self.shortcuts['p'] = 'place'
+        self.shortcuts['t'] = 'todo'
+        self.shortcuts['d'] = 'showDone'
+        self.shortcuts['u'] = 'showUndone'
+        self.shortcuts['c'] = 'contact'
+        self.shortcuts['b'] = 'backup'
+        self.shortcuts['E'] = 'encrypt'
+        self.shortcuts['i'] = 'info'
+        self.shortcuts['V'] = 'verify'
+        self.shortcuts['l'] = 'label'
+        self.shortcuts['L'] = 'link'
+
+        self.ParseOpts()
+        printer = Note_Printer(self.quiet)
+
+        try:
+            with open(self.configFile, 'r') as fd:
+                self.config = json.loads(fd.read())
+        except IOError:
+            s = 'Cannot find config file at "{0}", exiting'
+            print s.format(self.configFile)
+            sys.exit(1)
+        except ValueError:
+            s = 'Config file must be valid json'
+            print s
+            sys.exit(1)
+
+        if self.command in self.shortcuts:
+            self.command = self.shortcuts[self.command]
+
+        try:
+            reply = self.commands[self.command]()
+        except KeyError:
+            print u"{0} does not exist".format(self.command)
+            sys.exit(0)
+
+        if reply is not None:
+            printer(reply)
+
+    def ProcessFile(self):
+        """
+
+        """
+
+        # this... is a hack
+        f = string.Formatter()
+        iterable = f.parse(self.template)
+        count = len([i for i in iterable])
+        spaces = count * ['']
+
+        with open(self.tmpNote, 'w') as fd:
+            fd.write(self.template.format(*spaces))
+
+        self.startEditor(3)
+
+        with open(self.tmpNote) as fd:
+            s = fd.read()
+        s = unicode(s, encoding='UTF-8')
+
+        return s
+
+    def Add(self):
+        """
+
+        :rval: str
+        """
+
+        self.template = self.note_template
+
+        s = self.ProcessFile()
+
+        note = self.get_note_text('NOTE', 'TAGS', s)
+
+        tags = self.get_note_text('TAGS', '', s)
+        tags = [re.sub(r'(^\s+)|(\s+$)', '', ii) for ii in tags.split(',')]
+
+        msg = {"type": "Note", "object": {"note": note, "tags": tags}}
+        return self.client.Send(msg)
+
+    def GetByID(self, ID):
+        """
+
+        :rval: str
+        """
+        msg = {"type": "Get", "object": {"type": "ID", "id": scrubID(ID)}}
+        return self.client.Send(msg)
+
+    def Edit(self):
+        """
+
+        :rval: str
+        """
+        search = re.search(r'\d+$', self.commandArgs)
+
+        if search is None:
+            # Get by label
+            label_name = self.commandArgs
+            msg = {"object": {"type": "Label", "name": label_name},
+                   "type": "Get"}
+            r_val = json.loads(self.client.Send(msg))
+            ID = r_val['object']['ID']
+        else:
+            ID = search.group(0)
+
+        note_obj = self.GetByID(ID)
+        note_obj = json.loads(note_obj)
+
+        note_type = note_obj['object']['type']
+
+        f_name = 'edit_{0}'.format(note_type)
+        try:
+            f = getattr(self, f_name)
+        except AttributeError:
+            print 'Unknown note type, qutting'
+            sys.exit(1)
+        msg = f(note_obj)
+
+        return self.client.Send(msg)
+
+    def edit_todo(self, note_obj):
+
+        ddp = DateDataParser()
+
+        todo = note_obj['object']['todo']
+        done = note_obj['object']['done']
+        date = note_obj['object']['date']
+        tags = note_obj['object']['tags']
+        tags = ', '.join(tags)
+        note_id = note_obj['object']['ID']
+
+        if date:
+            date_str = time.strftime("%d %b %Y", time.localtime(date))
+        else:
+            date_str = time.strftime("%d %b %Y", time.localtime(time.time()))
+
+        with open(self.tmpNote, 'w') as fd:
+            s = self.todo_template.format(todo, done, date_str, tags)
+            s = s.encode('UTF-8')
+            fd.write(s)
+
+        self.startEditor(3)
+
+        with open(self.tmpNote) as fd:
+            s = fd.read()
+        s = unicode(s, encoding='UTF-8')
+
+        todo = self.get_note_text('TODO', 'DONE', s)
+
+        done = self.get_note_text('DONE', 'DATE', s)
+
+        date = self.get_note_text('DATE', 'TAGS', s)
+        date_obj = ddp.get_date_data(date)['date_obj']
+        date = int(date_obj.strftime('%s'))
+
+        tags = self.get_note_text('TAGS', '', s)
+        expr = r'(^\n?\s+)|(\n?\s+$)'
+        tags = [re.sub(expr, '', ii) for ii in tags.split(',')]
+
+        msg = {"type": "Todo",
+               "object": {"todo": todo,
+                          "done": done,
+                          "date": date,
+                          "tags": tags,
+                          "ID": note_id}}
+
+        return msg
+
+    def get_note_text(self, begin, end, s):
+        """
+        :desc: Given a string s, extract the substring that makes up the
+               text between 'begin' and 'end'.
+        :param str begin: The string after which text will be extracted
+        :param str end: The string that ends the extraction
+        :param str s: The string to extract the substring from
+        :returns: A substring of s
+        :rval: str
+
+        >>> begin = "BEGIN"
+        >>> end = "END"
+        >>> s = "BEGIN extract this text! END"
+        >>> r.get_note_text(begin, end, s)
+        "Extract this text!"
+
+        """
+
+        if end == '' or end is None:
+            expr = r"(?<={0}).+".format(begin)
+            note_text = re.search(expr, s, flags=re.DOTALL).group(0)
+        else:
+            expr = r"{0}(.+?){1}".format(begin, end)
+            note_text = re.search(expr, s, flags=re.DOTALL).group(1)
+
+        note_text = re.sub(r'(^\s+)|(\s+$)', '', note_text)
+
+        return note_text
+
+    def edit_place(self, note_obj):
+
+        place = note_obj['object']['place']
+        address = note_obj['object']['address']
+        note = note_obj['object']['note']
+        tags = note_obj['object']['tags']
+        tags = ', '.join(tags)
+        note_id = note_obj['object']['ID']
+
+        with open(self.tmpNote, 'w') as fd:
+            s = self.place_template.format(place, address, note, tags)
+            s = s.encode('UTF-8')
+            fd.write(s)
+
+        self.startEditor(3)
+
+        with open(self.tmpNote) as fd:
+            s = fd.read()
+        s = unicode(s, encoding='UTF-8')
+
+        place = self.get_note_text('PLACE', 'ADDRESS', s)
+
+        address = self.get_note_text('ADDRESS', 'NOTE', s)
+
+        note = self.get_note_text('NOTE', 'TAGS', s)
+
+        tags = self.get_note_text('TAGS', '', s)
+        tags = [re.sub(r'(^\s+)|(\s+$)', '', ii) for ii in tags.split(',')]
+
+        msg = {"type": "Place",
+               "object": {"place": place,
+                          "address": address,
+                          "note": note,
+                          "tags": tags,
+                          "ID": note_id}}
+
+        return msg
+
+    def edit_note(self, note_obj):
+
+        note_text = note_obj['object']['note']
+        note_tags = note_obj['object']['tags']
+        note_tags = ', '.join(note_tags)
+        note_id = note_obj['object']['ID']
+
+        with open(self.tmpNote, 'w') as fd:
+            s = self.note_template.format(note_text, note_tags)
+            s = s.encode('UTF-8')
+            fd.write(s)
+
+        self.startEditor(3)
+
+        with open(self.tmpNote) as fd:
+            s = fd.read()
+        s = unicode(s, encoding='UTF-8')
+
+        note = self.get_note_text('NOTE', 'TAGS', s)
+
+        tags = self.get_note_text('TAGS', '', s)
+        tags = [re.sub(r'(^\s+)|(\s+$)', '', ii) for ii in tags.split(',')]
+
+        msg = {"type": "Note",
+               "object": {"note": note, "tags": tags, "ID": note_id}}
+
+        return msg
+
+    def edit_contact(self):
+
+        return
+
+    def Search(self):
+        """
+
+        :rval: str
+        """
+        msg = {"type": "Search", "object": {"searchTerm": self.commandArgs}}
+        return self.client.Send(msg)
+
+    def Place(self):
+        """
+
+        :rval: str
+        """
+        self.template = self.place_template
+
+        s = self.ProcessFile()
+
+        place = self.get_note_text('PLACE', 'ADDRESS', s)
+
+        address = self.get_note_text('ADDRESS', 'NOTE', s)
+
+        note = self.get_note_text('NOTE', 'TAGS', s)
+
+        tags = self.get_note_text('TAGS', '', s)
+        tags = [re.sub(r'(^\s+)|(\s+$)', '', ii) for ii in tags.split(',')]
+
+        msg = {"type": "Place", "object": {"place": place,
+                                           "address": address,
+                                           "note": note,
+                                           "tags": tags}}
+        return self.client.Send(msg)
+
+    def Contact(self):
+        """
+
+        :rval: str
+        """
+        self.template = self.note_template
+
+        s = self.ProcessFile()
+
+        note = self.get_note_text('NOTE', 'TAGS', s)
+
+        tags = self.get_note_text('TAGS', '', s)
+        tags = [re.sub(r'(^\s+)|(\s+$)', '', ii) for ii in tags.split(',')]
+
+        msg = {"type": "Contact", "object": {"note": note, "tags": tags}}
+        return self.client.Send(msg)
+
+    def todo(self):
+        """
+
+        :rval: str
+        """
+        self.template = self.todo_template
+        ddp = DateDataParser()
+
+        s = self.ProcessFile()
+
+        todo = self.get_note_text('TODO', 'DONE', s)
+
+        done = self.get_note_text('DONE', 'DATE', s)
+
+        date = self.get_note_text('DATE', 'TAG', s)
+        date_obj = ddp.get_date_data(date)['date_obj']
+        date = int(date_obj.strftime('%s'))
+
+        tags = self.get_note_text('TAGS', '', s)
+        tags = [re.sub(r'(^\s+)|(\s+$)', '', ii) for ii in tags.split(',')]
+
+        msg = {"type": "Todo", "object": {"todo": todo,
+                                          "done": done,
+                                          "date": date,
+                                          "tags": tags}}
+        return self.client.Send(msg)
+
+    def Delete(self):
+        """
+        :desc: Deletes a note (if an ID is given) or a label (if a
+               label is given)
+        :rval: str
+        """
+        if re.search(r'^\d+$', self.commandArgs):
+            ID = int(self.commandArgs)
+            msg = {"type": "Delete", "object": {"id": ID}}
+        else:
+            msg = {"type": "Delete_Label",
+                   "object": {"label": self.commandArgs}}
+        return self.client.Send(msg)
+
+    def ShowDone(self):
+        """
+
+        :rval: str
+        """
+        done = self.commandArgs
+        msg = {"type": "Get", "object": {"type": "done", "done": True}}
+        return self.client.Send(msg)
+
+    def ShowUndone(self):
+        """
+
+        :rval: str
+        """
+
+        done = self.commandArgs
+        msg = {"type": "Get", "object": {"type": "done", "done": False}}
+        return self.client.Send(msg)
+
+    def Backup(self):
+        """
+
+        """
+        return
+
+    def Encrypt(self):
+        """
+
+        """
+        return
+
+    def Dropbox(self):
+        """
+
+        """
+        return
+
+    def LastMonth(self):
+        """
+
+        """
+        return
+
+    def ThisMonth(self):
+        """
+
+        """
+        return
+
+    def Info(self):
+        """
+
+        :rval: str
+        """
+        ID = int(self.commandArgs)
+        msg = {"type": "Get", "object": {"type": "ID", "id": ID}}
+        return self.client.Send(msg)
+
+    def Verify(self):
+        """
+
+        """
+        return
+
+    def get_sorted_results(self, comparator):
+
+        msg = {"type": "Search", "object": {"searchTerm": self.commandArgs}}
+        r = self.client.Send(msg)
+        r = json.loads(r)
+        results_sorted = sorted(r['object']['results'], key=comparator)
+        r['object']['results'] = results_sorted
+        return json.dumps(r)
+
+    def SID(self):
+        """
+        :desc: Fetch notes and sort them by ID
+        :rval: str
+        """
+        def comparator(k):
+            return k['obj']['ID']
+
+        return self.get_sorted_results(comparator)
+
+    def SDate(self):
+        """
+
+        :desc: Fetch notes and sort them by date last modified
+        :rval: str
+        """
+
+        def comparator(k):
+            return max(k['obj']['timestamps'])
+
+        return self.get_sorted_results(comparator)
+
+    def SRelevance(self):
+        """
+        :desc: Fetch notes and sort them by search relevance
+        :rval: str
+        """
+
+        def comparator(k):
+            return k['score']
+
+        return self.get_sorted_results(comparator)
+
+    def Label(self):
+        """
+        :desc: Add a label to the note db if and ID is given, if no ID
+               is given, attempt to get the a note by label
+        :rval: str
+        :returns: A status json object serialed to a string
+        """
+
+        try:
+            label_name = re.search(r'^\w+', self.commandArgs).group(0)
+        except AttributeError:
+            print 'Incorrect label given'
+            sys.exit(1)
+
+        ID = re.search(r'\d+$', self.commandArgs)
+
+        if ID is None:
+            # Get by label
+            msg = {"object": {"type": "Label", "name": label_name},
+                   "type": "Get"}
+            # FIXME no need for r_val here?
+            r_val = json.loads(self.client.Send(msg))
+            r_val['printer_options'] = 'pretty'
+            return json.dumps(r_val)
+        else:
+            # Set a label to a note by it's ID
+            ID = ID.group(0)
+            msg = {"type": "Label", "object": {"name": label_name, "id": ID}}
+            return self.client.Send(msg)
+
+    def Link(self):
+        p = SP.check_output(['which', 'notec'])
+        p = re.sub(r'\n$', '', p)
+        print 'ln -s {0} /usr/local/bin/n'.format(p)
+
+
+def main():
+
+    runner = Runner()
+    runner.Run()
+
+    return
+
+if __name__ == "__main__":
+    main()
