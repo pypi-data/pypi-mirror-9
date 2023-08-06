@@ -1,0 +1,482 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>samsifter.models.filter_model &mdash; SamSifter 0.5.0 documentation</title>
+    
+    <link rel="stylesheet" href="../../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../../',
+        VERSION:     '0.5.0',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../../_static/doctools.js"></script>
+    <link rel="top" title="SamSifter 0.5.0 documentation" href="../../../index.html" />
+    <link rel="up" title="Module code" href="../../index.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../../index.html">SamSifter 0.5.0 documentation</a> &raquo;</li>
+          <li><a href="../../index.html" accesskey="U">Module code</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <h1>Source code for samsifter.models.filter_model</h1><div class="highlight"><pre>
+<span class="c">#!/usr/bin/env python3</span>
+<span class="c"># -*- coding: utf-8 -*-</span>
+<span class="sd">&quot;&quot;&quot;Filter models for trees and lists.</span>
+
+<span class="sd">Implementations of the standard Qt4 item-based models for trees (2 dimensions)</span>
+<span class="sd">and lists (1 dimension).</span>
+
+<span class="sd">Warning</span>
+<span class="sd">-------</span>
+<span class="sd">Drag&amp;Drop is *not* fully implemented due to restrictions on the binary encoding</span>
+<span class="sd">of C++ objects using Python&#39;s ``pickle``. Pickling support is required to</span>
+<span class="sd">encode filter items to MIME on initiation of a drag event as well as to decode</span>
+<span class="sd">an item from MIME at the end of a drop event. However this would require the</span>
+<span class="sd">implementation of (de)serialization methods for the entire hierarchy of</span>
+<span class="sd">PyQt-wrapped C++ classes that are used in this project and currently don&#39;t</span>
+<span class="sd">support ``pickle``.</span>
+
+
+<span class="sd">Thus, I have decided to simply override the double-click behaviour on filter</span>
+<span class="sd">items to emulate the *drag&amp;drop* action with a similarly intuitive</span>
+<span class="sd">*click&amp;clone* action. See :py:meth:`samsifter.models.filter.FilterItem.clone`</span>
+<span class="sd">and :py:meth:`samsifter.samsifter.MainWindow.init_ui` for details.</span>
+
+<span class="sd">.. moduleauthor:: Florian Aldehoff &lt;faldehoff@student.uni-tuebingen.de&gt;</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="sd">&quot;&quot;&quot; Qt4 &quot;&quot;&quot;</span>
+<span class="kn">from</span> <span class="nn">PyQt4.QtGui</span> <span class="kn">import</span> <span class="n">QStandardItemModel</span><span class="p">,</span> <span class="n">QBrush</span><span class="p">,</span> <span class="n">QColor</span>
+<span class="kn">from</span> <span class="nn">PyQt4.QtCore</span> <span class="kn">import</span> <span class="p">(</span><span class="n">Qt</span><span class="p">,</span> <span class="n">QAbstractListModel</span><span class="p">,</span> <span class="n">QModelIndex</span><span class="p">,</span> <span class="n">pyqtSignal</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="FilterTreeModel"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.filter_model.FilterTreeModel">[docs]</a><span class="k">class</span> <span class="nc">FilterTreeModel</span><span class="p">(</span><span class="n">QStandardItemModel</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Item-based two-dimensional model for filter items.</span>
+
+<span class="sd">    Can represent hierarchical and sequential data by implementing the</span>
+<span class="sd">    QAbstractItemModel.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">parent</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Initialize new instance of filter list model.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        parent : QObject, optional</span>
+<span class="sd">            Parent Qt4 object this model belongs to, defaults to None.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">FilterTreeModel</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="n">parent</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">setHorizontalHeaderLabels</span><span class="p">([</span><span class="s">&quot;available filters&quot;</span><span class="p">])</span>
+
+<div class="viewcode-block" id="FilterTreeModel.supportedDragActions"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.filter_model.FilterTreeModel.supportedDragActions">[docs]</a>    <span class="k">def</span> <span class="nf">supportedDragActions</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Drag actions supported by the model.</span>
+
+<span class="sd">        Used to return a combination of drop actions, indicating the types of</span>
+<span class="sd">        drag and drop operations that the model accepts.</span>
+
+<span class="sd">        Overrides Qt4 base method.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        int</span>
+<span class="sd">            Qt drag action.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">Qt</span><span class="o">.</span><span class="n">CopyAction</span>
+</div>
+<div class="viewcode-block" id="FilterTreeModel.iterate_items"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.filter_model.FilterTreeModel.iterate_items">[docs]</a>    <span class="k">def</span> <span class="nf">iterate_items</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Provides a lazy iterator over all filter items.</span>
+
+<span class="sd">        Yields</span>
+<span class="sd">        ------</span>
+<span class="sd">        FilterItem</span>
+<span class="sd">            Next filter item in model.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">rowCount</span><span class="p">()):</span>
+            <span class="k">yield</span> <span class="bp">self</span><span class="o">.</span><span class="n">item</span><span class="p">(</span><span class="n">i</span><span class="p">)</span>
+
+</div></div>
+<div class="viewcode-block" id="FilterListModel"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.filter_model.FilterListModel">[docs]</a><span class="k">class</span> <span class="nc">FilterListModel</span><span class="p">(</span><span class="n">QAbstractListModel</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;One-dimensional list model for filter items.</span>
+
+<span class="sd">    Represents data as a simple non-hierarchical sequence of items.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">item_changed</span> <span class="o">=</span> <span class="n">pyqtSignal</span><span class="p">(</span><span class="s">&#39;QStandardItem&#39;</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s">&quot;itemChanged&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">parent</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Initialize new instance of filter list model.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        parent : QObject, optional</span>
+<span class="sd">            Parent Qt4 object this model belongs to, defaults to None.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">FilterListModel</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="n">parent</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">filters</span> <span class="o">=</span> <span class="p">[]</span>
+
+<div class="viewcode-block" id="FilterListModel.__repr__"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.filter_model.FilterListModel.__repr__">[docs]</a>    <span class="k">def</span> <span class="nf">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;String representation of model for debugging.&quot;&quot;&quot;</span>
+        <span class="n">rep</span> <span class="o">=</span> <span class="s">&quot;</span><span class="se">\n</span><span class="s">model contains </span><span class="si">%i</span><span class="s"> filters:&quot;</span> <span class="o">%</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">filters</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">fltr</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">filters</span><span class="p">:</span>
+            <span class="n">rep</span> <span class="o">+=</span> <span class="nb">repr</span><span class="p">(</span><span class="n">fltr</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">rep</span>
+</div>
+<div class="viewcode-block" id="FilterListModel.flags"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.filter_model.FilterListModel.flags">[docs]</a>    <span class="k">def</span> <span class="nf">flags</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">index</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Provides view with Qt flags for item at given index.</span>
+
+<span class="sd">        Must return an appropriate combination of flags for each item. In</span>
+<span class="sd">        particular, the value returned by this function must include</span>
+<span class="sd">        Qt::ItemIsEditable in addition to the values applied to items in a</span>
+<span class="sd">        read-only model.</span>
+
+<span class="sd">        Used by other components to obtain information about each item provided</span>
+<span class="sd">        by the model. In many models, the combination of flags should include</span>
+<span class="sd">        Qt::ItemIsEnabled and Qt::ItemIsSelectable.</span>
+
+<span class="sd">        Implements abstract Qt4 method.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        index : QModelIndex</span>
+<span class="sd">            Model index of requested item.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        int</span>
+<span class="sd">            Combination of bit flags for item properties.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">index</span><span class="o">.</span><span class="n">isValid</span><span class="p">():</span>
+            <span class="k">return</span><span class="p">(</span><span class="n">Qt</span><span class="o">.</span><span class="n">ItemIsEnabled</span> <span class="o">|</span> <span class="n">Qt</span><span class="o">.</span><span class="n">ItemIsSelectable</span>
+                   <span class="o">|</span> <span class="n">Qt</span><span class="o">.</span><span class="n">ItemIsDropEnabled</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">Qt</span><span class="o">.</span><span class="n">ItemIsDropEnabled</span>
+</div>
+    <span class="sd">&quot;&quot;&quot; data &quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="FilterListModel.iterate_items"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.filter_model.FilterListModel.iterate_items">[docs]</a>    <span class="k">def</span> <span class="nf">iterate_items</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Provides a lazy iterator over all filter items.</span>
+
+<span class="sd">        Yields</span>
+<span class="sd">        ------</span>
+<span class="sd">        FilterItem</span>
+<span class="sd">            The next filter item in the model.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">filters</span><span class="p">)):</span>
+            <span class="k">yield</span> <span class="bp">self</span><span class="o">.</span><span class="n">filters</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+</div>
+<div class="viewcode-block" id="FilterListModel.index"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.filter_model.FilterListModel.index">[docs]</a>    <span class="k">def</span> <span class="nf">index</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">row</span><span class="p">,</span> <span class="n">col</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">parent</span><span class="o">=</span><span class="n">QModelIndex</span><span class="p">()):</span>
+        <span class="sd">&quot;&quot;&quot;Returns the index of the specified model item.</span>
+
+<span class="sd">        Implements abstract Qt4 base method.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        row : int</span>
+<span class="sd">            Model row.</span>
+<span class="sd">        col : int, optional</span>
+<span class="sd">            Model column, defaults to 0 (list only has one column).</span>
+<span class="sd">        parent : QModelIndex, optional</span>
+<span class="sd">            Model index of parent item, defaults to invalid QModelIndex.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        QModelIndex</span>
+<span class="sd">            Model index of specified item (invalid if non-existant).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">createIndex</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="n">col</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="FilterListModel.data"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.filter_model.FilterListModel.data">[docs]</a>    <span class="k">def</span> <span class="nf">data</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">index</span><span class="p">,</span> <span class="n">role</span><span class="o">=</span><span class="n">Qt</span><span class="o">.</span><span class="n">DisplayRole</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Supplies item data to views and delegates.</span>
+
+<span class="sd">        Generally, models only need to supply data for Qt.DisplayRole and any</span>
+<span class="sd">        application-specific Qt.AccessibleTextRole, and</span>
+<span class="sd">        Qt.AccessibleDescriptionRole. See the Qt.ItemDataRole enum</span>
+<span class="sd">        documentation for information about the types</span>
+<span class="sd">        associated with each role.</span>
+
+<span class="sd">        Implements abstract Qt4 base method.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        index : QModelIndex</span>
+<span class="sd">            Model index of requested content item.</span>
+<span class="sd">        role : int</span>
+<span class="sd">            Qt item data role, defaults to DisplayRole.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        any</span>
+<span class="sd">            Depending on model data and requested role.</span>
+<span class="sd">        None</span>
+<span class="sd">            If index is invalid.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">index</span><span class="o">.</span><span class="n">isValid</span><span class="p">():</span>
+            <span class="k">return</span> <span class="bp">None</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">item</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">filters</span><span class="p">[</span><span class="n">index</span><span class="o">.</span><span class="n">row</span><span class="p">()]</span>
+        <span class="k">except</span> <span class="ne">IndexError</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">None</span>
+
+        <span class="k">if</span> <span class="n">role</span> <span class="o">==</span> <span class="n">Qt</span><span class="o">.</span><span class="n">DisplayRole</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">item</span><span class="o">.</span><span class="n">text</span><span class="p">()</span>
+        <span class="k">elif</span> <span class="n">role</span> <span class="o">==</span> <span class="n">Qt</span><span class="o">.</span><span class="n">DecorationRole</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">item</span><span class="o">.</span><span class="n">icon</span><span class="p">()</span>
+        <span class="k">elif</span> <span class="n">role</span> <span class="o">==</span> <span class="n">Qt</span><span class="o">.</span><span class="n">UserRole</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">item</span>
+        <span class="k">elif</span> <span class="n">role</span> <span class="o">==</span> <span class="n">Qt</span><span class="o">.</span><span class="n">ForegroundRole</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">item</span><span class="o">.</span><span class="n">is_valid</span><span class="p">():</span>
+                <span class="k">return</span> <span class="n">QBrush</span><span class="p">(</span><span class="n">Qt</span><span class="o">.</span><span class="n">black</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">QBrush</span><span class="p">(</span><span class="n">Qt</span><span class="o">.</span><span class="n">red</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">role</span> <span class="o">==</span> <span class="n">Qt</span><span class="o">.</span><span class="n">BackgroundRole</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">item</span><span class="o">.</span><span class="n">is_valid</span><span class="p">():</span>
+                <span class="k">return</span> <span class="n">QBrush</span><span class="p">(</span><span class="n">Qt</span><span class="o">.</span><span class="n">white</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">QBrush</span><span class="p">(</span><span class="n">QColor</span><span class="p">(</span><span class="mi">255</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">140</span><span class="p">,</span> <span class="mi">255</span><span class="p">))</span>
+        <span class="k">elif</span> <span class="n">role</span> <span class="o">==</span> <span class="n">Qt</span><span class="o">.</span><span class="n">ToolTipRole</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">item</span><span class="o">.</span><span class="n">get_description</span><span class="p">()</span>
+        <span class="k">return</span> <span class="bp">None</span>
+</div>
+<div class="viewcode-block" id="FilterListModel.insertItem"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.filter_model.FilterListModel.insertItem">[docs]</a>    <span class="k">def</span> <span class="nf">insertItem</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">item</span><span class="p">,</span> <span class="n">row</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Insert filter item at specified position or append at end.</span>
+
+<span class="sd">        Implements abstract Qt4 base method.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        item : FilterItem</span>
+<span class="sd">            Item to be inserted.</span>
+<span class="sd">        row : int, optional</span>
+<span class="sd">            Target row, defaults to None resulting in insertion at the end.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        bool</span>
+<span class="sd">            True on success.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">row</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">row</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">filters</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">beginInsertRows</span><span class="p">(</span><span class="n">QModelIndex</span><span class="p">(),</span> <span class="n">row</span><span class="p">,</span> <span class="n">row</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">filters</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="n">item</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">endInsertRows</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">rowsInserted</span><span class="o">.</span><span class="n">emit</span><span class="p">(</span><span class="n">QModelIndex</span><span class="p">(),</span> <span class="n">row</span><span class="p">,</span> <span class="n">row</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">True</span>
+</div>
+<div class="viewcode-block" id="FilterListModel.takeItem"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.filter_model.FilterListModel.takeItem">[docs]</a>    <span class="k">def</span> <span class="nf">takeItem</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">row</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Retrieves item and remove corresponding row.</span>
+
+<span class="sd">        Implements abstract Qt4 base method.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        row : int, optional</span>
+<span class="sd">            Target row, defaults to None resulting in deletion from the end.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        None</span>
+<span class="sd">            If given row is smaller or larger than model.</span>
+<span class="sd">        FilterItem</span>
+<span class="sd">            Requested filter item.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">row</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">row</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">filters</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span>
+        <span class="k">if</span> <span class="n">row</span> <span class="o">&gt;=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">filters</span><span class="p">)</span> <span class="ow">or</span> <span class="n">row</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">None</span>
+
+        <span class="n">item</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">filters</span><span class="p">[</span><span class="n">row</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">removeRow</span><span class="p">(</span><span class="n">row</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">item</span>
+</div>
+<div class="viewcode-block" id="FilterListModel.removeRows"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.filter_model.FilterListModel.removeRows">[docs]</a>    <span class="k">def</span> <span class="nf">removeRows</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">row</span><span class="p">,</span> <span class="n">count</span><span class="p">,</span> <span class="n">parent</span><span class="o">=</span><span class="n">QModelIndex</span><span class="p">()):</span>
+        <span class="sd">&quot;&quot;&quot;Remove several rows at once.</span>
+
+<span class="sd">        Used to remove rows and the items of data they contain from all types</span>
+<span class="sd">        of model. Implementations must call beginRemoveRows() before inserting</span>
+<span class="sd">        new columns into any underlying data structures, and call</span>
+<span class="sd">        endRemoveRows() immediately afterwards.</span>
+
+<span class="sd">        Implements abstract Qt4 base method.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        row : int</span>
+<span class="sd">            Start row of the range to be removed.</span>
+<span class="sd">        count : int</span>
+<span class="sd">            Number of rows to be removed including the start row.</span>
+<span class="sd">        parent : QModelIndex, optional</span>
+<span class="sd">            Parent of the item to be removed, defaults to invalid index.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        bool</span>
+<span class="sd">            True on success, False on valid index or invalid row number.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">parent</span><span class="o">.</span><span class="n">isValid</span><span class="p">():</span>
+            <span class="k">return</span> <span class="bp">False</span>
+
+        <span class="k">if</span> <span class="n">row</span> <span class="o">&gt;=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">filters</span><span class="p">)</span> <span class="ow">or</span> <span class="n">row</span> <span class="o">+</span> <span class="n">count</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">False</span>
+
+        <span class="n">begin_row</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">row</span><span class="p">)</span>
+        <span class="n">end_row</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">row</span> <span class="o">+</span> <span class="n">count</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">filters</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">beginRemoveRows</span><span class="p">(</span><span class="n">parent</span><span class="p">,</span> <span class="n">begin_row</span><span class="p">,</span> <span class="n">end_row</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">filters</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">filters</span><span class="p">[:</span><span class="n">begin_row</span><span class="p">]</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">filters</span><span class="p">[</span><span class="n">end_row</span> <span class="o">+</span> <span class="mi">1</span><span class="p">:]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">endRemoveRows</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">rowsRemoved</span><span class="o">.</span><span class="n">emit</span><span class="p">(</span><span class="n">parent</span><span class="p">,</span> <span class="n">begin_row</span><span class="p">,</span> <span class="n">end_row</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">True</span>
+</div>
+<div class="viewcode-block" id="FilterListModel.removeRow"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.filter_model.FilterListModel.removeRow">[docs]</a>    <span class="k">def</span> <span class="nf">removeRow</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">row</span><span class="p">,</span> <span class="n">parent</span><span class="o">=</span><span class="n">QModelIndex</span><span class="p">()):</span>
+        <span class="sd">&quot;&quot;&quot;Remove a single row.</span>
+
+<span class="sd">        Implements abstract Qt4 base method.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        row : int</span>
+<span class="sd">            Start row of the range to be removed.</span>
+<span class="sd">        parent : QModelIndex, optional</span>
+<span class="sd">            Parent of the item to be removed, defaults to invalid index.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        bool</span>
+<span class="sd">            True on success, False on valid index or invalid row number.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">removeRows</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">parent</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="FilterListModel.removeAll"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.filter_model.FilterListModel.removeAll">[docs]</a>    <span class="k">def</span> <span class="nf">removeAll</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">parent</span><span class="o">=</span><span class="n">QModelIndex</span><span class="p">()):</span>
+        <span class="sd">&quot;&quot;&quot;Remove all rows.</span>
+
+<span class="sd">        Implements abstract Qt4 base method.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        parent : QModelIndex, optional</span>
+<span class="sd">            Parent of the item to be removed, defaults to invalid index.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        bool</span>
+<span class="sd">            True on success.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">removeRows</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">rowCount</span><span class="p">(),</span> <span class="n">parent</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="FilterListModel.rowCount"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.filter_model.FilterListModel.rowCount">[docs]</a>    <span class="k">def</span> <span class="nf">rowCount</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">parent</span><span class="o">=</span><span class="n">QModelIndex</span><span class="p">()):</span>
+        <span class="sd">&quot;&quot;&quot;Provides the number of rows of data exposed by the model.</span>
+
+<span class="sd">        Implements abstract Qt4 base method.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        int</span>
+<span class="sd">            Number of items (= rows) in model.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">parent</span><span class="o">.</span><span class="n">isValid</span><span class="p">():</span>
+            <span class="k">return</span> <span class="mi">0</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">filters</span><span class="p">)</span>
+</div>
+    <span class="sd">&quot;&quot;&quot; drag and drop &quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="FilterListModel.supportedDropActions"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.filter_model.FilterListModel.supportedDropActions">[docs]</a>    <span class="k">def</span> <span class="nf">supportedDropActions</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Drop actions supported by the model.</span>
+
+<span class="sd">        Used to return a combination of drop actions, indicating the types of</span>
+<span class="sd">        drop operations that the model accepts.</span>
+
+<span class="sd">        Overrides Qt4 base method.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        int</span>
+<span class="sd">            Combination of Qt drop actions (bit flags).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">Qt</span><span class="o">.</span><span class="n">CopyAction</span> <span class="o">|</span> <span class="n">Qt</span><span class="o">.</span><span class="n">MoveAction</span>
+</div>
+<div class="viewcode-block" id="FilterListModel.supportedDragActions"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.filter_model.FilterListModel.supportedDragActions">[docs]</a>    <span class="k">def</span> <span class="nf">supportedDragActions</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Drag actions supported by the model.</span>
+
+<span class="sd">        Used to return a combination of drop actions, indicating the types of</span>
+<span class="sd">        drag and drop operations that the model accepts.</span>
+
+<span class="sd">        Overrides Qt4 base method.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        int</span>
+<span class="sd">            Combination of Qt drag actions (bit flags).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">Qt</span><span class="o">.</span><span class="n">MoveAction</span></div></div>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../../index.html">SamSifter 0.5.0 documentation</a> &raquo;</li>
+          <li><a href="../../index.html" >Module code</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2015, Florian Aldehoff.
+      Last updated on Mar 01, 2015.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

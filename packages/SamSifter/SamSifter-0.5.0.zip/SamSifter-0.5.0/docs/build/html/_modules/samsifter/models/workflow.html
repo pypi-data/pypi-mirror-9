@@ -1,0 +1,653 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>samsifter.models.workflow &mdash; SamSifter 0.5.0 documentation</title>
+    
+    <link rel="stylesheet" href="../../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../../',
+        VERSION:     '0.5.0',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../../_static/doctools.js"></script>
+    <link rel="top" title="SamSifter 0.5.0 documentation" href="../../../index.html" />
+    <link rel="up" title="Module code" href="../../index.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../../index.html">SamSifter 0.5.0 documentation</a> &raquo;</li>
+          <li><a href="../../index.html" accesskey="U">Module code</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <h1>Source code for samsifter.models.workflow</h1><div class="highlight"><pre>
+<span class="c"># -*- coding: utf-8 -*-</span>
+<span class="sd">&quot;&quot;&quot;Abstraction of workflows with input, tool pipeline and output.</span>
+
+<span class="sd">.. moduleauthor:: Florian Aldehoff &lt;faldehoff@student.uni-tuebingen.de&gt;</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">sys</span>
+<span class="kn">import</span> <span class="nn">datetime</span>
+<span class="kn">from</span> <span class="nn">os.path</span> <span class="kn">import</span> <span class="n">basename</span><span class="p">,</span> <span class="n">dirname</span>
+<span class="kn">from</span> <span class="nn">os</span> <span class="kn">import</span> <span class="n">getlogin</span>
+
+
+<span class="sd">&quot;&quot;&quot; Qt4 &quot;&quot;&quot;</span>
+<span class="kn">from</span> <span class="nn">PyQt4.QtCore</span> <span class="kn">import</span> <span class="p">(</span><span class="n">QObject</span><span class="p">,</span> <span class="n">QFileInfo</span><span class="p">,</span> <span class="n">pyqtSignal</span><span class="p">)</span>
+
+<span class="sd">&quot;&quot;&quot; custom libraries &quot;&quot;&quot;</span>
+<span class="kn">from</span> <span class="nn">samsifter.gui.dialogs</span> <span class="kn">import</span> <span class="n">BashOptions</span><span class="p">,</span> <span class="n">RmaOptions</span>
+<span class="kn">from</span> <span class="nn">samsifter.models.filter_model</span> <span class="kn">import</span> <span class="n">FilterListModel</span>
+<span class="kn">from</span> <span class="nn">samsifter.util.serialize</span> <span class="kn">import</span> <span class="n">WorkflowSerializer</span>
+<span class="kn">from</span> <span class="nn">samsifter.util.validation</span> <span class="kn">import</span> <span class="n">WorkflowValidator</span>
+<span class="kn">from</span> <span class="nn">samsifter.version</span> <span class="kn">import</span> <span class="n">samsifter_version</span>
+
+
+<div class="viewcode-block" id="Workflow"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.workflow.Workflow">[docs]</a><span class="k">class</span> <span class="nc">Workflow</span><span class="p">(</span><span class="n">QObject</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Container object for workflow related data.</span>
+
+<span class="sd">    Takes care of serialization and validation using specialized objects.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="c"># signals</span>
+    <span class="n">changed</span> <span class="o">=</span> <span class="n">pyqtSignal</span><span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s">&#39;changed&#39;</span><span class="p">)</span>
+    <span class="n">list_changed</span> <span class="o">=</span> <span class="n">pyqtSignal</span><span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s">&#39;list_changed&#39;</span><span class="p">)</span>
+    <span class="n">input_changed</span> <span class="o">=</span> <span class="n">pyqtSignal</span><span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s">&#39;input_changed&#39;</span><span class="p">)</span>
+    <span class="n">output_changed</span> <span class="o">=</span> <span class="n">pyqtSignal</span><span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s">&#39;output_changed&#39;</span><span class="p">)</span>
+    <span class="n">validity_changed</span> <span class="o">=</span> <span class="n">pyqtSignal</span><span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s">&#39;validity_changed&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">parent</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Initializ a new instance of a workflow.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        parent : QObject</span>
+<span class="sd">            Parent Qt object, defaults to None.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">Workflow</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="n">parent</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_filename</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">in_filename</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">out_filename</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">run_compile_stats</span> <span class="o">=</span> <span class="bp">True</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">run_sam2rma</span> <span class="o">=</span> <span class="bp">False</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">model</span> <span class="o">=</span> <span class="n">FilterListModel</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">itemChanged</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">on_change</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">rowsInserted</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">on_insert</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">rowsRemoved</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">on_remove</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">validator</span> <span class="o">=</span> <span class="n">WorkflowValidator</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_dirty</span> <span class="o">=</span> <span class="bp">False</span>     <span class="c"># no unsaved changes at this point</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">infile_valid</span> <span class="o">=</span> <span class="bp">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">outfile_valid</span> <span class="o">=</span> <span class="bp">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">valid</span> <span class="o">=</span> <span class="bp">False</span>
+
+<div class="viewcode-block" id="Workflow.commandline"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.workflow.Workflow.commandline">[docs]</a>    <span class="k">def</span> <span class="nf">commandline</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">hyphenated</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">multiline</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">batch</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+                    <span class="n">basenames</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Creates Bash-compatible commandline for entire workflow.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        hyphenated : bool, optional</span>
+<span class="sd">            Enable hyphenation of entire commandline for use within variables</span>
+<span class="sd">            evaluated by eval command; defaults to False.</span>
+<span class="sd">        multiline : bool, optional</span>
+<span class="sd">            Break long lines after each individual step of the workflow to</span>
+<span class="sd">            improve readability; defaults to False.</span>
+<span class="sd">        batch : bool, optional</span>
+<span class="sd">            Enable use of variables that can be evaluated within code blocks</span>
+<span class="sd">            like for loops or functions; defaults to False.</span>
+<span class="sd">        basenames : bool, optional</span>
+<span class="sd">            Shorten file paths to filename only; defaults to False.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        str</span>
+<span class="sd">            Commandline to be run in Bash or subprocess.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">model</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">None</span>
+
+        <span class="c"># set hyphenation character(s)</span>
+        <span class="k">if</span> <span class="n">hyphenated</span><span class="p">:</span>
+            <span class="n">hyphen</span> <span class="o">=</span> <span class="s">&quot;&#39;&quot;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">hyphen</span> <span class="o">=</span> <span class="s">&quot;&quot;</span>
+
+        <span class="c"># set newline character(s)</span>
+        <span class="k">if</span> <span class="n">multiline</span><span class="p">:</span>
+            <span class="c"># use \ for bash line continuation to increase readability</span>
+            <span class="n">newline</span> <span class="o">=</span> <span class="n">hyphen</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\\\n</span><span class="s">&quot;</span> <span class="o">+</span> <span class="n">hyphen</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">newline</span> <span class="o">=</span> <span class="s">&quot;&quot;</span>
+
+        <span class="c"># set filenames</span>
+        <span class="k">if</span> <span class="n">batch</span><span class="p">:</span>
+            <span class="n">input_str</span> <span class="o">=</span> <span class="s">&quot;${input}&quot;</span>
+            <span class="n">output_str</span> <span class="o">=</span> <span class="s">&quot;${output}&quot;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">in_filename</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+                <span class="n">input_str</span> <span class="o">=</span> <span class="s">&quot;${input}&quot;</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">basenames</span><span class="p">:</span>
+                    <span class="n">input_str</span> <span class="o">=</span> <span class="n">basename</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">in_filename</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">input_str</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">in_filename</span>
+
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">out_filename</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+                <span class="n">output_str</span> <span class="o">=</span> <span class="s">&quot;${output}&quot;</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">basenames</span><span class="p">:</span>
+                    <span class="n">output_str</span> <span class="o">=</span> <span class="n">basename</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">out_filename</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">output_str</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">out_filename</span>
+
+        <span class="n">cl</span> <span class="o">=</span> <span class="n">hyphen</span> <span class="o">+</span> <span class="s">&quot;cat &quot;</span> <span class="o">+</span> <span class="n">input_str</span> <span class="o">+</span> <span class="n">newline</span>
+        <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">iterate_items</span><span class="p">():</span>
+            <span class="n">cl</span> <span class="o">+=</span> <span class="s">&quot; | &quot;</span> <span class="o">+</span> <span class="n">item</span><span class="o">.</span><span class="n">commandline</span><span class="p">(</span><span class="n">basenames</span><span class="p">)</span> <span class="o">+</span> <span class="n">newline</span>
+        <span class="n">cl</span> <span class="o">+=</span> <span class="s">&quot; &gt; &quot;</span> <span class="o">+</span> <span class="n">output_str</span> <span class="o">+</span> <span class="n">hyphen</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\n</span><span class="s">&quot;</span>
+
+        <span class="k">return</span> <span class="n">cl</span>
+</div>
+<div class="viewcode-block" id="Workflow.to_bash"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.workflow.Workflow.to_bash">[docs]</a>    <span class="k">def</span> <span class="nf">to_bash</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">filename</span><span class="p">,</span>
+                <span class="n">bash_options</span><span class="o">=</span><span class="n">BashOptions</span><span class="p">(),</span>
+                <span class="n">rma_options</span><span class="o">=</span><span class="n">RmaOptions</span><span class="p">()):</span>
+        <span class="sd">&quot;&quot;&quot;Write Bash script with optional batch processing capability.</span>
+
+<span class="sd">        The batch variants take filenames as arguments while the standard call</span>
+<span class="sd">        processes only the explicitly set input file.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        filename : str</span>
+<span class="sd">            Writable path of new bash script.</span>
+<span class="sd">        bash_options : BashOptions, optional</span>
+<span class="sd">            Bash options object, defaults to new instance.</span>
+<span class="sd">        rma_options : RmaOptions, optional</span>
+<span class="sd">            SAM2RMA options object, defaults to new instance.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+<span class="c">#        if bash_options is None:</span>
+<span class="c">#            bash_options = BashOptions()</span>
+<span class="c">#</span>
+<span class="c">#        if rma_options is None:</span>
+<span class="c">#            rma_options = RmaOptions()</span>
+
+        <span class="n">bash_params</span> <span class="o">=</span> <span class="s">&#39;&#39;</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="n">bash_options</span><span class="o">.</span><span class="n">get_print_commands</span><span class="p">()</span>
+            <span class="ow">and</span> <span class="n">bash_options</span><span class="o">.</span><span class="n">get_stop_on_error</span><span class="p">()</span>
+        <span class="p">):</span>
+            <span class="n">bash_params</span> <span class="o">=</span> <span class="s">&#39; -ex&#39;</span>
+        <span class="k">elif</span> <span class="n">bash_options</span><span class="o">.</span><span class="n">get_print_commands</span><span class="p">():</span>
+            <span class="n">bash_params</span> <span class="o">=</span> <span class="s">&#39; -x&#39;</span>
+        <span class="k">elif</span> <span class="n">bash_options</span><span class="o">.</span><span class="n">get_stop_on_error</span><span class="p">():</span>
+            <span class="n">bash_params</span> <span class="o">=</span> <span class="s">&#39; -e&#39;</span>
+
+        <span class="n">bash_path</span> <span class="o">=</span> <span class="s">&quot;/bin/bash&quot;</span>
+
+        <span class="n">header</span> <span class="o">=</span> <span class="p">(</span><span class="s">&quot;#!</span><span class="si">%s%s</span><span class="se">\n</span><span class="s"># SamSifter v</span><span class="si">%s</span><span class="s"> workflow</span><span class="se">\n</span><span class="s"># created </span><span class="si">%s</span><span class="s"> by </span><span class="si">%s</span><span class="se">\n\n</span><span class="s">&quot;</span>
+                  <span class="o">%</span> <span class="p">(</span><span class="n">bash_path</span><span class="p">,</span> <span class="n">bash_params</span><span class="p">,</span> <span class="n">samsifter_version</span><span class="p">,</span>
+                     <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">()</span><span class="o">.</span><span class="n">strftime</span><span class="p">(</span><span class="s">&quot;%Y-%m-</span><span class="si">%d</span><span class="s"> %H:%M&quot;</span><span class="p">),</span>
+                     <span class="n">getlogin</span><span class="p">()))</span>
+
+        <span class="n">settings</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="s">&#39;# SAM2RMA settings</span><span class="se">\n</span><span class="s">&#39;</span>
+            <span class="s">&#39;#sam2rma_path=&quot;</span><span class="si">%s</span><span class="s">&quot;</span><span class="se">\n</span><span class="s">&#39;</span>
+            <span class="s">&#39;sam2rma_path=`which sam2rma`</span><span class="se">\n</span><span class="s">&#39;</span>
+            <span class="s">&#39;top_percent=&quot;</span><span class="si">%.1f</span><span class="s">&quot;</span><span class="se">\n</span><span class="s">&#39;</span>
+            <span class="s">&#39;min_score=&quot;</span><span class="si">%.1f</span><span class="s">&quot;</span><span class="se">\n</span><span class="s">&#39;</span>
+            <span class="s">&#39;max_expected=&quot;</span><span class="si">%.2f</span><span class="s">&quot;</span><span class="se">\n</span><span class="s">&#39;</span>
+            <span class="s">&#39;min_support_percent=&quot;</span><span class="si">%.3f</span><span class="s">&quot;</span><span class="se">\n</span><span class="s">&#39;</span>
+            <span class="s">&#39;</span><span class="se">\n</span><span class="s">&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">rma_options</span><span class="o">.</span><span class="n">get_sam2rma_path</span><span class="p">(),</span>
+                    <span class="n">rma_options</span><span class="o">.</span><span class="n">get_top_percent</span><span class="p">(),</span>
+                    <span class="n">rma_options</span><span class="o">.</span><span class="n">get_min_score</span><span class="p">(),</span>
+                    <span class="n">rma_options</span><span class="o">.</span><span class="n">get_max_expected</span><span class="p">(),</span>
+                    <span class="n">rma_options</span><span class="o">.</span><span class="n">get_min_support_percent</span><span class="p">())</span>
+        <span class="p">)</span>
+
+        <span class="n">commando</span> <span class="o">=</span> <span class="s">&quot;commando=</span><span class="si">%s</span><span class="se">\n</span><span class="s">&quot;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">commandline</span><span class="p">(</span>
+            <span class="n">hyphenated</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span>
+            <span class="n">multiline</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span>
+            <span class="n">batch</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span>
+            <span class="n">basenames</span><span class="o">=</span><span class="n">bash_options</span><span class="o">.</span><span class="n">get_use_basenames</span><span class="p">()</span>
+        <span class="p">)</span>
+
+        <span class="n">stats_switch</span> <span class="o">=</span> <span class="s">&quot;&quot;</span>
+<span class="c">#        if not bash_options.get_run_compile_stats():</span>
+<span class="c">#            stats_switch = &quot;#&quot;</span>
+
+        <span class="n">stats_command</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="s">&quot;compile_stats &quot;</span>
+            <span class="s">&quot;--prefix ${filename} &quot;</span>
+            <span class="s">&quot;--remove --verbose &quot;</span>
+            <span class="s">&quot;&gt; ${dirname}/${filename}.sifted.csv 2&gt;&gt; ${log}&quot;</span><span class="p">)</span>
+
+        <span class="n">rma_switch</span> <span class="o">=</span> <span class="s">&quot;&quot;</span>
+<span class="c">#        if not bash_options.get_run_sam2rma():</span>
+<span class="c">#            rma_switch = &quot;#&quot;</span>
+
+        <span class="n">rma_command</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="s">&quot;${sam2rma_path} &quot;</span>
+            <span class="s">&quot;--minScore ${min_score} &quot;</span>
+            <span class="s">&quot;--maxExpected ${max_expected} &quot;</span>
+            <span class="s">&quot;--topPercent ${top_percent} &quot;</span>
+            <span class="s">&quot;--minSupportPercent ${min_support_percent} &quot;</span>
+            <span class="s">&quot;--in ${output} &quot;</span>
+            <span class="s">&quot;--out ${dirname} &quot;</span>
+            <span class="s">&quot;2&gt;&gt; ${log}&quot;</span>
+        <span class="p">)</span>
+
+        <span class="n">function</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="s">&quot;# define individual job, requires filename as input</span><span class="se">\n</span><span class="s">&quot;</span>
+            <span class="s">&quot;job() {</span><span class="se">\n</span><span class="s">&quot;</span>
+            <span class="s">&quot;    </span><span class="si">%s</span><span class="s">&quot;</span>
+            <span class="s">&quot;    input=${1}</span><span class="se">\n</span><span class="s">&quot;</span>
+            <span class="s">&quot;    filename=`basename ${1}`</span><span class="se">\n</span><span class="s">&quot;</span>
+            <span class="s">&quot;    dirname=`pwd`</span><span class="se">\n</span><span class="s">&quot;</span>
+            <span class="s">&quot;    output=${filename}.sifted.sam</span><span class="se">\n</span><span class="s">&quot;</span>
+            <span class="s">&quot;    log=${filename}.sifted.log</span><span class="se">\n</span><span class="s">&quot;</span>
+            <span class="s">&quot;    eval ${commando} 2&gt; ${log}</span><span class="se">\n</span><span class="s">&quot;</span>
+            <span class="s">&quot;    </span><span class="se">\n</span><span class="s">&quot;</span>
+            <span class="s">&quot;    # removal of temporary statistics files is optional</span><span class="se">\n</span><span class="s">&quot;</span>
+            <span class="s">&quot;    </span><span class="si">%s%s</span><span class="se">\n</span><span class="s">&quot;</span>
+            <span class="s">&quot;    # conversion into RMA files is optional</span><span class="se">\n</span><span class="s">&quot;</span>
+            <span class="s">&quot;    </span><span class="si">%s%s</span><span class="se">\n</span><span class="s">&quot;</span>
+            <span class="s">&quot;}</span><span class="se">\n</span><span class="s">&quot;</span>
+            <span class="s">&quot;# make function and variables available to subprocesses</span><span class="se">\n</span><span class="s">&quot;</span>
+            <span class="s">&quot;export -f job</span><span class="se">\n</span><span class="s">&quot;</span>
+            <span class="s">&quot;export sam2rma_path top_percent min_score max_expected min_support_percent</span><span class="se">\n</span><span class="s">&quot;</span>
+            <span class="s">&quot;</span><span class="se">\n</span><span class="s">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">commando</span><span class="p">,</span> <span class="n">stats_switch</span><span class="p">,</span> <span class="n">stats_command</span><span class="p">,</span> <span class="n">rma_switch</span><span class="p">,</span>
+                    <span class="n">rma_command</span><span class="p">)</span>
+        <span class="p">)</span>
+
+        <span class="n">standard_call</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="s">&quot;eval ${commando} 2&gt; ${log}</span><span class="se">\n</span><span class="s">&quot;</span>
+            <span class="s">&quot;# removal of temporary statistics files is optional</span><span class="se">\n</span><span class="s">&quot;</span>
+            <span class="s">&quot;</span><span class="si">%s%s</span><span class="se">\n</span><span class="s">&quot;</span>
+            <span class="s">&quot;# conversion into RMA files is optional</span><span class="se">\n</span><span class="s">&quot;</span>
+            <span class="s">&quot;</span><span class="si">%s%s</span><span class="se">\n</span><span class="s">&quot;</span>
+            <span class="s">&quot;</span><span class="se">\n</span><span class="s">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">stats_switch</span><span class="p">,</span> <span class="n">stats_command</span><span class="p">,</span> <span class="n">rma_switch</span><span class="p">,</span> <span class="n">rma_command</span><span class="p">)</span>
+        <span class="p">)</span>
+
+        <span class="n">seq_call</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="s">&quot;# sequential execution, one after another</span><span class="se">\n</span><span class="s">&quot;</span>
+            <span class="s">&quot;for input in ${@}</span><span class="se">\n</span><span class="s">&quot;</span>
+            <span class="s">&quot;do</span><span class="se">\n</span><span class="s">&quot;</span>
+            <span class="s">&quot;    job ${input}</span><span class="se">\n</span><span class="s">&quot;</span>
+            <span class="s">&quot;done</span><span class="se">\n</span><span class="s">&quot;</span>
+            <span class="s">&quot;</span><span class="se">\n</span><span class="s">&quot;</span>
+        <span class="p">)</span>
+
+        <span class="n">par_call</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="s">&quot;# parallel execution, one subshell per input file</span><span class="se">\n</span><span class="s">&quot;</span>
+            <span class="s">&quot;SHELL=$(type -p bash) parallel --gnu --progress job {} ::: ${@}</span><span class="se">\n</span><span class="s">&quot;</span>
+            <span class="s">&quot;</span><span class="se">\n</span><span class="s">&quot;</span>
+        <span class="p">)</span>
+
+        <span class="n">summary</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="s">&quot;# create summary file for all processed files</span><span class="se">\n</span><span class="s">&quot;</span>
+            <span class="s">&quot;summarize_stats &gt; samsifter.summary.csv</span><span class="se">\n</span><span class="s">&quot;</span>
+            <span class="s">&quot;</span><span class="se">\n</span><span class="s">&quot;</span>
+        <span class="p">)</span>
+
+        <span class="n">footer</span> <span class="o">=</span> <span class="s">&quot;exit</span><span class="se">\n</span><span class="s">&quot;</span>
+
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">filename</span><span class="p">,</span> <span class="s">&#39;w&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="c"># put the script together</span>
+            <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">header</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">bash_options</span><span class="o">.</span><span class="n">get_processing_mode</span><span class="p">()</span> <span class="o">==</span> <span class="n">BashOptions</span><span class="o">.</span><span class="n">SINGLE_MODE</span><span class="p">:</span>
+                <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">settings</span><span class="p">)</span>
+                <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">commando</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">bash_options</span><span class="o">.</span><span class="n">get_use_basenames</span><span class="p">():</span>
+                    <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s">&#39;input=&quot;</span><span class="si">%s</span><span class="s">&quot;</span><span class="se">\n</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">basename</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">in_filename</span><span class="p">))</span>
+                    <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s">&#39;output=&quot;</span><span class="si">%s</span><span class="s">&quot;</span><span class="se">\n</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">basename</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">out_filename</span><span class="p">))</span>
+                    <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s">&#39;dirname=`pwd`</span><span class="se">\n</span><span class="s">&#39;</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s">&#39;input=&quot;</span><span class="si">%s</span><span class="s">&quot;</span><span class="se">\n</span><span class="s">&#39;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">in_filename</span><span class="p">)</span>
+                    <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s">&#39;output=&quot;</span><span class="si">%s</span><span class="s">&quot;</span><span class="se">\n</span><span class="s">&#39;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">out_filename</span><span class="p">)</span>
+                    <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s">&#39;dirname=&quot;</span><span class="si">%s</span><span class="s">&quot;</span><span class="se">\n</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">dirname</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">out_filename</span><span class="p">))</span>
+                <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s">&#39;filename=`basename ${input}`</span><span class="se">\n</span><span class="s">&#39;</span><span class="p">)</span>
+                <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s">&#39;log=${dirname}/${filename}.sifted.log</span><span class="se">\n</span><span class="s">&#39;</span><span class="p">)</span>
+                <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">standard_call</span><span class="p">)</span>
+                <span class="c"># no summary here, compiled stats contain more information</span>
+            <span class="k">elif</span> <span class="n">bash_options</span><span class="o">.</span><span class="n">get_processing_mode</span><span class="p">()</span> <span class="o">==</span> <span class="n">BashOptions</span><span class="o">.</span><span class="n">SEQUENTIAL_MODE</span><span class="p">:</span>
+                <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">function</span><span class="p">)</span>
+                <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">seq_call</span><span class="p">)</span>
+                <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">summary</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">bash_options</span><span class="o">.</span><span class="n">get_processing_mode</span><span class="p">()</span> <span class="o">==</span> <span class="n">BashOptions</span><span class="o">.</span><span class="n">PARALLEL_MODE</span><span class="p">:</span>
+                <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">settings</span><span class="p">)</span>
+                <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">function</span><span class="p">)</span>
+                <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">par_call</span><span class="p">)</span>
+                <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">summary</span><span class="p">)</span>
+            <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">footer</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Workflow.clear"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.workflow.Workflow.clear">[docs]</a>    <span class="k">def</span> <span class="nf">clear</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Empties the workflow from all filenames and filter steps.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">set_filename</span><span class="p">(</span><span class="bp">None</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">set_in_filename</span><span class="p">(</span><span class="bp">None</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">set_out_filename</span><span class="p">(</span><span class="bp">None</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">removeAll</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">set_dirty</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">changed</span><span class="o">.</span><span class="n">emit</span><span class="p">(</span><span class="s">&quot;workflow cleared&quot;</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Workflow.to_xml_string"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.workflow.Workflow.to_xml_string">[docs]</a>    <span class="k">def</span> <span class="nf">to_xml_string</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Represent workflow as XML tree.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        str</span>
+<span class="sd">            Pretty XML string representing entire workflow structure.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">tree</span> <span class="o">=</span> <span class="n">WorkflowSerializer</span><span class="o">.</span><span class="n">workflow_to_xml</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+        <span class="n">xml_string</span> <span class="o">=</span> <span class="n">WorkflowSerializer</span><span class="o">.</span><span class="n">tree_to_str</span><span class="p">(</span><span class="n">tree</span><span class="p">,</span> <span class="n">pretty</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">xml_string</span>
+</div>
+<div class="viewcode-block" id="Workflow.__str__"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.workflow.Workflow.__str__">[docs]</a>    <span class="k">def</span> <span class="nf">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;String representation of workflow.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        str</span>
+<span class="sd">            Hyphenated multiline commandline to run workflow.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">commandline</span><span class="p">(</span><span class="n">hyphenated</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">multiline</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Workflow.__repr__"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.workflow.Workflow.__repr__">[docs]</a>    <span class="k">def</span> <span class="nf">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Representation of workflow for debugging purposes.&quot;&quot;&quot;</span>
+        <span class="n">rep</span> <span class="o">=</span> <span class="s">&quot;SamSifter v</span><span class="si">%s</span><span class="s"> Workflow&quot;</span> <span class="o">%</span> <span class="n">samsifter_version</span>
+        <span class="n">rep</span> <span class="o">+=</span> <span class="s">&quot;</span><span class="se">\n</span><span class="s">- filename:</span><span class="se">\t\t</span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">_filename</span>
+        <span class="n">rep</span> <span class="o">+=</span> <span class="s">&quot;</span><span class="se">\n</span><span class="s">- input:</span><span class="se">\t\t</span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">in_filename</span>
+        <span class="n">rep</span> <span class="o">+=</span> <span class="s">&quot;</span><span class="se">\n</span><span class="s">- output:</span><span class="se">\t\t</span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">out_filename</span>
+        <span class="n">rep</span> <span class="o">+=</span> <span class="s">&quot;</span><span class="se">\n</span><span class="s">- dirty:</span><span class="se">\t\t</span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dirty</span>
+        <span class="n">rep</span> <span class="o">+=</span> <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="p">)</span>
+        <span class="n">rep</span> <span class="o">+=</span> <span class="s">&quot;</span><span class="se">\n</span><span class="s">&quot;</span>
+        <span class="k">return</span> <span class="n">rep</span>
+</div>
+    <span class="sd">&quot;&quot;&quot; Serialization &quot;&quot;&quot;</span>
+
+    <span class="nd">@staticmethod</span>
+<div class="viewcode-block" id="Workflow.formats"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.workflow.Workflow.formats">[docs]</a>    <span class="k">def</span> <span class="nf">formats</span><span class="p">():</span>
+        <span class="sd">&quot;&quot;&quot;Lists supported file formats for saving and loading.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        list of str</span>
+<span class="sd">            List of file extensions with leading asterisk, eg. ``*.ssx``.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">[</span><span class="s">&quot;*.ssx&quot;</span><span class="p">,</span> <span class="s">&quot;*.SSX&quot;</span><span class="p">]</span>
+</div>
+<div class="viewcode-block" id="Workflow.save"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.workflow.Workflow.save">[docs]</a>    <span class="k">def</span> <span class="nf">save</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Saves file and picks filetype depending on extension.</span>
+
+<span class="sd">        Note</span>
+<span class="sd">        ----</span>
+<span class="sd">        Currently redundant as only XML output is supported since binary output</span>
+<span class="sd">        was dropped.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        filename : str, optional</span>
+<span class="sd">            Writable path of new workflow file.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        bool</span>
+<span class="sd">            True if successful, otherwise False.</span>
+<span class="sd">        str</span>
+<span class="sd">            Error or success message.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">filename</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_filename</span> <span class="o">=</span> <span class="n">filename</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_filename</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s">&quot;.ssx&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_filename</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s">&quot;.SSX&quot;</span><span class="p">):</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">save_xml</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">(</span><span class="bp">False</span><span class="p">,</span>
+                    <span class="s">&quot;Failed to save </span><span class="si">%s</span><span class="s">: wrong file extension&quot;</span> <span class="o">%</span> <span class="n">filename</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Workflow.save_xml"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.workflow.Workflow.save_xml">[docs]</a>    <span class="k">def</span> <span class="nf">save_xml</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Save to file using XML serialization.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        bool</span>
+<span class="sd">            True if successful, otherwise False.</span>
+<span class="sd">        str</span>
+<span class="sd">            Error or success message.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">error</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">WorkflowSerializer</span><span class="o">.</span><span class="n">serialize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_filename</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">IOError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">error</span> <span class="o">=</span> <span class="s">&quot;input/ouptut error - failed to save: </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="n">e</span>
+            <span class="k">print</span><span class="p">(</span><span class="n">error</span><span class="p">,</span> <span class="nb">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">OSError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">error</span> <span class="o">=</span> <span class="s">&quot;OS error - failed to save: </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="n">e</span>
+            <span class="k">print</span><span class="p">(</span><span class="n">error</span><span class="p">,</span> <span class="nb">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">error</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+                <span class="k">return</span> <span class="bp">False</span><span class="p">,</span> <span class="n">error</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_dirty</span> <span class="o">=</span> <span class="bp">False</span>
+            <span class="k">return</span> <span class="p">(</span><span class="bp">True</span><span class="p">,</span> <span class="s">&quot;File saved to </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">_filename</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Workflow.load"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.workflow.Workflow.load">[docs]</a>    <span class="k">def</span> <span class="nf">load</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">filename</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Load from file using XML deserialization.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        filename : str, optional</span>
+<span class="sd">            Readable path to existing workflow file.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        bool</span>
+<span class="sd">            True if successful, otherwise False.</span>
+<span class="sd">        str</span>
+<span class="sd">            Error or success message.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">error</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">WorkflowSerializer</span><span class="o">.</span><span class="n">deserialize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">filename</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">IOError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">error</span> <span class="o">=</span> <span class="s">&quot;input/output error - failed to load: </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="n">e</span>
+            <span class="k">print</span><span class="p">(</span><span class="n">error</span><span class="p">,</span> <span class="nb">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">OSError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">error</span> <span class="o">=</span> <span class="s">&quot;OS error - failed to load: </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="n">e</span>
+            <span class="k">print</span><span class="p">(</span><span class="n">error</span><span class="p">,</span> <span class="nb">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">error</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+                <span class="k">return</span> <span class="bp">False</span><span class="p">,</span> <span class="n">error</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">input_changed</span><span class="o">.</span><span class="n">emit</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">in_filename</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">output_changed</span><span class="o">.</span><span class="n">emit</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">out_filename</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">set_filename</span><span class="p">(</span><span class="n">filename</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_dirty</span> <span class="o">=</span> <span class="bp">False</span>
+            <span class="n">message</span> <span class="o">=</span> <span class="p">(</span><span class="s">&quot;Loaded workflow with </span><span class="si">%i</span><span class="s"> steps from </span><span class="si">%s</span><span class="s">&quot;</span>
+                       <span class="o">%</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">rowCount</span><span class="p">(),</span>
+                          <span class="n">QFileInfo</span><span class="p">(</span><span class="n">filename</span><span class="p">)</span><span class="o">.</span><span class="n">fileName</span><span class="p">()))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">changed</span><span class="o">.</span><span class="n">emit</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+            <span class="k">return</span> <span class="bp">True</span><span class="p">,</span> <span class="n">message</span>
+</div>
+    <span class="sd">&quot;&quot;&quot; event handlers &quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="Workflow.on_change"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.workflow.Workflow.on_change">[docs]</a>    <span class="k">def</span> <span class="nf">on_change</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">item</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Handle change of workflow model.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">validator</span><span class="o">.</span><span class="n">validate</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">validity_changed</span><span class="o">.</span><span class="n">emit</span><span class="p">(</span><span class="s">&quot;test of validity change signal&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">set_dirty</span><span class="p">(</span><span class="bp">True</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Workflow.on_insert"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.workflow.Workflow.on_insert">[docs]</a>    <span class="k">def</span> <span class="nf">on_insert</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">mdlidx</span><span class="p">,</span> <span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Handle insertion of items into workflow model.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">validator</span><span class="o">.</span><span class="n">validate</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">set_dirty</span><span class="p">(</span><span class="bp">True</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Workflow.on_remove"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.workflow.Workflow.on_remove">[docs]</a>    <span class="k">def</span> <span class="nf">on_remove</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">mdlidx</span><span class="p">,</span> <span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Handle removal of items from workflow model.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">validator</span><span class="o">.</span><span class="n">validate</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">set_dirty</span><span class="p">(</span><span class="bp">True</span><span class="p">)</span>
+</div>
+    <span class="sd">&quot;&quot;&quot; Getters &amp; Setters &quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="Workflow.getModel"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.workflow.Workflow.getModel">[docs]</a>    <span class="k">def</span> <span class="nf">getModel</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">model</span>
+
+<span class="c">#    def setModel(self, model):</span>
+<span class="c">#        self.model = model</span>
+</div>
+<div class="viewcode-block" id="Workflow.get_in_filename"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.workflow.Workflow.get_in_filename">[docs]</a>    <span class="k">def</span> <span class="nf">get_in_filename</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">in_filename</span>
+</div>
+<div class="viewcode-block" id="Workflow.set_in_filename"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.workflow.Workflow.set_in_filename">[docs]</a>    <span class="k">def</span> <span class="nf">set_in_filename</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">filename</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">filename</span> <span class="o">==</span> <span class="s">&quot;&quot;</span><span class="p">:</span>
+            <span class="n">filename</span> <span class="o">=</span> <span class="bp">None</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">in_filename</span> <span class="o">!=</span> <span class="n">filename</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_dirty</span> <span class="o">=</span> <span class="bp">True</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">in_filename</span> <span class="o">=</span> <span class="n">filename</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">validator</span><span class="o">.</span><span class="n">validate</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">input_changed</span><span class="o">.</span><span class="n">emit</span><span class="p">(</span><span class="n">filename</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">changed</span><span class="o">.</span><span class="n">emit</span><span class="p">(</span><span class="s">&quot;input filename changed to </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="n">filename</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Workflow.get_out_filename"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.workflow.Workflow.get_out_filename">[docs]</a>    <span class="k">def</span> <span class="nf">get_out_filename</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">out_filename</span>
+</div>
+<div class="viewcode-block" id="Workflow.set_out_filename"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.workflow.Workflow.set_out_filename">[docs]</a>    <span class="k">def</span> <span class="nf">set_out_filename</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">filename</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">filename</span> <span class="o">==</span> <span class="s">&quot;&quot;</span><span class="p">:</span>
+            <span class="n">filename</span> <span class="o">=</span> <span class="bp">None</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">out_filename</span> <span class="o">!=</span> <span class="n">filename</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_dirty</span> <span class="o">=</span> <span class="bp">True</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">out_filename</span> <span class="o">=</span> <span class="n">filename</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">validator</span><span class="o">.</span><span class="n">validate</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">output_changed</span><span class="o">.</span><span class="n">emit</span><span class="p">(</span><span class="n">filename</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">changed</span><span class="o">.</span><span class="n">emit</span><span class="p">(</span><span class="s">&quot;output filename changed to </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="n">filename</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Workflow.get_run_compile_stats"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.workflow.Workflow.get_run_compile_stats">[docs]</a>    <span class="k">def</span> <span class="nf">get_run_compile_stats</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">run_compile_stats</span>
+</div>
+<div class="viewcode-block" id="Workflow.set_run_compile_stats"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.workflow.Workflow.set_run_compile_stats">[docs]</a>    <span class="k">def</span> <span class="nf">set_run_compile_stats</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">button_state</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">int</span><span class="p">(</span><span class="n">button_state</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">run_compile_stats</span> <span class="o">=</span> <span class="bp">False</span>
+        <span class="k">elif</span> <span class="nb">int</span><span class="p">(</span><span class="n">button_state</span><span class="p">)</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">run_compile_stats</span> <span class="o">=</span> <span class="bp">True</span>
+</div>
+<div class="viewcode-block" id="Workflow.get_run_sam2rma"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.workflow.Workflow.get_run_sam2rma">[docs]</a>    <span class="k">def</span> <span class="nf">get_run_sam2rma</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">run_sam2rma</span>
+</div>
+<div class="viewcode-block" id="Workflow.set_run_sam2rma"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.workflow.Workflow.set_run_sam2rma">[docs]</a>    <span class="k">def</span> <span class="nf">set_run_sam2rma</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">button_state</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">int</span><span class="p">(</span><span class="n">button_state</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">run_sam2rma</span> <span class="o">=</span> <span class="bp">False</span>
+        <span class="k">elif</span> <span class="nb">int</span><span class="p">(</span><span class="n">button_state</span><span class="p">)</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">run_sam2rma</span> <span class="o">=</span> <span class="bp">True</span>
+</div>
+<div class="viewcode-block" id="Workflow.is_dirty"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.workflow.Workflow.is_dirty">[docs]</a>    <span class="k">def</span> <span class="nf">is_dirty</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dirty</span>
+</div>
+<div class="viewcode-block" id="Workflow.set_dirty"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.workflow.Workflow.set_dirty">[docs]</a>    <span class="k">def</span> <span class="nf">set_dirty</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dirty</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dirty</span> <span class="o">!=</span> <span class="n">dirty</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_dirty</span> <span class="o">=</span> <span class="n">dirty</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">changed</span><span class="o">.</span><span class="n">emit</span><span class="p">(</span><span class="s">&quot;dirty flag changed to </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="n">dirty</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Workflow.is_valid"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.workflow.Workflow.is_valid">[docs]</a>    <span class="k">def</span> <span class="nf">is_valid</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">valid</span>
+</div>
+<div class="viewcode-block" id="Workflow.set_valid"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.workflow.Workflow.set_valid">[docs]</a>    <span class="k">def</span> <span class="nf">set_valid</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">valid</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">valid</span> <span class="o">!=</span> <span class="n">valid</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">valid</span> <span class="o">=</span> <span class="n">valid</span>
+</div>
+<div class="viewcode-block" id="Workflow.infile_is_valid"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.workflow.Workflow.infile_is_valid">[docs]</a>    <span class="k">def</span> <span class="nf">infile_is_valid</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">infile_valid</span>
+</div>
+<div class="viewcode-block" id="Workflow.set_infile_valid"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.workflow.Workflow.set_infile_valid">[docs]</a>    <span class="k">def</span> <span class="nf">set_infile_valid</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">valid</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">infile_valid</span> <span class="o">!=</span> <span class="n">valid</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">infile_valid</span> <span class="o">=</span> <span class="n">valid</span>
+</div>
+<div class="viewcode-block" id="Workflow.outfile_is_valid"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.workflow.Workflow.outfile_is_valid">[docs]</a>    <span class="k">def</span> <span class="nf">outfile_is_valid</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">outfile_valid</span>
+</div>
+<div class="viewcode-block" id="Workflow.set_outfile_valid"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.workflow.Workflow.set_outfile_valid">[docs]</a>    <span class="k">def</span> <span class="nf">set_outfile_valid</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">valid</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">outfile_valid</span> <span class="o">!=</span> <span class="n">valid</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">outfile_valid</span> <span class="o">=</span> <span class="n">valid</span>
+</div>
+<div class="viewcode-block" id="Workflow.get_filename"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.workflow.Workflow.get_filename">[docs]</a>    <span class="k">def</span> <span class="nf">get_filename</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_filename</span>
+</div>
+<div class="viewcode-block" id="Workflow.set_filename"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.workflow.Workflow.set_filename">[docs]</a>    <span class="k">def</span> <span class="nf">set_filename</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">filename</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">filename</span> <span class="o">==</span> <span class="s">&quot;&quot;</span><span class="p">:</span>
+            <span class="n">filename</span> <span class="o">=</span> <span class="bp">None</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_filename</span> <span class="o">!=</span> <span class="n">filename</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_dirty</span> <span class="o">=</span> <span class="bp">True</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_filename</span> <span class="o">=</span> <span class="n">filename</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">changed</span><span class="o">.</span><span class="n">emit</span><span class="p">(</span><span class="s">&quot;filename changed to </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="n">filename</span><span class="p">)</span></div></div>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../../index.html">SamSifter 0.5.0 documentation</a> &raquo;</li>
+          <li><a href="../../index.html" >Module code</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2015, Florian Aldehoff.
+      Last updated on Mar 01, 2015.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>
