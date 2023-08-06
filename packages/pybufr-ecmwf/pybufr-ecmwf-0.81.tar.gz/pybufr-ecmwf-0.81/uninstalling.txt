@@ -1,0 +1,10 @@
+If you need to ununstall this package, this trick may help you
+
+python setup.py install --record files.txt
+cat files.txt | xargs rm -rf
+
+trick found on:
+http://kmandla.wordpress.com/2009/01/08/there-is-no-setuppy-uninstall/
+
+note however that some files may be left behind at the moment
+if you use a different version of the package for uninstalling.
