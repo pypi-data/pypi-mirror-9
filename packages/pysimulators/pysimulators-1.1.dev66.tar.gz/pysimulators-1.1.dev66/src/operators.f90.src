@@ -1,0 +1,431 @@
+module operators
+
+    use, intrinsic :: iso_fortran_env, only : int32, int64, real32, real64
+    use module_pointingmatrix
+    implicit none
+
+contains
+
+
+    ! <ikind=int32,int32,int64,int64>
+    ! <isize=4,4,8,8>
+    ! <rsize=4,8,4,8>
+
+    subroutine fsr_kernel_i<isize>_r<rsize>(matrix, kernel, ncolmax, m, n)
+        integer, parameter          :: s = <isize> + <rsize>
+        integer(int64), intent(in)       :: ncolmax
+        integer(int64), intent(in)       :: m
+        integer(int64), intent(in)       :: n
+        !f2py integer*1, intent(in) :: matrix(ncolmax*m*s)
+        type(PointingElement_i<isize>_r<rsize>), intent(in) ::                 &
+            matrix(ncolmax, m)
+        logical(1), intent(inout)   :: kernel(0:n-1)
+        integer(<ikind>) :: col
+        integer(int64) :: i, j
+
+        !$omp parallel do private(col)
+        do i = 1, m
+            do j = 1, ncolmax
+                col = matrix(j,i)%index
+                if (col < 0 .or. matrix(j,i)%value == 0) cycle
+                kernel(col) = .false.
+            end do
+        end do
+        !$omp end parallel do
+
+    end subroutine
+
+
+    subroutine fsr_rot2d_kernel_i<isize>_r<rsize>(matrix, kernel, ncolmax, m, n)
+        integer, parameter          :: s = <isize> + 2 * <rsize>
+        integer(int64), intent(in)       :: ncolmax
+        integer(int64), intent(in)       :: m
+        integer(int64), intent(in)       :: n
+        !f2py integer*1, intent(in) :: matrix(ncolmax*m*s)
+        type(PointingElementRot2d_i<isize>_r<rsize>), intent(in) ::            &
+            matrix(ncolmax, m)
+        logical(1), intent(inout)   :: kernel(0:n-1)
+        integer(<ikind>) :: col
+        integer(int64) :: i, j
+
+        !$omp parallel do private(col)
+        do i = 1, m
+            do j = 1, ncolmax
+                col = matrix(j,i)%index
+                if (col < 0 .or.                                               &
+                    matrix(j,i)%r11 == 0 .and. matrix(j,i)%r21 == 0) cycle
+                kernel(col) = .false.
+            end do
+        end do
+        !$omp end parallel do
+
+    end subroutine
+
+
+    subroutine fsr_rot3d_kernel_i<isize>_r<rsize>(matrix, kernel, ncolmax, m, n)
+        integer, parameter          :: s = <isize> + 3 * <rsize>
+        integer(int64), intent(in)  :: ncolmax
+        integer(int64), intent(in)  :: m
+        integer(int64), intent(in)  :: n
+        !f2py integer*1, intent(in) :: matrix(ncolmax*m*s)
+        type(PointingElementRot3d_i<isize>_r<rsize>), intent(in) ::            &
+            matrix(ncolmax, m)
+        logical(1), intent(inout)   :: kernel(0:n-1)
+        integer(<ikind>) :: col
+        integer(int64) :: i, j
+
+        !$omp parallel do private(col)
+        do i = 1, m
+            do j = 1, ncolmax
+                col = matrix(j,i)%index
+                if (col < 0 .or. matrix(j,i)%r11 == 0) cycle
+                kernel(col) = .false.
+            end do
+        end do
+        !$omp end parallel do
+
+    end subroutine
+
+
+    ! <ikind=int32,int32,int32,int64,int64,int64>
+    ! <isize=4,4,4,8,8,8>
+    ! <rkind=real32,real32,real64,real32,real32,real64>
+    ! <rsize=4,4,8,4,4,8>
+    ! <vkind=real32,real64,real64,real32,real64,real64>
+    ! <vsize=4,8,8,4,8,8>
+
+    subroutine fsr_pT1_i<isize>_r<rsize>_v<vsize>(matrix, pT1, ncolmax, ninput,&
+                                noutput)
+        integer, parameter          :: s = <isize> + <rsize>
+        integer(int64), intent(in)       :: ncolmax
+        integer(int64), intent(in)       :: ninput
+        integer(int64), intent(in)       :: noutput
+        !f2py integer*1, intent(in) :: matrix(ncolmax*ninput*s)
+        type(PointingElement_i<isize>_r<rsize>), intent(in) ::                 &
+            matrix(ncolmax, ninput)
+        real(<vkind>), intent(inout) :: pT1(0:noutput-1)
+        integer(<ikind>) :: col
+        integer(int64) :: i, j
+
+        !$omp parallel do private(col)
+        do i = 1, ninput
+            do j = 1, ncolmax
+                col = matrix(j,i)%index
+                if (col < 0) cycle
+                !$omp atomic
+                pT1(col) = pT1(col) + matrix(j,i)%value
+            end do
+        end do
+        !$omp end parallel do
+
+    end subroutine
+
+
+    subroutine fsr_rot2d_pT1_i<isize>_r<rsize>_v<vsize>(matrix, pT1, ncolmax,  &
+                                      ninput, noutput)
+        integer, parameter          :: s = <isize> + 2 * <rsize>
+        integer(int64), intent(in)       :: ncolmax
+        integer(int64), intent(in)       :: ninput
+        integer(int64), intent(in)       :: noutput
+        !f2py integer*1, intent(in) :: matrix(ncolmax*ninput*s)
+        type(PointingElementRot2d_i<isize>_r<rsize>), intent(in) ::            &
+            matrix(ncolmax, ninput)
+        real(<vkind>), intent(inout) :: pT1(0:noutput-1)
+        integer(<ikind>) :: col
+        integer(int64) :: i, j
+
+        !$omp parallel do private(col)
+        do i = 1, ninput
+            do j = 1, ncolmax
+                col = matrix(j,i)%index
+                if (col < 0) cycle
+                !$omp atomic
+                pT1(col) = pT1(col) + sqrt(matrix(j,i)%r11**2 +                &
+                     matrix(j,i)%r21**2)
+            end do
+        end do
+        !$omp end parallel do
+
+    end subroutine
+
+
+    subroutine fsr_rot3d_pT1_i<isize>_r<rsize>_v<vsize>(matrix, pT1, ncolmax,  &
+                                      ninput, noutput)
+        integer, parameter          :: s = <isize> + 3 * <rsize>
+        integer(int64), intent(in)       :: ncolmax
+        integer(int64), intent(in)       :: ninput
+        integer(int64), intent(in)       :: noutput
+        !f2py integer*1, intent(in) :: matrix(ncolmax*ninput*s)
+        type(PointingElementRot3d_i<isize>_r<rsize>), intent(in) ::            &
+            matrix(ncolmax, ninput)
+        real(<vkind>), intent(inout) :: pT1(0:noutput-1)
+        integer(<ikind>) :: col
+        integer(int64) :: i, j
+
+        !$omp parallel do private(col)
+        do i = 1, ninput
+            do j = 1, ncolmax
+                col = matrix(j,i)%index
+                if (col < 0) cycle
+                !$omp atomic
+                pT1(col) = pT1(col) + matrix(j,i)%r11
+            end do
+        end do
+        !$omp end parallel do
+
+    end subroutine
+
+
+    subroutine fsr_pTx_pT1_i<isize>_r<rsize>_v<vsize>(matrix, input, pTx, pT1, &
+                                    ncolmax, ninput, noutput)
+        integer, parameter          :: s = <isize> + <rsize>
+        integer(int64), intent(in)       :: ncolmax
+        integer(int64), intent(in)       :: ninput
+        integer(int64), intent(in)       :: noutput
+        !f2py integer*1, intent(in) :: matrix(ncolmax*ninput*s)
+        type(PointingElement_i<isize>_r<rsize>), intent(in) ::                 &
+            matrix(ncolmax, ninput)
+        real(<vkind>), intent(in)    :: input(ninput)
+        real(<vkind>), intent(inout) :: pTx(0:noutput-1)
+        real(<vkind>), intent(inout) :: pT1(0:noutput-1)
+        real(<rkind>) :: val
+        integer(<ikind>) :: col
+        integer(int64) :: i, j
+
+        !$omp parallel do private(col, val)
+        do i = 1, ninput
+            do j = 1, ncolmax
+                col = matrix(j,i)%index
+                if (col < 0) cycle
+                val = matrix(j,i)%value
+                !$omp atomic
+                pTx(col) = pTx(col) + val * input(i)
+                !$omp atomic
+                pT1(col) = pT1(col) + val
+            end do
+        end do
+        !$omp end parallel do
+
+    end subroutine
+
+
+    subroutine fsr_rot3d_pTx_pT1_i<isize>_r<rsize>_v<vsize>(matrix, input, pTx,&
+                                          pT1, ncolmax, ninput, noutput)
+        integer, parameter          :: s = <isize> + 3 * <rsize>
+        integer(int64), intent(in)       :: ncolmax
+        integer(int64), intent(in)       :: ninput
+        integer(int64), intent(in)       :: noutput
+        !f2py integer*1, intent(in) :: matrix(ncolmax*ninput*s)
+        type(PointingElementRot3d_i<isize>_r<rsize>), intent(in) ::            &
+            matrix(ncolmax, ninput)
+        real(<vkind>), intent(in)    :: input(3,ninput)
+        real(<vkind>), intent(inout) :: pTx(0:noutput-1)
+        real(<vkind>), intent(inout) :: pT1(0:noutput-1)
+        real(<rkind>) :: val
+        integer(<ikind>) :: col
+        integer(int64) :: i, j
+
+        !$omp parallel do private(col, val)
+        do i = 1, ninput
+            do j = 1, ncolmax
+                col = matrix(j,i)%index
+                if (col < 0) cycle
+                val = matrix(j,i)%r11
+                !$omp atomic
+                pTx(col) = pTx(col) + val * input(1,i)
+                !$omp atomic
+                pT1(col) = pT1(col) + val
+            end do
+        end do
+        !$omp end parallel do
+
+    end subroutine
+
+
+    ! <ikind=int32,int32,int64,int64>
+    ! <isize=4,4,8,8>
+    ! <rkind=real32,real64,real32,real64>
+    ! <rsize=4,8,4,8>
+
+    subroutine fsr_restrict_i<isize>_r<rsize>(matrix, mask, ncolmax, m, n, ncol)
+        integer, parameter          :: s = <isize> + <rsize>
+        integer(int64), intent(in)  :: ncolmax
+        integer(int64), intent(in)  :: m
+        integer(int64), intent(in)  :: n
+        !f2py integer*1, intent(inout) :: matrix(ncolmax*m*s)
+        type(PointingElement_i<isize>_r<rsize>), intent(inout) ::              &
+            matrix(ncolmax, m)
+        logical*1, intent(in)         :: mask(0:n-1)
+        integer(<ikind>), intent(out) :: ncol
+        integer(<ikind>)              :: new_index(0:n-1), col
+        integer(int64)                :: i, j
+
+        ncol = 0
+        do i = 0, n-1
+            if (mask(i)) then
+                new_index(i) = ncol
+                ncol = ncol + 1
+            else
+                new_index(i) = -1
+            end if
+        end do
+
+        !$omp parallel do private(col)
+        do i = 1, m
+            do j = 1, ncolmax
+                col = matrix(j,i)%index
+                if (col < 0) cycle
+                matrix(j,i)%index = new_index(col)
+            end do
+        end do
+        !$omp end parallel do
+
+    end subroutine
+
+    subroutine fsr_rot2d_restrict_i<isize>_r<rsize>(matrix, mask, ncolmax, m,  &
+                                                    n, ncol)
+        integer, parameter          :: s = <isize> + 2 * <rsize>
+        integer(int64), intent(in)  :: ncolmax
+        integer(int64), intent(in)  :: m
+        integer(int64), intent(in)  :: n
+        !f2py integer*1, intent(inout) :: matrix(ncolmax*m*s)
+        type(PointingElementRot2d_i<isize>_r<rsize>), intent(inout) ::         &
+            matrix(ncolmax, m)
+        logical*1, intent(in)         :: mask(0:n-1)
+        integer(<ikind>), intent(out) :: ncol
+        integer(<ikind>)              :: new_index(0:n-1), col
+        integer(int64)                :: i, j
+
+        ncol = 0
+        do i = 0, n-1
+            if (mask(i)) then
+                new_index(i) = ncol
+                ncol = ncol + 1
+            else
+                new_index(i) = -1
+            end if
+        end do
+
+        !$omp parallel do private(col)
+        do i = 1, m
+            do j = 1, ncolmax
+                col = matrix(j,i)%index
+                if (col < 0) cycle
+                matrix(j,i)%index = new_index(col)
+            end do
+        end do
+        !$omp end parallel do
+
+    end subroutine
+
+    subroutine fsr_rot3d_restrict_i<isize>_r<rsize>(matrix, mask, ncolmax, m,  &
+                                                    n, ncol)
+        integer, parameter          :: s = <isize> + 3 * <rsize>
+        integer(int64), intent(in)  :: ncolmax
+        integer(int64), intent(in)  :: m
+        integer(int64), intent(in)  :: n
+        !f2py integer*1, intent(inout) :: matrix(ncolmax*m*s)
+        type(PointingElementRot3d_i<isize>_r<rsize>), intent(inout) ::         &
+            matrix(ncolmax, m)
+        logical*1, intent(in)         :: mask(0:n-1)
+        integer(<ikind>)              :: new_index(0:n-1), col
+        integer(<ikind>), intent(out) :: ncol
+        integer(int64)                :: i, j
+
+        ncol = 0
+        do i = 0, n-1
+            if (mask(i)) then
+                new_index(i) = ncol
+                ncol = ncol + 1
+            else
+                new_index(i) = -1
+            end if
+        end do
+
+        !$omp parallel do private(col)
+        do i = 1, m
+            do j = 1, ncolmax
+                col = matrix(j,i)%index
+                if (col < 0) cycle
+                matrix(j,i)%index = new_index(col)
+            end do
+        end do
+        !$omp end parallel do
+
+    end subroutine
+
+
+    ! <rkind=real32,real64>
+    ! <rsize=4,8>
+
+    subroutine trexp_direct_r<rsize>(input, ninputs, ndetectors, isize,        &
+            istride, output, noutputs, osize, ostride, tau, ntaus)
+
+        use module_operators, only : trexp_direct_inplace_r<rsize>,            &
+                                     trexp_direct_outplace_r<rsize>
+        integer(int64), intent(in)   :: ninputs, ndetectors, isize, istride
+        integer(int64), intent(in)   :: noutputs, osize, ostride, ntaus
+        real(<rkind>), intent(inout) :: input(ninputs)
+        real(<rkind>), intent(inout) :: output(noutputs)
+        real(<rkind>), intent(in)    :: tau(ntaus)
+
+        integer(int64) :: i
+
+        if (loc(input) == loc(output)) then
+            !$omp parallel do
+            do i = 1, ndetectors
+                call trexp_direct_inplace_r<rsize>(                            &
+                         input((i-1)*istride+1:(i-1)*istride+isize),           &
+                         tau(min(i, ntaus)))
+            end do
+            !$omp end parallel do
+        else
+            !$omp parallel do
+            do i = 1, ndetectors
+                call trexp_direct_outplace_r<rsize>(                           &
+                         input((i-1)*istride+1:(i-1)*istride+isize),           &
+                         output((i-1)*ostride+1:(i-1)*ostride+osize),          &
+                         tau(min(i, ntaus)))
+            end do
+            !$omp end parallel do
+        end if
+
+    end subroutine
+
+
+    subroutine trexp_transpose_r<rsize>(input, ninputs, ndetectors, isize,     &
+            istride, output, noutputs, osize, ostride, tau, ntaus)
+
+        use module_operators, only : trexp_transpose_inplace_r<rsize>,         &
+                                     trexp_transpose_outplace_r<rsize>
+        integer(int64), intent(in)   :: ninputs, ndetectors, isize, istride
+        integer(int64), intent(in)   :: noutputs, osize, ostride, ntaus
+        real(<rkind>), intent(inout) :: input(ninputs)
+        real(<rkind>), intent(inout) :: output(noutputs)
+        real(<rkind>), intent(in)    :: tau(ntaus)
+
+        integer(int64) :: i
+
+        if (loc(input) == loc(output)) then
+            !$omp parallel do
+            do i = 1, ndetectors
+                call trexp_transpose_inplace_r<rsize>(                         &
+                         input((i-1)*istride+1:(i-1)*istride+isize),           &
+                         tau(min(i, ntaus)))
+            end do
+            !$omp end parallel do
+        else
+            !$omp parallel do
+            do i = 1, ndetectors
+                call trexp_transpose_outplace_r<rsize>(                        &
+                         input((i-1)*istride+1:(i-1)*istride+isize),           &
+                         output((i-1)*ostride+1:(i-1)*ostride+osize),          &
+                         tau(min(i, ntaus)))
+            end do
+            !$omp end parallel do
+        end if
+
+    end subroutine
+
+
+end module operators
