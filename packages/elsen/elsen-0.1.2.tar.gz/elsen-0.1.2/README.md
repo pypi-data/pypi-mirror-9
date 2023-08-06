@@ -1,0 +1,410 @@
+<p align="center">
+  <a href="http://elsen.co">
+    <img src="https://elsen.co/img/apple-touch-icon-144x144.png"/>
+  </a>
+</p>
+
+Elsen Python
+============
+
+This library is the Python bindings to the Elsen API that integrate with the
+existing Financial Python modeling tools like Pandas and NumPy/SciPy.
+
+Easy Install
+------------
+
+For ease of use, it is recommended that you use Anaconda Python Distribution
+which is available for Windows, Mac OSX and Linux. It is a self-contained Python
+environment that is bundles all the common financial modeling tools.
+
+**[Download Anaconda](https://store.continuum.io/cshop/anaconda/)**
+
+**Mac OS X**
+
+1) [Install Anaconda](http://docs.continuum.io/anaconda/install.html#mac-install)
+
+2) Launch Terminal from the Applications:Utilities folder.
+
+3) Clone the source code for the library.
+
+```bash
+$ git clone git@github.com:elsen-trading/elsen-python.git
+```
+
+If you do not have Git currently installed then a window will pop up to ask you to install Developer Tools. Click Continue and the run the above command again.
+
+4) Move into the library source folder.
+
+```bash
+$ cd elsen-python 
+```
+
+5) Install the Elsen Python library.
+
+```bash
+$ python setup.py install
+```
+
+6) Run the example code.
+
+```bash
+$ python Example.py
+```
+
+Or to launch straight into the IPython notebook.
+
+```
+$ ipython notebook
+```
+
+**Linux**
+
+1) [Install Anaconda](http://docs.continuum.io/anaconda/install.html#linux-install)
+
+2) If you do not have Git installed, then install it.
+
+```bash
+sudo apt-get install git
+```
+
+3) Open the Dash by clicking the Ubuntu icon in the upper-left, type "terminal",
+and select the Terminal application from the results that appear.
+
+4) Clone the source code for the library.
+
+```bash
+$ git clone git@github.com:elsen-trading/elsen-python.git
+```
+
+5) Move into the library source folder.
+
+```bash
+$ cd elsen-python 
+```
+
+6) Install the Elsen Python library.
+
+```bash
+$ python setup.py install
+```
+
+7) Run the example code.
+
+```bash
+$ python Example.py
+```
+
+Or to launch straight into the IPython notebook.
+
+```
+$ ipython notebook
+```
+
+**Windows**
+
+Custom Install
+--------------
+
+**Setuptools**
+
+```bash
+$ pip install -r requirements.txt
+$ python setup.py install
+```
+
+Optionally several common libraries can be integrated:
+
+```bash
+$ pip install pandas
+$ pip install numpy
+$ pip install ipython
+$ pip install matplotlib
+```
+
+Usage
+-----
+
+The library is entirely contained in the ``elsen`` module:
+
+```python
+from elsen import *
+```
+
+**Authentication**
+
+To authenticate with the system you'll require four pieces of information
+contained in your *Elsen Welcome* email:
+
+* Authentication token
+* Application id 
+* Username
+* Password
+
+```python
+elsen = Elsen()
+
+elsen.authenticate(
+  app_id   = app_id,
+  username = 'bob',
+  password = 'trader'
+)
+```
+
+Adding a new application.
+
+```python
+elsen.add_application(
+  email  = 'bob@elsen.co'
+  app_id = app_id
+)
+```
+
+Once logged in, new users can be added to an application.
+
+```python
+elsen.add_user(
+  app_id,
+  username,
+  password,
+  # Optional fields.
+  first_name = 'Bob',
+  last_name  = 'Trader',
+  email      = 'bob@elsen.co'
+)
+```
+
+**Exchanges**
+
+```python
+In [1]: elsen.get_exchanges()
+Out[1]: [u'NASDAQ', u'NYSE', u'AMEX']
+```
+
+**Indices**
+
+```python
+In [1]: elsen.get_indices()
+Out[1]: [u'SP500']
+```
+
+**Filters**
+
+To get the most common ( in terms of company count ) filters available in the
+system query the common filters function. The top 10 available in the system
+are as follows:
+
+* ``avgvol30``     - Average amount of shares traded in a 30-day period.
+* ``phigh250``     - Percentage to highest price that a stock has traded at during the previous year.
+* ``dailyvolume``  - Average amount of shares traded in a day.
+* ``currentprice`` - Real time price of a security or the most recent listed.
+* ``plow250``      - Percentage to lowest price that a stock has traded at during the previous year.
+* ``inc_eibt``     - Net income before taxes
+- ``inc_sdws``     - Weighted average common shares outstanding including dilution due to options.
+- ``inc_sdai``     - EPS (taking into account options) including expenses caused by unusual events.
+- ``inc_sbas``     - Weighted average common shares outstanding less dilution.
+- ``inc_sbai``     - EPS including expenses caused by unusual events such as natural disasters, etc.
+
+
+```python
+n [1]: elsen.get_filters()[0:10]
+Out[1]: 
+[<<Filter: name=inc_vpti desc='Income before taxes excluding non-recurring charges and/or credits.' count=500>>,
+ <<Filter: name=inc_ndep desc='Depreciation Expense' count=2>>,
+ <<Filter: name=inc_xnic desc='Income available excluding expenses caused by extraordinary events.' count=504>>,
+ <<Filter: name=inc_nama desc='Amortization of Acquisition Costs' count=0>>,
+ <<Filter: name=inc_vrrp desc='Reported Ordinary Profit' count=0>>,
+ <<Filter: name=inc_sbtr desc='Bank Total Revenue' count=43>>,
+ <<Filter: name=inc_stps desc='Total Plan Service Cost' count=83>>,
+ <<Filter: name=inc_vdcd desc='Defined Contribution Expense - Domestic' count=30>>,
+ <<Filter: name=inc_vxtc desc='Transition Costs - Post-Retirement' count=8>>,
+ <<Filter: name=bal_qtsn1 desc='Number of common shares owned by the company itself and its subsidiaries' count=477>>]
+```
+
+```python
+In [2]: elsen.search_filters('profit')
+Out[2]: 
+[<<Filter: name=inc_vrrp desc='Reported Ordinary Profit' count=0>>,
+ <<Filter: name=inc_vnbp desc='Reported Net Business Profits' count=0>>,
+ <<Filter: name=inc_vopp desc='Reported Operating Profit' count=2>>,
+ <<Filter: name=inc_ndta desc='Dealer Trading Account Profit' count=1>>,
+ <<Filter: name=inc_migk desc='New Business Profit' count=0>>,
+ <<Filter: name=inc_ttax desc='All taxes on the basis of profits owned to federal, state and/or foreign government.' count=484>>,
+ <<Filter: name=inc_vgrp desc='Reported Gross Profit' count=0>>,
+ <<Filter: name=inc_vopr desc='Reported Operating Profit Margin' count=0>>,
+ <<Filter: name=inc_sgrp desc='Gross Profit' count=386>>,
+ <<Filter: name=inc_mibz desc='Underwriting Profit or Loss' count=5>>,
+ <<Filter: name=inc_snpm desc='The ratio of net profits to revenues (typically expressed in %).' count=477>>,
+ <<Filter: name=inc_ninc desc='A company's total earnings or profit.' count=504>>]
+```
+
+**Indicators**
+
+```python
+In [1]: elsen.get_indicators()
+Out[1]: 
+[<<Indicator: trailing>>,
+ <<Indicator: cross>>,
+ <<Indicator: ema>>,
+ <<Indicator: rsi>>,
+ <<Indicator: macd>>,
+ <<Indicator: bollingerband>>,
+ <<Indicator: sma>>]
+```
+
+*Relative Strength Index*:
+
+```python
+In[1]: rsi = elsen.get_indicators('rsi')
+
+In[2]: print rsi.short_desc
+The Relative Strength Index (RSI) measures the trend of a securities’ price by
+measuring the ratio of average gains to average losses, and converting it to an
+index from 1 to 100.
+
+In [3]: rsi.inputs()
+{u'action': u'BUY|SELL',
+ u'lookback': u'# lookback periods',
+ u'lower': u'Smallest value that will trigger an activation, inclusive.',
+ u'name': u'RSI',
+ u'upper': u'Largest value that will trigger an activation, inclusive.'}
+```
+
+*Simple Moving Average*:
+
+```python
+In [1]: sma = elsen.get_indicators('sma')
+
+In [2]: print sma.short_desc 
+The simple moving average is a trailing price indicator, indicating trends in
+securities prices by measuring the average closing price of a select number of
+periods prior to the current period.
+
+In [3]: print sma.inputs()
+{u'action': u'BUY|SELL',
+ u'upper': u'Largest value that will trigger an activation, inclusive.',
+ u'lower': u'Smallest value that will trigger an activation, inclusive.',
+ u'lookback': u'Window size',
+ u'name': u'SMA'}
+```
+
+**Strategies**
+
+```python
+# Buy when oversold
+ind1 = Indicator(action=BUY, name=RSI, lower=1, upper=30, lookback=21)
+
+# Sell when overbought
+ind2 = Indicator(action=SELL, name=RSI, lower=70, upper=100, lookback=21)
+
+# Filter out low price and low volume companies
+flt1 = Filter(name='currentprice', min=0, max=200)
+flt2 = Filter(name='avgvol30', min=10000000.0, max=3400000000.0)
+
+# Setup the strategy
+strategy = elsen.setup_strategy(
+    universe   = 'SP900',
+    indicators = [ind1, ind2],
+    filters    = [flt1, flt2],
+    interval   = 1)
+```
+
+**Simulations**
+
+To execute the backtest apply pass the strategy object as a argument to
+``setup_backtest`` along with a date range.
+
+```python
+backtest = elsen.setup_backtest(
+    strategy = strategy,
+    start    = '2014-5-1',
+    end      = '2014-12-1')
+
+# Run the backtest, wait for the results.
+backtest.join(timing=True)
+backtest.details()
+```
+
+To pull the specific details for a backtest in the system, given a specific
+backtest id. Use the ``detailsfor`` function.
+
+```python
+In[1]: elsen.detailsfor('dfd7faf3-e13c-4293-b55d-33bbd4fb0f9f')
+```
+
+**Metrics**
+
+```python
+In[1]: print 'Returns: $%s' % backtest.returns()
+Returns: $40193.9147
+
+In[2]: print 'Sharpe Ratio: %s' % backtest.sharpe()
+Sharpe Ratio: 0.77072534093809145889
+
+In[3]: print 'Alpha: %s' % backtest.alpha()
+Alpha: -0.140887764298623
+
+In[4]: print 'Beta: %s' % backtest.beta()
+Beta: 0.0000752396488764315
+```
+
+To get all of the metrics for the Backtest object you can call
+``help(backtest)`` to get the list of all available properties and methods.
+
+The backtest object itself can also be converted to a Pandas dataframe, JSON
+object, or serialized to a file.
+
+```python
+In[1]: backtest.to_dataframe()
+...
+In[2]: backtest.to_json()
+...
+
+In [3]: backtest.to_dataframe()['drawdown']
+Out[4]: 
+0    45.48239846246275415098
+Name: drawdown, dtype: object
+```
+
+To pull the individual trades for a backtest use the ``trades`` function which
+can generate the resulting dataframe object.
+
+```python
+In[1]: backtest.trades()
+...
+In[2]: backtest.trades().to_dataframe()
+```
+
+Documentation
+-------------
+
+```bash
+$ cd docs
+$ make html
+$ make latexpdf
+```
+
+Filing Issues
+-------------
+
+If you file an issue with Elsen support then please put the following line at
+the beginning of your script.
+
+```python
+enable_debugging()
+```
+
+In your bug report/email to support please include the following
+
+* Script or IPython Notebook used to run your program.
+* The output file ``elsen-python.log``.
+
+IPython
+-------
+
+The use cases are also provided in IPython notebook form for interactive usage:
+
+* [Visualization](Visualization.ipynb)
+
+```bash
+$ ipython notebook Visualization.ipynb
+```
