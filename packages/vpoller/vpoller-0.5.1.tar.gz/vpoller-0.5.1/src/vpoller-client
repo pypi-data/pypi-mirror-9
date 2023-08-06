@@ -1,0 +1,115 @@
+#!/usr/bin/env python
+#
+# Copyright (c) 2013-2015 Marin Atanasov Nikolov <dnaeon@gmail.com>
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+# 1. Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer
+#    in this position and unchanged.
+# 2. Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE AUTHOR(S) ``AS IS'' AND ANY EXPRESS OR
+# IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+# OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+# IN NO EVENT SHALL THE AUTHOR(S) BE LIABLE FOR ANY DIRECT, INDIRECT,
+# INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+# NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+# DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+# THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+# THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+"""
+vpoller-client is the vPoller Client application.
+
+It is used for sending client requests to vPoller Proxy/Workers for
+discovering and polling of vSphere Object properties.
+
+"""
+
+from __future__ import print_function
+
+import logging
+
+from vpoller import __version__
+from vpoller.client import VPollerClient
+from docopt import docopt
+
+def main():
+
+    usage="""
+Usage:
+    vpoller-client [options] -m <method> -V <host>
+
+Options:
+    -h, --help                                  Display this usage info
+    -v, --version                               Display version and exit
+    -d, --debug                                 Debug mode, be more verbose
+    -m <method>, --method <method>              The method to be processed during the client request
+    -V <host>, --vsphere-host <host>            The vSphere host to send the request to
+    -n <name>, --name <name>                    Name of the object, e.g. ESXi hostname, datastore URL, etc.
+    -p <properties>, --properties <properties>  Name of the property as defined by the vSphere Web SDK
+    -r <retries>, --retries <retries>           Number of times to retry if a request times out [default: 3]
+    -t <timeout>, --timeout <timeout>           Timeout after that period of milliseconds [default: 10000]
+    -e <endpoint>, --endpoint <endpoint>        Endpoint of vPoller Proxy/Worker the client connects to
+                                                [default: tcp://localhost:10123]
+    -k <key>, --key <key>                       Provide additional key for data filtering
+    -c <counter-id>, --counter-id <counter-id>  Retrieve performance metrics with this counter ID
+    -s <max-sample>, --max-sample <max-sample>  Max number of performance samples to retrieve
+    -i <instance>, --instance <instance>        Performance metric instance name
+    -T <interval> --perf-interval <interval>    Historical performance interval key
+    -U <username>, --guest-username <username>  Username to use for authentication in guest system
+    -P <password>, --guest-password <password>  Password to use for authentication in guest system
+    -H <helper>, --helper <helper>              Specify a helper module to use for processing of the
+                                                result message, e.g. 'vpoller.helpers.zabbix'
+
+Examples:
+    vpoller-client -m vm.discover -V vc01.example.org
+    vpoller-client -m vm.discover -V vc01.example.org -p runtime.powerState
+    vpoller-client -m vm.get -V vc01.example.org -n vm01.example.org -p summary.overallStatus
+    vpoller-client -m vm.diks.get -V vc01.example.org -n vm01.example.org -k /var
+    vpoller-client -m vm.process.get -V vc01.example.org -n vm01.example.org -U user -P pass
+
+"""
+
+    args = docopt(usage, version=__version__)
+
+    level = logging.DEBUG if args['--debug'] else logging.INFO
+    logging.basicConfig(
+        format='[%(asctime)s - %(levelname)s/%(processName)s] %(message)s',
+        level=level
+    )
+
+    client = VPollerClient(
+        endpoint=args["--endpoint"],
+        retries=int(args["--retries"]),
+        timeout=int(args["--timeout"])
+    )
+
+    # Message we send out for processing
+    msg = {
+        'method': args['--method'],
+        'hostname': args['--vsphere-host'],
+        'name': args['--name'],
+        'username': args['--guest-username'],
+        'password': args['--guest-password'],
+        'key': args['--key'],
+        'properties': args['--properties'].split(',') if args['--properties'] else None,
+        'counter-id': args['--counter-id'],
+        'instance': args['--instance'],
+        'max-sample': args['--max-sample'],
+        'perf-interval': args['--perf-interval'],
+        'helper': args['--helper'],
+    }
+
+    data = client.run(msg)
+
+    print(data.encode('utf-8'))
+
+if __name__ == '__main__':
+    main()
