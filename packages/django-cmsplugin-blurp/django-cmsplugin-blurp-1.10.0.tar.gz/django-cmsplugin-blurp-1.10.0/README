@@ -1,0 +1,313 @@
+Settings
+========
+
+You must declare blocks in a dictionnary setting named
+CMS_PLUGIN_BLURP_RENDERERS, each block define a name, a renderer
+class and its configuration. The key of the dictionnary define the
+slug of each renderer instance, and the value associated to this
+slug must be a dictionnary containing at least a key called 'name'
+containing the human name of this instance.
+
+Renderer
+========
+
+A renderer is a class with the following interface::
+
+      class Renderer(object):
+          def __init__(self, slug, config):
+            pass
+
+          def render(self, context):
+              '''Return the context to render the template'''
+              pass
+
+          def render_template(self):
+              '''Return a template path or a Template object'''
+              pass
+
+The render method must return a context which will be passed to its
+template, the render_template method must return template path or a
+Django Template object.
+
+You can also define the following class method::
+
+    @classmethod
+    def check(cls, config)
+        '''Validate the config dictionnary and yield an ASCII string for each error'''
+         pass
+
+You can raise ImproperlyConfigured when the configuration does not validate.
+
+There is two abstract helper classes:
+ - `cmsplugin_blurp.renderers.base.BaseRenderer`
+   which provide abstract method for checking that `render()` and
+   `render_template()` are properly overriden and a generic
+   `check()` method which call the `check_config()` config method
+   which must return an iterator yielding strings if errors are
+   found
+ - `cmsplugin_blurp.renderers.template.TemplateRenderer`
+   an abstract subclass of the `BaseRenderer` which provide a
+   generic implementation of `render_template()` which extract the
+   template path from the configuration dictionnary using the key
+   `template_name` and if it is not found return a template parsed from the
+   value of the key `template`.
+
+Common configuration keys
+=========================
+
+- ``ajax``  if True this key indicate to the base plugin to render the plugin using an AJAX request.
+  Requires jQuery to be loaded previously by the page using the plugin.
+
+  You must add the ``cmsplugin_blurp.urls`` to your urls::
+
+       ...
+       url(r'^cmsplugin_blurp/', include('cmsplugin_blurp.urls')),
+       ...
+
+- ``ajax_refresh`` if more than zero it indicates the time between refresh of
+  the plugin content using the AJAX request otherwise the content is never
+  refreshed after the first loading.
+
+Static renderer
+===============
+
+The simplest renderer is the static renderer you can configure one like this::
+
+    CMS_PLUGIN_PLUGIN_BLURP_RENDERERS = {
+        'homepage_text': {
+          'name': u'Homepage text',
+          'class': 'cmsplugin_blurp.renderers.static.Renderer',
+          'content': u'This is the text for the homepage',
+          'template': 'homepage_text.html',
+        }
+    }
+
+The template `homepage_text.html` could look like this::
+
+    {{ config.content }}
+
+
+Data source renderer
+====================
+
+It load one or more local (using a `file://...` URL) or remote file (using
+an `http://...` or `https://...` URL) and parses them using the
+following parsers:
+
+  - a json parser using the `json` package,
+  - an XML parser using the `etree.ElementTree` package,
+  - a RSS parser using the `feedparser` package feedparser,
+  - a CSV parser using the `csv` package.
+
+The resulting data structure can be cached, in this case loading is
+asynchronous using a thread.
+
+The config dictonnary can contain the following keys:
+- `name`, the human name of this renderer instance,
+- `source`, a list of dictionnary defining the remote files, the
+content of the dictionnary is described later,
+- `template`, the template in which to render the data sources, it
+will receive a variable named `data_sources` in its context
+containing property named after the `slug` field of each source.
+
+A source definition is a dictionnary containing the following keys:
+    - `slug`, the field name to hold this source parsed value in the
+      template, for example with this configuration:
+
+
+          ...
+          'slug': 'source1',
+          ...
+
+      you can access it with this template fragment:
+
+          {{ data_sources.source1 }}
+
+
+    - `url`, the URL of the file for this source, the scheme file://,
+      http://, and https:// are supported,
+    - `auth_mech`, whether an authentication mechanism is required by
+      the http[s]:// URL, it can be `hmac-sha1`, `hmac-sha256` or
+      `oauth2`. The HMAC mechanism is specified later; the OAuth2
+      mechanisme is the classical OAuth2 HTTP bearer authentication
+      mechanism but it prequires that you are using django-allauth and
+      that an access token for the provider `authentic2` can be
+      retrieved for the current user,
+    - `signature_key`, when using the HMAC authentication mechanism it
+      holds the secret key used to sign the exchanges,
+    - `async`, if True make refreshing the cache asynchronous (using a thread),
+      beware that if the cache is currently empty a synchronous update will be
+      done, lock are used to limit update thread to one by URL, but it you use
+      a worker engine their could be multiple thread trying to update the same
+      cache in different workers, value is optional and its default is False,
+    - `timeout`, a timeout for making the HTTP request, it is optional
+      and it default to 10 seconds,
+    - `refresh`, how long to cache the parsed value of the source, it
+      is optional and it defaults to 3600 seconds,
+    - `verify_certificate`, when the scheme of URL is https, it
+      indicates whether to check the SSL certificate against configured
+      certifate auhtorities, it is optional and defaults to True,
+    - `allow_redirects`, whether to follow HTTP redirects when getting
+      the data source file, it is optional and defaults to False,
+    - `parser_type`, how to parse the loaded file, it can be `json`,
+      `xml`, `rss`, 'csv' or 'raw' if you do not want any parsing to be
+      done, it is optional and defaults to 'raw',
+    - `content_type`, when doing an HTTP request it configures the
+      content of the `Accept` header, it is optional and automatically
+      set using the `parser_type` value.
+    - `limit`, when parsing an RSS file it limits the returned to first
+      `limit` entries sorted by date, it is optional and defaults to 0
+      meaning no limit,
+    - `csv_params`, when parsing a csv file this dictionnary is passed
+      as keyword arguments to the `reader()` or `DictReader()`
+      constructors, depending on whether the `fieldnames` arguments is
+      present,
+    - `user_context`, whether the user must be part of the cache key. For retro
+      compatibility If authentication mechanism is OAuth2, it defaults to True
+      otherwise to False.
+
+Exemple with the JSON parser
+----------------------------
+
+The configuration::
+
+    CMS_PLUGIN_BLURP_RENDERERS = {
+        'json': {
+             'name': u'My JSON content',
+             'class': 'cmsplugin_blurp.renderer.data_source.Renderer',
+             'sources': [
+                  {
+                      'slug': 'json_source',
+                      'url': 'http://example.net/file.json',
+                      'parser_type': 'json',
+                      'auth_mech': 'hmac-sha1',
+                      'signature_key': 'abcdefgh0123',
+                      'refresh': 600,
+                  }
+             ]
+             'template': 'my-json-block.html',
+        }
+    }
+
+The `my-json-block.html` template::
+
+    <dl>
+    {% for key, value in data_sources.json_source.iteritems %}
+        <dt>{{ key }}</dt>
+        <dd>{{ value }}</dd>
+    {% endfor %}
+    </dl>
+
+Exemple with the CSV parser
+---------------------------
+
+We suppose that the file `/var/spool/data/timesheet.csv` contains
+the following datas::
+
+     Monday,"10-12,14-17"
+     Tuesday,"10-12,14-18"
+     ....
+
+You can present this file using this configuration::
+
+    CMS_PLUGIN_BLURP_RENDERERS = {
+        'timesheet': {
+            'name': u'Timesheet of our organization',
+            'class': 'cmsplugin_blurp.renderer.data_source.Renderer',
+            'sources': [
+                {
+                    'slug': 'timesheet',
+                    'url': 'file:///var/spool/data/timesheet.csv',
+                    'parser_type': 'csv',
+                    'refresh': 86400,
+                    'csv_params': {
+                        'fieldnames': [
+                            'day',
+                            'opening_hours',
+                        ]
+                    }
+                }
+             ],
+             'template': 'timesheet.html',
+         }
+      }
+
+and the following template::
+
+    <table>
+        <thead>
+            <tr><td>Day</td><td>Opening hours</td></tr>
+        </thead>
+        <tbody>
+            {% for row in data_sources.timesheet %}
+                <tr><td>{{ row.day }}</td><td>{{ row.opening_hours }}</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+SQL Renderer
+============
+
+Configuration::
+
+    CMS_PLUGIN_BLURP_RENDERERS = {
+        'student_table': {
+            'name': u'Table of students',
+            'class': 'cmsplugin_blurp.renderer.sql.Renderer',
+            'url': 'postgresql://scott:tiger@localhost:5432/mydatabase',
+            'views': {
+                'students': {
+                    'query': 'SELECT name, age, birthdate FROM student WHERE class_id = :class_id',
+                    'bindparams': {
+                        'class_id': 12
+                    }
+                }
+            }
+            'template': 'student-table.html',
+        }
+   }
+
+Template::
+
+    <!-- student-table.html -->
+    <table>
+        {% for row in students %}
+            <tr>
+                <td>{{ row.name }}</td>
+                <td>{{ row.age  }}</td>
+                <td>{{ row.birthdate }}</td>
+            </tr>
+        {% endfor %}
+    </table>
+
+Template tag
+============
+
+render_blurp
+------------
+
+You can render a block in any template using the template tag ``render_blurp``:
+
+    {% load blurp_tags %}
+
+    {% render_blurp "student_table" %}
+
+blurp block tag
+---------------
+
+You can insert the context generated by a blurp in your current template to do
+the templating yourself, beware that you will lose ajaxification and dynamic
+reloading if you use this tag as we cannot send your inline template to the
+ajax endpoint::
+
+    {% load blurp_tags %}
+
+    {% blurp "student_table %}
+        {% for row in students %}
+            <tr>
+                <td>{{ row.name }}</td>
+                <td>{{ row.age  }}</td>
+                <td>{{ row.birthdate }}</td>
+            </tr>
+        {% endfor %}
+    {% endblurp %}

@@ -1,0 +1,45 @@
+{% load i18n %}
+{% load sekizai_tags %}
+
+{% addtoblock "js" %}
+  <script type="text/javascript">
+      (function($) {
+        if ($ == undefined) {
+          alert('jQuery is missing');
+        } else {
+          var $container = $("#block-plugin-ajax-{{ plugin_id }}");
+          var ajax_refresh = {{ ajax_refresh }};
+          var exponential_refresh = ajax_refresh;
+          var reload = function () {
+            $container.removeClass('block-plugin-ajax-failed');
+            $container.addClass('block-plugin-ajax-loading');
+            $.getJSON('{% url 'ajax_render' plugin_id=plugin_id %}{{ plugin_args|safe }}', function (result) {
+              $container.html(result.content);
+              $container.removeClass('block-plugin-ajax-loading');
+              if (ajax_refresh > 0) {
+                setTimeout(reload, ajax_refresh*1000);
+              }
+              exponential_refresh = ajax_refresh;
+            })
+            .fail(function (jqXHR) {
+              $container.addClass('block-plugin-ajax-failed');
+              if (ajax_refresh > 0 && jqXHR.status != 404) {
+                /* continue polling but use exponential backoff */
+                exponential_refresh = exponential_refresh * 2;
+                setTimeout(reload, exponential_refresh*1000);
+              }
+            })
+          };
+          $(document).ready(function(){
+            reload();
+          });
+        }
+      })($)
+  </script>
+{% endaddtoblock %}
+
+<div id="block-plugin-ajax-{{ plugin_id }}" class='block-plugin-ajax block-plugin-ajax-loading'>
+  <div class="block-plugin-ajax-placeholder">{% trans "loading..." %}</div>
+</div>
+
+
