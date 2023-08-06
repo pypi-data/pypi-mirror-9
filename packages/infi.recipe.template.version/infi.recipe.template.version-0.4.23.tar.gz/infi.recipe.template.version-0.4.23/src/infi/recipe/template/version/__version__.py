@@ -1,0 +1,11 @@
+__version__ = "0.4.23"
+__git_commiter_name__ = "Guy Rozendorn"
+__git_commiter_email__ = "guy@rzn.co.il"
+__git_branch__ = 'develop'
+__git_remote_tracking_branch__ = '(No remote tracking)'
+__git_remote_url__ = '(Not remote tracking)'
+__git_head_hash__ = '5cea00e88de46f469f881114181f700f06d17223'
+__git_head_subject__ = 'TRIVIAL fixing translate_clone_url_to_homepage'
+__git_head_message__ = ''
+__git_dirty_diff__ = ''
+__git_commit_date__ = '2015-04-14 11:16:09'
