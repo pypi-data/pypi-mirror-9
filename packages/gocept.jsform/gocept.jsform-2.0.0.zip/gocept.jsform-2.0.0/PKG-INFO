@@ -1,0 +1,437 @@
+Metadata-Version: 1.1
+Name: gocept.jsform
+Version: 2.0.0
+Summary: Next generation forms in javascript
+Home-page: https://bitbucket.org/gocept/gocept.jsform/
+Author: Sebastian Wehrmann <sw@gocept.com>, Maik Derstappen <md@derico.de>
+Author-email: sw@gocept.com
+License: ZPL 2.1
+Description: ==============================
+        The gocept.jsform distribution
+        ==============================
+        
+        JavaScript library for simple creation of forms in your clients browser. It
+        just needs a JSON datastructure and creates a form with auto saving fields
+        from it.
+        
+        Uses *knockout* for data-binding, *handlebars* for templating and *jquery*
+        for DOM manipulation and ajax calls.
+        
+        
+        Package contents
+        ================
+        
+        The package contains the following files, which you should include by hand if
+        you are *not* using bower:
+        
+        * *ko.mapping.js*
+        * *helpers.js*
+        * *jsform.js*
+        
+        Also, there are some widget templates, named ``gocept_jsform_templates_*.pt``.
+        You'll have to include those you need as scripts of type ``text/html`` with an
+        appropriate id, for example::
+        
+            <script type="text/html" id="gocept_jsform_templates_form">
+              <form method="POST" action="{{action}}" id="{{form_id}}">
+              </form>
+            </script>
+        
+        where the lines between the ``script`` tags are the content of the respective
+        template file.
+        
+        
+        Usage
+        =====
+        
+        All you need to start creating forms is::
+        
+            <div id="replace_this_with_my_form"></div>
+        
+            <script type="text/javascript">
+              var my_form = new gocept.jsform.Form('replace_this_with_my_form');
+              my_form.load('/form_data.json');
+            </script>
+        
+        This will inject the form in the container with the id
+        ``replace_this_with_my_form``, load the form data via *ajax* from the url
+        ``form_data.json`` and create input fields according to the content of
+        ``form_data.json``.
+        
+        ``form.load()`` accepts javascript objects as data or a url (like in the
+        example above). It then guesses, which field widget to load by means of the
+        datatype of your field::
+        
+            my_form.load(
+                {firstName: '', // will result in a input field with type="text"
+                 title: [{id: 'mr', value: 'Mister'},
+                         {id: 'mrs', value: 'Miss', selected: true}], // will result in a select box
+                 needs_glasses: false}); // will result in a checkbox
+        
+        *gocept.jsform* comes with basic templates for these three use cases. Of cource
+        you can provide your own templates for either the form or the fields itself.
+        Please refer to the customization section for further information.
+        
+        
+        Customization
+        =============
+        
+        There are various options which can be passed to customize the HTML output and
+        the behaviour of *gocept.jsform*.
+        
+        
+        Providing a save url for the server
+        -----------------------------------
+        
+        The great thing about *gocept.jsform* is, that it automatically pushes changes
+        in your form fields to the server. For that to work you need to specify a url
+        where *gocept.jsform* should propagate changes to::
+        
+            var form = new gocept.jsform.Form('my_form', {save_url: '/save.json'});
+        
+        On every change, the following information is pushed to that url:
+        
+        * ``id``: the name of the field (e.g. *firstname*)
+        * ``value``: the new value for that field (e.g. *Bob*)
+        
+        The server should now validate the given data. If saving went fine, it must
+        return ``{status: 'success'}``, if there was a (validation-) error, it must
+        return e.g. ``{status: 'error', msg: 'Not a valid email address'}``. The error
+        will then be displayed next to the widget.
+        
+        
+        Customizing the form template
+        -----------------------------
+        
+        The default behaviour is to simply append every new field in the form tag. If
+        you would like to customize the order of your fields or just need another
+        boilerplate for you form, you can use a custom form template with containers
+        for all or just some of the fields::
+        
+            var template = 
+              ['<form method="POST" action="{{action}}" id="{{form_id}}">',
+               '<table><tr><td class="firstname"><span id="firstname" /></td>',
+               '<td class="lastname"><span id="lastname" /></td></tr></table>',
+               '</form>'].join('');
+        
+            var form = new gocept.jsform.Form('my_form', {form_template: template});
+            form.load({firstname: 'Max', lastname: 'Mustermann'});
+        
+        This will replace the ``span`` containers with id ``firstname`` and
+        ``lastname`` with the appropriate ``input`` fields.
+        
+        
+        Customizing field widgets
+        -------------------------
+        
+        You can either customize widgets by their type (e.g. all fields rendered for
+        strings) or customize single widgets by their name.
+        
+        *Customization by field type*
+        
+        You can overwrite the default templates by providing your own templates in the
+        options dict passed during form initialization::
+        
+            var form = new gocept.jsform.Form(
+              'my_form', {string_template: my_input_template,
+                          object_template: my_select_template,
+                          boolean_template: my_checkbox_template});
+        
+        For every string data, your input template would be rendered instead of the
+        default input text field. Same for lists and boolean values.
+        
+        *Customization by field name*
+        
+        Imagine you want checkboxes instead of a select field::
+        
+            var template =
+              ['<div class="title">Titel:',
+               '{#each value}',
+               '  <div>',
+               '    <input type="radio" name="{{name}}" value="{{id}}" class="{{id}}"',
+               '           data-bind="checked: {{name}}" /> {{value}}',
+               '  </div>',
+               '{/each}',
+               '</div>'].join('');
+        
+            var form = new gocept.jsform.Form('my_form');
+            form.load({title: [{id: 'mr', value: 'Mr.'},
+                               {id: 'mrs', value: 'Mrs.'}]},
+                      {title: {template: template}});
+        
+        You can pass the *load* method a JS object containing customizations for each
+        field. One of these customization options is template, which results in
+        rendering two checkboxes instead of the default select box in the above
+        example.
+        
+        You can also specify a label or other options for the fields::
+        
+            var template =
+              ['{{label}}: <input type="text" name="{{name}}" value="{{default}}"',
+               '                  data-bind="value: {{name}}" {{readonly}} />'].join('');
+        
+            var form = new gocept.jsform.Form('my_form');
+            form.load({firstname: 'Sebastian'},
+                      {firstname: {template: template,
+                                   label: 'First name',
+                                   default: 'Max'}});
+        
+        
+        ======================
+        Additional information
+        ======================
+        
+        
+        Fanstatic
+        =========
+        
+        If you have a server using *fanstatic* to include resources, just do::
+        
+            from gocept.jsform import jsform
+            jsform.need()
+        
+        This will require all needed resources like *jquery*, *knockout*,
+        *json-template*, widgets and the code to setup and run *gocept.jsform* itself.
+        
+        
+        Bowerstatic
+        ===========
+        
+        If you would like to use the bower package of ``gocept.jsform`` and use
+        Bowerstatic to include your bower resources, you might need to register the
+        following renderer in order to access the templates required by
+        ``gocept.jsform``::
+        
+            def render_template(resource):
+            filename = os.path.basename(resource.file_path)
+            id_ = os.path.splitext(filename)[0]
+            return u'<script type="text/html" id="{}">{}</script>'.format(
+                id_, resource.content().decode('UTF-8'))
+        
+            bower = bowerstatic.Bower()
+            bower.register_renderer('.pt', render_template)
+        
+        
+        Tests
+        =====
+        
+        The tests are written in *jasmine* and run using selenium webdriver.
+        
+        
+        .. image:: https://builds.gocept.com/job/gocept.jsform/badge/icon
+          :target: https://builds.gocept.com/job/gocept.jsform/
+        
+        
+        ========================
+        Developing gocept.jsform
+        ========================
+        
+        :Author:
+            `Sebastian Wehrmann <http://gocept.com/>`_ <sw@gocept.com>
+            `Maik Derstappen <http://derico.de/>`_ <md@derico.de>
+        
+        :Online documentation:
+            http://pythonhosted.org/gocept.jsform/
+        
+        :PyPI page:
+            http://pypi.python.org/pypi/gocept.jsform/
+        
+        :Issues:
+            https://bitbucket.org/gocept/gocept.jsform/issues
+        
+        :Source code:
+            https://bitbucket.org/gocept/gocept.jsform/
+        
+        :Current change log:
+            https://bitbucket.org/gocept/gocept.jsform/raw-file/tip/CHANGES.txt
+        
+        
+        ============================
+        Change log for gocept.jsform
+        ============================
+        
+        2.0.0 (2015-03-26)
+        ==================
+        
+        - Nothing changed yet.
+        
+        
+        1.2.1a1+bower-1 (2015-02-03)
+        ============================
+        
+        - Render the token as the ``<option value>`` attribute, so we get the best of
+          both worlds: internally we deal with objects, but the DOM looks "normal" (and
+          other DOM-based libraries like select2 can interface with it).
+        
+        - Package the browser resources as a bower package.
+        
+        - Switch from json-template.js to Handbars.js for templating. (#13804)
+        
+        - Fixed a bug where using select fields with dynamic options (sources) triggered
+          a save request with empty value upon creation in the UI.
+        
+        
+        1.2.0 (2014-10-22)
+        ==================
+        
+        - Improved handling of object and multiselect fields such that the values
+          loaded are actually just the values, with select options being passed as the
+          ``source`` field option. This is an important backwards-incompatible change.
+        
+        - Added a field option ``multiple`` that, when truthy and the selected type is
+          object, makes the field be considered a list of objects. When using the
+          default templates, this turns a select widget into multi-select.
+        
+        - When loading values into a form via the JS API rather than via HTTP as JSON,
+          assume full objects, not tokens to be contained.
+        
+        - Add textarea template.
+        
+        - Added the concept of required fields which cannot be saved when blank.
+        
+        - More Bootstrap 3 compatibility.
+        
+        - Simplified HTML mark-up of form elements.
+        
+        - Removed the package metadata's implicit dependency on the test extra.
+        
+        - Use `classy <https://github.com/mitsuhiko/classy>`_ classes.
+        
+        - Consider HTTP error responses unrecoverable errors. This distinguishes them
+          from time-outs and connection errors.
+        
+        - Add ``loaded`` property on Form, a Deferred so clients can check whether
+          loading has finished. This is mainly helpful for tests, e.g.::
+        
+              selenium.waitForEval(
+                  '$("#jsform").data("form") && '
+                  '$("#jsform").data("form").loaded.state()', '"resolved"')
+        
+        - Expose the ``get_template`` function for reuse outside the Form class.
+        
+        - If an empty string is specified as ``form_template``, just use the existing
+          form DOM node without applying any template.
+        
+        - Add jQuery plugin ``$().jsform_submit_button(callback)`` that sets up a
+          button that saves the jsform and calls a function after the successful save.
+        
+        
+        1.1 (2014-04-07)
+        ================
+        
+        - Propagate save message of server using ``after-save`` trigger.
+        
+        - Added infrastructure for displaying and clearing status messages, use it for
+          announcing HTTP faults during AJAX calls.
+        
+        - Display and clear field-related errors both at the widget and via status
+          messages.
+        
+        - When saving data, count anything but a JSON response with a status value of
+          "success" as an error. Give up completely after an incomprehensible
+          response, retry on connection errors either after the next successful server
+          access for any other field, or when requested by a call to ``retry()``.
+        
+        - Added an API method ``save_remaining()`` that causes any fields to be saved
+          that have not been modified so far. While this should only save the initial
+          values loaded from the server, it is useful to apply the same validation and
+          error handling to all fields.
+        
+        - Added an API method ``when_saved(retry)`` that returns a promise that
+          aggregates any pending and completed save calls, either propagating the
+          retry behaviour of single fields (the default) or failing on server errors.
+        
+        - Provide a visual clue and status message while saving a field.
+        
+        - Some refactoring to improve code readability.
+        
+        - Made code pass jshint check.
+        
+        - Made default and currently not overrideable status message behaviour
+          compatible to bootstrap 3
+        
+        - Properly unsubscribe change handlers when updating fields.
+        
+        - Added simple localization.
+        
+        
+        1.0 (2013-12-13)
+        ================
+        
+        - Remove console calls as they are not understood by all browsers.
+        
+        
+        0.8 (2013-12-10)
+        ================
+        
+        - Fixed: jsform did not render in IE8 if form template started with line break.
+        
+        
+        0.7 (2013-12-03)
+        ================
+        
+        - Add ability to send a CSRF token with every request. This token must be
+          available via the id `csrf_token` (can be customized) in the DOM.
+        
+        - Added minified versions of javascript resources.
+        
+        
+        0.6 (2013-09-06)
+        ================
+        
+        - Bugfix: Use ``indexOf`` instead of ``startsWith``, which is not available on
+          all browsers.
+        
+        
+        0.5 (2013-09-06)
+        ================
+        
+        - Declare ``for`` attribute on form labels.
+        
+        - Store "save on change" subscriptions so they can be cancelled.
+        
+        - Ignore ``null`` values for data fields. (#1)
+        
+        
+        0.4 (2013-08-27)
+        ================
+        
+        - Made it possible to define templates as template files on file system.
+        
+        
+        0.3 (2013-08-27)
+        ================
+        
+        - Add events ``after-load`` and ``after-save``.
+        
+        - Fix ``JSON`` serialization to be able to handle Knockout observables.
+        
+        - Added ``reload`` functionality to the form class.
+        
+        
+        0.2 (2013-08-26)
+        ================
+        
+        - Made it possible to preselect values in arrays when the form is rendered.
+        
+        - Changed form submit behaviour:
+        
+          - Default submit type is not ``POST`` instead of ``GET``. (Change it with the
+            ``save_type`` option)
+        
+          - Data is now submitted as ``JSON`` type.
+        
+        
+        0.1 (2013-08-17)
+        ================
+        
+        initial release
+        
+Keywords: form javascript jquery client
+Platform: UNKNOWN
+Classifier: License :: OSI Approved :: Zope Public License
+Classifier: Programming Language :: Python
+Classifier: Programming Language :: Python :: 2
+Classifier: Programming Language :: Python :: 2.6
+Classifier: Programming Language :: Python :: 2.7
+Classifier: Programming Language :: Python :: 2 :: Only
