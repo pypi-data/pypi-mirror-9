@@ -1,0 +1,151 @@
+- make the Entry object in entries.parsers support the mode where it
+  has both a plain-text `.doc` and an rST `.rstdoc`, and it
+  dynamically converts on demand (and expunges on `set`)... that way
+  whatever you need is available...
+
+- switch default `doc` encoding to UTF-8 (with option to override)
+  so that something like this can be in the docstrings::
+
+    Details in § `Foo Section`_.
+
+  or submit patch to docutils that allows this:
+
+    Details in :unicode:`U+000A7` `Foo Section`_.
+
+- detect :doc.link:`...` links that don't have a target and fail or report
+  error
+
+- should the filters *augment* instead of *override* the system-defaults?
+  ==> make it configurable?
+
+- create a setting to auto-filter content based on labels, eg:
+    labels: !internal ?public # == NOT `internal`, OPTIONAL `public`
+
+- why are the pdfkit options being inserted into the HTML (instead of
+  only in the HTML-for-PDF)?
+
+- create a `Entry.labels` aadict that contains docorators
+  ==> the value should be either True/False or the parameter in parenthesis
+      if parenthesized.
+  ==> make these go back and forth between Entry.classes prefixed with `doc-`...
+
+- add ``nullable`` as known flag to parameters
+
+- make the Dispatcher.walk() use generators instead of recursion...
+  ==> reduces stack
+  ==> **AND** could be used to solve the RestController issue #2 more elegantly
+
+- add support for EPUB. model after:
+    https://bitbucket.org/firesock/epubc/
+
+- get rid of duplicate ids... for example, when two endpoints have
+  the same-name parameter... you get:
+
+    System Message: INFO/1 (application.rst, line 609); backlink
+    Duplicate implicit target name: "username".
+
+- when rendering rst *for end user consumption*, `:doc.*:` (and any
+  other custom rendering instructions) must be converted to standard
+  rST...
+
+- in order to reduce verbosity, `:doc.copy:...:` should:
+    - copy for structured data output (YAML, WADL, etc)
+    - link for text output (HTML, etc)
+
+- handle the scenario that all items in a "parameters" (or
+  raises/returns) section are filtered out (and is thus empty,
+  and shouldn't be displayed at all).
+
+- flag :doc.*: references that point to invalid locations somehow
+
+- move rst.Writer into docutils
+
+- make rst.Writer support substitution_definitions with multi-character
+  strings with embedded unicode characters.
+
+- consider moving directly from rST to PDF instead of generating HTML
+  as a middle-step...
+  ==> perhaps make that an option.
+
+- tree hierarchy: when rendering non-"/" tree, it should start at that
+  point, not from "/". eg. `pdescribe config.ini -T /path/to/foo` should
+  result in:
+
+    /path/to/foo/
+    |-- sub-controller/
+    |-- ...
+    `-- ...
+
+  instead of:
+
+    /
+    `-- path/
+        `-- to/
+            `-- foo/
+                |-- sub-controller/
+                |-- ...
+                `-- ...
+
+  ==> even better, don't restrict this algorithm just to the root,
+      but apply it to any non-leaf node with just one sub-branch.
+
+- force 'format' to lower case?... prolly - but where?
+
+- make `DescriberController.formattext_html` try to load docutils, and
+  if successful, do rST formatting with that. otherwise fallback to the
+  pseudo-stuff...
+
+- update DescribeController to inspect decorator `method` parameters
+
+- should per-stanza configurations default to global configuration
+  defaults? yes. but that is fairly involved.
+
+- add an option to 'force-create' controllers that are referenced by
+  class instead of by instance?
+
+- remove the inconsistency between filters receiving `data`
+  vs. `options` vs. `stage` etc...
+
+- rename `data`, `context`, `proc` ==> `stage` (it's the best i could
+  come up with)
+
+- make the filters receive dup'd structures, so they are
+  free to either modify the passed-in structure or return
+  a whole new one ==> and document it!
+
+- when a numpydoc section is :doc.copy:'d, the referenced sections
+  show up *before* any locally defined sections... oops. eg:
+
+     class Controller:
+       def get():
+         ':Returns: ...'
+       def put():
+         info... :Parameters: ... :doc.copy:`GET:.:Returns`
+
+  ==> put's documentation will be:
+    info...
+    Returns...
+    Paramaters...
+
+  fix that so that order is always 'summary => params => returns =>
+  raises'
+
+- resolve how :doc.*: linking works between endpoints that have/don't
+  have declared methods (i.e. Controller vs. RestController).
+
+- perhaps move the default rST generation to use
+    render.template = pyramid_describe:template/render.mako
+  from that template:
+    This template is currently not being used. It was just a thought
+    on how default rST rendering could be converted to use mako
+    templating... (and thus simpler to create a new template since
+    there would be an example that "uses all features"...)
+
+- rearchitect... we need to move to the following steps/pipeline:
+    # globally cacheable:
+      1. assemble: collects all endpoints to be documented
+      2. parse: parse all documentation into formal syntax
+    # per-request handling:
+      3. filter: restrict which endpoints are visible/massage documentation
+      4. render: render endpoints into one rST document
+      5. format: format the rST document into target format
