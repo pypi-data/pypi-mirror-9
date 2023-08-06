@@ -1,0 +1,418 @@
+Mind 0.2.3 Tutorial
+=================================
+.. note::
+   This tutorial covers using each module one by one but it doesn't cover making game with entire library.
+
+Mind.Knowledge
+-----------------------------------------------------
+Knowledge is part of Mind for saving data (with *.knw* extension)
+
+.. note::
+
+   This module currently isn't *very* useful (mostly because of bugs) but it might be soon.
+
+For beggining import Knowledge:
+
+>>> from Mind import Knowledge
+
+Then initialize *basic class for saving data*:
+
+>>> data = Knowledge.Knowledge("test")
+
+Then try this few lines (these adds data to data class):
+
+>>> data['player'] = 5
+>>> data[25] = 8
+>>> data[21.753] = 'exit'
+>>> data["something"] = [1, "X", [12.3, "Y"], 3]
+>>> data
+21.753 : exit
+player : 5
+something : [1, 'X', [12.3, 'Y'], 3]
+25 : 8
+>>> data[25]
+8
+
+Now try to save data and load:
+
+>>> data.save_data()
+>>> data = Knowledge.load("test")
+>>> data
+something : [1, 'X', [12.32, 'Y'], 3]
+25 : 8
+21.793000000000006 : exit
+player : 5
+
+.. warning::
+
+   Saving decimal numbers isn't very correct and maximum is 3 decimals!
+
+.. seealso::
+   Mind.Test.
+
+Mind.Orientation
+--------------------------------------------
+Orientation is part of library for maps.
+
+At begining:
+
+>>> from Mind import Orientation
+
+We could first create map:
+
+>>> Map = Orientation.MAP(1000, 1000)
+
+Then we could add few points:
+
+>>> A = Orientation.point(100, 100, Map, "A")
+>>> B = Orientation.point(200, 200, Map, "B")
+>>> C = Orientation.point(300, 200, Map, "C")
+
+.. Note::
+   If point is placed out of Map (here 1000 *width* and 1000 *height*) it will cause **MapError**!
+
+When point is created it automaticly goes to map. Test it:
+
+>>> print(Map)
+Map 1000x1000:
+1. A @ 100, 100
+2. B @ 200, 200
+3. C @ 300, 200
+
+We could add some group of points:
+
+>>> Group1 = Orientation.group_of_points(Map, "Some", B, C)
+
+And try to print Map now:
+
+>>> print(Map)
+Map 1000x1000:
+1. A @ 100, 100
+2. B @ 200, 200
+3. C @ 300, 200
+4. Some group [B @ 200, 200; C @ 300, 200]
+
+If we want for points (or any other map object) to not add to Map, we should set quiet to True (*e.g.:* ``point(400, 300, Map, quiet=True)``).
+
+Now it's time for some rects:
+
+>>> Rect1 = Orientation.rect(100, 100, 100, 100, Map)
+>>> print(Map)
+1. A @ 100, 100
+2. Some group [B @ 200, 200; C @ 300, 200]
+3. B @ 200, 200
+4. C @ 300, 200
+5. Unknown rect 100X100 @ 100, 100
+
+Rects support some interesting things:
+
+>>> A in Rect1
+True
+>>> B in Rect1
+True
+>>> C in Rect1
+False
+>>> Group1 in Rect1
+False
+>>> Orientation.group_of_points(Map, "Some", A, B) in Rect1
+True
+>>> Rect1 in Rect1
+True
+>>> Orientation.rect(150, 100, 100, 100, Map) in Rect1
+False
+
+I think you got the point but in case you didn't:
+    - If point is in inside rect **or** on edges of rect then ``point in rect`` is ``True``.
+    - If ``point in rect`` is True for **all** points in group_of_points then ``group_of_points in rect`` is ``True``.
+    - If **all** parts of rect1 are in rect2 then ``rect1 in rect2`` is ``True``.
+    - In all examples if it isn't ``True`` it's ``False``.
+
+Library for now also has ``line``, ``line-seg``, ``ray``, and ``direction`` classes but they still don't have support in Tiled maps loading, so this tutorial doesn't cover them.
+
+Important thing is ``ext_obj`` class. It's any Map object but with some additional properties:
+
+>>> p1 = Orientation.ext_obj(point(10, 10, Map, "some", quiet=True), "weird", "very strange", type="non-normal")
+
+Now you may ask why do you need all that? You maybe think: "*It would probably be better if I do my map exactly for my game, only map loading is problem.*"
+
+Because of that I will now start explaining using *Tiled* map (*.tmx* extension).
+
+.. Note::
+   For following examples you need to have `tiledtmxloader`_ if you don't have it some classes won't initialize
+
+.. _tiledtmxloader: http://www.pygame.org/project-map+loader+for+%27tiled%27-1158-.html
+
+We probably need to set the map:
+
+>>> Map = Orientation.tiled_map("first_level")
+<tiledtmxloader.tmxreader.TileSet object at 0x01C9B3D0>
+SpriteLayer: Sprite Cache hits: 0
+
+Now we could print map (I will show just beggining of output because it have 103 lines):
+
+>>> print(Map)
+1. Unknown rect 20X500 @ 0, 0; {type: None}
+2. Unknown rect 1980X20 @ 20, 0; {type: None}
+3. Unknown rect 1980X20 @ 20, 480; {type: None}
+
+You may notice that print output looks like Map print output and all objects are converted to ``ext_obj``.
+
+I think it's best to **not** work in python shell.
+
+We should first create main pygame loop (It doesn't use Mind but we'll need it), something like this:
+
+.. code-block:: python
+   :linenos:
+
+   import pygame
+   from Mind import Orientation
+   
+   pygame.init()
+   
+   screen = pygame.display.set_mode((500, 500))
+   
+   running = True
+   while running:
+       for event in pygame.event.get():
+           if event.type == pygame.QUIT:
+               running = False
+   
+       screen.fill((255, 255, 255))
+   
+       pygame.display.flip()
+   
+   pygame.quit()
+
+Next we should add Map initialization and Map blitting:
+
+.. code-block:: python
+   :linenos:
+   :emphasize-lines: 8,10,20
+
+   import pygame
+   from Mind import Orientation
+
+   pygame.init()
+
+   screen = pygame.display.set_mode((500, 500))
+
+   Map = Orientation.tiled_map("first_level")
+
+   Map.set_screen(screen)
+
+   running = True
+   while running:
+       for event in pygame.event.get():
+           if event.type == pygame.QUIT:
+               running = False
+
+       screen.fill((255, 255, 255))
+
+       Map.blit()
+
+       pygame.display.flip()
+
+   pygame.quit()
+
+Now we have camera with center on point (0, 0) of the map (uper left corner).
+
+But what if we want to have camera somewhere else? Then we should set map *position*:
+
+.. code-block:: python
+   :linenos:
+   :emphasize-lines: 12
+
+   import pygame
+   from Mind import Orientation
+
+   pygame.init()
+
+   screen = pygame.display.set_mode((500, 500))
+
+   Map = Orientation.tiled_map("first_level")
+
+   Map.set_screen(screen)
+
+   Map.set_camera_pos(200, 200)
+
+   running = True
+   while running:
+       for event in pygame.event.get():
+           if event.type == pygame.QUIT:
+               running = False
+
+       screen.fill((255, 255, 255))
+
+       Map.blit()
+
+       pygame.display.flip()
+
+   pygame.quit()
+
+If you edge is ``True`` in ``Map.set_camera_pos`` (which is by default) then map won't be blitted outside the edges.
+
+If we want to have map which will move when we press arrows we need to use *moving_map*:
+
+.. code-block:: python
+   :linenos:
+   :emphasize-lines: 15
+
+   import pygame
+   from Mind import Orientation
+
+   pygame.init()
+
+   screen = pygame.display.set_mode((500, 500))
+
+   Map = Orientation.moving_map("first_level", 500, 500, screen)
+
+   running = True
+   while running:
+       for event in pygame.event.get():
+           if event.type == pygame.QUIT:
+               running = False
+
+       screen.fill((255, 255, 255))
+
+       Map.blit()
+
+       pygame.display.flip()
+
+   pygame.quit()
+
+For moving map we need ``Map.move(x, y)``:
+
+.. code-block:: python
+   :linenos:
+   :emphasize-lines: 20-28
+
+   import pygame
+   from Mind import Orientation
+
+   pygame.init()
+
+   pygame.display.set_caption("test, arrows for moving")
+   screen = pygame.display.set_mode((400, 400))
+
+   Map = Orientation.moving_map("first_level", 500, 500, screen)
+
+   running = True
+   while running:
+       for event in pygame.event.get():
+           if event.type == pygame.QUIT:
+               running = False
+           elif event.type == pygame.KEYDOWN:
+               if event.key == pygame.K_UP:
+                   Map.move(0, -10)
+               if event.key == pygame.K_RIGHT:
+                   Map.move(10, 0)
+               if event.key == pygame.K_DOWN:
+                   Map.move(0, 10)
+               if event.key == pygame.K_LEFT:
+                   Map.move(-10, 0)
+
+       screen.fill((255, 255, 255))
+
+       Map.blit()
+
+       pygame.display.flip()
+
+   pygame.quit()
+
+Now try to move map.
+
+Left and right works but up doesn't.
+That's because in begining Map center is in point (500, 500) and when you press key up it's in point (500, 490) but it looks same because in both situations map would be blitted out of Map but it automatically blits on edge.
+
+We should use ``set_position()`` and ``get_camera_pos()`` methods for fixing that:
+
+.. code-block:: python
+   :linenos:
+   :emphasize-lines: 9, 26
+
+   import pygame
+   from Mind import Orientation
+
+   pygame.init()
+
+   pygame.display.set_caption("test, arrows for moving")
+   screen = pygame.display.set_mode((400, 400))
+
+   Map = Orientation.moving_map("first_level", 500, 500, screen)
+   Map.set_position(*Map.get_camera_pos())
+
+   running = True
+   while running:
+       for event in pygame.event.get():
+           if event.type == pygame.QUIT:
+               running = False
+           elif event.type == pygame.KEYDOWN:
+               if event.key == pygame.K_UP:
+                   Map.move(0, -10)
+               if event.key == pygame.K_RIGHT:
+                   Map.move(10, 0)
+               if event.key == pygame.K_DOWN:
+                   Map.move(0, 10)
+               if event.key == pygame.K_LEFT:
+                   Map.move(-10, 0)
+       Map.set_position(*Map.get_camera_pos())
+       screen.fill((255, 255, 255))
+
+       Map.blit()
+
+       pygame.display.flip()
+
+   pygame.quit()
+
+Map initialization has got some more advenced options but I'm not going to show them because they aren't necessary.
+
+Mind.Imagination
+--------------------------------------------------------
+Imagination is part of library for Main Menu.
+
+.. note::
+   Because this all classes need pygame initialization, it would be pointless to do this in shell.
+
+I supose you have code similiar to this (and understand it):
+
+.. literalinclude:: pro_2-p.py
+
+Next step would be code like this:
+
+.. literalinclude:: pro_2-1.py
+   :emphasize-lines: 11-18,21,22,26
+   :linenos:
+
+Line 11: We are creating Main Menu which is on active place (but that place doesn't matter because it's only one) and has 150 pixels between each option (but it currently doesn't have options).
+
+Line 12-13: We get keyboard from Main Menu and then add ``(pygame.K_ESCAPE, "quit")`` to it. So basically if we press *esc* ``keyboard["quit"]`` would be ``True`` .
+
+Line 15-17: We add option to Main Menu which uses font from line 9, have text "Start", is red, it's Main Menu is one from line 11 and is option on which index is. And we also add two similar options with some different attributes.
+
+Line 18: We finish our options defining. You don't have to know what this does but it must be on end of options defining.
+
+Line 21-22: If keyboard *quit* is on (so if we pressed esc) then game will stop running.
+
+Line 26: Main Menu blits on screen.
+
+When you run it and hit space/enter one option will disappear. If you press *ecs* game quits.
+
+If we want options to become black when index come to option we could do this:
+
+.. literalinclude:: pro_2-2.py
+   :emphasize-lines: 15-17
+   :linenos:
+
+Basically when index come to option its color changes to *0, 0, 0* (black).
+
+But when index is not on option it's still black, so we should define what happens when we go away from option.
+To do this we need *anti_pos_do* attribute:
+
+.. literalinclude:: pro_2-3.py
+   :emphasize-lines: 15-17
+   :linenos:
+
+For now this turtorial ended, next version will probably have some new things.
+
+.. note::
+   Althrought I will continue writting this tutorial, you may expand it or create completely new tutorial (your will probably be way better) and send me link (*jakov.manjkas@gmail.com*).
