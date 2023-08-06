@@ -1,0 +1,336 @@
+Metadata-Version: 1.1
+Name: saferedisqueue
+Version: 4.0b0
+Summary: A small wrapper around Redis that provides access to a FIFO queue.
+Home-page: https://github.com/hellp/saferedisqueue
+Author: Fabian Neumann, ferret go GmbH
+Author-email: neumann@ferret-go.com
+License: Copyright (c) 2013, Fabian Neumann, ferret go GmbH
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+    * Redistributions of source code must retain the above copyright notice,
+      this list of conditions and the following disclaimer.
+
+    * Redistributions in binary form must reproduce the above copyright
+      notice, this list of conditions and the following disclaimer in the
+      documentation and/or other materials provided with the distribution.
+
+    * Neither the name of the ferret go GmbH nor the names of its contributors
+      may be used to endorse or promote products derived from this software
+      without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+Description: ==============
+        saferedisqueue
+        ==============
+        
+        A small wrapper around `Redis <http://www.redis.io>`_ (using the "standard"
+        `Python redis client lib <https://pypi.python.org/pypi/redis>`_) that provides
+        access to a FIFO queue and allows upstream code to mark pop'ed items as
+        processed successfully (ACK'ing) or unsucessfully (FAIL'ing).
+        
+        Failed items are automatically requeued. Addionally a backup is kept for items
+        that were neither ack'ed nor fail'ed, i.e. in case the consumer crashes. The
+        backup items will be requeued as soon as one of the consumer(s) comes up
+        again.
+        
+        All actions are atomic and it is safe to have multiple producers and consumers
+        accessing the same queue concurrently.
+        
+        
+        Version compatibility with redis.py
+        ------------------------------------
+        
+        ===============      ===============
+        redis.py             saferedisqueue
+        ===============      ===============
+        2.4.10 - 2.6.x       1.x
+        2.7.0 - 2.7.5        no compatible version
+        2.7.6 - 2.10.x       2.x-3.x
+        ===============      ===============
+        
+        
+        Usage as a library
+        ==================
+        
+        >>> queue = SafeRedisQueue(name='test')
+        >>> queue.put("Hello World")
+        '595d43b2-2e49-4e96-a1d2-0848d1c7f0d3'
+        >>> queue.put("Foo bar")
+        '1df060eb-b578-499d-bede-20db9da8184e'
+        >>> queue.get()
+        ('595d43b2-2e49-4e96-a1d2-0848d1c7f0d3', 'Hello World')
+        >>> queue.get()
+        ('1df060eb-b578-499d-bede-20db9da8184e', 'Foo bar')
+        
+        Note: to be compatible with previous versions, 2 aliases ``push/pop`` exist. Start using the new ``put/get`` terminology as soon as possible since ``push/pop`` will be deleted in a future version.
+        
+        
+        ACK'ing and FAIL'ing
+        --------------------
+        
+        >>> queue.put("Good stuff")
+        >>> queue.put("Bad stuff")
+        >>> uid_good, payload_good = queue.get()
+        >>> uid_bad, payload_bad = queue.get()
+        ...
+        # process the payloads...
+        ...
+        >>> queue.ack(uid_good)  # done with that one
+        >>> queue.fail(uid_bad)  # something didn't work out with that one, let's requeue
+        >>> uid, payload = queue.get()  # get again; we get the requeued payload again
+        >>> uid == uid_bad
+        True
+        ...
+        # try again
+        ...
+        >>> queue.ack(uid)  # now it worked; ACK the stuff now
+        
+        
+        get timeout
+        -----------
+        
+        `SafeRedisQueue.get` accepts a timeout parameter:
+        
+        - 0 (the default) blocks forever, waiting for items
+        - a positive number blocks that amount of seconds
+        - a negative timeout disables blocking
+        
+        
+        Constructor parameters
+        ----------------------
+        
+        `SafeRedisQueue` accepts ``*args, **kwargs`` and passes them to
+        `redis.StrictRedis`, so use whatever you need.
+        
+        *Three exceptions*, use these in the keyword arguments to configure
+        `SafeRedisQueue` itself:
+        
+        `url`
+            Shortcut to use instead of a host/port/db/password combinations.
+            Accepts "redis URLs" just as the redis library does, for example:
+        
+            - redis://[:password]@localhost:6379/0
+            - unix://[:password]@/path/to/socket.sock?db=0
+        
+            When using this keyword parameter, all positional arguments (usually
+            one the host) are ignored. Those two are equivalent:
+        
+            - ``SafeRedisQueue('localhost', port=6379, db=7)``
+            - ``SafeRedisQueue(url='redis://localhost:6379/7')``
+        
+        `name`
+            A prefix used for the keys in Redis. Default: "0", which creates the
+            following keys in your Redis DB:
+        
+            - srq:0:items
+            - srq:0:queue
+            - srq:0:ackbuf
+            - srq:0:ackbuf_aging
+        
+            .. attention::
+        
+                The internal data structure changed in version 4.0. Pure
+                producer instances (i.e. those only using `put`) are backwards-
+                compatible, but consumer instances are not.
+        
+        `autoclean_interval`
+        
+            An interval in seconds (default: 60) at which unconfirmed items
+            (neither ACK'ed nor FAIL'ed) are requeued automatically. They are
+            moved from the internal ackbuf/ackbuf_aging data structures to the
+            queue again.
+        
+            Using this spawns a thread that does the autocleaning on a regular
+            interval.
+        
+            Pass ``None`` to disable autocleaning. It's enabled by default!
+        
+            It's recommended to pass ``None`` when creating an instances that
+            will only be used as a producer, i.e. one that will only use
+            `put`/`push`.
+        
+            *The mechanism was completely re-done in version 4.0. See CHANGES
+            for details.*
+        
+        `serializer`
+            An optional serializer to use on the items. Default: None
+        
+            Feel free to write your own serializer. It only requires a ``dumps``
+            and ``loads`` methods. Modules like ``pickle``, ``json``,
+            ``simplejson`` can be used out of the box.
+        
+            Note however, that when using Python 3 the ``json`` module has to be
+            wrapped as it by default does not handle the ``bytes`` properly that
+            is emitted by the underlying redis.py networking code. This should
+            work::
+        
+                class MyJSONSerializer(object):
+                    @staticmethod
+                    def loads(bytes):
+                        return json.loads(bytes.decode('utf-8'))
+        
+                    @staticmethod
+                    def dumps(data):
+                        return json.dumps(data)
+        
+                queue = SafeRedisQueue(name='foobar',serializer=MyJSONSerializer)
+        
+            *Added in version 3.0.0*
+        
+        
+        Command line usage
+        ==================
+        
+        For quick'n'dirty testing, you can use the script from the command line to put stuff into the queue::
+        
+            $ echo "Hello World" | python saferedisqueue.py producer
+        
+        ...and get it out again::
+        
+            $ python saferedisqueue.py consumer
+            cbdabbc8-1c0f-4eb0-8733-fdb62a9c0fa6 Hello World
+        
+        
+        =======
+        Changes
+        =======
+        
+        4.0b0 – 2015-03-09
+        ------------------
+        
+        - BREAKING CHANGE: the data structures used on the Redis server side
+          changed. While pure consumer instances (i.e. those only using `put`)
+          are backwards compatibility, consuming instances are **not**. This
+          means multiple consumers working on one queue must be compatible.
+          Before upgrading, make sure the queue is emptied.
+        
+        - The automatic requeue mechanism was reimplemented: Instead of a
+          complicated algorithm that used locks and was so poorly implemented
+          that it still had race conditions and caused inconsistent server-side
+          state occasionally, we are now using a sorted set (ZSET) that keeps
+          track of unconfirmed (neither ACK'ed *nor* FAIL'ed) and aging items.
+        
+          Note however: the new mechanism uses a thread to do the cleaning every
+          x seconds (via the `autoclean_interval` parameter) independently of
+          any `get`/`pop` calls. If threading gives you a headache, check out
+          the code before using it. Remember, autocleaning is enabled by
+          default! To disable it, pass ``autoclean_interval=None`` to the
+          constructor -- this also disables any threading code; it's recommended
+          to use it always for producer-only instances.
+        
+        
+        3.0.0 - 2014-11-13
+        ------------------
+        
+        - BREAKING CHANGE (very unlikely, though): `push`/`put` now returns the
+          uid of the just added item. Before it always returned `None`.
+        - `push` has been renamed to `put`; `push` stays as an alias, but is
+          deprecated and will be removed in version 4.
+        - `pop` has been renamed to `get`; `pop` stays as an alias, but is
+          deprecated and will be removed in version 4.
+        - Increased version compatibility with redis.py to "<2.11".
+        - Python 3.4 support
+        - More tests. Introduced tox for testing.
+        - Added `serializer` parameter to support custom serializers,
+          e.g. for automatic JSON conversion. See README for details, especially
+          when using Python 3.
+        
+        
+        2.0.0 - 2014-06-26
+        ------------------
+        
+        - SafeRedisQueue is now officially compatible with recent versions
+          (roughly speaking 2.7-2.10) of redis.py.
+        
+          For versions 2.4 and 2.6 please continue using the 1.x development
+          line.
+        
+          See README.rst for details on compatibility.
+        
+        
+        1.2.0 - 2014-06-26
+        ------------------
+        
+        - Raise compatible redis.py version up to 2.6.x. Updated README with
+          compatibility details.
+        
+        
+        
+        1.1.0 - 2014-06-20
+        ------------------
+        
+        - The constructor now accepts a "url" keyword parameter that supports
+          typical redis URL a la "redis://[:password]@localhost:6379/0". See
+          README for details.
+        
+        
+        1.0.1 - 2013-06-26
+        ------------------
+        
+        - Changed dependency on redis to require at least version 2.4.10 as
+          redis.StrictRedis, which we use, was only introduced in that version.
+          This should not affect anyone negatively as you wouldn't have to be able
+          to use saferedisqueue at all if your project or package used an older
+          version so far.
+          (Thanks Telofy!)
+        
+        
+        1.0.0 - 2013-06-05
+        ------------------
+        
+        - Released as open-source under 3-clause BSD license. Code identical to 0.3.0.
+        
+        
+        0.3.0 - 2012-05-22
+        ------------------
+        
+        - The constructor now accepts an "autoclean_interval" value to set the interval
+          at which the ackbuf -> backup rotation and backup requeuing happens.
+          Setting the value to `None` disables autoclean completely.
+          Default: 60 (seconds).
+        
+        
+        0.2.2 - 2012-03-29
+        ------------------
+        
+        - Negative timeout makes .pop() non-blocking.
+        
+        
+        0.2.1 - 2012-03-09
+        ------------------
+        
+        - Added setup.py and publish it on our internal package directory.
+        
+        
+        0.2.0 - 2012-03-08
+        ------------------
+        
+        - Renamed methods ("push_item" -> "push" etc.)
+        - New autoclean method that is called on every .pop()
+        - Internal: New names for keys in the redis db.
+        
+Keywords: Redis,key-value store,queue,queueing,Storm
+Platform: UNKNOWN
+Classifier: Development Status :: 5 - Production/Stable
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: BSD License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python
+Classifier: Programming Language :: Python :: 2.7
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.4
+Classifier: Topic :: Internet
