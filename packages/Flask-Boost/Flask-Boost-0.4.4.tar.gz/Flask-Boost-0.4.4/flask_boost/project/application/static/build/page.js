@@ -1,0 +1,1 @@
+(function(){setTimeout(showFlash,200);setTimeout(hideFlash,2000);function showFlash(){$('.flash-message').slideDown('fast');}function hideFlash(){$('.flash-message').slideUp('fast');}})();if(document.documentElement.id==='page-site-about'){(function(){})();}if(document.documentElement.id==='page-site-index'){(function(){})();}
