@@ -1,0 +1,104 @@
+#!/bin/sh
+#
+# 2011 Andi Brönnimann (andi-cdist at v-net.ch)
+# 2012 Nico Schottelius (nico-cdist at schottelius.org)
+#
+# This file is part of cdist.
+#
+# cdist is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# cdist is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with cdist. If not, see <http://www.gnu.org/licenses/>.
+#
+#
+# Manage packages with pkg on OpenBSD
+#
+
+# Debug
+# exec >&2
+# set -x
+
+os_version="$(cat "$__global/explorer/os_version")"
+machine="$(cat "$__global/explorer/machine")"
+
+if [ -f "$__object/parameter/flavor" ]; then
+	flavor="$(cat "$__object/parameter/flavor")"
+fi
+
+# do not show progress bar
+pkgopts="-x"
+
+if [ -f "$__object/parameter/name" ]; then
+   name="$__object/parameter/name"
+else
+   name="$__object_id"
+fi
+
+state_should="$(cat "$__object/parameter/state")"
+
+pkg_version="$(cat "$__object/explorer/pkg_version")"
+
+if [ -f "$__object/parameter/pkg_path" ]; then                                  
+  pkg_path="$(cat "$__object/parameter/pkg_path")"                              
+else
+  pkg_path="ftp://ftp.openbsd.org/pub/OpenBSD/$os_version/packages/$machine/"
+fi                                                                              
+
+if [ "$pkg_version" ]; then
+    state_is="present"
+else
+    state_is="absent"
+fi
+
+[ "$state_is" = "$state_should" ] && exit 0
+
+case "$state_should" in
+    present)
+        # use this because pkg_add doesn't properly handle errors
+        cat << eof
+export PKG_PATH="$pkg_path"                                              
+status=\$(pkg_add "$pkgopts" "$name--$flavor" 2>&1)
+pkg_info | grep "^${name}.*${flavor}" > /dev/null 2>&1
+
+# We didn't find the package in the list of 'installed packages', so it failed
+# This is necessary because pkg_add doesn't return properly
+if [ \$? -ne 0 ]; then
+    if [ -z "\${status}" ]; then
+      status="Failed to add package, uncaught exception."
+    fi
+    echo "Error: \$status"
+    exit 1
+fi
+eof
+    ;;
+
+    absent)
+        # use this because pkg_add doesn't properly handle errors
+        cat << eof
+status=\$(pkg_delete "$pkgopts" "$name--$flavor")
+pkg_info | grep "^${name}.*${flavor}" > /dev/null 2>&1
+
+# We found the package in the list of 'installed packages'
+# This would indicate that pkg_delete failed, send the output of pkg_delete
+if [ \$? -eq 0 ]; then
+    if [ -z "\${status}" ]; then
+      status="Failed to remove package, uncaught exception."
+    fi
+    echo "Error: \$status"
+    exit 1
+fi
+eof
+   ;;
+   *)
+		echo "Unknown state: $state_should" >&2
+		exit 1
+   ;;
+esac
