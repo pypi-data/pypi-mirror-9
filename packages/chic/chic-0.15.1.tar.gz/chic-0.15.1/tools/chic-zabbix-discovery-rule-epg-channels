@@ -1,0 +1,119 @@
+#!/usr/bin/python
+# -*- coding:utf-8 -*-
+
+# Author: Anxo Beltrán Álvarez
+# Contact: anxo.beltran@interoud.com
+
+"""
+Customs check for Zabbix to gather information about EPG Channels
+"""
+
+from optparse import OptionParser
+
+import os
+import sys
+import subprocess
+import slugify
+
+reload(sys)
+sys.setdefaultencoding('utf-8')
+
+import ConfigParser
+import psycopg2
+import simplejson as json
+
+DEV_NULL=open('/dev/null', "w")
+
+conffile = "./chic.cfg"
+
+logfile = "/dev/null"
+loglevel = 20
+workdir = "./chic/"
+
+dbuser = "epg"
+dbpassword = "mipassword"
+dbhost = "localhost"
+dbport = 5432
+dbname = "epg"
+
+# command line options parser ##################################################
+
+parser = OptionParser()
+
+# parser.add_option("-w", "--workdir", dest="workdir", default=workdir,
+#         help="Work directory (default: %s)" % workdir)
+parser.add_option("-l", "--logfile",
+        dest="logfile", help="Log file (default: %s)" % logfile,
+        default=logfile)
+parser.add_option("--dbuser",
+        dest="dbuser", help="dbuser (default: %s)" % dbuser,
+        default=dbuser)
+parser.add_option("--dbpassword",
+        dest="dbpassword", help="dbpassword (default: %s)" % dbpassword,
+        default=dbpassword)
+parser.add_option("--dbhost",
+        dest="dbhost", help="dbhost (default: %s)" % dbhost,
+        default=dbhost)
+parser.add_option("--dbport",
+        dest="dbport", help="dbport (default: %s)" % dbport,
+        default=dbport)
+parser.add_option("--dbname",
+        dest="dbname", help="dbname (default: %s)" % dbname,
+        default=dbname)
+parser.add_option("--loglevel",
+        dest="loglevel", help="Log level (default: %s)" % loglevel,
+        default=loglevel)
+(options, args) = parser.parse_args()
+
+logfile = options.logfile
+loglevel = options.loglevel
+dbuser = options.dbuser
+dbpassword = options.dbpassword
+dbhost = options.dbhost
+dbport = options.dbport
+dbname = options.dbname
+
+# logging ######################################################################
+import logging
+hdlr = logging.FileHandler(logfile)
+hdlr.setFormatter(logging.Formatter('%(levelname)s %(asctime)s %(message)s'))
+logger = logging.getLogger('chic')
+logger.addHandler(hdlr)
+logger.setLevel(int(loglevel))
+
+# setting up ###################################################################
+logger.info("Default encoding: %s" % sys.getdefaultencoding())
+
+################################################################################
+def channels_views(conn):
+        #conn.set_isolation_level(0)
+        res = {"data":[]}
+        cur = conn.cursor()
+        query = " SELECT channel_id, channel_identifier, channel_name, count (distinct id) \
+	from aka_aka_vodkatv_epg_event group by channel_id, channel_identifier, channel_name;"
+	cur.execute(query)
+	rows = cur.fetchall()
+
+	for row in rows:
+		_r = {}
+		_r["{#CHANNEL_ID}"] = slugify.slugify(row[0])
+		_r["{#CHANNEL_EXTERNAL_ID}"] = slugify.slugify(row[1])
+		_r["{#CHANNEL_NAME}"] = slugify.slugify(row[2])
+		_r["{#COUNT_EVENTS}"] = row[3]
+		res["data"].append(_r)
+
+	print json.dumps(res)
+
+def main():
+        try:
+        	conn=psycopg2.connect( \
+"dbname='%s' user='%s' host='%s' port=%s password='%s'" \
+        	        % (dbname,dbuser,dbhost,dbport,dbpassword))
+		channels_views(conn)
+	except Exception as e:
+        	logger.error( e )
+
+# main #########################################################################
+if __name__ == '__main__':
+    main()
+
