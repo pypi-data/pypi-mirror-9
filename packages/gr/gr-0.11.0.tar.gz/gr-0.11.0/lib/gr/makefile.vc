@@ -1,0 +1,96 @@
+CC = CL
+INCLUDES = /I..\..\3rdparty\jpeg /I..\..\3rdparty\png /I..\..\3rdparty\zlib /I..\gks /I.
+CFLAGS = /c /nologo /DNO_MUPDF /DNO_X11 /D_DLL /MD /D_POSIX $(INCLUDES)
+DEFINES = /DGRDIR=\"$(GRDIR)\"
+LINK = LINK /nologo
+JPEGLIBS = ..\..\3rdparty\jpeg\libjpeg.lib
+PNGLIBS = ..\..\3rdparty\png\libpng.lib
+ZLIBS = ..\..\3rdparty\zlib\libz.lib
+GRLIBS = libgr.lib
+GKSLIBS = ..\gks\libgks.lib
+DLLLIBS = msvcrt.lib oldnames.lib kernel32.lib wsock32.lib advapi32.lib user32.lib gdi32.lib comdlg32.lib winspool.lib
+DLLLFLAGS = /nodefaultlib -dll
+DLLLINK = LINK /nologo
+PYHOME = S:\Python27
+SRCDIR = .\
+
+DESTDIR = $(GRDIR)
+
+.SUFFIXES: .obj .c
+
+.c.obj:
+	$(CC) $(CFLAGS) $(DEFINES) $<
+
+#default: $(GKSLIBS) $(JPEGLIBS) $(PNGLIBS) $(ZLIBS) libgr.lib gr.pyd
+default: $(GKSLIBS) $(JPEGLIBS) $(PNGLIBS) $(ZLIBS) libgr.lib
+
+$(GKSLIBS):
+	@cd ../gks
+	@$(MAKE) /f makefile.vc
+	@cd ../gr
+
+$(JPEGLIBS):
+	@cd ../../3rdparty/jpeg
+	@$(MAKE) /f makefile.vc
+	@cd ..\..\lib\gr
+
+$(PNGLIBS):
+	@cd ../../3rdparty/png
+	@$(MAKE) /f makefile.vc
+	@cd ..\..\lib\gr
+
+$(ZLIBS):
+	@cd ../../3rdparty/zlib
+	@$(MAKE) /f makefile.vc
+	@cd ..\..\lib\gr
+
+libgr.lib: libgr.dll
+
+libgr.dll: gr.obj text.obj contour.obj spline.obj gridit.obj strlib.obj io.obj \
+	   image.obj md5.obj import.obj
+	$(DLLLINK) /out:$@ $** -def:libgr.def \
+	$(JPEGLIBS) $(PNGLIBS) $(ZLIBS) $(GKSLIBS) $(DLLLFLAGS) $(DLLLIBS)
+
+gr.pyd: py_gr.obj
+	$(DLLLINK) /out:$@ $** -def:gr.def \
+	$(PYHOME)\libs\python27.lib $(GRLIBS) \
+	$(JPEGLIBS) $(PNGLIBS) $(ZLIBS) $(GKSLIBS) $(DLLLFLAGS) $(DLLLIBS)
+
+py_gr.obj: python\py_gr.c
+	$(CC) $(CFLAGS) /I$(PYHOME)\include $**
+
+install: default
+	COPY /Y ..\gr\libgr.dll $(DESTDIR)
+	COPY /Y ..\gr\libgr.lib $(DESTDIR)
+	IF NOT EXIST $(DESTDIR)\python MKDIR $(DESTDIR)\python
+	IF NOT EXIST $(DESTDIR)\python\gr MKDIR $(DESTDIR)\python\gr
+	XCOPY /I /S /Y python\gr $(DESTDIR)\python\gr
+	IF NOT EXIST $(DESTDIR)\python\qtgr MKDIR $(DESTDIR)\python\qtgr
+	XCOPY /I /S /Y python\qtgr $(DESTDIR)\python\qtgr
+	COPY /Y ..\gr\gr.h $(DESTDIR)
+	COPY /Y ..\gks\libgks.dll $(DESTDIR)
+	COPY /Y ..\gks\libgks.lib $(DESTDIR)
+	COPY /Y ..\gks\gks.h $(DESTDIR)
+	IF NOT EXIST $(DESTDIR)\fonts MKDIR $(DESTDIR)\fonts
+	COPY /Y ..\gks\gksfont.dat $(DESTDIR)\fonts
+
+clean:
+	@cd ../gks
+	@$(MAKE) /f makefile.vc clean
+	@cd ../../3rdparty/zlib
+	@$(MAKE) /f makefile.vc clean
+	@cd ../../3rdparty/png
+	@$(MAKE) /f makefile.vc clean
+	@cd ../../3rdparty/jpeg
+	@$(MAKE) /f makefile.vc clean
+	@cd ..\..\lib\gr
+	DEL libgr.dll
+	DEL libgr.exp
+	DEL libgr.lib
+	DEL gr.pyd
+	DEL gr.exp
+	DEL gr.lib
+	DEL *.obj
+	DEL *.bak
+	DEL *.manifest
+
