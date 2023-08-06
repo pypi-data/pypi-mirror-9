@@ -1,0 +1,1 @@
+int PYTHON_VERSION2 = 1;
