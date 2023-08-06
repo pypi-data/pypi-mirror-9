@@ -1,0 +1,160 @@
+{% extends "site_base.html" %}
+
+{% load i18n %}
+
+{% block title %} {% trans "SK Registration" %} — {{ block.super }}{% endblock %}
+
+{% block body_class %}services{% endblock %}
+
+{% block body %}
+    <h1>{% trans "Registration status" %}</h1>
+    
+    <div class="status status-registered alert alert-success">
+    <i class="icon-ok"></i>
+    <b>SK Registered and validated</b>
+    </div>
+    <div class="status status-invalid alert alert-warning">
+      <i class="icon-warning-sign"></i>
+      <b>SK Registered - waiting for validation</b>
+    </div>
+    <div class="status status-unregistered alert alert-error">
+      <i class="icon-warning-sign"></i>
+      <b>SK Unregistered</b>
+    </div>
+    <div class="status status-missing-metadata alert alert-error">
+      <i class="icon-warning-sign"></i>
+      <b>Missing metadata</b>
+    </div>
+
+    <h2>Site information</h2>
+    <table class="table">
+      <tr>
+	<td class="muted">{% trans "Domain" %}</td><td>{{ SITE_DOMAIN }}</td>
+      </tr>
+      <tr>
+	<td class="muted">{% trans "Site URL" %}</td><td>{{ SETTINGS_SITEURL }}</td>
+      </tr>
+      <tr>
+	<td class="muted">{% trans "Web Title/Name" %}</td><td>{{ SITE_NAME }}</td>
+      </tr>
+      <tr>
+	<td class="muted">{% trans "Metadata" %}</td>
+	<td>{{ services_metadata }}  <button id="btn-modify-services-metadata" class="status status-unregistered btn btn-mini">{% trans "Modify" %}</button></td>
+      </tr>
+    </table>
+    
+    <button id="btn-check-validation" class="status status-invalid btn btn-small">{% trans "Check validation" %}</button>
+
+    <p class="status status-unregistered">{% blocktrans %}Please check the information is correct prior to registering the SK{% endblocktrans %}</p>
+
+    <p> 
+      <form class="status status-unregistered">
+	<label class="checkbox">
+	  <input id="chk-legal-notes-accepted" type="checkbox">{% blocktrans %}I have read the legal notes and i agree to them.{% endblocktrans %} 
+	  <a target="_blank" href="{% url 'sk_license' %}">{% trans "Read it." %}</a>
+	</label>
+      </form>
+    </p>
+    <button id="btn-register" class="status status-unregistered btn" disabled>{% trans "Register" %}</button>
+
+
+    <p class="status status-missing-metadata">{% blocktrans %}Please add more information about your SK implementation. Fill the Services Metadata form.{% endblocktrans %}</p>
+    <button id="btn-missing-metadata" class="status status-missing-metadata btn">{% trans "Insert metadata" %}</button>
+    
+    <div id="messages-modal" class="modal hide fade">
+      <div class="modal-header">
+	<button type="button" class="close" data-dismiss="modal">×</button>
+	<h4  id="messages-modal-title"></h4>
+      </div>
+      <div class="modal-body">
+	<p id="messages-modal-body"></p>
+      </div>
+      <div class="modal-footer">
+	<button class="btn btn-primary" data-dismiss="modal" aria-hidden="true">{% trans "Close" %}</button>
+      </div>
+    </div>
+
+
+{% endblock %}
+
+{% block extra_script %}
+{{ block.super }}
+<script>
+  var skStatus = '{{ status }}';
+  setStatus = function(status){
+      var cls = 'status-'+status;
+      $('.status').hide();
+      $('.'+cls).show();
+  };
+  setStatus(skStatus);
+  //setStatus('unregistered');
+
+  setModal = function(title, body){
+      $('#messages-modal-title').text(title);
+      $('#messages-modal-body').text(body);
+      $('#messages-modal').modal({
+          keyboard: false,
+          backdrop: 'static'
+      });
+  };
+
+  $('#btn-check-validation').click(function(event) {
+      var btn=$(this);
+      btn.button('loading');
+      $.ajax( "{% url 'skregistration_verify' %}")
+	  .done(function (data) {
+	      if(data.success){
+		  setStatus('registered');
+	      }
+	      btn.button('reset');
+	  })
+	  .fail(function (jqXHR, textStatus, errorThrown) { 
+	      setModal('Validation result', 'Registration was received and it is waiting for authorisation from the SP7 team.');
+	  })
+          .always(function(){
+	      btn.button('reset');
+	  })
+  });
+
+  $('#btn-register').click(function(event) {
+      var btn=$(this);
+      btn.button('loading');
+      $.ajax( "{% url 'skregistration_register' %}")
+	  .done(function (data) {
+	      if(data.success){
+		  setStatus('invalid');
+	      }
+	      btn.button('reset');
+	  })
+	  .fail(function (jqXHR, textStatus, errorThrown) { 
+	      setModal('Registration result', 'Registration not allowed');
+	  })
+          .always(function(){
+	      btn.button('reset');
+	  })
+  });
+
+  $('#btn-modify-services-metadata').click(function(event) {
+      {% if services_metadata.id %}
+      window.location.href = "{% url 'admin:mdtools_servicesmetadata_change' services_metadata.id %}";
+      {% endif %}
+      return false;
+  });
+
+  $('#btn-missing-metadata').click(function(event) {
+      window.location.href = "{% url 'admin:mdtools_servicesmetadata_add' %}";
+      return false;
+  });
+
+  $('#chk-legal-notes-accepted').click(function(event) {
+      var b=$('#btn-register');
+      if ($(this).is(':checked')) {
+	  b.attr("disabled", false);
+      } else {
+	  b.attr("disabled", true);
+      }
+  });
+
+  
+</script>
+{% endblock extra_script %}
