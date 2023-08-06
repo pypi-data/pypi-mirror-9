@@ -1,0 +1,10 @@
+__version__ = "0.1.26.post4"
+__git_commiter_name__ = "Roey Darwish Dror"
+__git_commiter_email__ = "roeyd@infinidat.com"
+__git_branch__ = 'develop'
+__git_remote_tracking_branch__ = 'origin/develop'
+__git_remote_url__ = 'git@infinigit.infinidat.com:/host/wmi.git'
+__git_head_hash__ = '18b7b984e9552bdbffe955dbf9f823ab9139747e'
+__git_head_subject__ = 'Python 3 compatibility'
+__git_head_message__ = ''
+__git_dirty_diff__ = ''
