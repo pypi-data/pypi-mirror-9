@@ -1,0 +1,10 @@
+__version__ = "0.1.8"
+__git_commiter_name__ = "Guy Rozendorn"
+__git_commiter_email__ = "guy@rzn.co.il"
+__git_branch__ = '(detached from v0.1.8)'
+__git_remote_tracking_branch__ = '(No remote tracking)'
+__git_remote_url__ = '(Not remote tracking)'
+__git_head_hash__ = '9a52abb66c8d60bc06dabfc489301c8d83a8dd07'
+__git_head_subject__ = 'Finished release v0.1.8.'
+__git_head_message__ = '* release/v0.1.8:\n  sg_reset\n  buildout.cfg: changed isolated python version to v2.7.6.21\n  buildout.cfg: changed isolated python version to v2.7.6.20\n  buildout.cfg: changed isolated python version to v2.7.6.19'
+__git_dirty_diff__ = ''
