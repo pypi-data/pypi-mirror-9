@@ -1,0 +1,496 @@
+#!/usr/bin/python
+
+# See file COPYING distributed with fsutils for copyright and license.
+
+import sys
+import os
+import argparse
+import datetime
+import dateutil.parser
+
+version = '0.2.3'
+
+class FSStatusError(Exception):
+
+    """base class for exceptions"""
+
+    def __init__(self, msg):
+        self.msg = msg
+        return
+
+    def __str__(self):
+        return self.msg
+
+class SubjectError(FSStatusError):
+
+    """error reading subject status"""
+
+class NoRunError(FSStatusError):
+
+    """no run found"""
+
+    def __init__(self):
+        return
+
+    def __str__(self):
+        return 'no run found'
+
+class LogError(FSStatusError):
+
+    """error in recon-all.log"""
+
+class Subject:
+
+    def __init__(self, spec, subjects_dir=None):
+        self.subjects_dir = subjects_dir
+        self.spec = spec
+        if not self.subjects_dir or '/' in spec:
+            self._init_from_path(self.spec)
+        else:
+            log = os.path.join(self.subjects_dir, 
+                               spec, 
+                               'scripts', 
+                               'recon-all.log')
+            self._init_from_path(log)
+        return
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return self.runs[key]
+        raise KeyError(key)
+
+    def __len__(self):
+        return len(self.runs)
+
+    def _init_from_path(self, path):
+        if os.path.isdir(path):
+            log = os.path.join(path, 'scripts', 'recon-all.log')
+            self._init_from_path(log)
+            return
+        self._read_log(path)
+        return
+
+    def _read_log(self, path):
+        if not os.path.exists(path):
+            raise SubjectError('%s does not exist' % path)
+        self.runs = []
+        with open(path) as fo:
+            while True:
+                try:
+                    run = Run(self, len(self.runs), fo)
+                except NoRunError:
+                    break
+                except Exception:
+                    import traceback
+                    traceback.print_exc()
+                    raise LogError('error parsing log file')
+                else:
+                    self.runs.append(run)
+        if not self.runs:
+            raise SubjectError('no runs found')
+        for run in self.runs:
+            run.order_vars['NR'] = len(self.runs)
+            run.print_vars['NR'] = len(self.runs)
+        return
+
+class Run:
+
+    def __init__(self, subject, run_number, fo):
+        self.subject = subject
+        self.run_number = run_number
+        self.t_end = None
+        self.steps = []
+        end_state = self.read_log(fo)
+        if end_state == 'start':
+            raise NoRunError()
+        self.print_vars = {}
+        self.order_vars = {}
+        # NR is set by the subject object
+        # RN is printed as one-based while run_number is zero-based
+        self.order_vars['RN'] = self.run_number
+        self.print_vars['RN'] = self.run_number+1
+        self.order_vars['TSTART'] = self.t_start
+        self.print_vars['TSTART'] = format_time(self.t_start)
+        if not self.t_end:
+            self.order_vars['TFINISH'] = None
+            if args.dash:
+                self.print_vars['TFINISH'] = '-          -'
+            else:
+                self.print_vars['TFINISH'] = ''
+            self.order_vars['TRUN'] = now-self.t_start
+            self.print_vars['TRUN'] = format_delta(now-self.t_start)
+            self.order_vars['R'] = True
+            self.print_vars['R'] = 'R'
+            self.order_vars['E'] = None
+            if args.dash:
+                self.print_vars['E'] = '-'
+            else:
+                self.print_vars['E'] = ''
+            if self.steps:
+                self.order_vars['SN'] = len(self.steps)
+                self.print_vars['SN'] = str(len(self.steps))
+                self.order_vars['STEPNAME'] = self.steps[-1]['name']
+                self.print_vars['STEPNAME'] = self.steps[-1]['name']
+                tstart = self.steps[-1]['tstart']
+                self.order_vars['STEPTSTART'] = tstart
+                self.print_vars['STEPTSTART'] = format_time(tstart)
+                self.order_vars['STEPTRUN'] = now-tstart
+                self.print_vars['STEPTRUN'] = format_delta(now-tstart)
+            else:
+                self.order_vars['SN'] = None
+                self.order_vars['STEPNAME'] = None
+                self.order_vars['STEPTSTART'] = None
+                self.order_vars['STEPTRUN'] = None
+                if args.dash:
+                    self.print_vars['SN'] = '-'
+                    self.print_vars['STEPNAME'] = '-'
+                    self.print_vars['STEPTSTART'] = '-'
+                    self.print_vars['STEPTRUN'] = '-'
+                else:
+                    self.print_vars['SN'] = ''
+                    self.print_vars['STEPNAME'] = ''
+                    self.print_vars['STEPTSTART'] = ''
+                    self.print_vars['STEPTRUN'] = ''
+        else:
+            self.order_vars['TFINISH'] = self.t_end
+            self.print_vars['TFINISH'] = format_time(self.t_end)
+            self.order_vars['TRUN'] = self.t_end-self.t_start
+            self.print_vars['TRUN'] = format_delta(self.t_end-self.t_start)
+            self.order_vars['R'] = False
+            if args.dash:
+                self.print_vars['R'] = '-'
+            else:
+                self.print_vars['R'] = ''
+            if self.error:
+                self.order_vars['E'] = True
+                self.print_vars['E'] = 'E'
+            else:
+                self.order_vars['E'] = False
+                if args.dash:
+                    self.print_vars['E'] = '-'
+                else:
+                    self.print_vars['E'] = ''
+            self.order_vars['SN'] = None
+            self.order_vars['STEPNAME'] = None
+            self.order_vars['STEPTSTART'] = None
+            self.order_vars['STEPTRUN'] = None
+            if args.dash:
+                self.print_vars['SN'] = '-'
+                self.print_vars['STEPNAME'] = '-'
+                self.print_vars['STEPTSTART'] = '-'
+                self.print_vars['STEPTRUN'] = '-'
+            else:
+                self.print_vars['SN'] = ''
+                self.print_vars['STEPNAME'] = ''
+                self.print_vars['STEPTSTART'] = ''
+                self.print_vars['STEPTRUN'] = ''
+        self.order_vars['SPEC'] = self.subject.spec
+        self.print_vars['SPEC'] = self.subject.spec
+        return
+
+    def read_log(self, fo):
+        """read a recon-all.log
+
+        states are:
+
+            start
+            header block
+            post-header
+            memory block
+            post-memory
+            verions block
+            step
+            end
+
+        lines in the header block:
+
+            date
+            pwd
+            $0
+            args
+            subjid
+            SUBJECTS_DIR
+            FREESURFER_HOME
+            actual FREESURFER_HOME
+            build stamp
+            uname -a
+        """
+        state = 'start'
+        headers = []
+        for line in fo:
+            line = line.strip()
+            if line.startswith('To report a problem, see'):
+                # this appears sometimes after a run (after we are done with 
+                # this processing), so it will show up at the start of our 
+                # processing of the next run
+                continue
+            if line.startswith('New invocation'):
+                # appears between runs; ignore
+                continue
+            if line == r'\n\n':
+                # sometimes appears between runs; ignore
+                continue
+            if state == 'start':
+                if line:
+                    state = 'header block'
+                    headers.append(line)
+                continue
+            if state == 'header block':
+                if line:
+                    headers.append(line)
+                else:
+                    state = 'post-header'
+                    self.t_start = dateutil.parser.parse(headers[0])
+                    self.pwd = headers[1]
+                    self.script_name = headers[2]
+                    self.args = headers[3]
+                    self.subjid = headers[4]
+                    self.subjects_dir = headers[5]
+                    self.freesurfer_home = headers[6]
+                    self.actual_freesurfer_home = headers[7]
+                    self.build_stamp = headers[8]
+                    self.uname = headers[9]
+                continue
+            if state == 'post-header':
+                if line:
+                    state = 'memory block'
+                continue
+            if state == 'memory block':
+                if not line:
+                    state = 'post-memory'
+                continue
+            if state == 'post-memory':
+                if line:
+                    state = 'versions block'
+                continue
+            if line.startswith('#@# '):
+                step = line[4:-28].strip()
+                t = dateutil.parser.parse(line[-28:])
+                self.steps.append({'name': step, 'tstart': t})
+                state = 'step'
+                continue
+            # state == 'step'
+            if 'exited with ERRORS' in line:
+                self.error = True
+                self.t_end = dateutil.parser.parse(line[-28:])
+                state = 'end'
+                break
+            if 'finished without error' in line:
+                self.error = False
+                self.t_end = dateutil.parser.parse(line[-28:])
+                state = 'end'
+                break
+        return state
+
+def run_cmp(a, b):
+    """cmp() on runs, ordering by the field in args.order_field"""
+    field = args.order_field.upper().strip()
+    return cmp(a.order_vars[field], b.order_vars[field])
+
+# output field widths
+# this is also used to check for valid output fields
+field_widths = {'NR': 2, 
+                'RN': 2, 
+                'TSTART': 19, 
+                'TFINISH': 19, 
+                'TRUN': 8, 
+                'E': 1, 
+                'R': 1, 
+                'SPEC': 8, 
+                'SN': 2, 
+                'STEPNAME': 34, 
+                'STEPTSTART': 19, 
+                'STEPTRUN': 8}
+
+progname = os.path.basename(sys.argv[0])
+
+description = """
+
+Report on the status of FreeSurfer runs.
+
+By default, {progname} reports on the latest run for each subject in 
+$SUBJECTS_DIR.
+
+An alternate subjects directory can be specified using the -S flag.
+
+Individual subjects can be selected at the command line.  If these 
+specifiers include a forward slash or if no subjects directory is given, 
+they are taken as paths to subject directories or recon-all.log files.
+
+Examples:
+
+    {progname} -- report on the last run for all subjects in $SUBJECTS_DIR
+
+    {progname} -S /data/study_2 S001 S002 S003 -- report on the last run 
+        for subjects S001, S002, and S003 in SUBJECTS_DIR=/data/study_2
+
+    {progname} ./S001 /tmp/recon-all.log -- report on the last run for 
+        the subject in S001 and the subject described by /tmp/recon-all.log
+
+Output can be customized by a comma-separated list of fields:
+
+    NR -- number of runs
+
+    RN -- the run number being reported on
+
+    TSTART -- the run start time
+
+    TFINISH -- the run end time
+
+    TRUN -- the run time
+
+    SN -- the number of the running step
+
+    STEPNAME -- the name of the running step
+
+    STEPTSTART -- the start time of the running step
+
+    STEPTRUN -- the run time of the running step
+
+    E -- 'E' if the run exited with errors
+
+    R -- 'R' if the case is still running
+
+    SPEC -- the subject specifier
+
+The same fields are options to the order option.
+
+""".format(progname=progname)
+
+def format_time(t):
+    return t.strftime('%Y-%m-%d %H:%M:%S')
+
+def format_delta(d):
+    s = d.seconds % 60
+    minutes = d.seconds / 60
+    m = minutes % 60
+    hours = minutes / 60
+    h = 24 * d.days + hours
+    return '%02d:%02d:%02d' % (h, m, s)
+
+parser = argparse.ArgumentParser(description=description, 
+                                 formatter_class=argparse.RawTextHelpFormatter)
+
+parser.add_argument('-v', '--version', 
+                    default=False, 
+                    action='store_true', 
+                    dest='version', 
+                    help='show version and exit')
+parser.add_argument('-H', '--suppress-header', 
+                    default=False, 
+                    action='store_true', 
+                    dest='suppress_header', 
+                    help='suppress header')
+parser.add_argument('-o', '--output', 
+                    dest='output_fields', 
+                    default='NR,RN,TSTART,TFINISH,TRUN,E,SPEC', 
+                    help='output fields')
+parser.add_argument('-O', '--order', 
+                    dest='order_field', 
+                    default='SPEC', 
+                    help='order field')
+parser.add_argument('--dash', '-d', 
+                    default=False, 
+                    action='store_true', 
+                    help='print dashes for empty values')
+parser.add_argument('--subjects-dir', '-S')
+parser.add_argument('subjects', 
+                    metavar='subject', 
+                    nargs='*')
+
+args = parser.parse_args()
+
+if args.version:
+    print '%s %s' % (progname, version)
+    sys.exit(0)
+
+output_fields = []
+for field in args.output_fields.split(','):
+    field = field.upper().strip()
+    if field not in field_widths:
+        sys.stderr.write('%s: unknown output field "%s"\n' % (progname, field))
+        sys.exit(1)
+    output_fields.append(field)
+
+if args.order_field.upper().strip() not in field_widths:
+    fmt = '%s: unknown order field "%s"\n'
+    sys.stderr.write(fmt % (progname, args.order_field))
+    sys.exit(1)
+
+subjects_dir = args.subjects_dir
+if not subjects_dir and 'SUBJECTS_DIR' in os.environ:
+    subjects_dir = os.environ['SUBJECTS_DIR']
+
+subjects = []
+
+now = datetime.datetime.now(dateutil.tz.tzlocal())
+
+if not subjects_dir:
+    if not args.subjects:
+        parser.print_usage(sys.stderr)
+        fmt = '%s: error: no subjects directory or subjects given\n'
+        sys.stderr.write(fmt % progname)
+        sys.exit(2)
+    for spec in args.subjects:
+        try:
+            subjects.append(Subject(spec))
+        except FSStatusError, data:
+            sys.stderr.write('%s: %s: %s\n' % (progname, spec, str(data)))
+else:
+    if not os.path.isdir(subjects_dir):
+        msg = '%s: %s is not a directory\n' % (progname, subjects_dir)
+        sys.stderr.write(msg)
+        sys.exit(1)
+    if not args.subjects:
+        for subject in os.listdir(subjects_dir):
+            try:
+                subjects.append(Subject(subject, subjects_dir=subjects_dir))
+            except SubjectError:
+                # subjects directory given but no specific subjects given 
+                # means that we're asked to scan for subjects, so in this 
+                # case we won't report on errors in subjects we try
+                pass
+            except LogError, data:
+                msg = '%s: %s: %s\n' % (progname, subject, str(data))
+                sys.stderr.write(msg)
+    else:
+        for subject in args.subjects:
+            try:
+                subjects.append(Subject(subject, subjects_dir=subjects_dir))
+            except FSStatusError, data:
+                msg = '%s: %s: %s\n' % (progname, subject, str(data))
+                sys.stderr.write(msg)
+
+if not subjects:
+    sys.stderr.write('%s: no subjects found\n' % progname)
+    sys.exit(1)
+
+runs = []
+for subject in subjects:
+    runs.append(subject[-1])
+
+if not runs:
+    sys.stderr.write('%s: no runs found\n' % progname)
+    sys.exit(1)
+
+runs.sort(run_cmp)
+
+headers = []
+fmts = []
+for field in output_fields:
+    width = field_widths[field]
+    headers.append(field.ljust(width))
+    fmts.append('{%s:%d}' % (field, width))
+
+header = '  '.join(headers).strip()
+fmt = '  '.join(fmts).strip()
+
+if not args.suppress_header:
+    print header
+
+for run in runs:
+    print fmt.format(**run.print_vars).rstrip()
+
+sys.exit(0)
+
+# eof
