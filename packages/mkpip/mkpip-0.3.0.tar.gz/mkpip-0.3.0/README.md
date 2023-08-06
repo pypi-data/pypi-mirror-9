@@ -1,0 +1,4 @@
+mkpip
+=====
+
+Boilerplate python packaging
