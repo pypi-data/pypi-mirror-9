@@ -1,0 +1,155 @@
+<html xmlns="http://www.w3.org/1999/xhtml"
+      xmlns:tal="http://xml.zope.org/namespaces/tal"
+      xmlns:metal="http://xml.zope.org/namespaces/metal"
+      metal:use-macro="base">
+<head>
+  <title></title>
+  <script metal:fill-slot="js"
+          src="/Static/Js/bld_results.js" type="text/javascript"></script>
+</head>
+<body>
+<div id="mainPanel" metal:fill-slot="main">
+  ${form.begin()}
+  <!-- ............................... Buttons ............................ -->
+  <div id="buttons">
+    <div class="first">
+      ${request.breadcrumbs.back_button()}
+    </div>
+    <div class="last">
+      <span tal:condition="working" id="refresh" class="${refresh}"></span>
+      <span tal:condition="not working" tal:omit-tag="">
+        ${form.button(request.current_route_path(), _('Refresh'), class_='buttonMain')}
+      </span>
+      ${form.button(route('project_dashboard', project_id=project['project_id']), _('View dashboard'))}
+    </div>
+    <hr class="hidden"/>
+  </div>
+  <div id="main">
+    <h2 id="subtitle" class="build" title="${_('Results')}">${project['label']}</h2><br/>
+    <!-- ............................. Flash .............................. -->
+    <div id="flashAlert" tal:condition="request.session.peek_flash('alert')">
+      <div tal:repeat="message request.session.pop_flash('alert')">${message}</div>
+    </div>
+    <!-- ............................ Action list ......................... -->
+    <h3 class="list">${_('Result List')}</h3>
+    <div class="listActions">
+      <div class="first"><img src="/Static/Images/build.png" alt="builds" title="${_('Builds')}"/></div>
+      <div class="last" tal:switch="action">
+        <span tal:case="'del?#'" tal:omit-tag="">
+          ${form.submit('del!#.x', _('Confirm deletion'), class_='button')}
+          ${form.submit_cancel(_('Cancel'))}
+        </span>
+        <span tal:case="'stp?#'" tal:omit-tag="">
+          ${form.submit('stp!#.x', _('Confirm STOP'), class_='button')}
+          ${form.submit_cancel(_('Cancel'))}
+        </span>
+        <span tal:case="default" tal:omit-tag=""> 
+          ${form.submit_image('dnl!#', _('Download selected results'),
+            '/Static/Images/action_download.png')}
+          ${form.submit_image('del?#', _('Delete selected result displays'),
+            '/Static/Images/action_delete.png')}
+          ${form.submit_image('stp?#', _('Stop selected builds'),
+            '/Static/Images/action_stop.png')}
+        </span>
+      </div>
+    </div>    
+    <!-- ............................... Results ........................... -->
+    <div id="content">
+      <table class="list"
+             tal:define="datetime import: datetime ; time import: time.time ;
+                         join import: os.path.join">
+        <tr>
+          <th class="checkbox" id="check_all"></th>
+          <th>${_('Pack')}</th>
+          <th>${_('Processing')}</th>
+          <th>${_('User')}</th>
+          <th>${_('Age/[Playing]')}</th>
+          <th>${_('Status')}</th>
+          <th class="last">${_('Actions')}</th>
+        </tr>
+        <tr tal:repeat="result results">
+          <td class="checkbox">
+            ${form.checkbox('#%s' % result['build_id'], id=None, class_='listCheck')}
+          </td>
+          <td>
+            <a href="${route('pack_view', project_id=project['project_id'], pack_id=result['pack_id'])}">
+              ${packs.get(result['pack_id'], _(u'Deleted pack…'))}
+            </a>
+          </td>
+          <td>
+            <a href="${route('processing_view', project_id=project['project_id'],
+                     processing_id=result['processing_id'])}">
+              ${processings.get(result['processing_id'], [_(u'Deleted processing…')])[0]}
+            </a>
+          </td>
+          <td>
+            <a href="${route('user_view', user_id=result['user_id'])}">
+              ${users.get(result['user_id'], _(u'Deleted user…'))}
+            </a>
+          </td>
+          <td tal:switch="result['status'] == 'none'">
+            <div tal:case="True" id="playing_${result['build_id']}" class="playing"
+                 title="${datetime.datetime.fromtimestamp(result['start']).isoformat(' ').split('.')[0]}">
+              [${str(datetime.timedelta(seconds=time() - result['start'])).split('.')[0]}]
+            </div>
+            <div tal:case="False"
+                 title="${datetime.datetime.fromtimestamp(result['start']).isoformat(' ').split('.')[0]}">
+              ${age(datetime.datetime.fromtimestamp(result['start']))}
+            </div>
+          </td>
+          <td tal:switch="result['status'] == 'none'">
+            <div tal:case="True" id="progress_${result['build_id']}" class="progressGauge buildStatus">
+              <div style="${'width: {p}%;'.format(p=progress[result['build_id']][1])}"></div>
+            </div>
+            <div tal:case="False" class="${result['status'] == 'fatal' and 'ko' or 'ok'} buildStatus">
+              ${status_labels[result['status']]}
+            </div>
+            <a href="${route('build_info', build_id=result['build_id'])}"></a>
+          </td>
+          <td class="last actions" tal:switch="action">
+            <span tal:case="'del?%s' % result['build_id']" tal:omit-tag="">
+              ${form.submit('del!%s.x' % result['build_id'], _('Confirm deletion'), class_='button')}
+              ${form.submit_cancel(_('Cancel'))}
+            </span>
+            <span tal:case="'stp?%s' % result['build_id']" tal:omit-tag="">
+              ${form.submit('stp!%s.x' % result['build_id'], _('Confirm STOP'), class_='button')}
+              ${form.submit_cancel(_('Cancel'))}
+            </span>
+            <span tal:case="default"  tal:omit-tag="">
+              <span tal:switch="result['status'] == 'none'" tal:omit-tag="">
+                <span tal:case="True" tal:omit-tag="">
+                  ${form.button(route('build_progress', build_id=result['build_id']),
+                    src='/Static/Images/action_progress_one.png', title=_('View progress'),
+                    class_="slow")}
+                  ${form.submit_image('stp?%s' % result['build_id'], _('Stop build'),
+                    '/Static/Images/action_stop_one.png')}
+                </span>
+                <span tal:case="False" tal:omit-tag="">
+                  ${form.button(route('build_view', build_id=result['build_id'], _anchor='build'),
+                    src='/Static/Images/action_progress_one.png', title=_('View build page'),
+                    class_="slow")}
+                  <span tal:condition="processings[result['processing_id']][1] and result.get('files')" tal:omit-tag="">
+                    <span tal:define="storage_id processings[result['processing_id']][1].partition('/')[0] ;
+                                      path processings[result['processing_id']][1].partition('/')[2]">
+                      ${form.submit_image('dnl!%s' % result['build_id'], _('Download result'),
+                        '/Static/Images/action_download_one.png')}
+                      ${form.button(route('storage_browse', storage_id=storage_id, path=path),
+                        src='/Static/Images/action_browse_one.png', title=_('View in storage'), class_="slow")}
+                    </span>
+                  </span>
+                  ${form.submit_image('del?%s' % result['build_id'], _('Delete result display'),
+                    '/Static/Images/action_delete_one.png')}
+                </span>
+              </span>
+            </span>
+          </td>
+        </tr>
+      </table>
+      <div id="flash" tal:condition="not results">${_('No recent result.')}</div>
+      <div class="spacer"> </div>
+    </div>
+  </div>
+  ${form.end()}
+</div>
+</body>
+</html>
