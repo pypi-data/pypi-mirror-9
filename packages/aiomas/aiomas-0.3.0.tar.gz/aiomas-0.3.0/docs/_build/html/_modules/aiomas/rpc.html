@@ -1,0 +1,569 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>aiomas.rpc &mdash; aiomas 0.2.0 documentation</title>
+  
+
+  
+  
+
+  
+  <link href='https://fonts.googleapis.com/css?family=Lato:400,700,400italic,700italic|Roboto+Slab:400,700|Inconsolata:400,700&subset=latin,cyrillic' rel='stylesheet' type='text/css'>
+
+  
+  
+    
+
+  
+
+  
+  
+    <link rel="stylesheet" href="../../_static/css/theme.css" type="text/css" />
+  
+
+  
+
+  
+    <link rel="top" title="aiomas 0.2.0 documentation" href="../../index.html"/>
+        <link rel="up" title="Module code" href="../index.html"/> 
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/modernizr/2.6.2/modernizr.min.js"></script>
+
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-nav-search">
+        
+          <a href="../../index.html" class="fa fa-home"> aiomas</a>
+        
+        
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+        
+          
+          
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../overview.html">Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../agent.html">The agent layer</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../rpc.html">The RPC layer</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../channel.html">The channel layer</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../codecs.html">Codecs for message serialization</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../api_reference/index.html">API reference</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../api_reference/aiomas.html"><code class="docutils literal"><span class="pre">aiomas</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api_reference/aiomas.agent.html"><code class="docutils literal"><span class="pre">aiomas.agent</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api_reference/aiomas.channel.html"><code class="docutils literal"><span class="pre">aiomas.channel</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api_reference/aiomas.clocks.html"><code class="docutils literal"><span class="pre">aiomas.clocks</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api_reference/aiomas.codecs.html"><code class="docutils literal"><span class="pre">aiomas.codecs</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api_reference/aiomas.exceptions.html"><code class="docutils literal"><span class="pre">aiomas.exceptions</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api_reference/aiomas.rpc.html"><code class="docutils literal"><span class="pre">aiomas.rpc</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api_reference/aiomas.util.html"><code class="docutils literal"><span class="pre">aiomas.util</span></code></a></li>
+</ul>
+</li>
+</ul>
+
+          
+        
+      </div>
+      &nbsp;
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
+        <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+        <a href="../../index.html">aiomas</a>
+      </nav>
+
+
+      
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="../../index.html">Docs</a> &raquo;</li>
+      
+          <li><a href="../index.html">Module code</a> &raquo;</li>
+      
+    <li>aiomas.rpc</li>
+      <li class="wy-breadcrumbs-aside">
+        
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document">
+            
+  <h1>Source code for aiomas.rpc</h1><div class="highlight"><pre>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">This module implements remote procedure calls (RPC) on top of request-reply</span>
+<span class="sd">channels (see :mod:`aiomas.channel`).</span>
+
+<span class="sd">RPC connections are represented by instances of :class:`RpcClient` (one for</span>
+<span class="sd">each side of a :class:`aiomas.channel.Channel`).  They provide access to the</span>
+<span class="sd">functions served by the remote side of the channel via :class:`Proxy`</span>
+<span class="sd">instances.  Optionally, they can provide their own RPC service (via</span>
+<span class="sd">:func:`rpc_service`) so that the remote side can make calls as well.</span>
+
+<span class="sd">An RPC service is defined by a :class:`Router`.  A router resolves paths</span>
+<span class="sd">requested by the remote side.  It can also handle sub-routers (which allows you</span>
+<span class="sd">to build hierarchies for nested calls) and is able to perform a reverse-lookup</span>
+<span class="sd">of a router (mapping a fuction to its path).</span>
+
+<span class="sd">Routers provide the functions and methods of dictionaries or class instances.</span>
+<span class="sd">Dict routers can be created by passing a dictionary to :class:`Router`.  For</span>
+<span class="sd">classes, you create a :class:`Service` instance as `rpc` class attribute.  This</span>
+<span class="sd">creates a *Descriptor* which then creates a new router instance for each class</span>
+<span class="sd">instance.</span>
+
+<span class="sd">Functions that should be callable from the remote side must be decorated with</span>
+<span class="sd">:func:`expose()`; :func:`Router.expose()` and :func:`Service.expose()` are</span>
+<span class="sd">aliases for it.</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s">&#39;open_connection&#39;</span><span class="p">,</span> <span class="s">&#39;start_server&#39;</span><span class="p">,</span> <span class="s">&#39;rpc_service&#39;</span><span class="p">,</span> <span class="s">&#39;expose&#39;</span><span class="p">,</span>
+    <span class="s">&#39;_handle_request&#39;</span><span class="p">,</span>
+    <span class="s">&#39;DictWrapper&#39;</span><span class="p">,</span> <span class="s">&#39;Router&#39;</span><span class="p">,</span> <span class="s">&#39;Service&#39;</span><span class="p">,</span> <span class="s">&#39;RpcClient&#39;</span><span class="p">,</span> <span class="s">&#39;Proxy&#39;</span><span class="p">,</span>
+<span class="p">]</span>
+
+<span class="kn">from</span> <span class="nn">asyncio</span> <span class="kn">import</span> <span class="n">coroutine</span>
+<span class="kn">import</span> <span class="nn">asyncio</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+
+<span class="kn">import</span> <span class="nn">aiomas.channel</span>
+<span class="kn">import</span> <span class="nn">aiomas.codecs</span>
+
+
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="n">__name__</span><span class="p">)</span>
+
+
+<span class="nd">@coroutine</span>
+<div class="viewcode-block" id="open_connection"><a class="viewcode-back" href="../../api_reference/aiomas.rpc.html#aiomas.agent.open_connection">[docs]</a><span class="k">def</span> <span class="nf">open_connection</span><span class="p">(</span><span class="n">addr</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">router</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">add_to</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwds</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Return an :class:`RpcClient` connected to *addr*.</span>
+
+<span class="sd">    This is a convenience wrapper for :meth:`aiomas.channel.open_connection()`.</span>
+<span class="sd">    All keyword arguments *(kwds)* are forwared to it.</span>
+
+<span class="sd">    You can optionally pass a *router* to allow the remote site to call back</span>
+<span class="sd">    to us.</span>
+
+<span class="sd">    If you want to cleanly cancel all :func:`rpc_service()` tasks created for</span>
+<span class="sd">    each connection made to *router*, you can pass a :class:`set` via *add_to*.</span>
+<span class="sd">    All tasks will then be append to it.</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">router</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span> <span class="ow">and</span> <span class="nb">type</span><span class="p">(</span><span class="n">router</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">Router</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&#39;&quot;</span><span class="si">%s</span><span class="s">&quot; is not a valid router.&#39;</span> <span class="o">%</span> <span class="n">router</span><span class="p">)</span>
+
+    <span class="n">channel</span> <span class="o">=</span> <span class="k">yield from</span> <span class="n">aiomas</span><span class="o">.</span><span class="n">channel</span><span class="o">.</span><span class="n">open_connection</span><span class="p">(</span><span class="n">addr</span><span class="p">,</span> <span class="o">**</span><span class="n">kwds</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">RpcClient</span><span class="p">(</span><span class="n">channel</span><span class="p">,</span> <span class="n">router</span><span class="p">,</span> <span class="n">add_to</span><span class="p">)</span>
+
+</div>
+<span class="nd">@coroutine</span>
+<div class="viewcode-block" id="start_server"><a class="viewcode-back" href="../../api_reference/aiomas.rpc.html#aiomas.agent.start_server">[docs]</a><span class="k">def</span> <span class="nf">start_server</span><span class="p">(</span><span class="n">addr</span><span class="p">,</span> <span class="n">router</span><span class="p">,</span> <span class="n">add_to</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwds</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Start a server socket on *host:port* and create an RPC service with</span>
+<span class="sd">    the provided *handler* for each new client.</span>
+
+<span class="sd">    This is a convenience wrapper for :meth:`aiomas.channel.start_server()`.</span>
+<span class="sd">    All keyword arguments *(kwds)* are forwared to it.</span>
+
+<span class="sd">    *router* must be a :class:`Router` instance for the :func:`rpc_service()`</span>
+<span class="sd">    that is started for each new connection.</span>
+
+<span class="sd">    If you want to cleanly cancel all :func:`rpc_service()` tasks created for</span>
+<span class="sd">    each connection made to *router*, you can pass a :class:`set` via *add_to*.</span>
+<span class="sd">    All tasks will then be append to it.</span>
+
+<span class="sd">    Raise a :exc:`ValueError` if *handler* is not decorated properly.</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">router</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">Router</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&#39;&quot;</span><span class="si">%s</span><span class="s">&quot; is not a valid router.&#39;</span> <span class="o">%</span> <span class="n">router</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">fac</span><span class="p">(</span><span class="n">channel</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">RpcClient</span><span class="p">(</span><span class="n">channel</span><span class="p">,</span> <span class="n">router</span><span class="p">,</span> <span class="n">add_to</span><span class="p">)</span>
+
+    <span class="n">server</span> <span class="o">=</span> <span class="k">yield from</span> <span class="n">aiomas</span><span class="o">.</span><span class="n">channel</span><span class="o">.</span><span class="n">start_server</span><span class="p">(</span><span class="n">addr</span><span class="p">,</span> <span class="n">fac</span><span class="p">,</span> <span class="o">**</span><span class="n">kwds</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">server</span>
+
+</div>
+<span class="nd">@coroutine</span>
+<div class="viewcode-block" id="rpc_service"><a class="viewcode-back" href="../../api_reference/aiomas.rpc.html#aiomas.agent.rpc_service">[docs]</a><span class="k">def</span> <span class="nf">rpc_service</span><span class="p">(</span><span class="n">router</span><span class="p">,</span> <span class="n">channel</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Serve the functions provided by the :class:`Router` *router* via the</span>
+<span class="sd">    :class:`~aiomas.channel.Channel` *channel*.</span>
+
+<span class="sd">    Forward errors raised by the handler to the caller.</span>
+
+<span class="sd">    Stop running when the connection closes.</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">loop</span> <span class="o">=</span> <span class="n">channel</span><span class="o">.</span><span class="n">_loop</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">while</span> <span class="bp">True</span><span class="p">:</span>
+            <span class="c"># Wait for a request</span>
+            <span class="n">request</span> <span class="o">=</span> <span class="k">yield from</span> <span class="n">channel</span><span class="o">.</span><span class="n">recv</span><span class="p">()</span>
+
+            <span class="c"># Dispatch handling of the request to a sub task to make dead-locks</span>
+            <span class="c"># less likely when multiple agents share the same connection.</span>
+            <span class="n">asyncio</span><span class="o">.</span><span class="n">async</span><span class="p">(</span><span class="n">_handle_request</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">loop</span><span class="p">,</span> <span class="n">router</span><span class="p">),</span> <span class="n">loop</span><span class="o">=</span><span class="n">loop</span><span class="p">)</span>
+
+    <span class="k">except</span> <span class="p">(</span><span class="n">ConnectionError</span><span class="p">,</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">CancelledError</span><span class="p">):</span>
+        <span class="k">pass</span>
+
+    <span class="k">finally</span><span class="p">:</span>
+        <span class="n">channel</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+
+</div>
+<span class="nd">@coroutine</span>
+<span class="k">def</span> <span class="nf">_handle_request</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">loop</span><span class="p">,</span> <span class="n">router</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Handle the *request*.</span>
+
+<span class="sd">    Resolve the path, execute the corresponding message and set the result</span>
+<span class="sd">    or exception.</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">path</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">kwargs</span> <span class="o">=</span> <span class="n">request</span><span class="o">.</span><span class="n">content</span>
+    <span class="c"># logger.debug(&#39;Request: [%s, %s, %s]&#39; % (path, args, kwargs))</span>
+
+    <span class="c"># Resolve requested path</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">func</span> <span class="o">=</span> <span class="n">router</span><span class="o">.</span><span class="n">resolve</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">LookupError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+        <span class="k">yield from</span> <span class="n">request</span><span class="o">.</span><span class="n">fail</span><span class="p">(</span><span class="n">exc</span><span class="p">)</span>
+        <span class="k">return</span>
+
+    <span class="c"># Call requested function</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="n">func</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">iscoroutine</span><span class="p">(</span><span class="n">res</span><span class="p">):</span>
+            <span class="n">res</span> <span class="o">=</span> <span class="k">yield from</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">async</span><span class="p">(</span><span class="n">res</span><span class="p">,</span> <span class="n">loop</span><span class="o">=</span><span class="n">loop</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="k">yield from</span> <span class="n">request</span><span class="o">.</span><span class="n">fail</span><span class="p">(</span><span class="n">e</span><span class="p">)</span>  <span class="c"># pragma: no branch</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">yield from</span> <span class="n">request</span><span class="o">.</span><span class="n">reply</span><span class="p">(</span><span class="n">res</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="expose"><a class="viewcode-back" href="../../api_reference/aiomas.rpc.html#aiomas.agent.expose">[docs]</a><span class="k">def</span> <span class="nf">expose</span><span class="p">(</span><span class="n">func</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Decorator that enables RPC access to the decorated function.</span>
+
+<span class="sd">    *func* will not be wrapped but only gain an ``__rpc__`` attribute.</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="s">&#39;__call__&#39;</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&#39;&quot;</span><span class="si">%s</span><span class="s">&quot; is not callable.&#39;</span> <span class="o">%</span> <span class="n">func</span><span class="p">)</span>
+
+    <span class="n">func</span><span class="o">.</span><span class="n">__rpc__</span> <span class="o">=</span> <span class="bp">True</span>
+    <span class="k">return</span> <span class="n">func</span>
+
+</div>
+<div class="viewcode-block" id="DictWrapper"><a class="viewcode-back" href="../../api_reference/aiomas.rpc.html#aiomas.agent.DictWrapper">[docs]</a><span class="k">class</span> <span class="nc">DictWrapper</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;Wrapper for dicts so that they can be used as RPC routers.&quot;&quot;&quot;</span>
+    <span class="n">__rpc__</span> <span class="o">=</span> <span class="bp">True</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">router</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">dict</span> <span class="o">=</span> <span class="nb">dict</span>
+        <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">val</span> <span class="ow">in</span> <span class="nb">dict</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="c"># Iterate over all entries and look for objects with routers.</span>
+            <span class="c"># Set *router* as parent to these sub-routers.</span>
+            <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">val</span><span class="p">,</span> <span class="s">&#39;rpc&#39;</span><span class="p">):</span>
+                <span class="n">Router</span><span class="o">.</span><span class="n">set_sub_router</span><span class="p">(</span><span class="n">router</span><span class="p">,</span> <span class="n">val</span><span class="o">.</span><span class="n">rpc</span><span class="p">,</span> <span class="n">key</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">__getrpc__</span> <span class="o">=</span> <span class="nb">dict</span><span class="o">.</span><span class="n">__getitem__</span>
+
+</div>
+<div class="viewcode-block" id="Router"><a class="viewcode-back" href="../../api_reference/aiomas.rpc.html#aiomas.agent.Router">[docs]</a><span class="k">class</span> <span class="nc">Router</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;The Router resolves paths to functions provided by their object *obj*</span>
+<span class="sd">    (or its children).  It can also perform a reverse lookup to get the path</span>
+<span class="sd">    of the router (and the router&#39;s *obj*).</span>
+
+<span class="sd">    The *obj* can be a class, an instance or a dict.</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">obj</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">obj</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="nb">dict</span><span class="p">:</span>
+            <span class="c"># Mark *obj* as node in the RPC hierarchy and and create an alias</span>
+            <span class="c"># for accessing its child elements.</span>
+            <span class="n">obj</span><span class="o">.</span><span class="n">__rpc__</span> <span class="o">=</span> <span class="bp">True</span>
+            <span class="n">obj</span><span class="o">.</span><span class="n">__getrpc__</span> <span class="o">=</span> <span class="n">obj</span><span class="o">.</span><span class="n">__getattribute__</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c"># We cannot set additional attributes to a dict, so we wrap it:</span>
+            <span class="n">obj</span> <span class="o">=</span> <span class="n">DictWrapper</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">obj</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">obj</span> <span class="o">=</span> <span class="n">obj</span>  <span class="c">#: The object to which this router belongs to.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="s">&#39;&#39;</span>  <span class="c">#: The name of the router (empty for root routers).</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">parent</span> <span class="o">=</span> <span class="bp">None</span>  <span class="c">#: The parent router or ``None`` for root routers.</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_cache</span> <span class="o">=</span> <span class="p">{}</span>  <span class="c"># Maps already resolved paths to functions</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">path</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;The path to this router (without trailing slash).&quot;&quot;&quot;</span>
+        <span class="n">router</span> <span class="o">=</span> <span class="bp">self</span>
+        <span class="n">parts</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">while</span> <span class="n">router</span><span class="o">.</span><span class="n">parent</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">router</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+            <span class="n">router</span> <span class="o">=</span> <span class="n">router</span><span class="o">.</span><span class="n">parent</span>
+
+        <span class="k">return</span> <span class="s">&#39;/&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">parts</span><span class="p">)</span>
+
+<div class="viewcode-block" id="Router.resolve"><a class="viewcode-back" href="../../api_reference/aiomas.rpc.html#aiomas.agent.Router.resolve">[docs]</a>    <span class="k">def</span> <span class="nf">resolve</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Resolve *path* and return the corresponding function.</span>
+
+<span class="sd">        *path* is a string with path components separated by */* (without</span>
+<span class="sd">        trailing slash).</span>
+
+<span class="sd">        Raise a :exc:`LookupError` if no handler function can be found for</span>
+<span class="sd">        *path* or if the function is not exposed (see :func:`expose()`).</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">obj</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cache</span><span class="p">[</span><span class="n">path</span><span class="p">]</span>
+        <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
+            <span class="n">obj</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">obj</span>
+            <span class="n">parts</span> <span class="o">=</span> <span class="n">path</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s">&#39;/&#39;</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">name</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">parts</span><span class="p">):</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">obj</span> <span class="o">=</span> <span class="n">obj</span><span class="o">.</span><span class="n">__getrpc__</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+                <span class="k">except</span> <span class="p">(</span><span class="ne">AttributeError</span><span class="p">,</span> <span class="ne">KeyError</span><span class="p">):</span>
+                    <span class="k">raise</span> <span class="ne">LookupError</span><span class="p">(</span><span class="s">&#39;Name &quot;</span><span class="si">%s</span><span class="s">&quot; not found in &quot;</span><span class="si">%s</span><span class="s">&quot;&#39;</span> <span class="o">%</span>
+                                      <span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="s">&#39;/&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">parts</span><span class="p">[:</span><span class="n">i</span><span class="p">])))</span> <span class="kn">from</span> <span class="bp">None</span>
+
+                <span class="k">if</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="s">&#39;__rpc__&#39;</span><span class="p">):</span>
+                    <span class="k">raise</span> <span class="ne">LookupError</span><span class="p">(</span><span class="s">&#39;&quot;</span><span class="si">%s</span><span class="s">&quot; is not exposed&#39;</span> <span class="o">%</span> <span class="n">name</span><span class="p">)</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">_cache</span><span class="p">[</span><span class="n">path</span><span class="p">]</span> <span class="o">=</span> <span class="n">obj</span>
+
+        <span class="k">return</span> <span class="n">obj</span>
+</div>
+    <span class="n">expose</span> <span class="o">=</span> <span class="nb">staticmethod</span><span class="p">(</span><span class="n">expose</span><span class="p">)</span>
+    <span class="sd">&quot;&quot;&quot;Alias for :func:`expose()`.&quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="Router.add"><a class="viewcode-back" href="../../api_reference/aiomas.rpc.html#aiomas.agent.Router.add">[docs]</a>    <span class="k">def</span> <span class="nf">add</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Add the sub-router *name* (stored at ``self.obj.&lt;name&gt;``) to this</span>
+<span class="sd">        router.</span>
+
+<span class="sd">        Convenience wrapper for :meth:`set_sub_router`.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">router</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">obj</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span><span class="o">.</span><span class="n">rpc</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">set_sub_router</span><span class="p">(</span><span class="n">router</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Router.set_sub_router"><a class="viewcode-back" href="../../api_reference/aiomas.rpc.html#aiomas.agent.Router.set_sub_router">[docs]</a>    <span class="k">def</span> <span class="nf">set_sub_router</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">router</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Set *self* as parent for the *router* named *name*.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">router</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">Router</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&#39;&quot;</span><span class="si">%s</span><span class="s">&quot; is not a valid router.&#39;</span> <span class="o">%</span> <span class="n">router</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">router</span><span class="o">.</span><span class="n">parent</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&#39;&quot;</span><span class="si">%s</span><span class="s">&quot; is already a sub router of &quot;</span><span class="si">%s</span><span class="s">&quot;&#39;</span> <span class="o">%</span>
+                             <span class="p">(</span><span class="n">router</span><span class="p">,</span> <span class="n">router</span><span class="o">.</span><span class="n">parent</span><span class="p">))</span>
+        <span class="n">router</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="n">name</span>
+        <span class="n">router</span><span class="o">.</span><span class="n">parent</span> <span class="o">=</span> <span class="bp">self</span>
+
+</div></div>
+<div class="viewcode-block" id="Service"><a class="viewcode-back" href="../../api_reference/aiomas.rpc.html#aiomas.agent.Service">[docs]</a><span class="k">class</span> <span class="nc">Service</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;A Data Descriptor that creates a new :class:`Router` instance for each</span>
+<span class="sd">    class instance to which it is set.</span>
+
+<span class="sd">    The attribute name for the Service should always be *rpc*::</span>
+
+<span class="sd">        class Spam:</span>
+<span class="sd">            rpc = aiomas.rpc.Service()</span>
+
+<span class="sd">    You can optionally pass a list with the attribute names of classes with</span>
+<span class="sd">    sub-routers.  This required to build hierarchies of routers, e.g.::</span>
+
+<span class="sd">        class Eggs:</span>
+<span class="sd">            rpc = aiomas.rpc.Service()</span>
+
+
+<span class="sd">        class Spam:</span>
+<span class="sd">            rpc = aiomas.rpc.Service([&#39;eggs&#39;])</span>
+
+<span class="sd">            def __init__(self):</span>
+<span class="sd">                self.eggs = Eggs()  # Instance with a sub-router</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sub_routers</span><span class="o">=</span><span class="p">()):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_sub_router_names</span> <span class="o">=</span> <span class="n">sub_routers</span>
+
+    <span class="k">def</span> <span class="nf">__set__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">instance</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Raise :exc:`AttributeError` to forbid overwriting this attribute.&quot;&quot;&quot;</span>
+        <span class="k">raise</span> <span class="ne">AttributeError</span><span class="p">(</span><span class="s">&#39;Read-only attribute.&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__get__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">instance</span><span class="p">,</span> <span class="n">cls</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;If accessed from the class, return this Service instance.  If</span>
+<span class="sd">        accessed from an *instance*, return the :class:`Router` instance for</span>
+<span class="sd">        *instance*.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">instance</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">instance</span><span class="o">.</span><span class="n">__dict__</span><span class="p">[</span><span class="s">&#39;rpc&#39;</span><span class="p">]</span>
+        <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
+            <span class="n">router</span> <span class="o">=</span> <span class="n">instance</span><span class="o">.</span><span class="n">__dict__</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s">&#39;rpc&#39;</span><span class="p">,</span> <span class="n">Router</span><span class="p">(</span><span class="n">instance</span><span class="p">))</span>
+            <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sub_router_names</span><span class="p">:</span>
+                <span class="n">router</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">router</span>
+
+    <span class="n">expose</span> <span class="o">=</span> <span class="nb">staticmethod</span><span class="p">(</span><span class="n">expose</span><span class="p">)</span>
+    <span class="sd">&quot;&quot;&quot;Alias for :func:`expose()`.&quot;&quot;&quot;</span>
+
+</div>
+<div class="viewcode-block" id="RpcClient"><a class="viewcode-back" href="../../api_reference/aiomas.rpc.html#aiomas.agent.RpcClient">[docs]</a><span class="k">class</span> <span class="nc">RpcClient</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;The RpcClient provides proxy objects for remote calls via its</span>
+<span class="sd">    :attr:`remote` attribute.</span>
+
+<span class="sd">    *channel* is a :class:`~aiomas.channel.Channel` instance for communicating</span>
+<span class="sd">    with the remote side.</span>
+
+<span class="sd">    If *router* is not ``None``, it will also start its own RPC service so the</span>
+<span class="sd">    other side can make calls to us as well.</span>
+
+<span class="sd">    If you want to cleanly cancel all :func:`rpc_service()` tasks created for</span>
+<span class="sd">    each connection made to *router*, you can pass a :class:`set` via *add_to*.</span>
+<span class="sd">    All tasks will then be append to it.</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">channel</span><span class="p">,</span> <span class="n">router</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">add_to</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">channel</span> <span class="o">=</span> <span class="n">channel</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">channel</span><span class="o">.</span><span class="n">codec</span><span class="o">.</span><span class="n">add_serializer</span><span class="p">(</span><span class="nb">object</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_serialize_obj</span><span class="p">,</span>
+                                          <span class="bp">self</span><span class="o">.</span><span class="n">_deserialize_obj</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">router</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">t</span> <span class="o">=</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">async</span><span class="p">(</span><span class="n">rpc_service</span><span class="p">(</span><span class="n">router</span><span class="p">,</span> <span class="n">channel</span><span class="p">),</span>
+                              <span class="n">loop</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">channel</span><span class="o">.</span><span class="n">_loop</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">add_to</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>  <span class="c"># pragma: no branch</span>
+                <span class="n">add_to</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">remote</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;A :class:`Proxy` for remote methods.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">Proxy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">channel</span><span class="p">,</span> <span class="s">&#39;&#39;</span><span class="p">)</span>
+
+<div class="viewcode-block" id="RpcClient.close"><a class="viewcode-back" href="../../api_reference/aiomas.rpc.html#aiomas.agent.RpcClient.close">[docs]</a>    <span class="k">def</span> <span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Close the connection.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">channel</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+</div>
+    <span class="k">def</span> <span class="nf">_serialize_obj</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">obj</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">obj</span><span class="o">.</span><span class="n">rpc</span><span class="o">.</span><span class="n">path</span>
+        <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s">&#39;&quot;</span><span class="si">%r</span><span class="s">&quot; object of type &quot;</span><span class="si">%s</span><span class="s">&quot; cannot be serialized.&#39;</span> <span class="o">%</span>
+                            <span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="nb">type</span><span class="p">(</span><span class="n">obj</span><span class="p">)))</span> <span class="kn">from</span> <span class="bp">None</span>
+
+    <span class="k">def</span> <span class="nf">_deserialize_obj</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">Proxy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">channel</span><span class="p">,</span> <span class="n">path</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="Proxy"><a class="viewcode-back" href="../../api_reference/aiomas.rpc.html#aiomas.agent.Proxy">[docs]</a><span class="k">class</span> <span class="nc">Proxy</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;Proxy object for remote objects and functions.&quot;&quot;&quot;</span>
+    <span class="n">__slots__</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;_channel&#39;</span><span class="p">,</span> <span class="s">&#39;_path&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">channel</span><span class="p">,</span> <span class="n">path</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_channel</span> <span class="o">=</span> <span class="n">channel</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_path</span> <span class="o">=</span> <span class="n">path</span>
+
+<div class="viewcode-block" id="Proxy.__getattr__"><a class="viewcode-back" href="../../api_reference/aiomas.rpc.html#aiomas.agent.Proxy.__getattr__">[docs]</a>    <span class="k">def</span> <span class="nf">__getattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Return a new proxy for *name*.&quot;&quot;&quot;</span>
+        <span class="n">path</span> <span class="o">=</span> <span class="n">name</span> <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_path</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">_path</span> <span class="o">+</span> <span class="s">&#39;/&#39;</span> <span class="o">+</span> <span class="n">name</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">__class__</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_channel</span><span class="p">,</span> <span class="n">path</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Proxy.__call__"><a class="viewcode-back" href="../../api_reference/aiomas.rpc.html#aiomas.agent.Proxy.__call__">[docs]</a>    <span class="k">def</span> <span class="nf">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Call the remote method represented by this proxy and return its</span>
+<span class="sd">        result.</span>
+
+<span class="sd">        The result is a future, so you need to ``yield from`` it in order to</span>
+<span class="sd">        get the actual return value (or exception).</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_path</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">AttributeError</span><span class="p">(</span><span class="s">&#39;No RPC function name specified.&#39;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_channel</span><span class="o">.</span><span class="n">send</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">_path</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">))</span>
+</div>
+    <span class="k">def</span> <span class="nf">__eq__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_channel</span> <span class="ow">is</span> <span class="n">other</span><span class="o">.</span><span class="n">_channel</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_path</span> <span class="o">==</span> <span class="n">other</span><span class="o">.</span><span class="n">_path</span>
+
+    <span class="k">def</span> <span class="nf">__hash__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">hash</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_channel</span><span class="p">)</span> <span class="o">+</span> <span class="nb">hash</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_path</span><span class="p">)</span></div>
+</pre></div>
+
+          </div>
+          <footer>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2014-2015, Stefan Scherfke.
+    </p>
+  </div>
+
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a <a href="https://github.com/snide/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+  
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  
+
+    <script type="text/javascript">
+        var DOCUMENTATION_OPTIONS = {
+            URL_ROOT:'../../',
+            VERSION:'0.2.0',
+            COLLAPSE_INDEX:false,
+            FILE_SUFFIX:'.html',
+            HAS_SOURCE:  true
+        };
+    </script>
+      <script type="text/javascript" src="../../_static/jquery.js"></script>
+      <script type="text/javascript" src="../../_static/underscore.js"></script>
+      <script type="text/javascript" src="../../_static/doctools.js"></script>
+
+  
+
+  
+  
+    <script type="text/javascript" src="../../_static/js/theme.js"></script>
+  
+
+  
+  
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.StickyNav.enable();
+      });
+  </script>
+   
+
+</body>
+</html>
