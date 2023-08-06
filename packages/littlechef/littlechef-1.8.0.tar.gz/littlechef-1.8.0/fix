@@ -1,0 +1,171 @@
+#!/usr/bin/env python
+from __future__ import print_function
+
+import argparse
+import sys
+import os
+
+# Messages
+NO_ORDER = "No order given. Type 'fix -l' for a list of orders\n"
+VERSION = 'LittleChef {0}'
+INSTALL_ERROR = ("LittleChef was not correctly installed: "
+                 "Couldn't import littlechef.py")
+
+## Try to import package and set the fabfile path ##
+fabfile = None
+try:
+    import littlechef
+    # Get absolute directory for imported littlechef package
+    dirname = os.path.dirname(os.path.abspath(littlechef.__file__))
+    # Build path to the runner fabfile to pass to fabric
+    fabfile = os.path.join(dirname, 'runner.py')
+except ImportError:
+    print(INSTALL_ERROR)
+    sys.exit(1)
+
+
+class DynamicFabOperations(object):
+
+    _commands = None
+
+    @staticmethod
+    def get_commands():
+        from fabric.main import list_commands, state, load_fabfile
+        docstring, callables, default = load_fabfile(fabfile)
+        state.commands.update(callables)
+        commands_str = ""
+        for c in list_commands("\n", "normal"):
+            commands_str += c + "\n"
+        return commands_str
+
+    @property
+    def commands(self):
+        if self._commands is None:
+            self._commands = self.get_commands()
+        return self._commands
+
+    def __contains__(self, item):
+        return item in self.commands
+
+    def splitlines(self, keepends=False):
+        return self.commands.splitlines(keepends)
+
+
+def parse_arguments():
+    """Gets the console arguments for Littlechef's fix command"""
+    parser = argparse.ArgumentParser(
+        description="Starts a Chef Solo configuration run",
+        epilog=DynamicFabOperations(),
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+
+    parser.add_argument(
+        "commands", type=str, default="", nargs='*',
+        help="Littlechef commands")
+
+    parser.add_argument(
+        "-v", "--version", action='version',
+        version=VERSION.format(littlechef.__version__),
+        help="Print littlechef version"
+    )
+    parser.add_argument(
+        "-l", "--list", dest="list_commands", action="store_true",
+        default=False, help="List all available orders"
+    )
+    parser.add_argument(
+        "-y", "--yes", dest="assume_yes", action="store_true", default=False,
+        help=('Automatic yes to prompts; assume "yes" as answer to all prompts'
+              ' and run non-interactively')
+    )
+    parser.add_argument(
+        "--no-report", dest="no_report", action="store_true", default=False,
+        help="Don't save the chef-solo output as a report on the node"
+    )
+    parser.add_argument(
+        "--why-run", dest="whyrun", action="store_true", default=False,
+        help=("Do a configuration Whyrun, where no changes are "
+              "performed to the node")
+    )
+    parser.add_argument(
+        "-V", "--verbose", dest="verbose", action="store_true", default=False,
+        help="Output 'processing' statements"
+    )
+    parser.add_argument(
+        "-d", "--debug", action="store_true", default=False,
+        help="Ask chef-solo for verbose and debugging output"
+    )
+    parser.add_argument(
+        "-e", "--env", dest="environment", default=None,
+        help="Using a certain chef environment"
+    )
+    parser.add_argument(
+        "-c", "--concurrency", default=False,
+        help="Execute commands concurrently"
+    )
+    parser.add_argument(
+        "-g", "--include-guests", dest="include_guests", action="store_true",
+        default=False,
+        help=("When searching for nodes with tags also include virtualized"
+              "guests of matching hosts")
+    )
+    parser.add_argument(
+        "--no-color", dest="no_color", action="store_true",
+        default=False,
+        help=("Don't colorize the output")
+    )
+    return parser, vars(parser.parse_args())
+
+
+if __name__ == '__main__':
+    # commandline options
+    parser, args = parse_arguments()
+
+    ## Process args list and call fabric's main() ##
+    if not sys.argv:
+        parser.parse_args(['-h'])
+    else:
+        if (os.path.basename(sys.argv[0]).startswith('fix')):
+            # In windows, the first argument may be just "fix"
+            fix_cmd = sys.argv[0]
+        else:
+            fix_cmd = None
+        if ((len(sys.argv) == 1 and fix_cmd) or
+                (len(sys.argv) == 2 and fix_cmd and '-l' in sys.argv)):
+            # All that is in sys.argv is the fix command.
+            parser.parse_args(['-h'])
+        else:
+            # Check for version, that overrides everything else.
+            commands = args['commands']
+            if args['assume_yes']:
+                littlechef.noninteractive = True
+            if args['no_report']:
+                littlechef.enable_logs = False
+            if args['whyrun']:
+                littlechef.whyrun = True
+            if args['concurrency']:
+                try:
+                    littlechef.concurrency = int(args['concurrency'])
+                except ValueError:
+                    littlechef.concurrency = False
+            if args['include_guests']:
+                littlechef.include_guests = True
+            if args['verbose']:
+                littlechef.verbose = True
+            if args['debug']:
+                littlechef.loglevel = 'debug'
+                littlechef.verbose = True
+            if args['environment'] is not None:
+                if not commands or ":" in args['environment']:
+                    parser.error("No value given for --env")
+                littlechef.chef_environment = args['environment']
+            littlechef.no_color = args['no_color']
+
+            # overwrite all commandline arguments and proxy
+            # execution to the fabric script
+            if fix_cmd:
+                sys.argv[:] = [fix_cmd] + ['-f', fabfile] + commands
+            else:
+                sys.argv[:] = ['-f', fabfile] + commands
+            littlechef.__cooking__ = True
+            from fabric import main
+            main.main()
