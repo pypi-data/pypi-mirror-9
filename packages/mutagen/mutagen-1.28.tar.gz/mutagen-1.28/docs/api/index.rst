@@ -1,0 +1,13 @@
+API
+===
+
+.. toctree::
+
+    base
+    id3
+    flac
+    ogg
+    ape
+    mp4
+    asf
+    aac
