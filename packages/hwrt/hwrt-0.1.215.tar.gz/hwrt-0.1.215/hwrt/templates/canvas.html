@@ -1,0 +1,136 @@
+{% extends "bootstrap/base.html" %}
+{% block title %}Classify{% endblock %}
+
+{% block navbar %}
+
+{% endblock %}
+
+{% block scripts %}
+{{super()}}
+<script type='text/javascript' src='http://cdnjs.cloudflare.com/ajax/libs/fabric.js/1.4.0/fabric.min.js'></script>
+<script src="https://code.jquery.com/jquery-2.1.1.min.js"></script>
+<script>
+    var lines = [];
+
+    window.onload = function() {
+        var canvas = new fabric.Canvas('sheet');
+        canvas.isDrawingMode = true;
+        canvas.freeDrawingBrush.width = 5;
+        canvas.freeDrawingBrush.color = "#ff0000";
+        canvas.on('mouse:down', startRecording);
+
+        function startRecording(event) {
+            // directly add first point
+            var x = event.e.x;
+            var y = event.e.y;
+            var time = new Date().getTime();
+            if (typeof(x) != 'number') {
+                console.log(event);
+                x = event.e.screenX;
+                y = event.e.screenY;
+            }
+            if (typeof(x) != 'number') {
+                x = event.e.touches[0].clientX;
+                y = event.e.touches[0].clientY;
+            }
+            var line = [];
+            line.push({
+                x: x,
+                y: y,
+                time: time
+            });
+            canvas.on("mouse:move", recordMoment);
+            canvas.on("mouse:up", stopRecording);
+
+            function recordMoment(event) {
+                var x = event.e.x;
+                var y = event.e.y;
+                var time = new Date().getTime();
+                if (typeof(x) != 'number') {
+                    x = event.e.screenX;
+                    y = event.e.screenY;
+                }
+                if (typeof(x) != 'number') {
+                    x = event.e.touches[0].clientX;
+                    y = event.e.touches[0].clientY;
+                }
+                line.push({
+                    x: x,
+                    y: y,
+                    time: time
+                });
+            }
+
+            function stopRecording() {
+                lines.push(line);
+                canvas.off("mouse:move", recordMoment);
+                canvas.off("mouse:up", stopRecording);
+                $.ajax({
+                  type: "POST",
+                  url: "../worker",
+                  data: {'classify': JSON.stringify(lines)},
+                  success: function(data)
+                    {
+                        $('#resultlink').removeClass('invisible');
+                         var content = "<table class='table' role='table' name='resulttable' id='resulttable'>";
+                         content += "<thead><tr><th>&alpha;</th><th>LaTeX</th><th>%</th></tr></thead><tbody>";
+                         $.each(data, function( index, value ) {
+                             $.each(value,
+                                    function(symbolbla, probability) {
+                                        var arr = symbolbla.split(";");
+                                        var system_id = arr[0];
+                                        var latex = arr[1];
+                                        var unicode_code_point = arr[2];
+                                        var font = arr[3];
+                                        var font_style = arr[4];
+                                        content += "<tr><td><a href='../symbol/?id="+system_id+"' style='font-family:"+font+";font-style:"+font_style+"'>&#" + unicode_code_point + ";</a></td><td><input id=\"inptxt"+system_id+"\" class=\"form-control\" value='"+ latex + "' disabled/></td><td style='text-align:right'>" + parseFloat(probability*100).toFixed(2) + "</td></tr>";
+                                    })
+                         });
+                         content += "</tbody></table>";
+                         document.getElementById('classification-results').innerHTML = content;
+
+
+                         $.each(data, function( index, value ) {
+                             $.each(value,
+                                    function(symbolbla, probability) {
+                                        var arr = symbolbla.split(";");
+                                        var system_id = arr[0];
+                                        var latex = arr[1];
+                                        var unicode_code_point = arr[2];
+                                        var font = arr[3];
+                                        var font_style = arr[4];
+                                    })
+                         });
+                    },
+                  dataType: "json",
+                  error: function(e) {
+                    console.log(e);
+                  }
+                });
+            }
+        }
+    }
+
+
+    function addCanvas() {
+        var drawnJSON = document.getElementById('drawnJSON');
+        drawnJSON.value = JSON.stringify(lines);
+        return true;
+    }
+    </script>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="page-header"><h1>Classify</h1></div>
+
+    <div id="classification-results" style="float:right">
+    </div>
+
+    <form method="post" onsubmit="$('button').prop('disabled', true);return addCanvas();" id="form">
+    <input type="hidden" id="drawnJSON" name="drawnJSON" value="" />
+    <canvas id="sheet" width="400" height="400" style="border:1px solid black;width:400px;height:400px;"></canvas>
+    <a href="?formula_id=" class="btn btn-danger">Clear</a>
+    </form>
+</div>
+{% endblock %}
