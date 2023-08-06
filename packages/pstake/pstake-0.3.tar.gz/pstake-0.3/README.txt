@@ -1,0 +1,29 @@
+==================
+PSTricks Converter
+==================
+
+|build_status|
+
+.. |build_status| image:: https://drone.io/bitbucket.org/yungyuc/pstake/status.png
+  :target: https://drone.io/bitbucket.org/yungyuc/pstake
+
+`PSTricks <http://tug.org/PSTricks/main.cgi/>`__ is a system that allows
+drawing virtually `any
+<http://tug.org/PSTricks/main.cgi?file=Examples/Gallery/Gallery>`__\ `thing
+<http://tug.org/PSTricks/main.cgi?file=Examples/Gallery3D/Gallery3D>`__ inside
+TeX/LaTeX.  The quality of the drawings is unbeatable.
+
+`Pstake <http://bitbucket.org/yungyuc/pstake>`__ is a simple tool that compiles
+and converts PSTricks into an image file.  The source PSTricks commands are
+stored in a .tex file.  Pstake will (i) wrap them around a boilerplate, (ii)
+use `LaTeX <http://www.latex-project.org>`__ to generate an `EPS
+<http://en.wikipedia.org/wiki/Encapsulated_PostScript>`__ file, and (iii)
+convert the EPS file to the destination format (only `PNG
+<http://en.wikipedia.org/wiki/Portable_Network_Graphics>`__ is supported now).
+The conversion needs external tools (i) `ghostscript
+<http://www.ghostscript.com/>`__ and (ii) either `imagemagick
+<http://www.imagemagick.org>`__ or `PIL
+<http://www.pythonware.com/products/pil/>`__/`Pillow
+<http://python-pillow.github.io>`__.
+
+.. vim: set ff=unix ft=rst fenc=utf8:
