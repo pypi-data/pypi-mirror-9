@@ -1,0 +1,63 @@
+#!/usr/bin/env python
+import json
+import shutil
+import os
+import urlparse
+
+from shapeways.client import Client
+import swuploader
+import docopt
+
+__doc__ = """
+Usage:
+  swuploader (-h | --help)
+  swuploader (-v | --version)
+  swuploader auth [--server=<server>] <consumer_key> <consumer_secret> <output>
+  swuploader upload [--models=<models>] [--out=<out>] [--server=<server>] <auth_tokens>
+
+Options:
+  -h --help                      Show this help text
+  -v --version                   Show version information
+  -m <models> --models=<models>  Set the directory for where model ini's are available [default: ./]
+  -o <out> --out=<out>           Set the directory where the model ini's are moved to after upload [default: ./]
+  -s <server> --server=<server>  Set different api server url if desired.
+"""
+
+args = docopt.docopt(__doc__, version="swuploader %s" % (swuploader.__version__, ))
+
+if args["auth"]:
+    client = Client(args["<consumer_key>"], args["<consumer_secret>"])
+    if args["--server"]:
+        client.base_url = args["--server"]
+    url = client.connect()
+    parts = urlparse.urlparse(url)
+    qs = urlparse.parse_qs(parts.query)
+    oauth_token = qs["oauth_token"][0]
+    print "Please Visit: %s" % (url, )
+    verifier = raw_input("Paste Verifier Code: ")
+    client.verify(oauth_token, verifier)
+    auth_tokens = {
+        "consumer_key": client.consumer_key,
+        "consumer_secret": client.consumer_secret,
+        "oauth_token": client.oauth_token,
+        "oauth_secret": client.oauth_secret,
+    }
+    with open(args["<output>"], "w") as fp:
+        json.dump(auth_tokens, fp)
+elif args["upload"]:
+    auth_tokens = {}
+    with open(args["<auth_tokens>"]) as fp:
+        auth_tokens = json.load(fp)
+    client = Client(**auth_tokens)
+    if args["--server"]:
+        client.base_url = args["--server"]
+    for settings_filename, model in swuploader.get_models(args["--models"]):
+        print "Uploading Model From: %s" % (settings_filename, )
+        results = swuploader.upload_model(model, client)
+        if results:
+            print "Visit Model At: %s" % (results["urls"]["editModelUrl"]["address"], )
+            basename = os.path.basename(settings_filename)
+            new_location = os.path.abspath(os.path.join(args["--out"], basename))
+            shutil.move(settings_filename, new_location)
+        else:
+            print "Model Upload Failed"
