@@ -1,0 +1,10 @@
+__version__ = "0.1.29.post2"
+__git_commiter_name__ = "wiggin15"
+__git_commiter_email__ = "wiggin15@yahoo.com"
+__git_branch__ = 'develop'
+__git_remote_tracking_branch__ = 'origin/develop'
+__git_remote_url__ = 'git@infinigit.infinidat.com:/host/multipathtools.git'
+__git_head_hash__ = '5ec93bce262de03ba350f3883e67349e3f9c833f'
+__git_head_subject__ = 'Merge pull request #1 from r-darwish/python3'
+__git_head_message__ = 'Python 3 compatibility'
+__git_dirty_diff__ = ''
