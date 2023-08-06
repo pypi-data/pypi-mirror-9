@@ -1,0 +1,37 @@
+.. image:: https://drone.io/bitbucket.org/eodolphi/flask-json-resource/status.png
+   :target: https://drone.io/bitbucket.org/eodolphi/flask-json-resource/latest
+
+
+
+Flask JSON Resource
+====================
+
+Quickly create REST api's using `json-schema`. 
+
+
+
+Minimal Example
+-------------------
+
+.. code-block:: python
+
+    from flask import Flask
+
+    from flask.ext.pymongo import PyMongo
+    from json_resource import Schema
+    from flask.ext.json_resource import API
+
+    app = Flask('test')
+    app.debug = True
+
+    db = PyMongo(app)
+    api = API(app, db)
+
+    @api.register()
+    class TestResource(api.Resource):
+        schema = Schema({'id': 'test'})  
+
+
+    class TestResourceCollection(api.CollectionResource):
+        schema = Schema({'id': 'test-collection'})  
+        objects = TestResource.objects
