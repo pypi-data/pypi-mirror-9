@@ -1,0 +1,146 @@
+Metadata-Version: 1.1
+Name: ofxtools
+Version: 0.3.7
+Summary: Library for working with Open Financial Exchange (OFX) formatted data used by financial institutions
+Home-page: https://github.com/csingley/ofxtools
+Author: Christopher Singley
+Author-email: csingley@gmail.com
+License: MIT
+Download-URL: https://github.com/csingley/ofxtools/tarball/0.3.7
+Description: DESCRIPTION
+        ====
+        ofxtools is a Python library for working with Open Financial Exchange (OFX)
+        data - both OFXv1 (SGML) and OFXv2 (pure XML) - which is the standard format
+        for downloading financial information from banks and stockbrokers.
+        
+        ofxtools has no external dependencies beyond stdlib, and is compatible with
+        Python version 2.7+ and 3.1+.
+        
+        The primary facilities provided include:
+            * The OFXClient class; which dowloads OFX statements from the Internet
+            * The OFXTree class; which parses OFX data into a standard ElementTree
+              structure for further processing in Python.
+            * The OFXResponse class; which validates and converts OFX data parsed by
+              OFXParser into Python types and exposes them through more Pythonic
+              attribute access (e.g. OFXResponse.statements[0].ledgerbal)
+        
+        Also included is the ofxtools.ofxalchemy subpackage, with versions of
+        OFXTree and OFXResponse that can parse OFX formatted data and persist it
+        into an SQL database.
+        
+        ofxalchemy depends on [the SQLAlchemy package][http://www.sqlalchemy.org].
+        You'll need the upcoming version 1.0 of SQLAlchemy, which is still in
+        development and can be obtained from [the SQLAlchemy code repository]
+        (https://bitbucket.org/zzzeek/sqlalchemy).
+        
+        INSTALLATION
+        ====
+        Use the Python user installation scheme:
+            `python setup.py install --user`
+        
+        In addition to the Python package, this will also install a script 'ofxget'
+        in ~/.local/bin, and its sample configuration file in ~/.config/ofxtools .
+        
+        To use ofxalchemy, you'll need to install SQLAlchemy via:
+            `pip install sqlalchemy`
+        or
+            `easy_install sqlalchemy`
+        or download and install the package from 
+        [the SQLAlchemy website][http://www.sqlalchemy.org]
+        or from [PyPI][https://pypi.python.org]
+        
+        
+        BASIC USAGE TO DOWNLOAD OFX
+        ====
+            1) Copy ~/.config/ofxtools/ofxget_example.cfg to ~/.config/ofxtools/ofxget.cfg and edit.
+                Add a section for your financial institution, including URL, 
+                account information, login, etc.
+                See comments within.
+            2) Execute ofxget with appropriate arguments, e.g.
+                `# ofxget amex stmt -s 20140101 -e 20140630 > foobar.ofx`
+                See the --help for explanation of the script options
+        
+        
+        PARSER USAGE EXAMPLE
+        ====
+        >>> from ofxtools import OFXTree
+        >>> tree = OFXTree()
+        >>> tree.parse('stmtrs.ofx')
+        >>> response = tree.convert()
+        >>> response
+        <OFXResponse fid='1001' org='NCH' dtserver='2005-10-29 10:10:03' len(statements)=1 len(securities)=0>
+        >>> stmt = response.statements[0]
+        >>> stmt
+        <BankStatement account=<BANKACCTFROM acctid='999988' accttype='CHECKING' bankid='121099999'> currency=USD ledgerbal=<LEDGERBAL balamt='200.29' dtasof='2005-10-29 11:20:00'> availbal=<AVAILBAL balamt='200.29' dtasof='2005-10-29 11:20:00'> len(other_balances)=0 len(transactions)=2>
+        >>> stmt.transactions[-1]
+        <STMTTRN dtposted='2005-10-20 00:00:00' trntype='ATM' trnamt='-300.00' fitid='00003' dtuser='2005-10-20 00:00:00'>
+        
+        
+        SQL PERSISTENCE EXAMPLE
+        ====
+        >>> # Housekeeping to set up database connection
+        ...
+        >>> from ofxtools import ofxalchemy
+        >>> from sqlalchemy import create_engine
+        >>> engine = create_engine('sqlite://', echo=False)
+        >>> ofxalchemy.DBSession.configure(bind=engine)
+        >>> ofxalchemy.Base.metadata.create_all(engine)
+        >>> # Parse and persist the OFX data
+        ...
+        >>> parser = ofxalchemy.OFXParser()
+        >>> parser.parse('invstmtrs.ofx')
+        >>> parser.instantiate()
+        <OFXResponse len(statements)=1 len(securities)=3>
+        >>> DBSession.commit()
+        >>> # Besides the returned OFXResponse object, persisted data can now be
+        >>> # accessed by querying the database.  The object model follows the OFX
+        >>> # specification fairly closely, with data elements represented as instance
+        >>> # attributes, subaggregate type nesting modeled by polymorphic inheritance,
+        >>> # and references to other data types replaced by foreign key relationships.
+        >>> #
+        >>> # N.B. There is no database structure representing account statements
+        >>> # (OFX *STMT aggregates); only the transactions, balances, etc. contained
+        >>> # within a statement are persisted.
+        ...
+        >>> from ofxtools.ofxalchemy.models import *
+        >>> acct = DBSession.query(ACCTFROM).one()
+        >>> acct
+        <INVACCTFROM(brokerid='121099999', acctid='999988', id='1')>
+        >>> acct.invbals
+        [<INVBAL(availcash='200.00', marginbalance='-50.00', shortbalance='0', acctfrom_id='1', dtasof='2005-08-27 01:00:00')>]
+        >>> # The full range of SQLAlchemy query expressions is available.
+        ...
+        >>> from datetime import datetime
+        >>> invtrans = DBSession.query(INVTRAN).filter_by(acctfrom=acct).filter(INVTRAN.dttrade >= datetime(2005,1,1)).filter(INVTRAN.dttrade <= datetime(2005,12,31)).order_by(INVTRAN.dttrade).all()
+        >>> invtrans
+        [<BUYSTOCK(units='100', unitprice='50.00', commission='25.00', total='-5025.00', subacctsec='CASH', subacctfund='CASH', buytype='BUY', secinfo_id='1', id='1')>]
+        >>> # OFX text data has been validated and converted to Python types, so it
+        >>> # can be worked with directly.
+        ...
+        >>> t = invtrans[0]
+        >>> assert -t.units * t.unitprice - t.commission == t.total
+        >>>
+        
+        
+Keywords: ofx,Open Financial Exchange
+Platform: UNKNOWN
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: Intended Audience :: Financial and Insurance Industry
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Classifier: Topic :: Utilities
+Classifier: Topic :: Office/Business
+Classifier: Topic :: Office/Business :: Financial
+Classifier: Topic :: Office/Business :: Financial :: Accounting
+Classifier: Topic :: Office/Business :: Financial :: Investment
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Natural Language :: English
+Classifier: Programming Language :: Python
+Classifier: Programming Language :: Python :: 2
+Classifier: Programming Language :: Python :: 2.7
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.1
+Classifier: Programming Language :: Python :: 3.2
+Classifier: Programming Language :: Python :: 3.3
+Classifier: Programming Language :: Python :: 3.4
