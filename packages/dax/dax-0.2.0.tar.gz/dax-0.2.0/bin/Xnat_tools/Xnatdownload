@@ -1,0 +1,750 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+'''
+Download almost everything you need from Xnat
+
+@author: Benjamin Yvernault, Electrical Engineering, Vanderbilt University
+
+WARNING: very important,--update options isn't working completely.
+         The last modified resources date can't be access right now on XNAT.
+         This options will only download the resources that you don't have the previous download or the one that where deleted and reuploaded since your last upload.
+         If this message appears, it means the attributes hasn't been added yet to XNAT.
+'''
+
+import os
+import sys
+import csv
+import copy 
+import shutil
+import logging
+from dax import XnatUtils
+from datetime import datetime
+from lxml import etree
+
+DEFAULT_REPORT_NAME='download_report.csv'
+DEFAULT_COMMAND_LINE='download_commandLine.txt'
+DEFAULT_CSV_LIST=['object_type','project_id','subject_label','session_type','session_label', 'as_label', 'as_type', 'as_description','quality','resource','fpath']
+SCAN_HEADER=['object_type','project_id','subject_label','session_type','session_label', 'ID', 'type', 'series_description','quality','resource','fpath']
+ASSESSOR_HEADER=['object_type','project_id','subject_label','session_type','session_label', 'label', 'proctype', 'procstatus','qcstatus', 'resource','fpath']
+
+########################################## USEFUL FUNCTIONS ##########################################
+def setup_info_logger(name,logfile):
+    if logfile:
+        handler=logging.FileHandler(logfile,'w')
+    else:
+        handler=logging.StreamHandler()
+    
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.INFO)
+    logger.addHandler(handler)
+    return logger
+
+def get_option_list(option):
+    if not option:
+        return None
+    elif option.lower()=='all':
+        return 'all'
+    elif option=='nan':
+        return None
+    else:
+        return option.split(',')
+
+########################################## SPECIFIC FUNCTIONS ##########################################
+def write_cmd_file(cmd_file,overwrite):
+    cmdargs = sys.argv
+    cmdstr='python '+os.path.abspath(cmdargs[0])+" ".join(cmdargs[1:])
+    #Check the previous cmd_file if one and warning if cmd different:
+    if os.path.exists(cmd_file) and not overwrite:
+        f = open(cmd_file,'r')
+        previouscmd=f.read().strip()
+        f.close()
+        if previouscmd!=cmdstr:
+            logger.info('WARNING: the command line you are running is different than the one you ran last time. You might have some data different for both command.')
+            logger.info(' *previous command: '+previouscmd)
+            logger.info(' *current command:  '+cmdstr)
+    #Write new cmd
+    f = open(cmd_file,'w')
+    f.write(cmdstr+'\n')
+    f.close()
+
+def read_txtfile(options):
+    scan_list=list()
+    assessor_list=list()
+    if os.path.exists(options.csvfile):
+        with open(options.csvfile,'rb') as csvfileread:
+            csvreader = csv.reader(csvfileread,delimiter=',')
+            for row in csvreader:
+                if row[0]=='scan':
+                    scan_list.append(dict(zip(SCAN_HEADER,row)))
+                elif row[0]=='assessor':
+                    assessor_list.append(dict(zip(ASSESSOR_HEADER,row)))
+        if not options.resourcesS:
+            options.resourcesS=','.join(set([s['resource'] for s in scan_list]))
+            logger.info('WARNING: resources for scan not set. Using resources found in csvfile.')
+        if not options.resourcesA:
+            options.resourcesA=','.join(set([a['resource'] for a in assessor_list]))
+            logger.info('WARNING: resources for assessor not set. Using resources found in csvfile.')
+    else:
+        logger.info('ERROR: file '+options.csvfile+' not found. Check if the file exists.')
+    return scan_list,assessor_list,options
+
+def read_report(reportfile):
+    dl_scan=dict()
+    dl_assessor=dict()
+    old_rows=list()
+    last_download=None
+    if os.path.exists(reportfile):
+        with open(reportfile,'rb') as csvfileread:
+            csvreader = csv.reader(csvfileread,delimiter=',')
+            last_download=int(csvreader.next()[0].split('=')[1].replace('-','').replace(':','').replace(' ',''))  #get the last_update
+            h=csvreader.next()  #remove header
+            for row in csvreader:
+                if row[0]=='scan':
+                    label='-x-'.join([row[1],row[2],row[4],row[5]])
+                    if label in dl_scan.keys():
+                        dl_scan[label].append(row[-2])
+                    else:
+                        dl_scan[label]=[row[-2]]
+                    old_rows.append(row)
+                elif row[0]=='assessor':
+                    if row[5] in dl_assessor.keys():
+                        dl_assessor[row[5]].append(row[-2])
+                    else:
+                        dl_assessor[row[5]]=[row[-2]]
+                    old_rows.append(row)
+    return dl_scan,dl_assessor,last_download,old_rows
+                    
+def extract_information(xnat,directory,options):
+    scan_list=list()
+    assessor_list=list()
+    old_rows=list()
+    last_download=None
+    if options.csvfile:
+        scan_list,assessor_list,options=read_txtfile(options)
+    else:
+        #check project_list:
+        projectList = check_projects(get_option_list(options.project))
+        if not projectList:
+            logger.info('ERROR: You do not have access to the projects ID given as a parameter or it does not exist on XNAT.')
+            sys.exit()
+        #list of scans and assessors for the all the project cat together.
+        for project in projectList:
+            scan_list.extend(XnatUtils.list_project_scans(xnat,project))
+            assessor_list.extend(XnatUtils.list_project_assessors(xnat,project))
+        #Read previous report
+        dl_scan,dl_assessor,last_download,old_rows=read_report(os.path.join(directory,DEFAULT_REPORT_NAME))
+        if options.overwrite:
+            last_download=None
+        elif options.update:
+            pass
+        else:
+            #filter by former download:
+            scan_list=filter(lambda x: need_download(xnat,x,dl_scan,get_option_list(options.resourcesS)), scan_list)
+            assessor_list=filter(lambda x: need_download(xnat,x,dl_assessor,get_option_list(options.resourcesA)), assessor_list)
+            last_download=None #We don't update the one downloaded already
+    return scan_list,assessor_list,last_download,old_rows,options
+
+def filter_subj_sess(obj_list,options):
+    obj_list_subj=[]
+    obj_list_sess=[]
+    #Variables:
+    subjects=get_option_list(options.subject)
+    if subjects=='all':
+        subjects=None
+    sessions=get_option_list(options.experiment)
+    if sessions=='all':
+        sessions=None
+    if subjects and sessions:
+        obj_list_sess=filter(lambda x: x['subject_label'] in subjects and x['session_label'] in sessions, obj_list)
+    elif subjects and not sessions:
+        obj_list_subj=filter(lambda x: x['subject_label'] in subjects, obj_list)
+    elif sessions and not subjects:
+        obj_list_sess=filter(lambda x: x['session_label'] in sessions, obj_list)
+    else:
+        
+        obj_list_subj=obj_list
+    return obj_list_subj+obj_list_sess
+
+def filter_scans(obj_list,options):
+    #Variables:
+    scantypes=get_option_list(options.scantype)
+    without = get_option_list(options.withoutS)
+    qualities = get_option_list(options.qualities)
+    if not options.csvfile and not scantypes and not without:
+        return list()
+    if scantypes and scantypes!='all':
+        obj_list=filter(lambda x: x['type'] in scantypes, obj_list)
+    if without:
+        obj_list=filter(lambda x: x['type'] not in without, obj_list)
+    if qualities and qualities!='all':
+        obj_list=filter(lambda x: x['quality'] in qualities, obj_list)
+    if without=='all':
+         return list()
+    return obj_list
+
+def filter_assessors(obj_list,options):
+    #Variables:
+    proctypes = get_option_list(options.assessortype)
+    without = get_option_list(options.withoutA)
+    status = get_option_list(options.status)
+    qcstatus = get_option_list(options.qcstatus)
+    if not options.csvfile and not proctypes and not without: ## if not csvfile and proctypes and without or not set, then we don't download anything
+        return list()
+    if proctypes and proctypes!='all':
+        obj_list=filter(lambda x: x['proctype'] in proctypes, obj_list)
+    if without:
+        obj_list=filter(lambda x: x['proctype'] not in without, obj_list)
+    if status and status!='all':
+        obj_list=filter(lambda x: x['procstatus'] in status, obj_list)
+    if qcstatus and qcstatus!='all':
+        obj_list=filter(lambda x: x['qcstatus'] in status, obj_list)
+    if without=='all':
+         return list()
+    return obj_list
+
+def extract_obj_one_subject(project,subject,obj_list):
+    return filter(lambda x: x['subject_label']==subject and x['project_id']==project, obj_list)
+
+def need_download(xnat,obj,dl_obj,res_list):
+    if dl_obj:
+        if 'series_description' in obj.keys():
+            label='-x-'.join([obj['project_id'],obj['subject_label'],obj['session_label'],obj['ID']])
+            if isinstance(res_list,str) and res_list.lower()=='all':
+                res_list=[r['label'] for r in XnatUtils.list_scan_resources(xnat,obj['project_id'],obj['subject_label'],obj['session_label'],obj['ID'])]
+        elif 'proctype' in obj.keys():
+            label=obj['label']
+            if isinstance(res_list,str) and res_list.lower()=='all':
+                res_list=[r['label'] for r in XnatUtils.list_assessor_out_resources(xnat,obj['project_id'],obj['subject_label'],obj['session_label'],obj['label'])]
+        if label in dl_obj.keys() and set(dl_obj[label])==set(res_list):
+            return False
+        else:
+            return True
+    else:
+        return True
+
+########################################## Function related to XNAT ##########################################   
+def get_resource_modified(xnat,resource):    ###### Not working to get the modified time that is missing in the xml file, should be added soon #######
+    # xpaths for times in resource xml
+    CREATED_DICOM_XPATH = "/cat:DCMCatalog/cat:entries/cat:entry/@createdTime"
+    MODIFIED_DICOM_XPATH = "/cat:DCMCatalog/cat:entries/cat:entry/@modifiedTime"
+    CREATED_XPATH = "/cat:Catalog/cat:entries/cat:entry/@createdTime"
+    MODIFIED_XPATH = "/cat:Catalog/cat:entries/cat:entry/@modifiedTime"
+    # Get the resource object and its uri
+    res_xml_uri = resource._uri+'?format=xml'
+    # Get the XML for resource
+    xmlstr = xnat._exec(res_xml_uri, 'GET')
+    # Parse out the times
+    root = etree.fromstring(xmlstr)
+    create_times = root.xpath(CREATED_XPATH, namespaces=root.nsmap)
+    if not create_times:
+        create_times = root.xpath(CREATED_DICOM_XPATH, namespaces=root.nsmap)
+    mod_times = root.xpath(MODIFIED_XPATH, namespaces=root.nsmap)
+    if not mod_times:
+        mod_times = root.xpath(MODIFIED_DICOM_XPATH, namespaces=root.nsmap)
+    # Find the most recent time
+    all_times = create_times + mod_times
+    if all_times:
+        max_time = max(all_times)
+        date = max_time.split('.')[0]
+        res_date=date.split('T')[0].replace('-','')+date.split('T')[1].replace(':','')
+    else:
+        res_date=resource.parent().parent().attrs.get('date').strip().replace('-','')+'000000'
+    return res_date
+
+def check_projects(projectList):
+    for project in projectList:
+        proj=xnat.select('/project/'+project)
+        if not proj.exists():
+            logger.info('WARNING: Project '+project+' does not exist on XNAT. Remove this project from the list.')
+            projectList.remove(project)
+        else:
+            if not len(XnatUtils.list_subjects(xnat,project))>0:
+                logger.info("WARNING: You don't access to the project: "+project+". Remove this project from the list.")
+                projectList.remove(project)
+    return projectList
+
+# Extract list of scan/assessors dictionary that will get download 
+def get_xnat_information(xnat,directory,options):
+    """Extract the list of scans/assessors dictionary from XNAT project 
+       Filter the list to what the user want with the different options
+       Get the list of subject as well for downloading in order"""
+    logger.info('INFO: Accessing scans/assessors information from XNAT.')
+    #Extract information from options and the report:
+    scan_list,assessor_list,last_download,old_rows,options=extract_information(xnat,directory,options)
+    #filter by attributes:
+    scan_list=filter_scans(scan_list,options)
+    assessor_list=filter_assessors(assessor_list,options)
+    #filter by subject/session:
+    scan_list=filter_subj_sess(scan_list,options)
+    assessor_list=filter_subj_sess(assessor_list,options)    
+    #Extract list of subject to download in order:
+    proj_subj_list=list()
+    if scan_list:
+        proj_subj_list.extend([s['project_id']+'-x-'+s['subject_label'] for s in scan_list])
+    if assessor_list:
+        proj_subj_list.extend([s['project_id']+'-x-'+s['subject_label'] for s in assessor_list])
+    if options.project:
+        #Print the number of scans/assessors per Project:
+        logger.info('INFO: Number of scans/assessors that needs to be download per Project (after filters):')
+        logger.info('---------------------------------------------------------------')
+        logger.info('| %*s | %*s | %*s |' % (-20,'Project ID',-15,'Number of Scans',-19,'Number of Assessors'))
+        project_list=check_projects(get_option_list(options.project))
+        for project in project_list:
+            logger.info('---------------------------------------------------------------')
+            logger.info('| %*s | %*s | %*s |' % (-20,project,-15,len([s for s in scan_list if s['project_id']==project]),-19,len([a for a in assessor_list if a['project_id']==project])))
+        logger.info('---------------------------------------------------------------\n')
+    return set(proj_subj_list),scan_list,assessor_list,last_download,old_rows,options
+
+def getscanpath(directory,scan,oneDir):
+    if oneDir:
+        scanpath=directory
+    else:
+        scanlabel=scan['ID']+'-x-'+scan['type'].strip().replace('/','_').replace(" ", "")
+        if scan['series_description']!='': 
+            scanlabel=scanlabel+'-x-'+scan['series_description'].strip().replace('/','_').replace(" ", "")
+        scanpath=os.path.join(directory,scan['project_id'],scan['subject_label'],scan['session_label'],scanlabel)
+    return scanpath
+
+def getassessorpath(directory,assessor,oneDir):
+    if oneDir:
+        procpath=directory
+    else:
+        procpath=os.path.join(directory,assessor['project_id'],assessor['subject_label'],assessor['session_label'],assessor['label'])
+    return procpath
+                       
+########################################## DOWNLOAD XNAT FUNCTION (SCAN/ASSESSOR/RESOURCES/FILES) ##########################################
+####### MAIN ####### 
+def download_data_xnat(options,directory,xnat,proj_subj_list,scan_list,assessor_list,csvwriter,last_download=None):
+    """Main function to download data from XNAT
+       looping over the project/subject to be in order"""
+    #resources
+    ScanResources = get_option_list(options.resourcesS)
+    ProcResources = get_option_list(options.resourcesA)
+    #Number of subjects 
+    number=len(proj_subj_list)
+    #Download:
+    logger.info('INFO: Downloading Data for each pair project/subject..')
+    for index,ps in enumerate(sorted(proj_subj_list)):
+        project=ps.split('-x-')[0]
+        subject=ps.split('-x-')[1]
+        logger.info(' * '+str(index+1)+'/'+str(number)+' Project/Subject : '+project+'/'+subject)
+        ##SCAN##
+        for scan in extract_obj_one_subject(project,subject,scan_list):
+            logger.info('  +session '+scan['session_label']+' -- scan '+scan['ID']+' -- type: '+scan['type'])
+            scanpath=getscanpath(directory,scan,options.oneDir)
+            if options.overwrite and os.path.exists(scanpath):
+                shutil.rmtree(scanpath)
+            #Create the line for the report
+            row=copy.deepcopy(['scan',scan['project_id'],scan['subject_label'],scan['session_type'],scan['session_label'],scan['ID'],scan['type'],scan['series_description'],scan['quality']]) #deepcopy to start each line from this row
+            download_scan(scanpath,xnat,scan,ScanResources,csvwriter,row,options.oneDir,last_download) 
+        ##ASSESSOR##
+        for assessor in extract_obj_one_subject(project,subject,assessor_list):
+            logger.info('  +proc '+assessor['label'])
+            procpath=getassessorpath(directory,assessor,options.oneDir)
+            if options.overwrite and os.path.exists(procpath):
+                shutil.rmtree(procpath)
+            #Create the line for the report
+            row=copy.deepcopy(['assessor',assessor['project_id'],assessor['subject_label'],assessor['session_type'],assessor['session_label'],assessor['label'],assessor['proctype'],assessor['procstatus'],assessor['qcstatus']]) #deepcopy to start each line from this row
+            download_assessor(procpath,xnat,assessor,ProcResources,csvwriter,row,options.oneDir,last_download) 
+####### SCANS #######      
+def download_scan(directory,xnat,scan_dict,resources_list,csvwriter,row,oneDir,last_download):
+    scan=xnat.select('/project/'+scan_dict['project_id']+'/subjects/'+scan_dict['subject_label']+'/experiments/'+scan_dict['session_label']+'/scans/'+scan_dict['ID'])
+    if not scan.exists():
+        logger.info('  ->WARNING: No scan with the ID given.')
+    else:
+        #Get list of resources' label
+        if resources_list=='all':
+            reslist=[r['label'] for r in XnatUtils.list_scan_resources(xnat,scan_dict['project_id'],scan_dict['subject_label'],scan_dict['session_label'],scan_dict['ID'])]
+        else:
+            reslist= resources_list
+        #download resources from list
+        for ResourceName in reslist:
+            if ResourceName=='PARREC':
+                directory=os.path.join(directory,'PARREC')
+                download_resource(directory,xnat,scan.resource('PAR'),'PAR',csvwriter,row,True,'file',last_download)
+                download_resource(directory,xnat,scan.resource('REC'),'REC',csvwriter,row,True,'file',last_download)
+            else:
+                label=scan_dict['project_id']+'-x-'+scan_dict['subject_label']+'-x-'+scan_dict['session_label']+'-x-'+scan_dict['ID']+'-x-'+ResourceName
+                download_resource(directory,xnat,scan.resource(ResourceName),ResourceName,csvwriter,row,oneDir,label,last_download)          
+####### ASSESSOR ####### 
+def download_assessor(directory,xnat,assessor_dict,resources_list,csvwriter,row,oneDir,last_download):
+    assessor=xnat.select('/project/'+assessor_dict['project_id']+'/subjects/'+assessor_dict['subject_label']+'/experiments/'+assessor_dict['session_label']+'/assessors/'+assessor_dict['label'])
+    if not assessor.exists():
+        logger.info('  ->WARNING: No processor with the label given.')
+    else:
+        #Get the list of label for the resources
+        if resources_list=='all':
+            out_reslist=[r['label'] for r in XnatUtils.list_assessor_out_resources(xnat,assessor_dict['project_id'],assessor_dict['subject_label'],assessor_dict['session_label'],assessor_dict['label'])]
+        else:
+            out_reslist=resources_list
+        #download resources from list
+        for ResourceName in out_reslist:
+            download_resource(directory,xnat,assessor.out_resource(ResourceName),ResourceName,csvwriter,row,oneDir,assessor_dict['label']+'-x-'+ResourceName,last_download)
+####### RESOURCES #######                         
+def download_resource(directory,xnat,Resource,Resource_label,csvwriter,row,oneDir,label=None,last_download=None):
+    row=copy.deepcopy(row) #NOT KEEPING NEXT CHANGES
+    if not Resource.exists(): 
+        logger.info('   >Resource '+Resource_label+': WARNING -- no resource '+Resource_label)
+    else:  
+        if not Resource.files().get():
+            logger.info('   >Resource '+Resource_label+': ERROR -- No files in the resources.')
+        else:
+            if oneDir:
+                oneDir_download(xnat,directory,Resource,Resource_label,label,csvwriter,row,last_download)
+            else:
+                default_download(xnat,directory,Resource,Resource_label,csvwriter,row,last_download)
+def oneDir_download(xnat,directory,Resource,Resource_label,label,csvwriter,row,last_download):
+    #Add Resource label
+    row.append(Resource_label)
+    if len(Resource.files().get())>1:
+        resPath=os.path.join(directory,label)
+        #Add fpath
+        row.append(resPath)
+        if not os.path.exists(resPath) or (last_download and last_download<int(get_resource_modified(xnat,Resource))):
+            dl_files(Resource,directory)
+            os.system('mv '+os.path.join(directory,Resource_label)+' '+resPath)
+            if csvwriter: csvwriter.writerow(row) 
+        else:
+            logger.info('   >Resource '+Resource_label+': Skipping resource. Up-to-date.')
+    else:
+        #Add fpath
+        respath=os.path.join(directory,label+'__'+Resource.files().get()[0])
+        row.append(respath)
+        if not os.path.exists(respath) or (last_download and last_download<int(get_resource_modified(xnat,Resource))):
+            dl_file(Resource,respath)
+            if csvwriter: csvwriter.writerow(row)
+        else:
+            logger.info('   >Resource '+Resource_label+': Skipping resource. Up-to-date.')
+    
+def default_download(xnat,directory,Resource,Resource_label,csvwriter,row,last_download):
+    #Add Resource label
+    row.append(Resource_label)
+    #Add Path
+    Res_path=os.path.join(directory,Resource_label)
+    row.append(Res_path)
+    if not os.path.exists(Res_path) or (last_download and last_download<int(get_resource_modified(xnat,Resource))) or not os.listdir(Res_path):
+        dl_files(Resource,directory)
+        if csvwriter: csvwriter.writerow(row)
+    else:
+        logger.info('   >Resource '+Resource_label+': Skipping resource. Up-to-date.')
+        
+####### FILES ####### 
+def dl_files(Resource,directory):
+    #if more than one file:
+    if len(Resource.files().get())>1:
+        #create a dir with the resourcename:
+        Outputdir=os.path.join(directory,Resource.label())
+        if not os.path.exists(Outputdir):
+            os.makedirs(Outputdir)
+        logger.info('   >Resource '+Resource.label()+': Downloading all resources as a zip and unzipping it...')
+        Resource.get(Outputdir,extract=False) #not sure the extract True is working
+        os.system('unzip -o -d '+Outputdir+' '+os.path.join(Outputdir,Resource.label()+'.zip')+" > /dev/null")
+        os.remove(os.path.join(Outputdir,Resource.label()+'.zip'))
+    #if only one, if using download all resources, download it and unzip it if it's a zip
+    else:
+        logger.info('   >Resource '+Resource.label()+': Downloading resource.')
+        Input_res_label_fname = Resource.files().get()[0]
+        Outputdir=os.path.join(directory,Resource.label())
+        if not os.path.exists(Outputdir):
+            os.makedirs(Outputdir)
+        Resource.file(Input_res_label_fname).get(os.path.join(Outputdir,Input_res_label_fname))
+        if os.path.join(directory,Input_res_label_fname)[-3:]=='zip':
+            os.system('unzip -o -d '+directory+' '+os.path.join(Outputdir,Input_res_label_fname)+" > /dev/null")
+            os.remove(os.path.join(Outputdir,Input_res_label_fname))
+            
+#for only one file
+def dl_file(Resource,fpath):
+    Resource.file(Resource.files().get()[0]).get(fpath)
+
+########################################## DOWNLOAD SPECIFIC SCAN/ASSESSOR ##########################################
+def download_specific_scan(options):
+    if options.resourcesS:
+        logger.info('Selected Scan: '+options.selectionScan)
+        #Variables:
+        scan_path=os.path.join(directory,options.selectionScan)
+        ScanResources=get_option_list(options.resourcesS)
+        qualities=get_option_list(options.qualities)
+        #Get scan obj dict:
+        scan=dict(zip(['project_id','subject_label','session_label','ID'],options.selectionScan.split('-x-')))
+        Scan=xnat.select('/project/'+scan['project_id']+'/subjects/'+scan['subject_label']+'/experiments/'+scan['session_label']+'/scans/'+scan['ID'])
+        if Scan.exists():
+            if not qualities or (qualities and Scan.attrs.get('quality') in qualities):
+                scan['series_description']=Scan.attrs.get('series_description')
+                scan['type']=Scan.attrs.get('type')
+                scan_path=os.path.join(directory,scan['project_id']+'-x-'+scan['subject_label']+'-x-'+scan['session_label']+'-x-'+scan['ID'])
+                download_scan(scan_path,xnat,scan,ScanResources,None,[],options.oneDir,last_download=None)
+    else:
+        logger.info('WARNING: selected scan found but no resource specified')
+            
+def download_specific_assessor(options):
+    if options.resourcesA:
+        logger.info('Selected Processor: '+options.selectionAssessor)
+        #Variables:
+        assessor_path=os.path.join(directory,options.selectionAssessor)
+        ProcResources = get_option_list(options.resourcesA)
+        status=get_option_list(options.status)
+        #Get assessor obj dict:
+        assessor=dict(zip(['project_id','subject_label','session_label','ID'],options.selectionAssessor.split('-x-')[0:3]))
+        assessor['label']=options.selectionAssessor
+        Assessor=xnat.select('/project/'+assessor['project_id']+'/subjects/'+assessor['subject_label']+'/experiments/'+assessor['session_label']+'/assessor/'+assessor['label'])
+        if Assessor.exists():
+            if 'FS'==options.selectionAssessor[-1]:
+                jobstatus=Assessor.attrs.get('fs:fsData/procstatus')
+            else:
+                jobstatus=Assessor.attrs.get('proc:genProcData/procstatus')
+            if not status or (status and jobstatus in status):
+                assessor_path=os.path.join(directory,assessor['label'])
+                download_assessor(assessor_path,xnat,assessor,ProcResources,None,[],options.oneDir,last_download=None)
+    else:
+        logger.info('WARNING: selected assessor found but no resource specified')
+          
+########################################## CHECK OPTIONS ##########################################
+def check_options(options):
+    # The options :
+    if not options.directory:
+        print 'OPTION ERROR: directory not specify. Use option -d/--directory.'
+        return False
+    # can not have select scan and assessor and filetext in one command line
+    if options.csvfile:
+        if not os.path.exists(os.path.abspath(options.csvfile)):
+            print 'OPTION ERROR: -c/--csv options detected. csvfile '+os.path.abspath(options.csvfile)+' not found.'
+            return False
+        else:
+            print 'OPTION WARNING: -c/--csv options detected. Reading from the csvfile.'
+            return True
+    if not options.selectionScan and not options.selectionAssessor and not options.csvfile:
+        if not options.project:
+            print 'OPTION ERROR: You need to set the options -p with the projects ID from Xnat.'
+            return False
+    if options.update:
+        if not os.path.exists(os.path.abspath(options.directory)):
+            print 'OPTION ERROR: You used the option --continue but the directory you gave as option does not exist. Check the command line.'
+            return False
+    if options.overwrite and options.update:
+        print 'OPTION ERROR: You used the option --overwrite and --update. Use only one of them at a time.'
+        return False
+    #Resources
+    if not options.resourcesA and not options.resourcesS:
+        print 'OPTION WARNING: No resources set. Nothing to download.'
+        return False
+    #Types
+    if not options.selectionScan and not options.selectionAssessor and [options.withoutS,options.withoutA,options.assessortype,options.scantype]==[None,None,None,None]:
+        print 'OPTION WARNING: No scan/assessor type set (options: -s/-a/--WOS/--WOA). Nothing to download.'
+        return False
+    #can not have withoutS and scantype together
+    if options.withoutS:
+        print 'OPTION WARNING: You use option --WOS: the script will download from scan with a type different that the ones given.'
+    #can not have withoutA and assessortype together   
+    if options.withoutA:
+        print 'OPTION WARNING: You use option --WOA: the script will download from process with a type different that the ones given.'
+    return True
+
+########################################## MAIN DISPLAY FUNCTION ##########################################
+def Main_display(parser):
+    (options,_)=parser.parse_args()
+    print '################################################################'
+    print '#                         XNATDOWNLOAD                         #'
+    print '#                                                              #'
+    print '# Developed by the masiLab Vanderbilt University, TN, USA.     #'
+    print '# If issues, email benjamin.c.yvernault@vanderbilt.edu         #'
+    print '# Usage:                                                       #'
+    print '#     Download data from XNAT with specific search precised by #'
+    print '#     the different options                                    #'
+    print '# Parameters :                                                 #'
+    if options=={'overwrite':False,'update':False, 'qcstatus':None,'oneDir': False,'assessortype': None, 'status':None,'qualities':None, 'scantype': None, 'selectionScan': None, 'experiment': None, 'withoutS': None, 'resourcesA': None, 'csvfile': None, 'project': None, 'outputfile': None, 'withoutA': None, 'selectionAssessor': None, 'directory': None, 'resourcesS': None, 'subject': None}:
+        print '#     No Arguments given                                       #'
+        print '#     See the help bellow or Use "Xnatdownload" -h             #'
+        print '################################################################'
+        parser.print_help()
+        sys.exit()
+    else:
+        if options.directory:
+            print '#     %*s -> %*s#' %(-20,'Directory',-33,get_proper_str(options.directory,True))
+        if options.selectionScan:
+            print '#     %*s -> %*s#' %(-20,'selected Scan',-33,get_proper_str(options.selectionScan,True))
+            if options.resourcesS:  
+                print '#     %*s -> %*s#' %(-20,'Resources Scan',-33,get_proper_str(options.resourcesS))
+        elif options.selectionAssessor:
+            print '#     %*s -> %*s#' %(-20,'selected Process',-33,get_proper_str(options.selectionAssessor,True))
+            if options.resourcesA: 
+                print '#     %*s -> %*s#' %(-20,'Resources Process',-33,get_proper_str(options.resourcesA))
+        else:
+            if options.csvfile:
+                print '#     %*s -> %*s#' %(-20,'File csv',-33,get_proper_str(options.csvfile,True))
+                if options.resourcesS:
+                    print '#     %*s -> %*s#' %(-20,'Resources Scan',-33,get_proper_str(options.resourcesS))
+                if options.resourcesA:
+                    print '#     %*s -> %*s#' %(-20,'Resources Process',-33,get_proper_str(options.resourcesA))
+            elif options.project:
+                print '#     %*s -> %*s#' %(-20,'Project(s)',-33,get_proper_str(options.project))
+                if options.subject:
+                    print '#     %*s -> %*s#' %(-20,'Subject(s)',-33,get_proper_str(options.subject))
+                if options.experiment:
+                    print '#     %*s -> %*s#' %(-20,'Experiment(s)',-33,get_proper_str(options.experiment))
+                if options.scantype:
+                    print '#     %*s -> %*s#' %(-20,'Scan types',-33,get_proper_str(options.scantype))
+                if options.resourcesS:
+                    print '#     %*s -> %*s#' %(-20,'Resources Scan',-33,get_proper_str(options.resourcesS))
+                if options.qualities:
+                    print '#     %*s -> %*s#' %(-20,'Scan Qualities',-33,get_proper_str(options.qualities))
+                if options.assessortype:
+                    print '#     %*s -> %*s#' %(-20,'Process types',-33,get_proper_str(options.assessortype))
+                if options.resourcesA:
+                    print '#     %*s -> %*s#' %(-20,'Resources Process',-33,get_proper_str(options.resourcesA))
+                if options.status:
+                    print '#     %*s -> %*s#' %(-20,'Job Status',-33,get_proper_str(options.status))
+                if options.qcstatus:
+                    print '#     %*s -> %*s#' %(-20,'QC Status',-33,get_proper_str(options.qcstatus))
+        if options.oneDir:
+            print '#     %*s -> %*s#' %(-20,'No sub-dir mode',-33,'on')
+        if options.overwrite:
+            print '#     %*s -> %*s#' %(-20,'Overwrite mode',-33,'on')
+        if options.update:
+            print '#     %*s -> %*s#' %(-20,'Update mode',-33,'on')
+        if options.outputfile:
+            print '#     %*s -> %*s#' %(-20,'Output file',-33,get_proper_str(options.outputfile,True))
+        print '################################################################'
+        print "IMPORTANT WARNING FOR ALL USERS: "
+        print "  --update options isn't working."
+        print "  The last modified resources date can't be access right now on XNAT."
+        print '====================================================================='
+
+def get_proper_str(str_option,end=False):
+    if len(str_option)>32:
+        if end:
+            return '...'+str_option[-29:]
+        else:
+            return str_option[:29]+'...'
+    else:
+        return str_option
+        
+def get_usage():
+    usage="usage: %prog [options] \n"
+    usage+="What is the script doing : \n"
+    usage+="   *Download filtered data from XNAT to your local computer using the different options.\n\n"
+    #Example
+    usage+="Examples:\n"
+    usage+="   *Download all resources for all scans/assessors in a project: Xnatdownload -p PID -d /tmp/downloadPID -s all --rs all -a all --ra all\n"
+    usage+="   *Download NIFTI for T1,fMRI: Xnatdownload -p PID -d /tmp/downloadPID -s T1,fMRI --rs NIFTI\n"
+    usage+="   *Download only the outlogs for fMRIQA assessors that failed: Xnatdownload -p PID -d /tmp/downloadPID -a fMRIQA --status JOB_FAILED --ra OUTLOG\n"
+    usage+='   *Download PDF for assessors that Needs QA: Xnatdownload -p PID -d /tmp/downloadPID -a all --qcstatus="Needs QA" --ra OUTLOG\n'
+    usage+="   *Download NIFTI for T1 for some sessions : Xnatdownload -p PID -d /tmp/downloadPID --sess 109309,189308 -s all --rs NIFTI \n"
+    usage+="   *Download same data than previous line but overwrite the data: Xnatdownload -p PID -d /tmp/downloadPID --sess 109309,189308 -s all --rs NIFTI --overwrite\n"
+    usage+="   *Download data described by a csvfile (follow template) : Xnatdownload -d /tmp/downloadPID -c  upload_sheet.csv"
+    return usage
+
+########################################## OPTIONS ##########################################
+def parse_args():
+    from optparse import OptionParser
+    usage = get_usage()
+    parser = OptionParser(usage=usage)
+    #need this options
+    parser.add_option("-p", "--project", dest="project",default=None,
+                  help="Project(s) ID on Xnat", metavar="LIST_SEPARATED_COMMA")
+    parser.add_option("-d", "--directory", dest="directory",default=None,
+                  help="Directory where the data will be download", metavar="DIRECTORY")
+    parser.add_option("-D", "--oneDirectory", dest="oneDir",action="store_true", default=False,
+                  help="Data will be downloaded in the same directory. No sub-directory.", metavar="DIRECTORY")
+    #Download for only one Subject
+    parser.add_option("--subj", dest="subject",default=None,
+                  help="filter scans/assessors by their subject label. Format: a comma separated string (E.G: --subj VUSTP2,VUSTP3).", metavar="LIST_SEPARATED_COMMA")
+    #Download for only one Subject
+    parser.add_option("--sess", dest="experiment",default=None,
+                  help="filter scans/assessors by their session label. Format: a comma separated string (E.G: --sess VUSTP2b,VUSTP3a)", metavar="LIST_SEPARATED_COMMA")
+    #for a specific scantype or specific Assessor
+    parser.add_option("-s", "--scantype", dest="scantype",default=None,
+                  help="filter scans by their types (required to download scans). Format: a comma separated string (E.G : -s T1,MPRAGE,REST). To download all types, set to 'all'.", metavar="LIST_SEPARATED_COMMA")
+    parser.add_option("-a", "--assessortype", dest="assessortype",default=None,
+                  help="filter assessors by their types (required to download assessors). Format: a comma separated string (E.G : -a fMRIQA,dtiQA_v2,Multi_Atlas). To download all types, set to 'all'.", metavar="LIST_SEPARATED_COMMA")
+    parser.add_option("--WOS", dest="withoutS",default=None,
+                  help="filter scans by their types and removed the one with the specified types. Format: a comma separated string (E.G : --WOS T1,MPRAGE,REST).", metavar="LIST_SEPARATED_COMMA")
+    parser.add_option("--WOP", dest="withoutA",default=None,
+                  help="filter assessors by their types and removed the one with the specified types. Format: a comma separated string (E.G : --WOP fMRIQA,dtiQA).", metavar="LIST_SEPARATED_COMMA")
+    #specific attributes
+    parser.add_option("--quality", dest="qualities",default=None,
+                  help="filter scans by their quality. Format: a comma separated string (E.G: --quality usable,questionable,unusable).", metavar="LIST_SEPARATED_COMMA")
+    parser.add_option("--status", dest="status",default=None,
+                  help="filter assessors by their job status. Format: a comma separated string.", metavar="LIST_SEPARATED_COMMA")
+    parser.add_option("--qcstatus", dest="qcstatus",default=None,
+                  help="filter assessors by their quality control status. Format: a comma separated string.", metavar="LIST_SEPARATED_COMMA")
+    #Download from the following csvfile
+    parser.add_option("-c", "--csvfile", dest="csvfile",default=None,
+                  help="CSV file with the following header: object_type,project_id,subject_label,session_label,as_label. object_type must be 'scan' or 'assessor' and as_label the scan ID or assessor label.", metavar="CSVPATH")
+    #specific Resources
+    parser.add_option("--rs", dest="resourcesS",default=None,
+                  help="Resources you want to download for scans. E.g : --rs NIFTI,PAR,REC.", metavar="LIST_SEPARATED_COMMA")
+    parser.add_option("--ra", dest="resourcesA",default=None,
+                  help="Resources you want to download for assessors. E.g : --ra OUTLOG,PDF,PBS.", metavar="LIST_SEPARATED_COMMA")
+    #select only one scan
+    parser.add_option("--selectionS", dest="selectionScan",default=None,
+                  help="Download from only one selected scan.By default : no selection. E.G : project-x-subject-x-experiment-x-scan ", metavar="SELECTED_SCAN")
+    #select only one assessor
+    parser.add_option("--selectionP", dest="selectionAssessor",default=None,
+                  help="Download from only one selected processor.By default : no selection. E.G : assessor_label", metavar="SELECTED_ASSESSOR")
+    #Overwrite
+    parser.add_option("--overwrite", dest="overwrite",action="store_true", default=False,
+                  help="Overwrite the previous data downloaded with the same command.", metavar="")
+    #update
+    parser.add_option("--update", dest="update",action="store_true", default=False,
+                  help="Update the files from XNAT that have been downloaded with the newest version if there is one (not working yet).", metavar="")
+    #Output
+    parser.add_option("-o","--output", dest="outputfile", default=None,
+                  help="Write the display in a file giving to this options.", metavar="")
+    return parser
+
+###################################################################################################
+########################################## MAIN FUNCTION ##########################################
+###################################################################################################
+if __name__ == '__main__':
+    parser = parse_args()
+    (options,args)=parser.parse_args()
+    #############################
+    #Main display:
+    Main_display(parser)
+    #check options:
+    run=check_options(options)
+    #############################
+    logger = setup_info_logger('xnatdownload',options.outputfile)
+
+    #############################
+    # RUN                       #
+    #############################
+    if run:
+        #Directory:
+        directory = os.path.abspath(options.directory)
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+        #write the command:
+        write_cmd_file(os.path.join(directory,DEFAULT_COMMAND_LINE),options.overwrite)
+        try:
+            logger.info("INFO: Connection to Xnat")
+            xnat = XnatUtils.get_interface()
+            ############## SPECIFIC DOWNLOAD ###############
+            if options.selectionScan or options.selectionAssessor:
+                if options.selectionScan: download_specific_scan(options)
+                if options.selectionAssessor: download_specific_assessor(options)
+            else:
+                proj_subj_list,scan_list,assessor_list,last_download,old_rows,options=get_xnat_information(xnat,directory,options)
+                #open the report file:
+                with open(os.path.join(directory,DEFAULT_REPORT_NAME),'wb') as csvfilewrite:
+                    csvwriter = csv.writer(csvfilewrite,delimiter=',')
+                    #Today date
+                    csvwriter.writerow(['Last download date = '+'{:%Y-%m-%d %H:%M:%S}'.format(datetime.now())])
+                    csvwriter.writerow(DEFAULT_CSV_LIST)
+                    if options.overwrite or options.update:
+                        pass
+                    else:
+                        for row in old_rows:
+                            csvwriter.writerow(row)
+                    if options.csvfile:
+                        download_data_xnat(options,directory,xnat,proj_subj_list,scan_list,assessor_list,csvwriter,last_download)
+                    ############## DOWNLOAD FOR ALL ###############
+                    else:
+                        download_data_xnat(options,directory,xnat,proj_subj_list,scan_list,assessor_list,csvwriter,last_download)
+        finally:
+            #disconnect
+            xnat.disconnect()
+            logger.info('INFO: Connection to Xnat closed')
+
+    logger.info('===================================================================')

@@ -1,0 +1,211 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+'''
+Query through Xnat
+
+@author: Benjamin Yvernault, Electrical Engineering, Vanderbilt University
+'''
+
+import os
+import sys
+from dax import XnatUtils
+
+########################################################################################################
+########################################## SPECIFIC FUNCTIONS ##########################################
+########################################################################################################
+def get_text_session(xnat,project,txtfile):
+    session_list=list()
+    input_file = open(txtfile, 'r')
+    for line in input_file:
+        label=line.strip().split('\n')[0]
+        #check on XNAT:
+        worked,sess_label=xnat_check(xnat,project,label)
+        if worked:
+            session_list.append(sess_label)
+        
+    return session_list
+
+def xnat_check(xnat,project,label,list_experiment):
+    if len(label.split('-x-'))>1:
+        session=label.split('-x-')[2]
+    else:
+        session=label
+    subject=get_subject_id(xnat,session,list_experiment)
+    S=xnat.select('/project/'+project+'/subject/'+subject+'/experiment/'+session)
+    if S.exists():
+        return True,session
+    else:
+        return False,''
+
+def get_subject_id(xnat,session,list_experiment):
+    subject_id=[x['subject_id'] for x in list_experiment if x['session_label']==session]
+    return subject_id[0]
+    
+def change_date(xnat,project,session,list_experiment):
+    subject=get_subject_id(xnat,session,list_experiment)
+    Session=xnat.select('/project/'+project+'/subject/'+subject+'/experiment/'+session)
+    #set the date to nothing:
+    Session.attrs.set('xnat:mrSessionData/original',' ')
+    print '   ->Session changed to need update.'
+
+def get_xnat_subject_need_inputs(xnat,project):
+    proc_list=XnatUtils.list_project_assessors(xnat, project)
+    if not proc_list:
+        sys.stdout.write("   !!ERROR: You don't have access to the project: "+project+".!!\n")
+        sys.exit()
+    proc_list=filter(lambda x: x['procstatus']=='NEED_INPUTS', proc_list)
+    return list(set([x['session_label'] for x in proc_list]))
+        
+########################################## CHECK OPTIONS ##########################################                        
+def check_options(options):
+    # The options :
+    if not options.project:
+        print 'OPTION ERROR: You need to provide a project with the option -p/--project.'
+        return False
+        
+    if not options.session and not options.txtfile and not options.needinputs and not options.all:
+        print 'OPTION ERROR: You need to provide a subject label with -s/--subject or a text file -x/--txtfile or check NEED_INPUTS processes with -n/--needinputs.'
+        return False
+    
+    if options.all:
+        print 'OPTION WARNING: You choose --all. It will update all subjects again.'
+    else:
+        if (options.needinputs and options.session) or (options.needinputs and options.txtfile) or (options.txtfile and options.session):
+            print 'OPTION ERROR: You provide different modes together. Please provide only one: -s/--subject or -x/--txtfile or -n/--needinputs.'
+            return False
+           
+    if options.txtfile:
+        if not os.path.exists(options.txtfile):
+            print "OPTION ERROR: the file "+options.txtfile+" does not exist."
+            return False
+    else:
+        try:
+            xnat = XnatUtils.get_interface()
+            #PROJECT
+            for project in options.project.split(','):
+                P=xnat.select('/project/'+project)
+                if not P.exists():
+                    print 'OPTION ERROR: You used the option -p/--project with one or more non existing project ID on XNAT.'
+                    return False
+            
+        finally:                                        
+            xnat.disconnect()
+                
+    return True
+
+########################################## MAIN DISPLAY FUNCTION ##########################################   
+def Main_display(parser):
+    (options,args)=parser.parse_args()
+    print '################################################################'
+    print '#                      XNATSESSIONUPDATE                       #'
+    print '#                                                              #'
+    print '# Developed by the masiLab Vanderbilt University, TN, USA.     #'
+    print '# If issues, email benjamin.c.yvernault@vanderbilt.edu         #'
+    print '# Usage:                                                       #'
+    print '#     Reset sessions to be seen by the nex dax_update          #'
+    print '# Parameters :                                                 #'
+    if options=={'project': None, 'needinputs': False, 'txtfile': None, 'session': None,'all':False}:
+        print '#     No Arguments given                                       #'
+        print '#     See the help bellow or Use "Xnatsessionupdate" -h        #'
+        print '################################################################'
+        parser.print_help()
+        sys.exit()
+    else:
+        if options.all:
+            print '#     %*s -> %*s#' %(-20,'All',-33,'on')
+        if options.project:
+            print '#     %*s -> %*s#' %(-20,'Project(s)',-33,options.project)
+        if options.needinputs:
+            print '#     %*s -> %*s#' %(-20,'Mode',-33,'Sessions with NEED_INPUTS processes')
+        if options.session:
+            print '#     %*s -> %*s#' %(-20,'Mode',-33,'Selected Sessions')
+            print '#     %*s -> %*s#' %(-20,'Session(s)',-33,get_proper_str(options.session))
+        if options.txtfile:
+            print '#     %*s -> %*s#' %(-20,'Mode',-33,'TEXT file with list of sessions/processors')
+            print '#     %*s -> %*s#' %(-20,'Text File',-33,get_proper_str(options.txtfile,True))
+        print '################################################################'
+
+def get_proper_str(str_option,end=False):
+    if len(str_option)>32:
+        if end:
+            return '...'+str_option[-29:]
+        else:
+            return str_option[:29]+'...'
+    else:
+        return str_option
+
+def get_usage():
+    usage="usage: %prog [options] \n"
+    usage+="What is the script doing : \n"
+    usage+="   *Reset sessions last update date to update the sessions during the next dax_update.\n"
+    #Example
+    usage+="Examples:\n"
+    usage+="   *Reset all sessions: Xnatsessionupdate -p PID --all\n"
+    usage+="   *Reset some sessions : Xnatsessionupdate -p PID -s 109374,109348\n"
+    usage+="   *Reset for the sessions that have assessors NEED_INPUTS: Xnatsessionupdate -p PID -n\n"
+    return usage
+    
+def parse_args():
+    from optparse import OptionParser
+    usage = get_usage()
+    parser = OptionParser(usage=usage)
+    parser.add_option("-p", "--project", dest="project",default=None,
+                  help="One project ID on Xnat.", metavar="PID")
+    parser.add_option("-s", "--session", dest="session",default=None,
+                  help="Session label on Xnat or list of them.", metavar="SESSION_LABELS")
+    parser.add_option("-n", "--needinputs", dest="needinputs",action="store_true", default=False,
+                  help="Change the subject last update date for all the subject with processes in NEED_INPUTS mode.", metavar="SUBJECT_LABELS")
+    parser.add_option("-x","--txtfile",dest="txtfile",default=None,
+                    help="File txt with at each line the label of the assessor or just the Session label where the Subject date need to be changed. E.G for label: project-x-subject-x-experiment-x-scan-x-process_name.", metavar="FILEPATH")
+    parser.add_option("-a", "--all", dest="all",action="store_true", default=False,
+                  help="Change the session last update date for all sessions.", metavar="")
+    return parser
+              
+###################################################################################################
+########################################## MAIN FUNCTION ##########################################
+###################################################################################################
+if __name__ == '__main__':
+    """ Update the last update date of the session to nothing to be update again """
+    parser = parse_args()
+    (options,args)=parser.parse_args()
+    #############################
+    #Main display:
+    Main_display(parser)
+    #check options:
+    run=check_options(options)
+    #############################
+    
+    #############################
+    # RUN                       #
+    #############################
+    if run:
+        # Connection to Xnat
+        try:
+            xnat = XnatUtils.get_interface()
+            
+            for indexP,project in enumerate(options.project.split(',')):
+                print '-> Project : '+project
+                print ' INFO: Getting Sessions from XNAT...'
+                list_sessions_xnat=XnatUtils.list_experiments(xnat, project)
+                if options.all:
+                    print' INFO: Getting all XNAT sessions...'
+                    session_list=list(set([x['session_label'] for x in list_sessions_xnat]))
+                elif options.needinputs:
+                    print' INFO: Checking XNAT processes...'
+                    session_list=get_xnat_subject_need_inputs(xnat,project)
+                elif options.txtfile:
+                    print' INFO: Getting XNAT sessions from text file '+options.txtfile+' ...'
+                    session_list=get_text_session(xnat,project,options.txtfile,list_sessions_xnat)
+                else:
+                    session_list=(options.session).split(',')
+                
+                print' INFO: Changing XNAT sessions last update date for '+str(len(session_list))+' sessions ...'
+                for indexS,session in enumerate(session_list):
+                    print '  *Sessions '+str(indexS+1)+'/'+str(len(session_list))+' : '+session
+                    change_date(xnat,project,session,list_sessions_xnat)
+            
+        finally:                                        
+            xnat.disconnect()
+    
+    print '===================================================================\n'
