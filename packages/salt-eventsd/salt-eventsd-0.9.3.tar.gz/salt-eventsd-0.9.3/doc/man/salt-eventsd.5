@@ -1,0 +1,125 @@
+.\"                                      Hey, EMACS: -*- nroff -*-
+.\" First parameter, NAME, should be all caps
+.\" Second parameter, SECTION, should be 1-8, maybe w/ subsection
+.\" other parameters are allowed: see man(7), man(1)
+.TH "eventsd.conf" "5" "v0.2 August 8 2013" "Volker Schwicking" "File Formats and Conversions"
+.\" Please adjust this date whenever revising the manpage.
+.\"
+.SH NAME
+eventsd.conf \- configuration file for the salt-eventsd
+.SH OVERVIEW
+.br 
+The main configuration-file in JSON-Format for the salt-events usually located in /etc/salt/eventsd.conf. It contains 
+all the settings required to run the salt-eventsd. DO NOT remove any in mysql or general, the daemon will not start!
+
+.SH
+.BR CONFIG-SECTIONS
+.SS
+.BR GENERAL
+.br 
+Contains the general settings.
+
+.TP
+.BR backend 
+What backends to enable (in python list-format [worker1, worker2, worker4]
+
+.TP
+.BR backend_dir 
+Where the daemon can find the backend files <Name>_Worker.py
+
+.TP
+.BR sock_dir
+the path where the salt-masters events socket is located (default: /var/run/salt/master)
+
+.TP
+.BR node
+can be either master or minion, depending on where the salt-eventsd is run. Currently supports only 'master'
+
+.TP
+.BR max_workers
+how many threads to start max that insert data into the databse. This largely depends on your hardware. 
+
+.TP
+.BR id
+defaults to 'master', currently nothing else supported
+
+.TP
+.BR event_limit
+how many events to collect before writing them into the database. Think of this as a queue that collects until its full and then writes its data to disk,
+
+.TP
+.BR pidfile
+where the daemon should write its pidfie
+
+.TP
+.BR state_file
+the salt-eventsd keep counters of collected events, threads created, threads joined, etc. This data is written into a file on a regular bases. See state_upd below.
+
+.TP
+.BR state_timer
+How often to write the current status of the daemon to the state_file.
+
+.TP
+.BR loglevel
+can currently not be changed and defaults to 'info'. This is work to be done.
+
+.TP
+.BR logfile
+where to write the logfile. Currently defaults to '/var/log/salt/eventsd.log' and can not be changed. This is work to be done.
+
+.TP
+.BR dump_timer
+If there are only a few events on the master to collect, it might take quite a while before the already collected events are written to the database. To keep this time short, there is a timer that triggers this every 'dump_timer' seconds. Whenever the events are written to the database due to the event_limit being reached, the timer is reset.
+
+.TP
+.BR stat_worker
+Wether or not to enable the Stat_worker to run when the state_timer fires.
+
+.SS
+.BR WORKER_CREDENTIALS
+.br 
+Contains the (optional) credentials for the workers if they require any. They can also be configured in the workers temselves. They can be in any format as long as they are alid yaml. The workers receives the whole datastructure and has to extract the valid fields.
+
+.TP
+.BR all
+The credentials to pass on to all workers.
+
+.TP
+.BR <NAME>_Worker:
+The credentials to pass on to the worker named 'NAME'. Each worker can have its very own credentials.
+
+.SS
+.BR EVENTS
+Each event to react on, must be configured with all fields required to handle it.
+.TP
+.BR NAME
+Assign a name to the event. This is not used anywhere afterwards, just in the config. The fields "below" the name are the important ones.
+
+.INDENT 5.0
+
+.B \ tag 
+- the tag of the events
+
+.B \ mysql_tab
+- the table in the database this event should be written into. If set to 'worker', some logic in the worker has to figure out the correct table.
+
+.B \ template
+- a sql_query template to run with the collected events da
+
+.B \ dict_name
+- the structure of an event can vary. Usually the name of the dictionary where the data is located is 'data'. 
+
+.B \ fields
+- not all fields from the events must be used. This configures which fields to extract. NOTE: THE FIELDS IN THE QUERY HAVE TO MATCH THESE FIELDS EXACTLY. ORDER IS IMPORTANT!
+
+.B \ debug
+- debug can be enabled for each event (this is not implemented yet!)
+
+.B \ prio
+- A prioritiy for the event. This type of events dont ever get queued.
+
+.B \ batch_mode
+- Standard workers receive one event at the time. Batch workers receive all events at once. This can for example be useful for large insert into mysql
+
+.UNINDENT
+
