@@ -1,0 +1,10 @@
+__version__ = "0.5.30"
+__git_commiter_name__ = "Tal Yalon"
+__git_commiter_email__ = "tal.yalon@gmail.com"
+__git_branch__ = '(detached from v0.5.30)'
+__git_remote_tracking_branch__ = '(No remote tracking)'
+__git_remote_url__ = '(Not remote tracking)'
+__git_head_hash__ = '3f57b1d2c5d82a5463f438cf2d6700c8fed1f641'
+__git_head_subject__ = 'TRIVIAL added librt to linking for linux'
+__git_head_message__ = ''
+__git_dirty_diff__ = ''
