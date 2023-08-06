@@ -1,0 +1,153 @@
+Metadata-Version: 1.1
+Name: sluice
+Version: 0.3.0
+Summary: Tools for managing zfs snapshots
+Home-page: https://bitbucket.org/sjdrake/sluice
+Author: Stephen Drake
+Author-email: steve@synergyconsultingnz.com
+License: Common Development and Distribution License (CDDL)
+Description: Sluice
+        ======
+        Sluice is a set of tools for managing ZFS snapshots inspired by
+        `Time Machine`_.
+        
+        A goal of Sluice is to follow the Unix philosophy of simple, composable
+        tools.  To this end, the core functionality is broken into three
+        independent operations on snapshots: creation, synchronisation and
+        culling.
+        
+        Snapshots essential to synchronisation are locked with zfs holds to prevent
+        their accidental removal.  This allows these operations to run independently
+        but cooperatively, and facilitates interoperation with other tools.
+        
+        Each of the tools is simple enough that it can be fully configured with
+        command-line options - no configuration file is required.  Some options,
+        however, can be looked up from zfs user properties.
+        
+        Complex schemes can be effected by combining multiple cron jobs.
+        
+        Sluice is implemented on top of `Weir`_, which provides support for remote
+        operation.  All commands can operate on remote datasets specifed as urls of
+        the form ``zfs://user@host/path@snapname``.
+        
+        .. _Time Machine: https://en.wikipedia.org/wiki/Time_Machine_%28OS_X%29
+        .. _Weir: https://bitbucket.org/sjdrake/weir
+        
+        Installation
+        ------------
+        Requires Python 2.6, 2.7 or 3.4+.
+        
+        To install Sluice, simply::
+        
+        	$ pip install sluice
+        
+        zfs-autosnapshot
+        ----------------
+        Creates snapshots with names generated from a |strftime|_-compatible date
+        format string::
+        
+        	$ zfs-autosnapshot -v zroot/test@%Y-%m-%d
+        	INFO:sluice.autosnapshot:creating new snapshot zroot/test@2015-04-11
+        
+        If no format string is specified, it will be looked up from the user property
+        ``sluice.autosnapshot:format`` or the default ISO 8601-compatible format
+        ``%Y-%m-%dT%H%M`` will be used::
+        
+        	$ zfs set sluice.autosnapshot:format=auto-%Y-%m-%dT%H%M%S zroot/test
+        	$ zfs-autosnapshot -v zroot/test
+        	INFO:sluice.autosnapshot:creating new snapshot zroot/test@auto-2015-04-11T012611
+        
+        .. |strftime| replace:: ``strftime()``
+        .. _strftime: http://pubs.opengroup.org/onlinepubs/007908799/xsh/strftime.html
+        
+        zfs-copy
+        --------
+        Combines ``zfs send`` and ``zfs receive``::
+        
+        	$ zfs-copy -v zroot/test@2015-04-11 zfs://backup.local/wanaka/test-copy
+        	INFO:weir.process:sending from @ to zroot/test@2015-04-11
+        	INFO:weir.process:receiving full stream of zroot/test@2015-04-11 into wanaka/test-copy@2015-04-11
+        	INFO:weir.process:received 46.4KiB stream in 1 seconds (46.4KiB/sec)
+        
+        zfs-sync
+        --------
+        Performs one-way synchronisation of snapshots between two datasets::
+        
+        	$ zfs-sync -v zroot/test zfs://backup.local/wanaka/test-sync
+        	INFO:weir.process:sending from @ to zroot/test@auto-2015-04-11T012611
+        	INFO:weir.process:receiving full stream of zroot/test@auto-2015-04-11T012611 into wanaka/test-sync@auto-2015-04-11T012611
+        	INFO:weir.process:received 46.4KiB stream in 1 seconds (46.4KiB/sec)
+        
+        	$ zfs-autosnapshot zroot/test
+        	$ zfs-sync -v zroot/test zfs://backup.local/wanaka/test-sync
+        	INFO:weir.process:sending from @auto-2015-04-11T012611 to zroot/test@auto-2015-04-11T014021
+        	INFO:weir.process:receiving incremental stream of zroot/test@auto-2015-04-11T014021 into wanaka/test-sync@auto-2015-04-11T014021
+        	INFO:weir.process:received 312B stream in 3 seconds (104B/sec)
+        
+        A hold is placed on the source snapshot to prevent inadvertently deleting it
+        and thereby breaking incremental synchronisation::
+        
+        	$ zfs holds zroot/test@auto-2015-04-11T014021
+        	NAME                               TAG                                              TIMESTAMP
+        	zroot/test@auto-2015-04-11T014021  sluice.sync:zfs://backup.local/wanaka/test-sync  Sat Apr 11  1:40 2015
+        
+        zfs-cull
+        --------
+        Destroys old snapshots.
+        
+        Snapshots can be removed by specifying a maximum age in ISO 8601 duration
+        format.  The most recent snapshot and any held snapshots are preserved::
+        
+        	$ zfs-autosnapshot zroot/test
+        	$ zfs-cull -v --max-age=t1m zroot/test
+        	INFO:sluice.cull:destroying zroot/test@2015-04-11
+        	INFO:sluice.cull:destroying zroot/test@auto-2015-04-11T012611
+        	INFO:sluice.cull:destroying zroot/test@auto-2015-04-11T014021
+        
+        	$ zfs list -t all -r zroot/test
+        	NAME                                 USED   AVAIL   REFER  MOUNTPOINT
+        	zroot/test                          144Ki   109Gi   144Ki  /Volumes/zroot/test
+        	zroot/test@auto-2015-04-11T014021       0       -   144Ki  -
+        	zroot/test@auto-2015-04-11T014754       0       -   144Ki  -
+        
+        Snapshots can also be removed by density, defined as a / ∆a, where a is
+        snapshot age and ∆a is the age difference between adjacent snapshots.
+        Snapshot density is thus defined in log-time rather than in linear-time.
+        The oldest snapshot is also preserved in this mode::
+        
+        	$ zfs-autosnapshot zroot/test
+        	$ zfs-sync zroot/test zfs://backup.local/wanaka/test-sync
+        	$ zfs-cull -v --max-density=1 zfs://backup.local/wanaka/test-sync
+        	INFO:sluice.cull:destroying zfs://backup.local/wanaka/test-sync@auto-2015-04-11T014021
+        
+        	$ zfs list -t all -r wanaka/test-sync
+        	NAME                                       USED   AVAIL   REFER  MOUNTPOINT
+        	wanaka/test-sync                          160Ki   109Gi   144Ki  /Volumes/wanaka/test-sync
+        	wanaka/test-sync@auto-2015-04-11T012611     8Ki       -   144Ki  -
+        	wanaka/test-sync@auto-2015-04-11T014754     8Ki       -   144Ki  -
+        	wanaka/test-sync@auto-2015-04-11T015628       0       -   144Ki  -
+        
+        zfs-import
+        ----------
+        Proposed addition for v1.x - copy files from a non-zfs filesystem and create
+        a snapshot.
+        
+        zfs-export
+        ----------
+        Proposed addition for v1.x - create a clone of a zfs snapshot and copy files
+        to a non-zfs filesystem.
+        
+        License
+        -------
+        Licensed under the Common Development and Distribution License (CDDL).
+        
+Keywords: zfs
+Platform: UNKNOWN
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved
+Classifier: Programming Language :: Python :: 2
+Classifier: Programming Language :: Python :: 2.6
+Classifier: Programming Language :: Python :: 2.7
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.4
