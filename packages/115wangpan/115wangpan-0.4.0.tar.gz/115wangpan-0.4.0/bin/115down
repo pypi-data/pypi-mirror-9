@@ -1,0 +1,130 @@
+#!/usr/bin/env python
+
+from __future__ import print_function
+import argparse
+import getpass
+import os
+from u115 import API, File, Directory
+
+# SOCKS proxy
+if os.environ.get('PROXY_ADDR'):
+    proxy_addr = os.environ.get('PROXY_ADDR')
+    proxy_port = int(os.environ.get('PROXY_PORT'))
+    import socket
+    import socks
+    socks.set_default_proxy(socks.SOCKS5, proxy_addr, proxy_port)
+    socket.socket = socks.socksocket
+DRY_RUN = False
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(prog='115dl')
+    group = parser.add_mutually_exclusive_group(required=False)
+    group.add_argument('-u', '--username', help='account or username')
+    group.add_argument('-d', '--section', default='default',
+                       help='section name in credential file')
+    parser.add_argument('entry_num', nargs='?', help='entry number',
+                        type=int)
+    parser.add_argument('sub_num', nargs='?',
+                        help='sub-entry number or star (*) for all')
+    parser.add_argument('-t', '--tasks', action='store_true',
+                        help="list tasks")
+    parser.add_argument('-l', '--list', action='store_true', default=True,
+                        help="list the downloads directory")
+    parser.add_argument('-n', '--count', default=30, type=int,
+                        help="number of entries to get")
+    parser.add_argument('-m', '--sub-count', default=30, type=int,
+                        dest='sub_count', help="number of sub-entries to get")
+    parser.add_argument('-s', '--dry-run', action='store_true',
+                        help="print urls instead of downloading")
+    args = parser.parse_args()
+    if args.entry_num is not None:
+        if args.tasks is True:
+            raise parser.error('Cannot list entries of tasks.')
+        if args.entry_num <= 0:
+            msg = 'Entry number must be a positive integer.'
+            raise parser.error(msg)
+    if args.sub_num is not None:
+        msg = 'Sub-entry number must be a positive integer or star (*).'
+        if args.sub_num.isdigit():
+            try:
+                args.sub_num = int(args.sub_num)
+                assert args.sub_num > 0
+            except:
+                raise parser.error(msg)
+        else:
+            if args.sub_num != '*':
+                raise parser.error(msg)
+    return args
+
+
+def get_entries(username, password, section, entry_num, sub_num,
+                count, sub_count, list_tasks=False):
+    api = API()
+    api.login(username, password, section)
+    if list_tasks is True:
+        entries = api.get_tasks(count)
+    else:
+        entries = api.downloads_directory.list(count)
+    if entry_num is None:
+        for k, entry in enumerate(entries, start=1):
+            if list_tasks:
+                status = '[%s]' % entry.status_human
+                print(k, status, repr(entry))
+            else:
+                print(k, repr(entry))
+    elif entry_num is not None and sub_num is None:
+        entry = entries[entry_num - 1]
+        # entry may be a File object
+        if isinstance(entry, File):
+            download_file(entry)
+        else:
+            # Directory object
+            list_entry(entry, sub_count)
+    elif entry_num is not None and sub_num is not None:
+        entry = entries[entry_num - 1]
+        print(repr(entry))
+        subs = entry.list(sub_count)
+        if sub_num == '*':
+            for f in subs:
+                print(repr(f))
+                download_file(f)
+        else:
+            f = subs[sub_num - 1]
+            print(repr(f))
+            download_file(f)
+
+
+def list_entry(entry, sub_count):
+    print(repr(entry))
+    for k, f in enumerate(entry.list(sub_count), start=1):
+        print('\t', k, repr(f))
+
+
+def download_file(f):
+    if isinstance(f, File):
+        print(f.url)
+        if not DRY_RUN:
+            f.download()
+    elif isinstance(f, Directory):
+        ffiles = f.list()
+        for ff in ffiles:
+            print(ff)
+            print(ff.url)
+            if not DRY_RUN:
+                ff.download()
+
+
+def main():
+    args = parse_args()
+    global DRY_RUN
+    DRY_RUN = args.dry_run
+    password = None
+    if args.username is not None:
+        password = getpass.getpass()
+    get_entries(args.username, password, args.section, args.entry_num,
+                args.sub_num, args.count, args.sub_count, args.tasks)
+
+
+if __name__ == '__main__':
+    main()
