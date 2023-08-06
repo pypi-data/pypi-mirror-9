@@ -1,0 +1,11 @@
+__version__ = "0.1"
+__git_commiter_name__ = "Guy Rozendorn"
+__git_commiter_email__ = "guy@rzn.co.il"
+__git_branch__ = '(detached from v0.1)'
+__git_remote_tracking_branch__ = '(No remote tracking)'
+__git_remote_url__ = '(Not remote tracking)'
+__git_head_hash__ = 'b14856d5e3480ac9a886bbfba2ef7c78c6f80678'
+__git_head_subject__ = 'Finished release v0.1.'
+__git_head_message__ = '* release/v0.1:\n  raw and hexdump\n  hexdump\n  reset on linux\n  short flags\n  output tests\n  HOSTDEV-1981 starting to work\n  package name\n  HOSTDEV-1981 initial commit\n  added all project files'
+__git_dirty_diff__ = ''
+__git_commit_date__ = '2015-03-12 10:58:57'
