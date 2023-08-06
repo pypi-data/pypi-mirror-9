@@ -1,0 +1,10 @@
+__version__ = "0.1.1"
+__git_commiter_name__ = "Guy Rozendorn"
+__git_commiter_email__ = "guy@rzn.co.il"
+__git_branch__ = '(detached from v0.1.1)'
+__git_remote_tracking_branch__ = '(No remote tracking)'
+__git_remote_url__ = '(Not remote tracking)'
+__git_head_hash__ = '718c5fc67c84be8b1a2c92a33dd4ff2be22ccbd5'
+__git_head_subject__ = 'Finished release v0.1.1.'
+__git_head_message__ = '* release/v0.1.1:\n  workaround for gevent issue 191 on osx\n  non_blocking_read needs to get EAGAIN from the errno module\n  move pyforge dependency to development only'
+__git_dirty_diff__ = ''
