@@ -1,0 +1,152 @@
+
+Alloy Client
+============
+
+Description
+-----------
+
+A Python client and command-line tool for the Alloy digital archive. Also
+includes a rudimentary client for any CDMI enabled cloud storage.
+
+After Installation_, connect to an Alloy archive::
+
+    alloy init --api=https://alloy.example.com/api/cdmi
+
+(or if authentication is required by the archive)::
+
+    alloy init --api=https://alloy.example.com/api/cdmi --username=USER --password=PASS
+
+Show current working container::
+
+    alloy pwd
+
+List a container or object::
+
+    alloy ls [name]
+
+Move to a new container::
+
+    alloy cd subdir
+    ...
+    alloy cd ..  # back up to parent
+
+Create a new container::
+
+    alloy mkdir new
+
+Put a local file::
+
+    alloy put source.txt
+    ...
+    alloy put source.txt destination.txt  # Put to a different name remotely
+
+Provide the MIME type of the object (if not supplied ``alloy put`` will attempt
+to guess)::
+
+     alloy put --mimetype "text-plain" source.txt
+
+Fetch a data object from the archive to a local file::
+
+    alloy get source.txt
+
+    alloy get source.txt destination.txt  # Get with a different name locally
+
+    alloy get --force source.txt  # Overwrite an existing local file
+
+Remove an object::
+
+    alloy rm file.txt
+
+Recursively remove a container (WARNING: Dangerous!)::
+
+    alloy rm -r container
+
+Remove an already empty container (Safer!)::
+
+    alloy rmdir container
+
+Close the current session to prevent unauthorized access::
+
+    alloy exit
+
+
+Advanced Use - Metadata
+~~~~~~~~~~~~~~~~~~~~~~~
+
+Set (overwrite) a metadata value for a field::
+
+    alloy meta file.txt "org.dublincore.creator=S M Body"
+    alloy meta . "org.dublincore.title=My Collection"
+
+Add another value to an existing metadata field::
+
+    alloy meta file.txt "org.dublincore.creator+=A N Other"
+
+List metadata values for all fields::
+
+    alloy meta file.txt
+
+List metadata value(s) for a specific field::
+
+    alloy meta file.txt org.dublincore.creator
+
+Delete a metadata field::
+
+    alloy meta file.txt "org.dublincore.creator="
+
+
+Installation
+------------
+
+Create And Activate A Virtual Environment
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+::
+
+    $ virtualenv ~/ve/alloyclient<version>
+    ...
+    $ source ~/ve/alloyclient/bin/activate
+
+
+Install Dependencies
+~~~~~~~~~~~~~~~~~~~~
+::
+
+    pip install -r requirements.txt
+
+
+Install Alloy Client
+~~~~~~~~~~~~~~~~~~~~
+::
+
+    pip install -e .
+
+
+Detailed OSX install  commands
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+::
+
+    sudo easy_install virtualenv      # virtualenv installs pip
+    python -m virtualenv ~/ve/alloyclient<version>
+    source ~/ve/alloyclient<version>/bin/activate
+    pip install -r requirements.txt
+    pip install -e .
+
+
+License
+-------
+
+Copyright 2014 Archive Analytics Solutions
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
