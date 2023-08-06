@@ -1,0 +1,163 @@
+{% extends 'account-base.jinja' %}
+
+{% from '_helpers.jinja' import render_address %}
+
+{% block main %}
+<!-- My Orders Page starts here -->
+<section class="my-account">
+  <div class="container">
+    <div class="col-md-12">
+    {% block sale_confirmation %}
+      {% if confirmation %}
+        <div class="alert alert-success order-confirmation">
+          <i class="fa fa-check-circle"></i>
+          Thank You!<br>
+          <h4>Your Order has been placed successfully.</h4>
+        </div>
+      {% endif %}
+    {% endblock sale_confirmation %}
+
+      {% if not current_user.is_anonymous() %}
+        {{ account_header(_('My Account / Order #') + sale.reference, 'orders') }}
+      {% endif %}
+      <div class="col-md-10">
+        <!--My Orders-->
+        <div class="cart-table">
+          <div class="row-fluid">
+            <div class="col-md-6">
+              <div class="invoice-shipment-address">
+                <div class="page-header">
+                  <h4>{{ _('Invoice Address') }}</h4>
+                </div>
+                {{ render_address(sale.invoice_address, edit=False) }}
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="invoice-shipment-address">
+                <div class="page-header">
+                  <h4>{{ _('Shipment Address') }}</h4>
+                </div>
+                {{ render_address(sale.shipment_address, edit=False) }}
+              </div>
+            </div>
+          </div>
+
+          <div class="row-fluid">
+            <div class="col-md-12">
+              <div class="panel panel-default margin-top-30">
+                <div class="panel-heading">
+                  <h4>{{ _('Order Details') }}</h4>
+                </div>
+                <div class="table-responsive">
+                  <table class="table table-bordered">
+                    <thead>
+                      <tr>
+                      {% block sale_lines_header %}
+                        <th>#</th>
+                        <th>{{ _('Description') }}</th>
+                        <th>{{ _('Ordered Quantity') }}</th>
+                        <th>{{ _('Unit Price') }}</th>
+                        <th>{{ _('Sub Total') }}</th>
+                        <th>{{ _('Action') }}</th>
+                      {% endblock sale_lines_header %}
+                      </tr>
+                    </thead>
+                    {% block sale_lines_content %}
+                    {% for line in sale.lines %}
+                    <tr>
+                      <td>{{ loop.index }}</td>
+                      <td>
+                        {% if line.product and line.product.displayed_on_eshop %}
+                        <a href="{{ url_for('product.product.render', uri=line.product.uri) }}">{{ line.description }}</a>
+                        {% else %}
+                        {{ line.description }}
+                        {% endif %}
+                      </td>
+                      <td>{{ line.quantity|int }} {{ line.unit.name }}</td>
+                      <td>{{ line.unit_price|currencyformat(sale.currency.code) }}</td>
+                      <td>{{ line.amount|currencyformat(sale.currency.code) }}</td>
+                      <td class="action">{% block line_actions %}{% endblock %}</td>
+                    </tr>
+                    {% endfor %}
+                    {% endblock sale_lines_content %}
+                    <tr>
+                      <td colspan="5">
+                        <strong class="pull-right">Sub Total</strong>
+                      </td>
+                      <td><strong>{{ sale.untaxed_amount|currencyformat(sale.currency.code) }}</strong></td>
+                    </tr>
+                    <tr>
+                      <td colspan="5">
+                        <strong class="pull-right">Tax Amount</strong>
+                      </td>
+                      <td><strong>{{ sale.tax_amount|currencyformat(sale.currency.code) }}</strong></td>
+                    </tr>
+                    <tr>
+                      <td colspan="5">
+                        <strong class="pull-right">Total Amount</strong>
+                      </td>
+                      <td><strong>{{ sale.total_amount|currencyformat(sale.currency.code) }}</strong></td>
+                    </tr>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+          {% block add_note %}
+          <div class="row">
+            <div class="col-md-12">
+            {% if not sale.comment and sale.state == 'confirmed' %}
+              <div class="add-comment col-md-12">
+                <h5 class="text-muted">{{ _('Add Note') }}</h5>
+                <form name="add-comment"id="add-comment-form">
+                  <textarea class="form-control" rows="3"  placeholder="{{ _('You can leave a message here') }}" name="comment"></textarea>
+                </form>
+                  <button name="save-comment" class="btn btn-primary col-md-3 pull-right margin-top-30" id="add-comment" data-url="{{ url_for('sale.sale.add_comment_to_sale', active_id=sale.id, access_code=sale.guest_access_code) }}">{{ _('Save') }}</button>
+              </div>
+            {% else %}
+              <h5> <span class="text-muted">Note: </span>&nbsp;{{ sale.comment }}</h5>
+            {% endif %}
+            </div>
+          </div>
+          {% endblock add_note %}
+        </div>
+      </div>
+    </div>
+</section>
+{% endblock main %}
+
+{% block scripts %}
+{{ super() }}
+<script type="text/javascript">
+  $(document).ready(function() {
+    $('#add-comment').on('click', function(){
+      $.ajax({
+        type: "POST",
+        url: $(this).data('url'),
+        data: $('#add-comment-form').serialize(),
+      }).success(function(data) {
+          $.pnotify({
+            title: 'message',
+            text: data.message,
+            history: false,
+            nonblock: true,
+            delay:2000,
+            nonblock_opacity: .4,
+            animation: 'show'
+          });
+        $('.add-comment').html('<h5><span class="text-muted">Note: </span>' + data.comment +'</h5>');
+      });
+    });
+  });
+</script>
+{% endblock scripts %}
+
+
+{% block ga_page_view %}
+{% if confirmation %}
+    {% for line in sale.lines if line.product %}
+      ga('ec:addProduct', {{ line.product.ga_product_data(price=line.unit_price, quantity=line.quantity|string)|tojson|safe }});
+    {% endfor %}
+    ga('ec:setAction', 'purchase', {{ sale.ga_purchase_data()|tojson|safe }});
+{% endif %}
+{% endblock ga_page_view %}
