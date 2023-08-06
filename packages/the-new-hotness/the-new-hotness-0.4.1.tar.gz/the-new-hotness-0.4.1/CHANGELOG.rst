@@ -1,0 +1,125 @@
+Changelog
+=========
+
+0.4.1
+-----
+
+- Specbump. `fdb2eebea <https://github.com/fedora-infra/the-new-hotness/commit/fdb2eebeab32a8fdd7615adfed8cadd4dace0c7b>`_
+- fix GitHub capitalization `812397ca1 <https://github.com/fedora-infra/the-new-hotness/commit/812397ca189fdb91ed5392dbf6c3ebf8e2be91da>`_
+- Merge pull request #41 from fedora-infra/feature/github-name `66ece5a1c <https://github.com/fedora-infra/the-new-hotness/commit/66ece5a1c33b5f0ea2b930e33deeb17237dc78f5>`_
+
+0.4.0
+-----
+
+- Specbump. `b498c637e <https://github.com/fedora-infra/the-new-hotness/commit/b498c637e7f07fd4d19576fd4730d235117c5ab2>`_
+- Suppress some errors from rpmbuild and friends. `b0b7c0c1c <https://github.com/fedora-infra/the-new-hotness/commit/b0b7c0c1c88edda93850c6da16837360f72003e8>`_
+- Merge pull request #25 from fedora-infra/feature/suppress-some-errors `a1ba74a63 <https://github.com/fedora-infra/the-new-hotness/commit/a1ba74a63ef49033273288299bcae5533a4c6723>`_
+- Note on the default message posted on bugzilla about packaging and legal changes `ba4ef2220 <https://github.com/fedora-infra/the-new-hotness/commit/ba4ef22205bf74419476e28e5570851e64868ea6>`_
+- Strip leading v. `4f10baed7 <https://github.com/fedora-infra/the-new-hotness/commit/4f10baed700eee823ff5c0d971fed0b04674f30f>`_
+- Merge pull request #27 from fedora-infra/legal_be_nice `6a9566302 <https://github.com/fedora-infra/the-new-hotness/commit/6a9566302246c4703e89139471538f3d2199296d>`_
+- Merge pull request #28 from fedora-infra/feature/strip-leading-v `016b0c57e <https://github.com/fedora-infra/the-new-hotness/commit/016b0c57ed4e5d2f7b3c8861a33aa61d68b31b23>`_
+- This should actually be cached. `c9853a41c <https://github.com/fedora-infra/the-new-hotness/commit/c9853a41c999e89c74a8d8cbe164715fc5eb9db2>`_
+- Merge pull request #30 from fedora-infra/feature/typofix-revert `9913cbea8 <https://github.com/fedora-infra/the-new-hotness/commit/9913cbea816902d328a3ce381916bb2fa51b5cd5>`_
+- Try to fix README rendering. `0d7f6ef85 <https://github.com/fedora-infra/the-new-hotness/commit/0d7f6ef8544378a02df6d60a060aa821cd4c5165>`_
+- Further fix. `9a213a4c6 <https://github.com/fedora-infra/the-new-hotness/commit/9a213a4c6a5e4e71016c1fa408b4cbc52c671858>`_
+- Propagate srpm-creation and koji-kickoff errors to the ticket. `41d187509 <https://github.com/fedora-infra/the-new-hotness/commit/41d187509c43d39f7c9abed7df5d350790ea72e3>`_
+- Create and attach patches to bz tickets we file. `daea3b076 <https://github.com/fedora-infra/the-new-hotness/commit/daea3b076b3c483c56c5a3eff7701984a8d349a2>`_
+- Use os.path.join. `f058e4800 <https://github.com/fedora-infra/the-new-hotness/commit/f058e48001c051f2b186c689d8888452b10b15f3>`_
+- Merge pull request #36 from fedora-infra/feature/patch-creation `f8b314a42 <https://github.com/fedora-infra/the-new-hotness/commit/f8b314a426fed660cf88e2899a17df390871b845>`_
+- Compare sum of new and old tarball. `ed32e48b4 <https://github.com/fedora-infra/the-new-hotness/commit/ed32e48b46c9ef9cbd9295728081f649e01edcd2>`_
+- Merge pull request #37 from fedora-infra/feature/not-april-1st `6d9b71279 <https://github.com/fedora-infra/the-new-hotness/commit/6d9b712792beabd0ea9855f5bdb0142867fd01c2>`_
+- Listen for pkgdb monitoring toggle events. `df8fddd16 <https://github.com/fedora-infra/the-new-hotness/commit/df8fddd16c134bd095dd15b941c274b7382408c2>`_
+- Use exceptions to propagate error messages to fedmsg `34dbb2e77 <https://github.com/fedora-infra/the-new-hotness/commit/34dbb2e77c15c3c0d448abc7cdbc57ecff0b810e>`_
+- Convert those ValueErrors to AnityaExceptions which just make more sense. `4a4bd1624 <https://github.com/fedora-infra/the-new-hotness/commit/4a4bd162441f38138f38c9bbb45a7368de5da04f>`_
+- Merge pull request #38 from fedora-infra/feature/pkgdb-monitor-toggle `02b72faa5 <https://github.com/fedora-infra/the-new-hotness/commit/02b72faa55afc1afe1456a5aa33376ac7a3e24c3>`_
+- Handle multiply mapped anitya projects. `a9eba188b <https://github.com/fedora-infra/the-new-hotness/commit/a9eba188b38481dff1517c2808e65d7599cb9e6b>`_
+- Demote this error message. `3630273bd <https://github.com/fedora-infra/the-new-hotness/commit/3630273bd8a953941dc9852adf7e8086312330c1>`_
+- Handle newly-mapped packages from anitya. `4cef2de3d <https://github.com/fedora-infra/the-new-hotness/commit/4cef2de3d31f49d63974df2e86cc5bf043cc000e>`_
+- Merge pull request #39 from fedora-infra/feature/multiply-mapped `dc5342307 <https://github.com/fedora-infra/the-new-hotness/commit/dc534230715e2aa24c150333b65c766f7166c567>`_
+
+0.3.3
+-----
+
+- specbump `a3171f209 <https://github.com/fedora-infra/the-new-hotness/commit/a3171f2099e8c99623481e69304f9b9b3cbeb118>`_
+- Demote this log statement. `f99f5f5f5 <https://github.com/fedora-infra/the-new-hotness/commit/f99f5f5f5cd3154ff8769c3be7eeb6448682ab41>`_
+- Use the kojira repos to get the latest rawhide info. `3b9d136c0 <https://github.com/fedora-infra/the-new-hotness/commit/3b9d136c0c8adf1ee2ea128ff0361b197671a471>`_
+- Merge pull request #20 from fedora-infra/feature/kojira `957298475 <https://github.com/fedora-infra/the-new-hotness/commit/957298475e211a79fb5022752c301eb464e96049>`_
+- Drop explicit archlist for now. `2c1caf83f <https://github.com/fedora-infra/the-new-hotness/commit/2c1caf83f99161ef2f1d17c50a1d3006d9834ecd>`_
+- Generate a nicer changelog for the scratch task srpm. `97b865e4d <https://github.com/fedora-infra/the-new-hotness/commit/97b865e4d5ee426e4caf9da2bced02b5351174fa>`_
+- It's not a duck! `4f3009821 <https://github.com/fedora-infra/the-new-hotness/commit/4f30098215cdd24aa7f8b4da3996f524282078d9>`_
+- Merge pull request #22 from fedora-infra/feature/nicer-changelog `9e110051f <https://github.com/fedora-infra/the-new-hotness/commit/9e110051f48df51c9c854536fca77b41abc11629>`_
+- For github backend, if the homepage is on github, specify the version_url to use `aa996242f <https://github.com/fedora-infra/the-new-hotness/commit/aa996242f3b80edbdc3f8afb38e988aca17505c4>`_
+- Merge pull request #24 from fedora-infra/github_info `10d25ebd6 <https://github.com/fedora-infra/the-new-hotness/commit/10d25ebd621fe1184bc5cd29fac8c8d30b5f1c32>`_
+
+0.3.2
+-----
+
+- Specbump. `fa0475659 <https://github.com/fedora-infra/the-new-hotness/commit/fa0475659eb797eaa1240d9c7047fea2d819bb09>`_
+- Demote this log statement. `75bb86263 <https://github.com/fedora-infra/the-new-hotness/commit/75bb86263d006f089e53fe966c1d5a482748a9a3>`_
+- When a command fails, I'd like to know what it was. `5e221b80c <https://github.com/fedora-infra/the-new-hotness/commit/5e221b80ce6c5ac3970ad265abd38266b9e107c6>`_
+- Still more information. `66e9f9bfe <https://github.com/fedora-infra/the-new-hotness/commit/66e9f9bfec9d6d151cc5543ed46916a5eb7323a2>`_
+- Only followup on rawhide builds. `ca4199e72 <https://github.com/fedora-infra/the-new-hotness/commit/ca4199e72226493a74d67efd4d354d3b69ae3166>`_
+- Get rawhide dist tag from pkgdb, not from config. `cd3ce37ff <https://github.com/fedora-infra/the-new-hotness/commit/cd3ce37ff06ecdf506a19168a3386936dbb449bc>`_
+- Merge pull request #15 from fedora-infra/feature/only-rawhide-thank-you `232015f36 <https://github.com/fedora-infra/the-new-hotness/commit/232015f36e9f82090ad78c078a8cef4e52aaadbe>`_
+
+0.3.1
+-----
+
+- specbump `e39e82db5 <https://github.com/fedora-infra/the-new-hotness/commit/e39e82db5caef2f1844e45bbc4d02d2f316127dd>`_
+- Suppress errors. `d669ecfd3 <https://github.com/fedora-infra/the-new-hotness/commit/d669ecfd3b6772b74219ae75be440e4019322596>`_
+- Merge pull request #11 from fedora-infra/feature/supress-errors `ef0a32dab <https://github.com/fedora-infra/the-new-hotness/commit/ef0a32dabb342d01bfe1e957b60cf39183bb1d27>`_
+- Only followup on bugs that are not already closed. `a78a6e916 <https://github.com/fedora-infra/the-new-hotness/commit/a78a6e9161c8f72377ad0dc4b3d6f61b591e0f79>`_
+- Merge pull request #12 from fedora-infra/feature/limited-followup `7b80bcbea <https://github.com/fedora-infra/the-new-hotness/commit/7b80bcbeaab9e966fe7149b5b7581f28e1fa5857>`_
+
+0.3.0
+-----
+
+- specbump `3850a8813 <https://github.com/fedora-infra/the-new-hotness/commit/3850a8813204013d9eafa3aa10ff96d8fad26a9b>`_
+- Specfile should pull this in now. `c4b81f078 <https://github.com/fedora-infra/the-new-hotness/commit/c4b81f078abdec91ddae1c4187357c30eb0f9708>`_
+- Auto add new packages. `536049a7f <https://github.com/fedora-infra/the-new-hotness/commit/536049a7fed5f0302083875b2d1ad58a5de609a3>`_
+- Map package if the project already exists. `c4a323851 <https://github.com/fedora-infra/the-new-hotness/commit/c4a3238511405686ccc640d95b18d769b5745727>`_
+- Typofix. `6ca7fc20e <https://github.com/fedora-infra/the-new-hotness/commit/6ca7fc20e43a12959a99c3f695c584ef6393814e>`_
+- Merge pull request #10 from fedora-infra/feature/auto-add-new-packages `51e6735f7 <https://github.com/fedora-infra/the-new-hotness/commit/51e6735f7472ac214163fbc32b1f3a601daac872>`_
+
+0.2.2
+-----
+
+- bumpspec. `bb3a6d1f0 <https://github.com/fedora-infra/the-new-hotness/commit/bb3a6d1f093a2913a0cefbd2c90bf26b842ff6c6>`_
+- Typofix. `6dddc60fc <https://github.com/fedora-infra/the-new-hotness/commit/6dddc60fc15150e3547d05d2f12b65ad6b835e6a>`_
+- Add a call to fedpkg sources. `645f5e717 <https://github.com/fedora-infra/the-new-hotness/commit/645f5e71705289288d20daf3784e77d824710948>`_
+- Merge pull request #7 from fedora-infra/feature/fedpkg-patches `2be36e1bc <https://github.com/fedora-infra/the-new-hotness/commit/2be36e1bc63a8d3458454faafe4dbbef5f07d1aa>`_
+- Add some hacking instructions. `692cc10fb <https://github.com/fedora-infra/the-new-hotness/commit/692cc10fb65434e50f85f22226d04ec8fd9df944>`_
+- Use the multiple-topics feature from moksha.hub-1.4.4 `82780ac80 <https://github.com/fedora-infra/the-new-hotness/commit/82780ac8017ed9a845a05bb7aee15b2ad350e7dd>`_
+- Merge pull request #8 from fedora-infra/feature/multiple-topics `af38b3b2d <https://github.com/fedora-infra/the-new-hotness/commit/af38b3b2dd918f8eca7f1de9d8bb3cf4d9f8f19a>`_
+- Reorganize where formatting of followup-text lives. `1bf3448f3 <https://github.com/fedora-infra/the-new-hotness/commit/1bf3448f38d1d29442763ab52a344a8e967da2bf>`_
+- Comment on real koji builds, not just scratch ones.  Fixes #4. `0e7f5cc01 <https://github.com/fedora-infra/the-new-hotness/commit/0e7f5cc01ac4411255f30eac3a7108f5577f814a>`_
+- Install and initialize fedmsg.meta since we use it here now. `2972bf618 <https://github.com/fedora-infra/the-new-hotness/commit/2972bf618b6a1997d1d0183a7f78bea72393ed93>`_
+- Merge pull request #9 from fedora-infra/feature/comment-on-build `a22e051c1 <https://github.com/fedora-infra/the-new-hotness/commit/a22e051c1b3af46565b7a6fd0410d388090087e1>`_
+
+0.2.1
+-----
+
+- bumpspec. `f869c2ac9 <https://github.com/fedora-infra/the-new-hotness/commit/f869c2ac964e4223d82f27a01ce355c8b66f8153>`_
+- Add forgotten parens. `1325d5484 <https://github.com/fedora-infra/the-new-hotness/commit/1325d5484a8e4284e13c383232e8d7a90d81bdc7>`_
+
+0.2.0
+-----
+
+- Specbump. `47c1d6de7 <https://github.com/fedora-infra/the-new-hotness/commit/47c1d6de7eda487c6ffa3dd7208148df2ab09393>`_
+- Tell bugzilla not to save cookies or tokens. `effcb613a <https://github.com/fedora-infra/the-new-hotness/commit/effcb613a85841946a945d3a283486465399b461>`_
+- Remove dependence on fedpkg. `398135f9e <https://github.com/fedora-infra/the-new-hotness/commit/398135f9e96482653c3542195bcbc663d86a35e5>`_
+- Tell koji the fully-qualified path to the srpm. `6761db430 <https://github.com/fedora-infra/the-new-hotness/commit/6761db430f8b9c2d106b310b4cd97aaf6c4e1eee>`_
+- We can't send an email every time here. `b86ea985d <https://github.com/fedora-infra/the-new-hotness/commit/b86ea985dcf61496f17e91dfc747dc06e49d011c>`_
+- Condense log. `f3938580b <https://github.com/fedora-infra/the-new-hotness/commit/f3938580be3ce974e470baeff2e422d87822e01a>`_
+- Add some fedmsg messages in there. `e8290306e <https://github.com/fedora-infra/the-new-hotness/commit/e8290306e4fc5d810415bc7e755410d729604295>`_
+
+0.1.3
+-----
+
+- Specfile. `05535eb7c <https://github.com/fedora-infra/the-new-hotness/commit/05535eb7c8304b1303c04a112f48e96550c80951>`_
+- Check pkgdb monitoring status before acting. `60bb7b2e2 <https://github.com/fedora-infra/the-new-hotness/commit/60bb7b2e201bab127f8ca2c52c2c7fdbd6590399>`_
+- Merge pull request #3 from fedora-infra/feature/check-monitoring `d953d3161 <https://github.com/fedora-infra/the-new-hotness/commit/d953d3161d4f0cb8292ed42ee100f354c1943d6e>`_
+- Make the yumconfig configurable. `b8a25f5d9 <https://github.com/fedora-infra/the-new-hotness/commit/b8a25f5d9fe7d5b2f7d8edde699537360643c21a>`_
+- Keep repoid. `09ff85afa <https://github.com/fedora-infra/the-new-hotness/commit/09ff85afa0931a926e17207b111a1119df865f38>`_
+- Adjust for new/old APIs. `377024ac8 <https://github.com/fedora-infra/the-new-hotness/commit/377024ac81ef4b8c31781958f20eb3fe50e02490>`_
+- Require python-sh. `7ceef9e37 <https://github.com/fedora-infra/the-new-hotness/commit/7ceef9e3759c36ef1311dd904abcb811d6db4a60>`_
