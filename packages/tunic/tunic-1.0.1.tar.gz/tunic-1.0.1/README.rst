@@ -1,0 +1,55 @@
+Tunic
+=====
+
+Tunic is a library built on Fabric for performing common tasks related
+to deploying a code base on multiple remote servers.
+
+It's designed so that you can make use of as much or as little of
+its functionality as you'd like, the choice is yours.
+
+It only requires the Fabric library as a dependency and can be installed
+from the Python Package Index (PyPI) using the pip tool like so.
+
+.. code-block:: bash
+
+    $ pip install tunic
+
+You could then make use of it in your deploy process like so.
+
+.. code-block:: python
+
+    from fabric.api import task
+    from tunic.api import get_release_id, ReleaseManager, VirtualEnvInstallation
+
+    APP_BASE = '/srv/www/myapp'
+
+    @task
+    def deploy():
+        stop_my_app()
+        release = get_release_id()
+
+        installer = VirtualEnvInstaller(APP_BASE, ['myapp'])
+        release_manager = ReleaseManager(APP_BASE)
+
+        installer.install(release)
+        release_manager.set_current_release(release)
+
+        start_my_app()
+
+The above snippet is just the start, take a look around the code base
+for more methods that can save you work in your deploy process.
+
+Documentation
+-------------
+
+The latest documentation is available at http://tunic.readthedocs.org/en/latest/
+
+Source
+------
+
+The source is available at https://github.com/tshlabs/tunic
+
+Changes
+-------
+
+The change log is available at http://tunic.readthedocs.org/en/latest/changes.html
