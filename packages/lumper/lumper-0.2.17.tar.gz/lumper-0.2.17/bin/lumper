@@ -1,0 +1,151 @@
+#!/usr/bin/env python
+# encoding: utf-8
+import argparse
+import json
+import logging
+import uuid
+from socket import getfqdn
+from arconfig import GenConfigAction, LoadConfigAction
+from lumper.log_setter import LogSetterAction
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(epilog='Notice: exec "%(prog)s <command> --help" for command options')
+
+    subparsers = parser.add_subparsers(dest='cmd')
+    subparsers.required = True
+
+    # Server mode
+    subparser = subparsers.add_parser("server", help="Run http backend")
+    subparser.add_argument("--config", action=LoadConfigAction)
+    subparser.add_argument("--gen-config", action=GenConfigAction)
+
+    group = subparser.add_argument_group("Server options")
+    group.add_argument('-a', '--address', dest="address", help="Listen this address", default="localhost")
+    group.add_argument('-p', '--port', dest="port", help="Listen this port", type=int, default=8228)
+
+    group.add_argument('--secret', dest="cookie_secret",
+                       help="Cookie secret", default=str(uuid.uuid3(uuid.NAMESPACE_DNS, getfqdn())))
+
+    group.add_argument('--gzip', dest="gzip", help="Gzip HTTP responses", action='store_true', default=False)
+
+    group.add_argument('--debug', dest="debug", help="Debugging mode", default=False, action="store_true")
+    group.add_argument('--logging', dest="logging", help="Logging level", action=LogSetterAction)
+
+    group.add_argument('--github-secret', dest="github_secret", help="Github webhook's secret", default=None)
+
+    group.add_argument('-A', '--rmq-address', dest="rmq_address", help="RMQ host address", default="localhost")
+    group.add_argument('-P', '--rmq-port', dest="rmq_port", help="RMQ host port", type=int, default=5672)
+    group.add_argument('-H', '--vhost', dest="rmq_vhost", help="RMQ virtual host", default="/")
+    group.add_argument('--user', dest="rmq_user", help="RMQ virtual host", default=None)
+    group.add_argument('--password', dest="rmq_password", help="RMQ virtual host", default=None)
+
+    group = subparser.add_argument_group("Task options")
+    group.add_argument('-T', '--timeout', dest="timeout", help="Build timeout", type=int, default=600)
+
+    # Worker mode
+    subparser = subparsers.add_parser("worker", help="Run in worker mode")
+    subparser.add_argument("--config", action=LoadConfigAction)
+    subparser.add_argument("--gen-config", action=GenConfigAction)
+
+    group = subparser.add_argument_group("Main options")
+    group.add_argument('--logging', dest="logging", help="Logging level", action=LogSetterAction)
+
+    group = subparser.add_argument_group("RabbitMQ options")
+    group.add_argument('-a', '--address', dest="amqp_address", help="RMQ host address", default="localhost")
+    group.add_argument('-p', '--port', dest="amqp_port", help="RMQ host port", type=int, default=5672)
+    group.add_argument('-H', '--vhost', dest="amqp_vhost", help="RMQ virtual host", default="/")
+    group.add_argument('-U', '--user', dest="amqp_user", help="RMQ username", default=None)
+    group.add_argument('-P', '--password', dest="amqp_password", help="RMQ password", default=None)
+
+    group = subparser.add_argument_group("Docker options")
+    group.add_argument('--docker-url', dest="docker_url",
+                       help="Docker daemon url [\"unix:///var/run/docker.sock\"]",
+                       default="unix:///var/run/docker.sock")
+    group.add_argument('--docker-tls', dest="docker_tls", help="Set when a docker daemon use TLS", action="store_true")
+    group.add_argument('--docker-ca', dest="docker_ca_cert", help="TLS certificate authority", default="ca.crt")
+    group.add_argument('--docker-cert', dest="docker_client_cert", help="TLS client certificate", default="client.crt")
+    group.add_argument('--docker-key', dest="docker_client_key", help="TLS client private key", default="client.pem")
+    group.add_argument('--docker-tls-strict', dest="docker_tls_strict", help="Strict verification server certificate",
+                       action="store_true")
+    group.add_argument('--docker-registry', dest="docker_registry",
+                       help="Set if you have a private registry", default='localhost:5000')
+    group.add_argument('--docker-ssl-registry', dest="docker_ssl_registry",
+                       help="The private registry use ssl", action='store_true')
+    group.add_argument('--docker-publish', dest="docker_publish",
+                       help="Set if you want push images to registry", action="store_true")
+
+    # Mailer mode
+    subparser = subparsers.add_parser("mailer", help="Run as mailer delivery worker")
+    subparser.add_argument("--config", action=LoadConfigAction)
+    subparser.add_argument("--gen-config", action=GenConfigAction)
+
+    group = subparser.add_argument_group("Main options")
+    group.add_argument('--logging', dest="logging", help="Logging level", action=LogSetterAction)
+
+    group = subparser.add_argument_group("RabbitMQ options")
+    group.add_argument('-a', '--address', dest="amqp_address", help="RMQ host address", default="localhost")
+    group.add_argument('-p', '--port', dest="amqp_port", help="RMQ host port", type=int, default=5672)
+    group.add_argument('-H', '--vhost', dest="amqp_vhost", help="RMQ virtual host", default="/")
+    group.add_argument('-U', '--user', dest="amqp_user", help="RMQ username", default=None)
+    group.add_argument('-P', '--password', dest="amqp_password", help="RMQ password", default=None)
+
+    group = subparser.add_argument_group("SMTP options")
+    group.add_argument("--smtp-host", dest="smtp_host", help="Server host", default="localhost")
+    group.add_argument("--smtp-port", dest="smtp_port", help="Server port", type=int, default=25)
+    group.add_argument("--smtp-user", dest="smtp_user", help="Authentication username. Do auth if set.", default=None, type=str)
+    group.add_argument("--smtp-password", dest="smtp_password", help="Password.", default=None, type=str)
+    group.add_argument("--smtp-tls", dest="smtp_tls", help="Use TLS.", action='store_true')
+    default_sender = "lumper@%s" % (getfqdn())
+    group.add_argument(
+        "--smtp-sender", dest="smtp_sender",
+        help="Sender of messages [default: %s]" % default_sender,
+        default=default_sender
+    )
+
+    group.add_argument(
+        "--build-hook",
+        dest="build_hooks",
+        metavar="URL",
+        help="The url address on which will send build-hook (Might be multiple).",
+        action='append',
+        default=[],
+    )
+
+    default_user = "root@%s" % (getfqdn())
+    group = subparser.add_argument_group("Delivery options")
+    group.add_argument("--mail-map", dest="mail_map", help="github user to E-mail map json file with hash.", default=None)
+    group.add_argument(
+        "--admin-mail",
+        dest="admin_mail",
+        help="admin email for unknown users [default: %s]" % default_user,
+        default=default_user
+    )
+
+    args = parser.parse_args()
+
+    if args.cmd == 'server':
+        from lumper.modes.server import run
+
+        if not args.github_secret:
+            logging.getLogger().warning("Github secret is not presented. Signature checking are disabled.")
+        else:
+            args.github_secret = str(args.github_secret)
+        exit(run(args))
+
+    elif args.cmd == 'worker':
+        from lumper.modes.worker import run
+        exit(run(args))
+
+    elif args.cmd == 'mailer':
+        from lumper.modes.mailer import run
+
+        if args.mail_map:
+            args.mail_map = json.load(open(args.mail_map, 'r'))
+        else:
+            args.mail_map = {}
+
+        exit(run(args))
+
+    else:
+        print ("Incompatible mode")
+        exit(128)
