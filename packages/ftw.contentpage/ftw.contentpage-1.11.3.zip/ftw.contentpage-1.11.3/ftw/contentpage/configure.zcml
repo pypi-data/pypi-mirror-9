@@ -1,0 +1,135 @@
+<configure
+    xmlns="http://namespaces.zope.org/zope"
+    xmlns:cmf="http://namespaces.zope.org/cmf"
+    xmlns:five="http://namespaces.zope.org/five"
+    xmlns:zcml="http://namespaces.zope.org/zcml"
+    xmlns:genericsetup="http://namespaces.zope.org/genericsetup"
+    xmlns:profilehook="http://namespaces.zope.org/profilehook"
+    xmlns:i18n="http://namespaces.zope.org/i18n"
+    i18n_domain="ftw.contentpage">
+
+    <!-- include package dependencies -->
+    <include package="z3c.autoinclude" file="meta.zcml" />
+    <includeDependencies package="." />
+
+    <include package="ftw.profilehook" />
+
+    <five:registerPackage package="." initialize=".initialize" />
+
+    <!-- Include the sub-packages that use their own configure.zcml files. -->
+
+    <include file="permissions.zcml" />
+    <include package=".content" />
+    <include package=".browser" />
+    <include package=".handlers" />
+    <include package=".portlets" />
+    <include package=".viewlets" />
+    <include package=".behaviors" />
+    <include package=".upgrades" />
+
+    <include zcml:condition="installed ftw.lawgiver" file="lawgiver.zcml" />
+
+    <!-- register interfaces so that they are available in manage_interfaces -->
+    <interface interface="ftw.contentpage.interfaces.IAuthority" />
+
+    <i18n:registerTranslations directory="locales" />
+
+    <!-- Register the installation GenericSetup extension profile -->
+    <genericsetup:registerProfile
+        name="default"
+        title="ftw.contentpage"
+        directory="profiles/default"
+        description="Create content the simplayout way"
+        provides="Products.GenericSetup.interfaces.EXTENSION"
+        />
+
+    <profilehook:hook
+        profile="ftw.contentpage:default"
+        handler=".hooks.installed"
+        />
+
+    <genericsetup:registerProfile
+        name="uninstall"
+        title="Uninstall ftw.contentpage"
+        directory="profiles/uninstall"
+        description=""
+        provides="Products.GenericSetup.interfaces.EXTENSION"
+        for="Products.CMFPlone.interfaces.IMigratingPloneSiteRoot"
+        />
+
+    <profilehook:hook
+        profile="ftw.contentpage:uninstall"
+        handler=".hooks.uninstalled"
+        />
+
+    <!-- indexer -->
+    <adapter name="getContentCategories" factory=".indexer.categories" />
+    <adapter name="snippetText" factory=".indexer.snippet_text" />
+    <adapter name="start" factory=".indexer.start" />
+    <adapter name="end" factory=".indexer.end" />
+
+    <!-- Schema extender adapter for categorizable content -->
+    <include package="archetypes.schemaextender" />
+    <adapter factory=".extender.CategoriesExtender"
+         provides="archetypes.schemaextender.interfaces.IOrderableSchemaExtender"
+         name="ftw.contentpage.category.extender" />
+
+    <!-- Schema extender adapter to handle the listing marker interface with a checkbox -->
+
+    <adapter factory=".extender.ListingMarkerExtender"
+         provides="archetypes.schemaextender.interfaces.IOrderableSchemaExtender"
+         name="ftw.contentpage.showlistingmarker.extender" />
+
+
+    <!-- Make PloneFormGen forms categorizable -->
+    <configure zcml:condition="installed Products.PloneFormGen">
+        <class class="Products.PloneFormGen.content.form.FormFolder">
+            <implements interface="ftw.contentpage.interfaces.ICategorizable" />
+        </class>
+    </configure>
+
+    <!-- Register ftw.geo adapter -->
+    <adapter factory=".geo.AddressBlockLocationAdapter" />
+    <adapter
+        for="ftw.contentpage.interfaces.IAddressBlockView
+            zope.interface.Interface
+            zope.interface.Interface
+            zope.interface.Interface"
+        factory="collective.geo.kml.browser.viewlets.KMLMapViewletLayers"
+    />
+
+    <utility
+      component=".vocabularies.SubjectVocabulary"
+      name="ftw.contentpage.subjects"
+    />
+
+    <utility
+      component=".vocabularies.contentcategories_vocabulary"
+      name="ftw.contentpage.contentcategories"
+    />
+
+    <class class="ftw.contentpage.content.news.News">
+          <implements interface="simplelayout.base.interfaces.ISimpleLayoutBlock" />
+    </class>
+
+    <!-- Block config for ITeaser -->
+   <adapter
+        provides="simplelayout.base.interfaces.IBlockConfig"
+        for="ftw.contentpage.interfaces.ITeaser"
+        factory="simplelayout.base.block_config.BlockConfig" />
+
+   <!-- Teaser block config init/edit event -->
+   <subscriber
+       for="ftw.contentpage.interfaces.ITeaser
+            Products.Archetypes.interfaces.IObjectInitializedEvent"
+       handler="simplelayout.base.events.set_initial_layout"
+       />
+
+   <subscriber
+       for="ftw.contentpage.interfaces.ITeaser
+            Products.Archetypes.interfaces.IObjectEditedEvent"
+       handler="simplelayout.base.events.set_initial_layout"
+       />
+
+
+</configure>
