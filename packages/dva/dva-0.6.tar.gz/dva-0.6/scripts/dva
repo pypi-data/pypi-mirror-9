@@ -1,0 +1,136 @@
+#!/usr/bin/env python
+from gevent import monkey; monkey.patch_all()
+import sys
+import logging
+import argparse
+import aaargh
+import re
+import uuid
+
+from dva.tools import catching
+# load all testing modules
+from dva.test import *
+from dva.report.bug_main import DEFAULT_URL, DEFAULT_COMPONENT, DEFAULT_PRODUCT
+from dva.work.test import TEST_WORKER_POOL_SIZE
+
+RE_ANY = re.compile('.*')
+
+LOG = None
+APP = aaargh.App(description="dva's validation. again.")
+
+
+class LogAction(argparse.Action):
+    '''custom logging action'''
+    def __call__(self, parser, namespace, value, option_string=None):
+        '''loglevel setting action'''
+        if not hasattr(logging, value.upper()):
+            # no such level
+            raise argparse.ArgumentError('invalid loglevel name: %s' % value)
+        logging.basicConfig(level=getattr(logging, value.upper()))
+        global LOG
+        LOG = logging.getLogger(__name__)
+        setattr(namespace, self.dest, value.upper())
+
+APP.arg('-l', '--loglevel', help='set log level', action=LogAction, default='WARNING',
+        choices=['DEBUG', 'ERROR', 'INFO', 'WARNING', 'debug', 'error', 'info', 'warning'])
+APP.arg('-c', '--conf', help='use conf file', default=None)
+
+
+@APP.cmd(help='validate in single mode --- one testcase per instance')
+@APP.cmd_arg('-i', '--istream', help='input filename', type=argparse.FileType('r'), default=sys.stdin)
+@APP.cmd_arg('-o', '--ostream', help='output filename', type=argparse.FileType('w'), default=sys.stdout)
+@APP.cmd_arg('-t', '--test-whitelist', help='regexp testname list', default=['.*'], nargs='+', metavar='PATTERN')
+@APP.cmd_arg('-T', '--test-blacklist', help='regexp testname list', default=[], nargs='+', metavar='PATTERN')
+@APP.cmd_arg('-s', '--stage-whitelist', help='regexp stagename list', default=['.*'], nargs='+', metavar='PATTERN')
+@APP.cmd_arg('-S', '--stage-blacklist', help='regexp stagename list', default=[], nargs='+', metavar='PATTERN')
+@APP.cmd_arg('-g', '--tags-whitelist', help='regexp tags list', default=['default'], nargs='+', metavar='PATTERN')
+@APP.cmd_arg('-G', '--tags-blacklist', help='regexp tags list', default=[], nargs='+', metavar='PATTERN')
+@APP.cmd_arg('-n', '--no-action', help='take no action', action='store_true')
+@APP.cmd_arg('-P', '--parallel-instances', help='number of instances to use', default=1, type=int)
+def svalidate(loglevel, conf, istream, ostream, test_whitelist, test_blacklist, stage_whitelist, stage_blacklist,
+    tags_whitelist, tags_blacklist, no_action, parallel_instances=1):
+    logging.basicConfig(level=getattr(logging, loglevel))
+    from dva.work.singlemode_main import main as main
+    return main(conf, istream, ostream, test_whitelist, test_blacklist, stage_whitelist, stage_blacklist,
+        tags_whitelist, tags_blacklist, no_action, parallel_instances)
+
+@APP.cmd(help='validate in parallel')
+@APP.cmd_arg('-i', '--istream', help='input filename', type=argparse.FileType('r'), default=sys.stdin)
+@APP.cmd_arg('-o', '--ostream', help='output filename', type=argparse.FileType('w'), default=sys.stdout)
+@APP.cmd_arg('-t', '--test-whitelist', help='regexp testname list', default=['.*'], nargs='+', metavar='PATTERN')
+@APP.cmd_arg('-T', '--test-blacklist', help='regexp testname list', default=[], nargs='+', metavar='PATTERN')
+@APP.cmd_arg('-s', '--stage-whitelist', help='regexp stagename list', default=['.*'], nargs='+', metavar='PATTERN')
+@APP.cmd_arg('-S', '--stage-blacklist', help='regexp stagename list', default=[], nargs='+', metavar='PATTERN')
+@APP.cmd_arg('-g', '--tags-whitelist', help='regexp tags list', default=['default'], nargs='+', metavar='PATTERN')
+@APP.cmd_arg('-G', '--tags-blacklist', help='regexp tags list', default=[], nargs='+', metavar='PATTERN')
+@APP.cmd_arg('-n', '--no-action', help='take no action', action='store_true')
+@APP.cmd_arg('--parallel-instances', help='greenlet pool size', default=64, type=int)
+@APP.cmd_arg('--parallel-tests', help='greenlet pool size', default=4, type=int)
+@APP.cmd_arg('--sorted-mode', help='apply both dependency- and name-based sorting to test execution', action='store_true')
+@APP.cmd_arg('--test-modules', help='use custom test modules', default=['dva.test'], metavar='MOD.NAME', nargs='+')
+@APP.cmd_arg('--keepalive', help='do not terminate instances after validation', action='store_true')
+def validate(loglevel, conf, istream, ostream, test_whitelist, test_blacklist, stage_whitelist, stage_blacklist,
+    tags_whitelist, tags_blacklist, no_action, parallel_instances, parallel_tests, sorted_mode, test_modules, keepalive):
+    logging.basicConfig(level=getattr(logging, loglevel))
+    import importlib
+    # preload test cases
+    modules = [importlib.import_module(modname) for modname in test_modules]
+    logging.debug('using test modules: %s', modules)
+    from dva.work.data_parallel_main import main
+    return main(conf, istream, ostream, test_whitelist, test_blacklist, stage_whitelist, stage_blacklist,
+                tags_whitelist, tags_blacklist, no_action, parallel_instances, parallel_tests, sorted_mode, keepalive)
+
+
+@APP.cmd(help='report result')
+@APP.cmd_arg('-i', '--istream', help='input filename', type=argparse.FileType('r'), default=sys.stdin)
+@APP.cmd_arg('-o', '--ostream', help='output filename', type=argparse.FileType('w'), default=sys.stdout)
+@APP.cmd_arg('-t', '--test-whitelist', help='comma delimited testname list', default=['*'], nargs='+', metavar='LIST')
+@APP.cmd_arg('-V', '--verbose', help='print even passed test logs', action='store_true')
+def result(loglevel, conf, istream, ostream, test_whitelist, verbose):
+    logging.basicConfig(level=getattr(logging, loglevel))
+    from dva.report.main import main
+    return main(conf, istream, ostream, test_whitelist, verbose)
+
+@APP.cmd(help='summary of result')
+@APP.cmd_arg('-i', '--istream', help='input filename', type=argparse.FileType('r'), default=sys.stdin)
+@APP.cmd_arg('-t', '--test-whitelist', help='comma delimited testname list', default=['*'], nargs='+', metavar='LIST')
+@APP.cmd_arg('-c', '--compare', help='comma delimited list of areas that are compared', default=['ami'], nargs='+', metavar='LIST')
+@APP.cmd_arg('-x', '--xunit', help='output format will be xunit', action='store_true')
+def summary(loglevel, conf, istream,test_whitelist,compare,xunit):
+    logging.basicConfig(level=getattr(logging, loglevel))
+    from dva.report.summary_main import main
+    return main(conf, istream,test_whitelist,compare,xunit)
+
+@APP.cmd(help='jenkins upload tool')
+@APP.cmd_arg('-i', '--istream', help='input filename', type=argparse.FileType('r'), default=sys.stdin)
+@APP.cmd_arg('-u', '--user', help='Jenkins username', default="jenkins")
+@APP.cmd_arg('-p', '--password', help='Jenkins password', default="jenkins")
+@APP.cmd_arg('-U', '--url', help='Jenkins URL', default=None)
+@APP.cmd_arg('-c', '--comment', help='job comment', default="No comment")
+@APP.cmd_arg('--report-empty', help='report even though no results detected', action='store_true')
+def jenkins(loglevel, conf, istream, url, comment, user, password, report_empty):
+    logging.basicConfig(level=getattr(logging, loglevel))
+    from dva.report.jenkins import main
+    hashtag = str(uuid.uuid4())
+    return main(conf, istream, url, hashtag, comment, user, password, report_empty)
+
+
+@APP.cmd(help='report result as bugzilla')
+@APP.cmd_arg('-i', '--istream', help='input filename', type=argparse.FileType('r'), default=sys.stdin)
+@APP.cmd_arg('-o', '--ostream', help='output filename', type=argparse.FileType('w'), default=sys.stdout)
+@APP.cmd_arg('-t', '--test-whitelist', help='comma delimited testname list', default=['*'], nargs='+', metavar='LIST')
+@APP.cmd_arg('-u', '--user', help='bz username', default=None)
+@APP.cmd_arg('-p', '--password', help='bz password', default=None)
+#added debug_mode which prevents to create bugs in Bugzilla. It prints everything to ostream instead
+@APP.cmd_arg('-d', '--debug-mode', help='debug mode - read only bugzilla', action='store_true')
+@APP.cmd_arg('-U', '--url', help='bz URL', default=DEFAULT_URL)
+@APP.cmd_arg('-C', '--component', help='bz component', default=DEFAULT_COMPONENT)
+@APP.cmd_arg('-R', '--product', help='bz product', default=DEFAULT_PRODUCT)
+@APP.cmd_arg('-V', '--verbose', help='print even passed test logs', action='store_true')
+@APP.cmd_arg('-P', '--pool-size', help='greenlet pool size', default=64, type=int)
+def bugzilla(loglevel, conf, istream, ostream, test_whitelist, user, password, url, component, product, verbose, pool_size, debug_mode):
+    logging.basicConfig(level=getattr(logging, loglevel))
+    from dva.report.bug_main import main
+    return main(conf, istream, ostream, test_whitelist, user, password, url, component, product, verbose, pool_size, debug_mode)
+
+sys.exit(APP.run())
