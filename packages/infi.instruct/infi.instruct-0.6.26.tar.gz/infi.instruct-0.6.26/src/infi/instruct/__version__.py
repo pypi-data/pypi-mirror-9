@@ -1,0 +1,10 @@
+__version__ = "0.6.26"
+__git_commiter_name__ = "Guy Rozendorn"
+__git_commiter_email__ = "guy@rzn.co.il"
+__git_branch__ = '(detached from v0.6.26)'
+__git_remote_tracking_branch__ = '(No remote tracking)'
+__git_remote_url__ = '(Not remote tracking)'
+__git_head_hash__ = 'a2bd51f8980128b84136eb0bffd7c1168fc3af6a'
+__git_head_subject__ = 'Finished release v0.6.26.'
+__git_head_message__ = "* release/v0.6.26:\n  STORAGEMODEL-320 when packing, no need a custom 'n'\n  Updated documentation about Python 3\n  Python 3 compatibility\n  buildout.cfg: changed isolated python version to v2.7.6.21\n  buildout.cfg: changed isolated python version to v2.7.6.20\n  buildout.cfg: changed isolated python version to v2.7.6.19"
+__git_dirty_diff__ = ''
