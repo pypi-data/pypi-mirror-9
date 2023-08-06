@@ -1,0 +1,237 @@
+Metadata-Version: 1.1
+Name: extenum
+Version: 0.7.0
+Summary: Extended Enum classes for the Python 3 enum module
+Home-page: https://github.com/t2y/extenum
+Author: Tetsuya Morimoto
+Author-email: tetsuya dot morimoto at gmail dot com
+License: Apache License 2.0
+Description: extenum
+        =======
+        
+        |Build Status| |Latest Version| |Downloads| |License|
+        
+        Extended Enum classes for the Python 3 enum module.
+        
+        The `enum <https://docs.python.org/3/library/enum.html>`__ module was
+        added since 3.4. That's good enough for simple use. The extenum is
+        strongly inspired by Java Enum style described in `Effective
+        Java <http://en.wikipedia.org/wiki/Joshua_Bloch#Effective_Java>`__ and
+        privides additional feature.
+        
+        How to install
+        --------------
+        
+        NOTE: extenum supports Python 3 only.
+        
+        ::
+        
+            $ pip install extenum
+        
+        ConstantSpecificEnum
+        --------------------
+        
+        *ConstantSpecificEnum* class is inherited the standard Enum class and
+        provides the feature of constant specific method and function
+        overloading for Enum members.
+        
+        Read `Effective
+        Java <http://en.wikipedia.org/wiki/Joshua_Bloch#Effective_Java>`__ for
+        more detail.
+        
+        Constant specific method implementation
+        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        
+        Let's try to create Enum class with *ConstantSpecificEnum*. To use a
+        method as function overloading, add *@overload(CONSTANT)* decorator on
+        that method. The *overload* decorator is implicitly defined as well as
+        you'll see lator in *ImplicitEnum* section.
+        
+        .. code:: python
+        
+            >>> from extenum import ConstantSpecificEnum
+            >>> class Operation(ConstantSpecificEnum):
+            ...     PLUS = '+'
+            ...     MINUS = '-'
+            ...     TIMES = '*'
+            ...     DIVIDE = '/'
+            ...
+            ...     @overload(PLUS)
+            ...     def apply(self, x, y):
+            ...         return x + y
+            ...
+            ...     @overload(MINUS)
+            ...     def apply(self, x, y):
+            ...         return x - y
+            ...
+            ...     @overload(TIMES)
+            ...     def apply(self, x, y):
+            ...         return x * y
+            ...
+            ...     @overload(DIVIDE)
+            ...     def apply(self, x, y):
+            ...         return x / y
+            ...
+            >>> for name, const in Operation.__members__.items():
+            ...     print(name, ':', const.apply(2, 4))
+            ...
+            PLUS : 6
+            MINUS : -2
+            TIMES : 8
+            DIVIDE : 0.5
+        
+        Strategy enum pattern
+        ~~~~~~~~~~~~~~~~~~~~~
+        
+        The strategy enum is more complex pattern based on constant specific
+        method.
+        
+        .. code:: python
+        
+            >>> from extenum import ConstantSpecificEnum
+            >>> class PayrollDay(ConstantSpecificEnum):
+            ...
+            ...     class PayType(ConstantSpecificEnum):
+            ...         WEEKDAY = 1
+            ...         WEEKEND = 2
+            ...
+            ...         @overload(WEEKDAY)
+            ...         def overtime_pay(self, hours, pay_rate):
+            ...             return 0 if hours <= 8 else (hours - 8) * pay_rate / 2
+            ...
+            ...         @overload(WEEKEND)
+            ...         def overtime_pay(self, hours, pay_rate):
+            ...             return hours * pay_rate / 2
+            ...
+            ...         def pay(self, hours_worked, pay_rate):
+            ...             base_pay = hours_worked * pay_rate
+            ...             overtime_pay = self.overtime_pay(hours_worked, pay_rate)
+            ...             return base_pay + overtime_pay
+            ...
+            ...     MONDAY = PayType.WEEKDAY
+            ...     TUESDAY = PayType.WEEKDAY
+            ...     WEDNESDAY = PayType.WEEKDAY
+            ...     THURSDAY = PayType.WEEKDAY
+            ...     FRIDAY = PayType.WEEKDAY
+            ...     SATURDAY = PayType.WEEKEND
+            ...     SUNDAY = PayType.WEEKEND
+            ...
+            ...     def pay(self, hours_worked, pay_rate):
+            ...         return self.value.pay(hours_worked, pay_rate)
+            ...
+            >>> PayrollDay.MONDAY.pay(10, 1000.0)
+            11000.0
+            >>> PayrollDay.WEDNESDAY.pay(8, 1000.0)
+            8000.0
+            >>> PayrollDay.SATURDAY.pay(10, 1000.0)
+            15000.0
+            >>> PayrollDay.SUNDAY.pay(8, 1000.0)
+            12000.0
+        
+        ImplicitEnum
+        ------------
+        
+        Before describing what *ImplicitEnum* class is, read good article
+        written by Nick Coghlan as below.
+        
+        -  `Support for alternate declaration
+           syntaxes <http://python-notes.curiousefficiency.org/en/latest/python3/enum_creation.html#support-for-alternate-declaration-syntaxes>`__
+        
+        OK. I guess you've already understood why the standard enum module
+        haven't supported implicit declaration syntax.
+        
+        Put aside its needs for now, Nick indicates how to implement
+        *ImplicitEnum*. So, let's try to implement it experimentally using the
+        special method, ``__missing__`` in defaultdict and ``__prepare__`` in
+        Metaclass.
+        
+        .. code:: python
+        
+            >>> from extenum import ImplicitEnum
+            >>> class Color(ImplicitEnum):
+            ...     RED
+            ...     GREEN
+            ...     BLUE
+            ...
+            >>> for name, const in Color.__members__.items():
+            ...     print(name, ':', const.value)
+            ...
+            RED : 1
+            GREEN : 2
+            BLUE : 3
+        
+        It works well if some constants are explicit and the rest are implicit.
+        
+        .. code:: python
+        
+            >>> class Numbers(ImplicitEnum):
+            ...     ONE = 1
+            ...     TWO = 2
+            ...     THREE
+            ...
+            >>> Numbers.THREE.value
+            3
+        
+        However, it depends on the declation order.
+        
+        .. code:: python
+        
+            >>> class DuplicatedValues(ImplicitEnum):
+            ...     ONE
+            ...     TWO = 1
+            ...     THREE = 1
+            ...
+            >>> DuplicatedValues.ONE.value
+            1
+            >>> DuplicatedValues.TWO.value
+            1
+            >>> DuplicatedValues.THREE.value
+            1
+        
+        .. |Build Status| image:: https://travis-ci.org/t2y/extenum.svg?branch=master
+           :target: https://travis-ci.org/t2y/extenum/
+        .. |Latest Version| image:: https://pypip.in/version/extenum/badge.svg
+           :target: https://pypi.python.org/pypi/extenum/
+        .. |Downloads| image:: https://pypip.in/download/extenum/badge.svg
+           :target: https://pypi.python.org/pypi/extenum/
+        .. |License| image:: https://pypip.in/license/extenum/badge.svg
+           :target: https://pypi.python.org/pypi/extenum/
+        
+        ChangeLog
+        =========
+        
+        0.7.0 (2015-03-06)
+        ------------------
+        
+        -  removed RegisterFactory for simplicity
+        
+        0.6.0 (2015-03-05)
+        ------------------
+        
+        -  added ImplicitEnum
+        
+        0.5.0 (2015-03-01)
+        ------------------
+        
+        -  first release
+        
+        
+Keywords: enum
+Platform: unix
+Platform: linux
+Platform: osx
+Platform: windows
+Classifier: License :: OSI Approved :: Apache Software License
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: Operating System :: Microsoft :: Windows
+Classifier: Operating System :: MacOS :: MacOS X
+Classifier: Operating System :: POSIX
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.2
+Classifier: Programming Language :: Python :: 3.3
+Classifier: Programming Language :: Python :: 3.4
+Classifier: Programming Language :: Python :: 3 :: Only
+Classifier: Programming Language :: Python :: Implementation :: CPython
+Classifier: Programming Language :: Python :: Implementation :: PyPy
+Classifier: Topic :: Software Development :: Libraries
