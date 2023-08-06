@@ -1,0 +1,166 @@
+{% extends "django_microsip_diot\base.html" %}
+{% block title %}DIOT{% endblock %}
+
+<!-- CSS Code -->
+{% block style_css %}
+  <link rel="stylesheet" href="{{ STATIC_URL}}django_microsip_diot/css/style.css">
+{% endblock %}
+
+<!-- JavaScript Code -->
+{% block js_code %}
+<script>
+    var fecha_inicio = "{{fecha_inicio}}";
+    var fecha_fin = "{{fecha_fin}}";
+    var inicio_ext = "{{inicio_ext}}";
+    var repos_ext = "{{repos_ext}}";
+  $(document).ready(function(){
+    $("#id_fecha_inicio, #id_fecha_fin, #id_inicio_ext").datepicker({dateFormat:'dd/mm/yy',altField: "#alternate", altFormat: "DD, d MM, yy"});
+    
+  });
+</script>
+<script src="{{STATIC_URL}}django_microsip_diot/js/diot.js"></script>
+
+{% endblock %}
+
+{% block breadcrumb %}{{ block.super }} <li class="active">DIOT</li> {% endblock %}
+{% block content %}
+<div align="center">
+  <button id="sincronizar_catalogo" class="btn">Sincronizar Catalogo de Proveedores</button>
+  <button id="crear_paises" class="btn">Crear Paises</button>
+</div>
+<br>
+<form method="post" class="form-horizontal" action="" width="300px"  enctype='multipart/form-data'>{% csrf_token %}
+  {{ form.errors }}
+  <div class="page-header">
+    <h1>DIOT 
+      <button type="submit" class="btn" onclick="this.disabled=true,this.form.submit(), this.value='Exportando...';"><i class="glyphicon glyphicon-search"></i> Buscar Facturas Recibidas </button>
+    </h1>
+  </div>
+  <div>
+  <div class="col-md-2 col-xs-2 col-sm-4">
+      <label>Fecha de Inicio</label>
+      <div>{{ form.fecha_inicio }}</div>  
+  </div>
+  <div class="col-md-2 col-xs-2 col-sm-4">
+      <label>Fecha de Fin</label>
+      <div>{{ form.fecha_fin }}</div>
+  </div>
+  <div class="col-md-4 col-xs-4 col-sm-4">
+      <div>{{ form.repos_ext }} <label>Facturas de Periodos anteriores</label></div>
+      <div id="inicio_ext" {%if mostrar_fecha == 0%}style="display:none;"{% endif %}><label>A partir de </label> {{ form.inicio_ext }} </div>
+  </div>
+  <div class="col-md-4 col-xs-4 col-sm-4">
+      <div {% if mostrar_check_integrar == 0%} class='hidden' {% endif %} ><input type="checkbox" id="integradas" checked="checked"> <label>Mostrar ya Integradas</label></div>
+  </div>
+  </div>
+  <br><br><br><br>
+</form>
+
+{% if button %}
+    <div align="center"><button class="btn" id="crear_txt">Crear archivo TXT</button></div>
+{% endif %}
+
+<table class="table" id="tabla_repositorios">
+      <thead>
+        <tr>
+          <th><input type="checkbox" id="integrar"></input></th>
+          <th>Fecha</th>
+          <th>Folio</th>
+          <th>Nombre</th>
+          <th>RFC</th>
+          <th class="text-right">Pagado</th>
+          <th class="text-right">Importe</th>
+          <th class="text-right">IVA</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for repo in repo_dic %}
+          <tr {% if repo.0.pagado < repo.0.importe and repo.0.pagado > 0%} style="background-color: bisque;" {% endif %} {% if repo.0.pagado >= repo.0.importe %}class="diot_xml"{% endif %} >
+            <td><input type="checkbox" value="{{repo.0.id}}" class="chk_repo" {% if not repo.0.integrar == 'N' and repo.0.pagado < repo.0.importe %}checked="checked"{% endif %} {%if repo.0.pagado < repo.0.importe and repo.0.pagado %}disabled="disabled"{%endif%}> </td>
+            <td id="fecha" {%if repo.0.fecha < f_i %}class="extemporanea"{%endif%}><small>{{repo.0.fecha}}</small></td>
+            <td id="folio"> {{repo.0.folio}} <input type="hidden" id="tipo_comprobante" value="{{repo.0.tipo_comprobante}}"> </td>
+            <td id="nombre"><small>{{repo.0.nombre}}</small><input type="hidden" id="pagado_h" value="{{repo.0.pagado}}"><input type="hidden" id="pago" value="0"></td>
+            <td id="rfc">{{repo.0.rfc}} <input type="hidden" id="id_fiscal" value="{{repo.0.taxid}}"></td>
+            <td id="pagado" class="text-right">$ {{repo.0.pagado}}</td>
+            <td id="importe" class="text-right">$ {{repo.0.importe}}</td>
+            <td id="iva" class="text-right" >$ {{repo.1}}
+              <input type="hidden" id="subtotal" value="{{repo.2}}">
+              <input type="hidden" id="descuento" value="{{repo.3}}">
+              <input type="hidden" id="iva_retenido" value="{{repo.4}}">
+              <input type="hidden" id="iva_descuentos" value="0">
+              <input type="hidden" id="iva_no_acreditable" value="0">
+            </td>
+            <td>{% if repo.0.pagado != repo.0.importe %} <button class="btn options" data-toggle="modal" data-target="#options_Modal" ><i class="glyphicon glyphicon-usd"></i></button>{% endif %}</td>
+            <!-- <td><button class="btn options"><i class="glyphicon glyphicon-th"></i> </button></td> -->
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div id="paginacion" align="center"><strong></strong></div>
+    <br style="clear:both">
+    <br>
+    <br>
+    <br><br>
+    <br>
+    <br>
+
+    <div class="modal fade tags-modal-md" id="options_Modal" tabindex="-1" role="dialog" aria-labelledby="mySmallModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-md">
+        <div class="modal-content">
+          <div class="modal-header">
+            <button type="button" class="close" data-dismiss="modal"><span aria-hidden="true">×</span><span class="sr-only">Close</span></button>
+            <h3>Datos de XML</h3><input type="hidden" id="id_xml">
+            <button type="button" class="btn btn-default" data-dismiss="modal">Cancelar</button>
+            <a href="#" id="modificar_xml" class="btn btn-default">Seleccionar</a>
+          </div>
+          <div class="modal-body">
+            <table class="table">
+              <thead>
+                <th>
+                  <td></td>
+                  <td></td>
+                </th>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Tasa de IVA</td>
+                  <td>
+                    <select name="" id="tasa_iva_modal">
+                      <option value="16">16%</option>
+                      <option value="0">0%</option>
+                    </select>
+                  </td>
+                </tr>
+                <tr>
+                  <td>Importe sin IVA</td>
+                  <td><input type="text" id="importe_sin_iva_modal" class="form-control" size="5"></td>
+                </tr>
+                <tr>
+                  <td>Proporcion Acredit. IVA</td>
+                  <td><input type="text" id="proporcion_modal" class="form-control" size="5"></td>
+                </tr>
+                <tr>
+                  <td>IVA Acreditable</td>
+                  <td><input type="text" id="iva_acreditable_modal" class="form-control" size="5"></td>
+                </tr>
+                <tr>
+                  <td>IVA sin Acreditar</td>
+                  <td><input type="text" id="iva_sin_acreditar_modal" class="form-control" size="5"></td>
+                </tr>
+                <tr>
+                  <td>IVA Retenido</td>
+                  <td><input type="text" id="iva_retenido_modal" class="form-control" size="5"></td>
+                </tr>
+                <tr>
+                  <td>Descuento</td>
+                  <td><input type="text" id="descuento_modal" class="form-control" size="5"></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+{% endblock %}
