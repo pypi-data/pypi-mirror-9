@@ -1,0 +1,123 @@
+#!/usr/bin/python3
+# -*- Mode: python -*-
+# -*- coding: utf-8 -*-
+
+import sys
+import os
+import getopt
+
+filterenable = {}
+
+SHORT_OPTIONS = ""
+LONG_OPTIONS = ['help', 'version', 'filters=', 'list']
+
+# processing the command line options
+
+try:
+    options, args = getopt.getopt(sys.argv[1:], SHORT_OPTIONS, LONG_OPTIONS)
+except getopt.GetoptError as msg:
+    print("%s: %s" % (sys.argv[0], msg))
+    sys.exit(1)
+
+option_help = 0
+option_version = 0
+option_list = 0
+
+for (opt, val) in options:
+    if opt == '--help':
+        option_help = 1
+    elif opt == '--version':
+        option_version = 1
+    elif opt == '--filters':
+        for m in val.split(','):
+            filterenable[m] = 1
+    elif opt == '--list':
+        option_list = 1
+
+if not args:
+    fn = '-'
+
+from KPC import poparse, checks
+
+if (option_help):
+    helpmsg = [
+        'Usage: ko-po-check [옵션]... [파일]...<',
+        '      --help                이 도움말을 표시하고 끝납니다',
+        '      --version             버전 정보를 표시하고 끝납니다',
+        '      --filters=..          필터 직접 지정 (디버깅용)',
+        '      --list                필터 목록을 표시합니다 (디버깅용)',
+        '',
+        ' 파일이 `-\'이거나 파일이 주어지지 않은 경우 표준 입력에서 읽습니다.'
+    ]
+    for l in helpmsg:
+        print(l)
+    sys.exit(1)
+
+if (option_version):
+    from KPC.config import VERSION
+    print(('ko-po-check %s' % VERSION))
+    sys.exit(0)
+
+import glob
+
+filenames = glob.glob(os.sep.join(checks.__path__ + ['*', '*.py']))
+filters = {}
+for filename in filenames:
+    if not filename.split(os.sep)[-1].startswith('_'):
+        f = {}
+        exec(compile(open(filename, 'rb').read(), filename, 'exec'), f)
+        if filterenable:
+            if f['name'] in filterenable:
+                filters[f['name']] = f
+        else:
+            filters[f['name']] = f
+
+if option_list:
+    for name in sorted(filters.keys()):
+        try:
+            print("%s: %s" % (name, filters[name]['description']))
+        except:
+            print('BUG: "%s"에 description 필드가 없습니다' % name)
+    sys.exit(0)
+
+retval = 0
+for fn in args:
+    if fn == '-':
+        fp = sys.stdin
+    else:
+        fp = open(fn)
+
+    try:
+        catalog = poparse.parse_file(fp)
+    except poparse.ParseError as err:
+        print(('%s:%d: 파싱 오류' % (fn, err.lineno)))
+        sys.exit(1)
+    if fn != '-':
+        fp.close()
+
+    active_keys = filters.keys()
+    filtercontext = {}
+
+    if len(catalog.entries) > 0 and catalog.entries[0].msgid == '':
+        entry = catalog.entries[0]
+        for filtername in filters.keys():
+            try:
+                checker = filters[filtername]['checker']
+                filtercontext[filtername] = checker._get_context(entry)
+            except KeyError:
+                print('BUG: "%s"에 checker 필드가 없습니다' % filtername)
+
+    for entry in catalog.entries:
+        if (not entry.is_translated()):
+            continue
+        for filtername in sorted(filters.keys()):
+            try:
+                checker = filters[filtername]['checker']
+            except KeyError:
+                print('BUG: "%s"에 checker 필드가 없습니다' % filtername)
+
+            errors = checker._check(entry, filtercontext[filtername])
+            for e in errors:
+                print(('%s:%d: %s' % (fn, entry.msgstr_lineno, e.message)))
+
+sys.exit(retval)
