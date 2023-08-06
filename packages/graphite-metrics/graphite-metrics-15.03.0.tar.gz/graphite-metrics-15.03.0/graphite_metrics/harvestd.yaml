@@ -1,0 +1,254 @@
+### Default (baseline) configuration parameters.
+### DO NOT ever change this config, use -c commandline option instead!
+
+
+collectors:
+  # Modules that collect the actual datapoints to be sent
+
+  _default: # used as a base for all other sections here
+    enabled: true
+    # debug: # auto-filled from global "debug" section, if not specified
+
+  ping:
+    # Reports average (ewma) rtt of icmp ping to each specified host and packet loss (if any).
+    interval: 5 # seconds between sending-out pings
+    ewma_factor: 0.3 # ewma factor for rtt values
+    resolve:
+      no_reply: 30 # re-resolve hostnames after 30 seconds w/o reply
+      time: 600 # re-resolve hostnames after fixed 600s intervals
+      # "max_retries" restarts ping subprocess (e.g. to apply changes to
+      #   /etc/hosts or other libc resolver configuration) after N name resolution failures.
+      # Also, if resolver fails even after restart (i.e. on start), disable warnings
+      #  (but issuing a message on next success) after that number of retries.
+      max_retries: 5
+    hosts: # explicitly split into ipv4/ipv6 to control how hostnames are resolved
+      ipv4:
+        # google_com: google.com
+        # google_dns: 8.8.8.8
+      ipv6:
+        # ipv6_google_com: ipv6.google.com
+        # ipv6_tunnelbroker_net: ipv6.tunnelbroker.net
+
+  cron_log:
+    # Reports start/stop, run time and errors for cron jobs from a logfile.
+    # I use simple wrappers for cron-jobs to produce these logs (among other things):
+    #  https://github.com/mk-fg/fgtk#task https://github.com/mk-fg/fgtk/tree/master/task
+    source: # must be filled with path to a log file
+    aliases: # either [alias, regexp] or ["_" + regexp_group, regexp], see "_script" example below
+      # - ['logrotate', '(^|\b)logrotate\b']
+      # - ['locate', '(^|\b)updatedb\b']
+      # - ['_script', '/etc/cron\.\w+/*(?P<script>\S+)(\s+|$)']
+    lines: # only named regexp groups here are mandatory, all lines are optional
+      init: 'task\[(\d+|-)\]:\s+Queued\b[^:]*: (?P<job>.*)$'
+      start: 'task\[(\d+|-)\]:\s+Started\b[^:]*: (?P<job>.*)$'
+      finish: 'task\[(\d+|-)\]:\s+Finished\b[^:]*: (?P<job>.*)$'
+      duration: 'task\[(\d+|-)\]:\s+Finished \([^):]*\bduration=(?P<val>\d+)[,)][^:]*: (?P<job>.*)$'
+      error: 'task\[(\d+|-)\]:\s+Finished \([^):]*\bstatus=0*[^0]+0*[,)][^:]*: (?P<job>.*)$'
+    xattr_name: user.collectd.logtail.pos # used to mark "last position" in sa logs
+
+  slabinfo:
+    # Reports RAM usage by kernel, allocated via slab subsystem.
+    include_prefixes: # takes priority over exclude_prefixes
+    exclude_prefixes: ['kmalloc-', 'kmem_cache', 'dma-kmalloc-']
+    pass_zeroes: False # to skip creating a lot metrics for always-0 (for particular hosts) slab counts
+
+  cgacct:
+    # Accounting of cpu/mem/io for systemd-created per-service cgroups.
+    cg_root: /sys/fs/cgroup
+    systemd_prefix: system.slice # was just "system" for older versions
+    resource_controllers: ['cpuacct', 'memory', 'blkio'] # mapped to methods in cgacct.py
+
+  sysstat:
+    # Processing of sysstat logs - cpu, io, network, temperatures, etc.
+    # See collectors/sysstat.py for full list of parameters.
+    force_interval: true # skip intervals of different length than core.interval
+    force_interval_fuzz: 10 # +/- % to consider acceptable interval fuzz
+    sa_path: /var/log/sa
+    rate: # see "graphite_metrics.collectors.rate_limit"
+      limiting_enabled: true
+      max_interval: 30 # cycles
+      sampling: 3
+    skip:
+      redundant: true # skip metrics, redundant with other default collectors
+      sections: # optional list of sections in "sadf -j -- -A" output to skip, example: ['disk', 'cpu-load-all']
+      older_than_days: 4 # do not check sysstat logs older than this number of days on each run
+    xattr_name: user.sa_carbon.pos # used to mark "last position" in sa logs
+
+    # Max timestan to dump with "sadf -j" in seconds.
+    # Use if resulting json is too huge for processing in one go (e.g. ram-wise).
+    max_dump_span: # example: 7200
+
+  iptables_counts:
+    # Packet/byte counters from iptables/ip6tables.
+    # In my case, these bindings are generated from higher-level configuration
+    #  by trilobite script (https://github.com/mk-fg/trilobite).
+    rule_metrics_path:
+      # Paths to files with "table_name chain_name rule_no metric_name"
+      #  lines for iptables/ip6tables.
+      # Example line in such files: "filter FORWARD 30 network.services.tor.out"
+      ipv4: # example: /var/lib/iptables/metrics.list
+      ipv6: # example: /var/lib/ip6tables/metrics.list
+    # One of: pkt, bytes, both (metric.pkt + metric.bytes), both_flat (metric_pkt + metric_bytes)
+    units: both_flat
+    # Consider counter invalid (and skip it) if rule has changed without rule_metrics file update
+    discard_changed_rules: true
+
+  irq:
+    # Interrupt counters (/proc/interrupts, /proc/softirqs) processing.
+    # No configuration.
+  memstats:
+    # System memory usage statistics (/proc/vmstat, /proc/meminfo).
+    # No configuration.
+  memfrag:
+    # Memory fragmentation statistics (/proc/buddyinfo, /proc/pagetypeinfo).
+    # No configuration.
+  stats:
+    # General system statistics (/proc/stats) - irq.total.{hard,soft}, processes.forks, etc.
+    # No configuration.
+
+  cjdns_peer_stats:
+    # Traffic/state stats for cjdns daemon - https://github.com/cjdelisle/cjdns/
+    # Collects these via InterfaceController_peerStats() admin interface call.
+    # Doesn't need/use threaded cjdnsadmin module that comes with it.
+    enabled: false # more rare than other stats
+    # How to get peer metric name.
+    # Can be either "pubkey", "ipv6" or whatever key (e.g. "user")
+    #  that cjdns returns or a list of these, to use first one available (e.g. ["user", "ipv6"]).
+    # Note that "pubkey" and "ipv6" keys are synthetic and always available.
+    peer_id: ipv6
+    # Path to standard cjdcmd/cjdmaid/cjdnsadmin configuration file,
+    #  which should contain address, port and password keys.
+    # See https://github.com/cjdelisle/cjdns/blob/master/contrib/python/cjdnsadminmaker.py
+    cjdnsadmin_conf: ~/.cjdnsadmin
+    # Prefix under which create "<peer_id>.{bytes_in,bytes_out}" counters
+    prefix: network.services.cjdns.peers
+    filter:
+      # Log stats only for peers with following connection properties.
+      direction: any # one of "any", "incoming", "outgoing"
+      established_only: true # don't send byte counters of configured but disconnected peers
+    # Some extra metrics to pass along with byte counters.
+    # Each one can be set to null or false to skip sending it.
+    special_metrics:
+      # Add specified key for each peer, set to 0 or 1, depending on connection state.
+      peer_link: link
+      # Total number of configured peers.
+      count: network.services.cjdns.peer_state.total
+      # Prefix for counts of peers by state (e.g. "established", "unresponsive", etc).
+      count_state: network.services.cjdns.peer_state
+    timeout: 2 # how long to wait for cjdns responses
+
+  # self_profiling: # TODO
+  #   main_loop: true
+  #   collectors: true
+
+
+processors:
+  # Modules that process the datapoints before they are passed to sinks
+  # Datapoints are passed to processors in the same order as they're specified here,
+  #  with all the entry points without config section afterwards in no particular order
+  # Passed a list of sinks along with the datapoints,
+  #  so can facilitate filtering, by dropping particular sinks from the list
+
+  _default: # used as a base for all other sections here
+    enabled: true
+    # debug: # auto-filled from global "debug" section, if not specified
+
+  hostname_prefix:
+    hostname: # uname(), if unset
+
+
+sinks:
+  _default: # used as a base for all other sections here
+    # Default host/port for sinks can be overidden by CLI flags
+    host: localhost # can be specified as "host[:port]"
+    default_port: 2003
+
+    enabled: false # should be explicitly enabled
+    # debug: # auto-filled from global "debug" section, if not specified
+
+  carbon_socket:
+    enabled: true # the only sink enabled by default
+    max_reconnects: # before bailing out with the error
+    reconnect_delay: 5 # seconds
+
+  librato_metrics: # see http://dev.librato.com/v1/post/metrics
+
+    http_parameters:
+      # See http://docs.python-requests.org/en/latest/api/#main-interface for a complete list
+      url: https://metrics-api.librato.com/v1/metrics
+      auth: ['example@librato.com:', '75AFDB82'] # override with the actual values, no url-encoding needed
+      timeout: # defaults to half of the loop.interval or 30, if former is inaccessible
+      # Might be useful in some setups:
+      #  proxies:
+      #  cert:
+      #  verify: false
+
+    # Derive "source" field from first component of metric name
+    # See also "hostname_prefix" processor
+    source_from_prefix: true
+    # Explicit source specification, overrides "source_from_prefix", if set
+    # If neither "source" or "source_from_prefix" are set, it won't be sent at all
+    source:
+    # Discard "measure_time" field of individual metrics,
+    #  sending just one value (when data reached the sink)
+    # Saves quite a bit of traffic (roughly 1/3),
+    #  but MUST NOT be used with historical data collectors, like sysstat
+    unified_measure_time: false
+    # Split measurement submissions into concurrent requests, as suggested by docs
+    # Goal is to minimize overall submission time given the current api limitations
+    # Uses async api in requests module, which requires gevent (gevent.org),
+    #  will be disabled with a warning (or fail, if enabled explicitly), if unavailable
+    chunk_data:
+      # Can be explicitly disabled (enabled: false) to remove gevent-related
+      #  warnings on init, or enabled (=true) to fail if async api is unavailable
+      enabled:
+      max_chunk_size: 500
+      max_concurrent_requests: 10 # 0 or false to remove this limit
+
+  # dump: # just logs all the datapoints with level=INFO for testing purposes
+  #   enabled: true
+
+
+loop:
+  name: basic # entry point name to use, only one loop can be used
+  interval: 60 # seconds
+
+
+core:
+  # Emulate filesystem extended attributes (used in some collectors
+  #  like sysstat or cron_log), storing per-path data in a simple shelve db.
+  # Done by faking "xattr" module. Attached data will be lost on path changes.
+  # Specify a path to db file (will be created) to use it.
+  xattr_emulation:
+
+debug: # values here can be overidden by special CLI flags
+  dry_run: false
+
+
+logging: # see http://docs.python.org/library/logging.config.html
+  # "custom" level means WARNING or DEBUG, depending on CLI options
+  warnings: true # capture python warnings
+  tracebacks: true # much easier to debug with these, but noisy and multiline
+  version: 1
+  formatters:
+    basic:
+      format: '%(asctime)s :: %(levelname)s :: %(name)s: %(message)s'
+      datefmt: '%Y-%m-%d %H:%M:%S'
+  handlers:
+    console:
+      class: logging.StreamHandler
+      stream: ext://sys.stdout
+      formatter: basic
+      level: custom
+    # file:
+    #   class: logging.handlers.WatchedFileHandler
+    #   filename: /var/log/harvestd.log
+    #   formatter: basic
+    #   encoding: utf-8
+    #   level: DEBUG
+  # loggers:
+  #   graphite_metrics.collectors.irq:
+  #     level: ERROR
+  root:
+    handlers: [console]
+    level: custom
