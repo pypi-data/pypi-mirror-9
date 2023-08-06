@@ -1,0 +1,376 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta content="Ruffus is a Computation Pipeline library for python. It is open-sourced, powerful and user-friendly, and widely used in science and bioinformatics" name="description" />
+<meta content="python, pipeline, computation, cluster, Ruffus, bioinformatics, parallel' name='keywords" name="keywords" />
+<meta content="Leo Goodstadt" name="Author" />
+<meta content="Leo Goodstadt" name="Publisher" />
+<meta content="ruffus&#64;llew.org.uk" name="Email" />
+<meta content="index, follow" name="robots" />
+<meta content="en-uk" name="language" />
+<meta content="United Kingdom" name="country" />
+<meta content="Leo Goodstadt 2009-2014" name="copyright" />
+
+    <title>Chapter 14: Python Code for Multiprocessing, drmaa and Computation Clusters &mdash; ruffus 2.6.2 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/ruffus.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '2.6.2',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <script type="text/javascript" src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    <link rel="top" title="ruffus 2.6.2 documentation" href="../../index.html" />
+    <link rel="next" title="Chapter 15: Python Code for Logging progress through a pipeline" href="logging_code.html" />
+    <link rel="prev" title="Chapter 13: Python Code for @merge multiple input into a single result" href="merge_code.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="logging_code.html" title="Chapter 15: Python Code for Logging progress through a pipeline"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="merge_code.html" title="Chapter 13: Python Code for @merge multiple input into a single result"
+             accesskey="P">previous</a> |</li>
+        Ruffus v. 2.6.2
+            <li><a href="../../index.html">Home</a> | </li>
+            <li><a href="../../contents.html">Contents</a> | </li>
+            <li><a href="../../installation.html">Install</a>  | </li>
+            <li><a href="introduction.html">Manual</a>  / </li>
+            <li><a href="manual_contents.html">(TOC)</a>  | </li>
+            <li><a href="../../faq.html">FAQ</a>  | </li>
+            <li><a href="../../cheatsheet.html">Cheat sheet</a> | </li>
+            <li><a href="command_line.html">Command Line</a> | </li>
+            <li><a href="../../gallery.html">Gallery</a> |  </li>
+            <li><a href="../new_syntax.html">New syntax in v 2.6</a> | </li>
+            <li><a href="../../history.html">Latest Changes</a> &raquo; </li>
+ 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="new-manual-multiprocessing-chapter-num-python-code-for-multiprocessing-drmaa-and-computation-clusters">
+<span id="new-manual-multiprocessing-code"></span><h1><strong>Chapter 14</strong>: Python Code for Multiprocessing, <tt class="docutils literal"><span class="pre">drmaa</span></tt> and Computation Clusters<a class="headerlink" href="#new-manual-multiprocessing-chapter-num-python-code-for-multiprocessing-drmaa-and-computation-clusters" title="Permalink to this headline">¶</a></h1>
+<div class="admonition seealso">
+<p class="first admonition-title">See also</p>
+<ul class="last simple">
+<li><a class="reference internal" href="manual_contents.html#new-manual-table-of-contents"><em>Manual Table of Contents</em></a></li>
+<li><a class="reference internal" href="../../decorators/jobs_limit.html#decorators-jobs-limit"><em>&#64;jobs_limit</em></a> syntax</li>
+<li><a class="reference internal" href="../../pipeline_functions.html#pipeline-functions-pipeline-run"><em>pipeline_run()</em></a> syntax</li>
+<li><a class="reference internal" href="../../drmaa_wrapper_functions.html#drmaa-wrapper-run-job"><em>drmaa_wrapper.run_job()</em></a> syntax</li>
+<li>Back to <strong>Chapter 14</strong>: <a class="reference internal" href="multiprocessing.html#new-manual-multiprocessing"><em>Multiprocessing, drmaa and Computation Clusters</em></a></li>
+</ul>
+</div>
+<div class="section" id="jobs-limit">
+<h2><a class="reference internal" href="../../decorators/jobs_limit.html#decorators-jobs-limit"><em>&#64;jobs_limit</em></a><a class="headerlink" href="#jobs-limit" title="Permalink to this headline">¶</a></h2>
+<blockquote>
+<div><ul class="simple">
+<li>First 2 tasks are constrained to a parallelism of 3 shared jobs at a time</li>
+<li>Final task is constrained to a parallelism of 5 jobs at a time</li>
+<li>The entire pipeline is constrained to a (theoretical) parallelism of 10 jobs at a time</li>
+</ul>
+<div class="highlight-python"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">ruffus</span> <span class="kn">import</span> <span class="o">*</span>
+<span class="kn">import</span> <span class="nn">time</span>
+
+<span class="c"># make list of 10 files</span>
+<span class="nd">@split</span><span class="p">(</span><span class="bp">None</span><span class="p">,</span> <span class="s">&quot;*stage1&quot;</span><span class="p">)</span>
+<span class="k">def</span> <span class="nf">make_files</span><span class="p">(</span><span class="n">input_files</span><span class="p">,</span> <span class="n">output_files</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">10</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="mi">5</span><span class="p">:</span>
+            <span class="nb">open</span><span class="p">(</span><span class="s">&quot;</span><span class="si">%d</span><span class="s">.small_stage1&quot;</span> <span class="o">%</span> <span class="n">i</span><span class="p">,</span> <span class="s">&quot;w&quot;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="nb">open</span><span class="p">(</span><span class="s">&quot;</span><span class="si">%d</span><span class="s">.big_stage1&quot;</span> <span class="o">%</span> <span class="n">i</span><span class="p">,</span> <span class="s">&quot;w&quot;</span><span class="p">)</span>
+<span class="hll">
+</span><span class="nd">@jobs_limit</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="s">&quot;ftp_download_limit&quot;</span><span class="p">)</span>
+<span class="nd">@transform</span><span class="p">(</span><span class="n">make_files</span><span class="p">,</span> <span class="n">suffix</span><span class="p">(</span><span class="s">&quot;.small_stage1&quot;</span><span class="p">),</span> <span class="s">&quot;.stage2&quot;</span><span class="p">)</span>
+<span class="k">def</span> <span class="nf">stage1_small</span><span class="p">(</span><span class="n">input_file</span><span class="p">,</span> <span class="n">output_file</span><span class="p">):</span>
+    <span class="k">print</span> <span class="s">&quot;FTP downloading </span><span class="si">%s</span><span class="s"> -&gt;Start&quot;</span> <span class="o">%</span> <span class="n">input_file</span>
+<span class="hll">    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+</span>    <span class="nb">open</span><span class="p">(</span><span class="n">output_file</span><span class="p">,</span> <span class="s">&quot;w&quot;</span><span class="p">)</span>
+    <span class="k">print</span> <span class="s">&quot;FTP downloading </span><span class="si">%s</span><span class="s"> -&gt;Finished&quot;</span> <span class="o">%</span> <span class="n">input_file</span>
+
+<span class="nd">@jobs_limit</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="s">&quot;ftp_download_limit&quot;</span><span class="p">)</span>
+<span class="hll"><span class="nd">@transform</span><span class="p">(</span><span class="n">make_files</span><span class="p">,</span> <span class="n">suffix</span><span class="p">(</span><span class="s">&quot;.big_stage1&quot;</span><span class="p">),</span> <span class="s">&quot;.stage2&quot;</span><span class="p">)</span>
+</span><span class="k">def</span> <span class="nf">stage1_big</span><span class="p">(</span><span class="n">input_file</span><span class="p">,</span> <span class="n">output_file</span><span class="p">):</span>
+    <span class="k">print</span> <span class="s">&quot;FTP downloading </span><span class="si">%s</span><span class="s"> -&gt;Start&quot;</span> <span class="o">%</span> <span class="n">input_file</span>
+    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+    <span class="nb">open</span><span class="p">(</span><span class="n">output_file</span><span class="p">,</span> <span class="s">&quot;w&quot;</span><span class="p">)</span>
+    <span class="k">print</span> <span class="s">&quot;FTP downloading </span><span class="si">%s</span><span class="s"> -&gt;Finished&quot;</span> <span class="o">%</span> <span class="n">input_file</span>
+
+<span class="nd">@jobs_limit</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span>
+<span class="nd">@transform</span><span class="p">([</span><span class="n">stage1_small</span><span class="p">,</span> <span class="n">stage1_big</span><span class="p">],</span> <span class="n">suffix</span><span class="p">(</span><span class="s">&quot;.stage2&quot;</span><span class="p">),</span> <span class="s">&quot;.stage3&quot;</span><span class="p">)</span>
+<span class="k">def</span> <span class="nf">stage2</span><span class="p">(</span><span class="n">input_file</span><span class="p">,</span> <span class="n">output_file</span><span class="p">):</span>
+    <span class="k">print</span> <span class="s">&quot;Processing stage2 </span><span class="si">%s</span><span class="s"> -&gt;Start&quot;</span> <span class="o">%</span> <span class="n">input_file</span>
+    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+    <span class="nb">open</span><span class="p">(</span><span class="n">output_file</span><span class="p">,</span> <span class="s">&quot;w&quot;</span><span class="p">)</span>
+    <span class="k">print</span> <span class="s">&quot;Processing stage2 </span><span class="si">%s</span><span class="s"> -&gt;Finished&quot;</span> <span class="o">%</span> <span class="n">input_file</span>
+
+<span class="n">pipeline_run</span><span class="p">(</span><span class="n">multiprocess</span> <span class="o">=</span> <span class="mi">10</span><span class="p">,</span> <span class="n">verbose</span> <span class="o">=</span> <span class="mi">0</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Giving:</p>
+<div class="highlight-pycon"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="n">pipeline_run</span><span class="p">(</span><span class="n">multiprocess</span> <span class="o">=</span> <span class="mi">10</span><span class="p">,</span> <span class="n">verbose</span> <span class="o">=</span> <span class="mi">0</span><span class="p">)</span>
+
+<span class="hll"><span class="gp">&gt;&gt;&gt; </span><span class="c"># 3 jobs at a time, interleaved</span>
+</span><span class="go">FTP downloading 5.big_stage1 -&gt;Start</span>
+<span class="go">FTP downloading 6.big_stage1 -&gt;Start</span>
+<span class="go">FTP downloading 7.big_stage1 -&gt;Start</span>
+<span class="go">FTP downloading 5.big_stage1 -&gt;Finished</span>
+<span class="go">FTP downloading 8.big_stage1 -&gt;Start</span>
+<span class="go">FTP downloading 6.big_stage1 -&gt;Finished</span>
+<span class="go">FTP downloading 9.big_stage1 -&gt;Start</span>
+<span class="go">FTP downloading 7.big_stage1 -&gt;Finished</span>
+<span class="go">FTP downloading 0.small_stage1 -&gt;Start</span>
+<span class="go">FTP downloading 8.big_stage1 -&gt;Finished</span>
+<span class="go">FTP downloading 1.small_stage1 -&gt;Start</span>
+<span class="go">FTP downloading 9.big_stage1 -&gt;Finished</span>
+<span class="go">FTP downloading 2.small_stage1 -&gt;Start</span>
+<span class="go">FTP downloading 0.small_stage1 -&gt;Finished</span>
+<span class="go">FTP downloading 3.small_stage1 -&gt;Start</span>
+<span class="go">FTP downloading 1.small_stage1 -&gt;Finished</span>
+<span class="go">FTP downloading 4.small_stage1 -&gt;Start</span>
+<span class="go">FTP downloading 2.small_stage1 -&gt;Finished</span>
+<span class="go">FTP downloading 3.small_stage1 -&gt;Finished</span>
+<span class="go">FTP downloading 4.small_stage1 -&gt;Finished</span>
+
+<span class="hll"><span class="gp">&gt;&gt;&gt; </span><span class="c"># 5 jobs at a time, interleaved</span>
+</span><span class="go">Processing stage2 0.stage2 -&gt;Start</span>
+<span class="go">Processing stage2 1.stage2 -&gt;Start</span>
+<span class="go">Processing stage2 2.stage2 -&gt;Start</span>
+<span class="go">Processing stage2 3.stage2 -&gt;Start</span>
+<span class="go">Processing stage2 4.stage2 -&gt;Start</span>
+<span class="go">Processing stage2 0.stage2 -&gt;Finished</span>
+<span class="go">Processing stage2 5.stage2 -&gt;Start</span>
+<span class="go">Processing stage2 1.stage2 -&gt;Finished</span>
+<span class="go">Processing stage2 6.stage2 -&gt;Start</span>
+<span class="go">Processing stage2 2.stage2 -&gt;Finished</span>
+<span class="go">Processing stage2 4.stage2 -&gt;Finished</span>
+<span class="go">Processing stage2 7.stage2 -&gt;Start</span>
+<span class="go">Processing stage2 8.stage2 -&gt;Start</span>
+<span class="go">Processing stage2 3.stage2 -&gt;Finished</span>
+<span class="go">Processing stage2 9.stage2 -&gt;Start</span>
+<span class="go">Processing stage2 5.stage2 -&gt;Finished</span>
+<span class="go">Processing stage2 7.stage2 -&gt;Finished</span>
+<span class="go">Processing stage2 6.stage2 -&gt;Finished</span>
+<span class="go">Processing stage2 8.stage2 -&gt;Finished</span>
+<span class="go">Processing stage2 9.stage2 -&gt;Finished</span>
+</pre></div>
+</div>
+</div></blockquote>
+</div>
+<div class="section" id="using-ruffus-drmaa-wrapper">
+<span id="id1"></span><h2>Using  <tt class="docutils literal"><span class="pre">ruffus.drmaa_wrapper</span></tt><a class="headerlink" href="#using-ruffus-drmaa-wrapper" title="Permalink to this headline">¶</a></h2>
+<blockquote>
+<div><div class="highlight-python"><div class="highlight"><pre><span class="c">#!/usr/bin/python</span>
+<span class="n">job_queue_name</span>    <span class="o">=</span> <span class="s">&quot;YOUR_QUEUE_NAME_GOES_HERE&quot;</span>
+<span class="n">job_other_options</span> <span class="o">=</span> <span class="s">&quot;-P YOUR_PROJECT_NAME_GOES_HERE&quot;</span>
+
+<span class="kn">from</span> <span class="nn">ruffus</span> <span class="kn">import</span> <span class="o">*</span>
+<span class="kn">from</span> <span class="nn">ruffus.drmaa_wrapper</span> <span class="kn">import</span> <span class="n">run_job</span><span class="p">,</span> <span class="n">error_drmaa_job</span>
+
+<span class="n">parser</span> <span class="o">=</span> <span class="n">cmdline</span><span class="o">.</span><span class="n">get_argparse</span><span class="p">(</span><span class="n">description</span><span class="o">=</span><span class="s">&#39;WHAT DOES THIS PIPELINE DO?&#39;</span><span class="p">)</span>
+
+<span class="n">options</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">()</span>
+
+<span class="c">#  logger which can be passed to multiprocessing ruffus tasks</span>
+<span class="n">logger</span><span class="p">,</span> <span class="n">logger_mutex</span> <span class="o">=</span> <span class="n">cmdline</span><span class="o">.</span><span class="n">setup_logging</span> <span class="p">(</span><span class="n">__name__</span><span class="p">,</span> <span class="n">options</span><span class="o">.</span><span class="n">log_file</span><span class="p">,</span> <span class="n">options</span><span class="o">.</span><span class="n">verbose</span><span class="p">)</span>
+
+
+<span class="c">#</span>
+<span class="hll"><span class="c">#   start shared drmaa session for all jobs / tasks in pipeline</span>
+</span><span class="c">#</span>
+<span class="kn">import</span> <span class="nn">drmaa</span>
+<span class="n">drmaa_session</span> <span class="o">=</span> <span class="n">drmaa</span><span class="o">.</span><span class="n">Session</span><span class="p">()</span>
+<span class="n">drmaa_session</span><span class="o">.</span><span class="n">initialize</span><span class="p">()</span>
+
+<span class="nd">@originate</span><span class="p">([</span><span class="s">&quot;1.chromosome&quot;</span><span class="p">,</span> <span class="s">&quot;X.chromosome&quot;</span><span class="p">],</span>
+           <span class="n">logger</span><span class="p">,</span> <span class="n">logger_mutex</span><span class="p">)</span>
+<span class="k">def</span> <span class="nf">create_test_files</span><span class="p">(</span><span class="n">output_file</span><span class="p">):</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">stdout_res</span><span class="p">,</span> <span class="n">stderr_res</span> <span class="o">=</span> <span class="s">&quot;&quot;</span><span class="p">,</span><span class="s">&quot;&quot;</span>
+        <span class="n">job_queue_name</span><span class="p">,</span> <span class="n">job_other_options</span> <span class="o">=</span> <span class="n">get_queue_options</span><span class="p">()</span>
+
+        <span class="c">#</span>
+<span class="hll">        <span class="c">#   ruffus.drmaa_wrapper.run_job</span>
+</span>        <span class="c">#</span>
+        <span class="n">stdout_res</span><span class="p">,</span> <span class="n">stderr_res</span>  <span class="o">=</span> <span class="n">run_job</span><span class="p">(</span><span class="n">cmd_str</span>           <span class="o">=</span> <span class="s">&quot;touch &quot;</span> <span class="o">+</span> <span class="n">output_file</span><span class="p">,</span>
+                                          <span class="n">job_name</span>          <span class="o">=</span> <span class="n">job_name</span><span class="p">,</span>
+                                          <span class="n">logger</span>            <span class="o">=</span> <span class="n">logger</span><span class="p">,</span>
+                                          <span class="n">drmaa_session</span>     <span class="o">=</span> <span class="n">drmaa_session</span><span class="p">,</span>
+                                          <span class="n">run_locally</span>       <span class="o">=</span> <span class="n">options</span><span class="o">.</span><span class="n">local_run</span><span class="p">,</span>
+                                          <span class="n">job_queue_name</span>    <span class="o">=</span> <span class="n">job_queue_name</span><span class="p">,</span>
+                                          <span class="n">job_other_options</span> <span class="o">=</span> <span class="n">job_other_options</span><span class="p">)</span>
+
+    <span class="c"># relay all the stdout, stderr, drmaa output to diagnose failures</span>
+    <span class="k">except</span> <span class="n">error_drmaa_job</span> <span class="k">as</span> <span class="n">err</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span><span class="s">&quot;</span><span class="se">\n</span><span class="s">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="nb">str</span><span class="p">,</span>
+                            <span class="s">&quot;Failed to run:&quot;</span>
+                            <span class="n">cmd</span><span class="p">,</span>
+                            <span class="n">err</span><span class="p">,</span>
+                            <span class="n">stdout_res</span><span class="p">,</span>
+                            <span class="n">stderr_res</span><span class="p">)))</span>
+
+
+<span class="k">if</span> <span class="n">__name__</span> <span class="o">==</span> <span class="s">&#39;__main__&#39;</span><span class="p">:</span>
+    <span class="n">cmdline</span><span class="o">.</span><span class="n">run</span> <span class="p">(</span><span class="n">options</span><span class="p">,</span> <span class="n">multithread</span> <span class="o">=</span> <span class="n">options</span><span class="o">.</span><span class="n">jobs</span><span class="p">)</span>
+<span class="hll">    <span class="c"># cleanup drmaa</span>
+</span>    <span class="n">drmaa_session</span><span class="o">.</span><span class="n">exit</span><span class="p">()</span>
+</pre></div>
+</div>
+</div></blockquote>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h3><a href="../../contents.html">Table Of Contents</a></h3>
+  <ul>
+<li><a class="reference internal" href="#"><strong>Chapter 14</strong>: Python Code for Multiprocessing, <tt class="docutils literal"><span class="pre">drmaa</span></tt> and Computation Clusters</a><ul>
+<li><a class="reference internal" href="#jobs-limit"><tt class="docutils literal"><span class="pre">&#64;jobs_limit</span></tt></a></li>
+<li><a class="reference internal" href="#using-ruffus-drmaa-wrapper">Using  <tt class="docutils literal"><span class="pre">ruffus.drmaa_wrapper</span></tt></a></li>
+</ul>
+</li>
+</ul>
+
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="merge_code.html"
+                        title="previous chapter"><strong>Chapter 13</strong>: Python Code for  <tt class="docutils literal"><span class="pre">&#64;merge</span></tt> multiple input into a single result</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="logging_code.html"
+                        title="next chapter"><strong>Chapter 15</strong>: Python Code for Logging progress through a pipeline</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="../../_sources/tutorials/new_tutorial/multiprocessing_code.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+    
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+    <h3> Quick Reference:</h3>
+    <ul>
+        <h4><a href="../../decorators/decorators.html#core">Core:</a></h4>   
+        <ul>
+            <li><a href="../../decorators/originate.html">@originate</a>                           </li>
+            <li><a href="../../decorators/split.html">@split</a>                                   </li>
+            <li><a href="../../decorators/transform.html">@transform</a>                           </li>
+            <li><a href="../../decorators/merge.html">@merge</a>                                   </li>
+        </ul>
+
+        <h4><a href="../../decorators/decorators.html#advanced">Advanced</a></h4>   
+        <ul>
+            <li><a href="../../decorators/subdivide.html">@subdivide</a>                           </li>
+            <li><a href="../../decorators/transform_ex.html">@transform (add_inputs) </a>          </li>
+            <li><a href="../../decorators/collate.html">@collate</a>                               </li>
+            <li><a href="../../decorators/collate_ex.html">@collate (add_inputs)</a>               </li>
+            <li><a href="../../decorators/graphviz.html">@graphviz</a>                             </li>
+            <li><a href="../../decorators/mkdir.html">@mkdir</a>                                   </li>
+            <li><a href="../../decorators/follows.html">@follows / mkdir</a>                       </li>
+            <li><a href="../../decorators/posttask.html">@posttask touch_file</a>                  </li>
+            <li><a href="../../decorators/active_if.html">@active_if</a>                           </li>
+            <li><a href="../../decorators/jobs_limit.html">@jobs_limit</a>                         </li>
+        </ul>
+    
+        <h4><a href="../../decorators/decorators.html#combinatorics">Combinatorial:</a></h4>   
+        <ul>
+            <li><a href="../../decorators/product.html">@product </a>                              </li>
+            <li><a href="../../decorators/permutations.html">@permutations </a>                    </li>
+            <li><a href="../../decorators/combinations.html">@combinations </a>                    </li>
+            <li><a href="../../decorators/combinations_with_replacement.html">@combinations_ _with_replacement </a>                    </li>
+        </ul>
+
+                        
+        <h4><a href="../../decorators/decorators.html#esoteric">Esoteric</a></h4>   
+        <ul>
+            <li><a href="../../decorators/files_ex.html">@files (on the fly)</a>                   </li>
+            <li><a href="../../decorators/parallel.html">@parallel</a>                             </li>
+            <li><a href="../../decorators/check_if_uptodate.html">@check_if_uptodate</a>           </li>
+        </ul>
+
+
+        <h4 ><a href="../../decorators/indicator_objects.html">Indicator objects</a></h4>
+        <h4 >Pipeline functions</h4>
+        <ul>
+            <li><a href="../../pipeline_functions.html#pipeline-functions-pipeline-run">pipeline_run</a>                       </li>
+            <li><a href="../../pipeline_functions.html#pipeline-functions-pipeline-printout">pipeline_printout</a>                      </li>
+            <li><a href="../../pipeline_functions.html#pipeline-functions-pipeline-printout-graph">pipeline_printout_graph</a>          </li>
+            <li><a href="../../pipeline_functions.html#pipeline-functions-pipeline-get-task-names">pipeline_get_task_names</a>          </li>
+            <li><a href="../../drmaa_wrapper_functions.html#drmaa-wrapper-functions-drmaa_wrapper-run_job">drmaa_wrapper.run_job</a>          </li>
+        </ul>
+
+         <a href="../../todo.html">Future plans</a>
+    </ul>
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="logging_code.html" title="Chapter 15: Python Code for Logging progress through a pipeline"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="merge_code.html" title="Chapter 13: Python Code for @merge multiple input into a single result"
+             >previous</a> |</li>
+        Ruffus v. 2.6.2
+            <li><a href="../../index.html">Home</a> | </li>
+            <li><a href="../../contents.html">Contents</a> | </li>
+            <li><a href="../../installation.html">Install</a>  | </li>
+            <li><a href="introduction.html">Manual</a>  / </li>
+            <li><a href="manual_contents.html">(TOC)</a>  | </li>
+            <li><a href="../../faq.html">FAQ</a>  | </li>
+            <li><a href="../../cheatsheet.html">Cheat sheet</a> | </li>
+            <li><a href="command_line.html">Command Line</a> | </li>
+            <li><a href="../../gallery.html">Gallery</a> |  </li>
+            <li><a href="../new_syntax.html">New syntax in v 2.6</a> | </li>
+            <li><a href="../../history.html">Latest Changes</a> &raquo; </li>
+ 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2009-2013 Leo Goodstadt.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

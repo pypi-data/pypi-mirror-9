@@ -1,0 +1,564 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>ruffus.proxy_logger &mdash; ruffus 2.6.2 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/ruffus.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '2.6.2',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <script type="text/javascript" src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    <link rel="top" title="ruffus 2.6.2 documentation" href="../../index.html" />
+    <link rel="up" title="Module code" href="../index.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        Ruffus v. 2.6.2
+            <li><a href="../../index.html">Home</a> | </li>
+            <li><a href="../../contents.html">Contents</a> | </li>
+            <li><a href="../../installation.html">Install</a>  | </li>
+            <li><a href="../../tutorials/new_tutorial/introduction.html">Manual</a>  / </li>
+            <li><a href="../../tutorials/new_tutorial/manual_contents.html">(TOC)</a>  | </li>
+            <li><a href="../../faq.html">FAQ</a>  | </li>
+            <li><a href="../../cheatsheet.html">Cheat sheet</a> | </li>
+            <li><a href="../../tutorials/new_tutorial/command_line.html">Command Line</a> | </li>
+            <li><a href="../../gallery.html">Gallery</a> |  </li>
+            <li><a href="../../tutorials/new_syntax.html">New syntax in v 2.6</a> | </li>
+            <li><a href="../../history.html">Latest Changes</a> &raquo; </li>
+
+          <li><a href="../index.html" accesskey="U">Module code</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <h1>Source code for ruffus.proxy_logger</h1><div class="highlight"><pre>
+<span class="c">#!/usr/bin/env python</span>
+<span class="c">################################################################################</span>
+<span class="c">#</span>
+<span class="c">#   proxy_logger.py</span>
+<span class="c">#</span>
+<span class="c">#</span>
+<span class="c">#   Copyright (c) 10/9/2009 Leo Goodstadt</span>
+<span class="c">#</span>
+<span class="c">#   Permission is hereby granted, free of charge, to any person obtaining a copy</span>
+<span class="c">#   of this software and associated documentation files (the &quot;Software&quot;), to deal</span>
+<span class="c">#   in the Software without restriction, including without limitation the rights</span>
+<span class="c">#   to use, copy, modify, merge, publish, distribute, sublicense, and/or sell</span>
+<span class="c">#   copies of the Software, and to permit persons to whom the Software is</span>
+<span class="c">#   furnished to do so, subject to the following conditions:</span>
+<span class="c">#</span>
+<span class="c">#   The above copyright notice and this permission notice shall be included in</span>
+<span class="c">#   all copies or substantial portions of the Software.</span>
+<span class="c">#</span>
+<span class="c">#   THE SOFTWARE IS PROVIDED &quot;AS IS&quot;, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR</span>
+<span class="c">#   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,</span>
+<span class="c">#   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE</span>
+<span class="c">#   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER</span>
+<span class="c">#   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,</span>
+<span class="c">#   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN</span>
+<span class="c">#   THE SOFTWARE.</span>
+<span class="c">#################################################################################</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">****************************************************************************</span>
+<span class="sd">Create proxy for logging for use with multiprocessing</span>
+<span class="sd">****************************************************************************</span>
+
+<span class="sd">These can be safely sent (marshalled) across process boundaries</span>
+
+
+<span class="sd">===========</span>
+<span class="sd">Example 1</span>
+<span class="sd">===========</span>
+
+<span class="sd">    Set up logger from config file::</span>
+
+<span class="sd">        from proxy_logger import *</span>
+<span class="sd">        args={}</span>
+<span class="sd">        args[&quot;config_file&quot;] = &quot;/my/config/file&quot;</span>
+
+<span class="sd">        (logger_proxy,</span>
+<span class="sd">         logging_mutex) = make_shared_logger_and_proxy (setup_std_shared_logger,</span>
+<span class="sd">                                                        &quot;my_logger&quot;, args)</span>
+
+
+<span class="sd">===========</span>
+<span class="sd">Example 2</span>
+<span class="sd">===========</span>
+
+<span class="sd">    Log to file ``&quot;/my/lg.log&quot;`` in the specified format (Time / Log name / Event type / Message).</span>
+
+<span class="sd">    Delay file creation until first log.</span>
+
+<span class="sd">    Only log ``Debug`` messages</span>
+
+<span class="sd">        Other alternatives for the logging threshold (``args[&quot;level&quot;]``) include</span>
+
+<span class="sd">            * ``logging.DEBUG``</span>
+<span class="sd">            * ``logging.INFO``</span>
+<span class="sd">            * ``logging.WARNING``</span>
+<span class="sd">            * ``logging.ERROR``</span>
+<span class="sd">            * ``logging.CRITICAL``</span>
+
+<span class="sd">    ::</span>
+
+<span class="sd">        from proxy_logger import *</span>
+<span class="sd">        args={}</span>
+<span class="sd">        args[&quot;file_name&quot;] = &quot;/my/lg.log&quot;</span>
+<span class="sd">        args[&quot;formatter&quot;] = &quot;%(asctime)s - %(name)s - %(levelname)6s - %(message)s&quot;</span>
+<span class="sd">        args[&quot;delay&quot;]     = True</span>
+<span class="sd">        args[&quot;level&quot;]     = logging.DEBUG</span>
+
+<span class="sd">        (logger_proxy,</span>
+<span class="sd">         logging_mutex) = make_shared_logger_and_proxy (setup_std_shared_logger,</span>
+<span class="sd">                                                        &quot;my_logger&quot;, args)</span>
+
+<span class="sd">===========</span>
+<span class="sd">Example 3</span>
+<span class="sd">===========</span>
+
+<span class="sd">    Rotate log files every 20 Kb, with up to 10 backups.</span>
+<span class="sd">    ::</span>
+
+<span class="sd">        from proxy_logger import *</span>
+<span class="sd">        args={}</span>
+<span class="sd">        args[&quot;file_name&quot;] = &quot;/my/lg.log&quot;</span>
+<span class="sd">        args[&quot;rotating&quot;] = True</span>
+<span class="sd">        args[&quot;maxBytes&quot;]=20000</span>
+<span class="sd">        args[&quot;backupCount&quot;]=10</span>
+<span class="sd">        (logger_proxy,</span>
+<span class="sd">         logging_mutex) = make_shared_logger_and_proxy (setup_std_shared_logger,</span>
+<span class="sd">                                                        &quot;my_logger&quot;, args)</span>
+
+
+
+<span class="sd">==============</span>
+<span class="sd">To use:</span>
+<span class="sd">==============</span>
+
+<span class="sd">    ::</span>
+
+<span class="sd">        (logger_proxy,</span>
+<span class="sd">         logging_mutex) = make_shared_logger_and_proxy (setup_std_shared_logger,</span>
+<span class="sd">                                                        &quot;my_logger&quot;, args)</span>
+
+<span class="sd">        with logging_mutex:</span>
+<span class="sd">            my_log.debug(&#39;This is a debug message&#39;)</span>
+<span class="sd">            my_log.info(&#39;This is an info message&#39;)</span>
+<span class="sd">            my_log.warning(&#39;This is a warning message&#39;)</span>
+<span class="sd">            my_log.error(&#39;This is an error message&#39;)</span>
+<span class="sd">            my_log.critical(&#39;This is a critical error message&#39;)</span>
+<span class="sd">            my_log.log(logging.DEBUG, &#39;This is a debug message&#39;)</span>
+
+<span class="sd">    Note that the logging function ``exception()`` is not included because python</span>
+<span class="sd">    stack trace information is not well-marshalled</span>
+<span class="sd">    (`pickle &lt;http://docs.python.org/library/pickle.html&gt;`_\ d) across processes.</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+
+
+
+
+
+<span class="c">#88888888888888888888888888888888888888888888888888888888888888888888888888888888888888888</span>
+
+<span class="c">#   imports</span>
+
+
+<span class="c">#88888888888888888888888888888888888888888888888888888888888888888888888888888888888888888</span>
+
+<span class="kn">import</span> <span class="nn">sys</span><span class="o">,</span><span class="nn">os</span>
+
+
+<span class="c">#88888888888888888888888888888888888888888888888888888888888888888888888888888888888888888</span>
+
+<span class="c">#   Shared logging</span>
+
+
+<span class="c">#88888888888888888888888888888888888888888888888888888888888888888888888888888888888888888</span>
+
+<span class="kn">import</span> <span class="nn">multiprocessing</span>
+<span class="kn">import</span> <span class="nn">multiprocessing.managers</span>
+
+
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">logging.handlers</span>
+
+
+
+<span class="c">#</span>
+<span class="c">#   setup_logger</span>
+<span class="c">#</span>
+<div class="viewcode-block" id="setup_std_shared_logger"><a class="viewcode-back" href="../../proxy_logger.html#ruffus.proxy_logger.setup_std_shared_logger">[docs]</a><span class="k">def</span> <span class="nf">setup_std_shared_logger</span><span class="p">(</span><span class="n">logger_name</span><span class="p">,</span> <span class="n">args</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    This function is a simple around wrapper around the python</span>
+<span class="sd">    `logging &lt;http://docs.python.org/library/logging.html&gt;`_ module.</span>
+
+<span class="sd">    This *logger_factory* example creates logging objects which can</span>
+<span class="sd">    then be managed by proxy via ``ruffus.proxy_logger.make_shared_logger_and_proxy()``</span>
+
+<span class="sd">    This can be:</span>
+
+<span class="sd">        * a `disk log file &lt;http://docs.python.org/library/logging.html#filehandler&gt;`_</span>
+<span class="sd">        * a automatically backed-up `(rotating) log &lt;http://docs.python.org/library/logging.html#rotatingfilehandler&gt;`_.</span>
+<span class="sd">        * any log specified in a `configuration file &lt;http://docs.python.org/library/logging.html#configuration-file-format&gt;`_</span>
+
+<span class="sd">    These are specified in the ``args`` dictionary forwarded by ``make_shared_logger_and_proxy()``</span>
+
+<span class="sd">    :param logger_name: name of log</span>
+<span class="sd">    :param args: a dictionary of parameters forwarded from ``make_shared_logger_and_proxy()``</span>
+
+<span class="sd">        Valid entries include:</span>
+
+<span class="sd">            .. describe:: &quot;level&quot;</span>
+
+<span class="sd">                Sets the `threshold &lt;http://docs.python.org/library/logging.html#logging.Handler.setLevel&gt;`_ for the logger.</span>
+
+<span class="sd">            .. describe:: &quot;config_file&quot;</span>
+
+<span class="sd">                The logging object is configured from this `configuration file &lt;http://docs.python.org/library/logging.html#configuration-file-format&gt;`_.</span>
+
+<span class="sd">            .. describe:: &quot;file_name&quot;</span>
+
+<span class="sd">                Sets disk log file name.</span>
+
+<span class="sd">            .. describe:: &quot;rotating&quot;</span>
+
+<span class="sd">                Chooses a `(rotating) log &lt;http://docs.python.org/library/logging.html#rotatingfilehandler&gt;`_.</span>
+
+<span class="sd">            .. describe:: &quot;maxBytes&quot;</span>
+
+<span class="sd">                Allows the file to rollover at a predetermined size</span>
+
+<span class="sd">            .. describe:: &quot;backupCount&quot;</span>
+
+<span class="sd">                If backupCount is non-zero, the system will save old log files by appending the extensions ``.1``, ``.2``, ``.3`` etc., to the filename.</span>
+
+<span class="sd">            .. describe:: &quot;delay&quot;</span>
+
+<span class="sd">                Defer file creation until the log is written to.</span>
+
+<span class="sd">            .. describe:: &quot;formatter&quot;</span>
+
+<span class="sd">                `Converts &lt;http://docs.python.org/library/logging.html#formatter-objects&gt;`_ the message to a logged entry string.</span>
+<span class="sd">                For example,</span>
+<span class="sd">                ::</span>
+
+<span class="sd">                    &quot;%(asctime)s - %(name)s - %(levelname)6s - %(message)s&quot;</span>
+
+
+
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="c">#</span>
+    <span class="c">#   Log file name with logger level</span>
+    <span class="c">#</span>
+    <span class="n">new_logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="n">logger_name</span><span class="p">)</span>
+    <span class="k">if</span> <span class="s">&quot;level&quot;</span> <span class="ow">in</span> <span class="n">args</span><span class="p">:</span>
+        <span class="n">new_logger</span><span class="o">.</span><span class="n">setLevel</span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="s">&quot;level&quot;</span><span class="p">])</span>
+
+    <span class="k">if</span> <span class="s">&quot;config_file&quot;</span> <span class="ow">in</span> <span class="n">args</span><span class="p">:</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">fileConfig</span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="s">&quot;config_file&quot;</span><span class="p">])</span>
+
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">if</span> <span class="s">&quot;file_name&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">args</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span><span class="s">&quot;Missing file name for log. Remember to set &#39;file_name&#39;&quot;</span><span class="p">)</span>
+        <span class="n">log_file_name</span> <span class="o">=</span> <span class="n">args</span><span class="p">[</span><span class="s">&quot;file_name&quot;</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="s">&quot;rotating&quot;</span> <span class="ow">in</span> <span class="n">args</span><span class="p">:</span>
+            <span class="n">rotating_args</span> <span class="o">=</span> <span class="p">{}</span>
+            <span class="c"># override default</span>
+            <span class="n">rotating_args</span><span class="p">[</span><span class="s">&quot;maxBytes&quot;</span><span class="p">]</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&quot;maxBytes&quot;</span><span class="p">,</span> <span class="mi">100000</span><span class="p">)</span>
+            <span class="n">rotating_args</span><span class="p">[</span><span class="s">&quot;backupCount&quot;</span><span class="p">]</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&quot;backupCount&quot;</span><span class="p">,</span> <span class="mi">5</span><span class="p">)</span>
+            <span class="n">handler</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">handlers</span><span class="o">.</span><span class="n">RotatingFileHandler</span><span class="p">(</span> <span class="n">log_file_name</span><span class="p">,</span> <span class="o">**</span><span class="n">rotating_args</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">defer_loggin</span> <span class="o">=</span> <span class="s">&quot;delay&quot;</span> <span class="ow">in</span> <span class="n">args</span>
+            <span class="n">handler</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">handlers</span><span class="o">.</span><span class="n">RotatingFileHandler</span><span class="p">(</span> <span class="n">log_file_name</span><span class="p">,</span> <span class="n">delay</span><span class="o">=</span><span class="n">defer_loggin</span><span class="p">)</span>
+
+        <span class="c">#       %(name)s</span>
+        <span class="c">#       %(levelno)s</span>
+        <span class="c">#       %(levelname)s</span>
+        <span class="c">#       %(pathname)s</span>
+        <span class="c">#       %(filename)s</span>
+        <span class="c">#       %(module)s</span>
+        <span class="c">#       %(funcName)s</span>
+        <span class="c">#       %(lineno)d</span>
+        <span class="c">#       %(created)f</span>
+        <span class="c">#       %(relativeCreated)d</span>
+        <span class="c">#       %(asctime)s</span>
+        <span class="c">#       %(msecs)d</span>
+        <span class="c">#       %(thread)d</span>
+        <span class="c">#       %(threadName)s</span>
+        <span class="c">#       %(process)d</span>
+        <span class="c">#       %(message)s</span>
+        <span class="c">#</span>
+        <span class="c"># E.g.: &quot;%(asctime)s - %(name)s - %(levelname)6s - %(message)s&quot;</span>
+        <span class="c">#</span>
+        <span class="k">if</span> <span class="s">&quot;formatter&quot;</span> <span class="ow">in</span> <span class="n">args</span><span class="p">:</span>
+            <span class="n">my_formatter</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">Formatter</span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="s">&quot;formatter&quot;</span><span class="p">])</span>
+            <span class="n">handler</span><span class="o">.</span><span class="n">setFormatter</span><span class="p">(</span><span class="n">my_formatter</span><span class="p">)</span>
+
+        <span class="n">new_logger</span><span class="o">.</span><span class="n">addHandler</span><span class="p">(</span><span class="n">handler</span><span class="p">)</span>
+
+    <span class="c">#</span>
+    <span class="c">#   This log object will be wrapped in proxy</span>
+    <span class="c">#</span>
+    <span class="k">return</span> <span class="n">new_logger</span>
+
+
+<span class="c">#</span>
+<span class="c">#   Proxy object for logging</span>
+<span class="c">#       Logging messages will be marshalled (forwarded) to the process where the</span>
+<span class="c">#       shared log lives</span>
+<span class="c">#</span></div>
+<span class="k">class</span> <span class="nc">LoggerProxy</span><span class="p">(</span><span class="n">multiprocessing</span><span class="o">.</span><span class="n">managers</span><span class="o">.</span><span class="n">BaseProxy</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">debug</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_callmethod</span><span class="p">(</span><span class="s">&#39;debug&#39;</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">log</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_callmethod</span><span class="p">(</span><span class="s">&#39;log&#39;</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">info</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_callmethod</span><span class="p">(</span><span class="s">&#39;info&#39;</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">warning</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_callmethod</span><span class="p">(</span><span class="s">&#39;warning&#39;</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">error</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_callmethod</span><span class="p">(</span><span class="s">&#39;error&#39;</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">critical</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_callmethod</span><span class="p">(</span><span class="s">&#39;critical&#39;</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">log</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_callmethod</span><span class="p">(</span><span class="s">&#39;log&#39;</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">__str__</span> <span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s">&quot;&lt;LoggingProxy&gt;&quot;</span>
+    <span class="k">def</span> <span class="nf">__repr__</span> <span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s">&#39;LoggerProxy()&#39;</span>
+
+<span class="c">#</span>
+<span class="c">#   Register the setup_logger function as a proxy for setup_logger</span>
+<span class="c">#</span>
+<span class="c">#   We use SyncManager as a base class so we can get a lock proxy for synchronising</span>
+<span class="c">#       logging later on</span>
+<span class="c">#</span>
+<span class="k">class</span> <span class="nc">LoggingManager</span><span class="p">(</span><span class="n">multiprocessing</span><span class="o">.</span><span class="n">managers</span><span class="o">.</span><span class="n">SyncManager</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Logging manager sets up its own process and will create the real Log object there</span>
+<span class="sd">    We refer to this (real) log via proxies</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">pass</span>
+
+
+
+
+<div class="viewcode-block" id="make_shared_logger_and_proxy"><a class="viewcode-back" href="../../proxy_logger.html#ruffus.proxy_logger.make_shared_logger_and_proxy">[docs]</a><span class="k">def</span> <span class="nf">make_shared_logger_and_proxy</span> <span class="p">(</span><span class="n">logger_factory</span><span class="p">,</span> <span class="n">logger_name</span><span class="p">,</span> <span class="n">args</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Make a `logging &lt;http://docs.python.org/library/logging.html&gt;`_ object</span>
+<span class="sd">    called &quot;\ ``logger_name``\ &quot; by calling ``logger_factory``\ (``args``\ )</span>
+
+<span class="sd">    This function will return a proxy to the shared logger which can be copied to jobs</span>
+<span class="sd">    in other processes, as well as a mutex which can be used to prevent simultaneous logging</span>
+<span class="sd">    from happening.</span>
+
+<span class="sd">    :param logger_factory: functions which creates and returns an object with the</span>
+<span class="sd">                           `logging &lt;http://docs.python.org/library/logging.html&gt;`_ interface.</span>
+<span class="sd">                           ``setup_std_shared_logger()`` is one example of a logger factory.</span>
+<span class="sd">    :param logger_name: name of log</span>
+<span class="sd">    :param args: parameters passed (as a single argument) to ``logger_factory``</span>
+<span class="sd">    :returns: a proxy to the shared logger which can be copied to jobs in other processes</span>
+<span class="sd">    :returns: a mutex which can be used to prevent simultaneous logging from happening</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c">#</span>
+    <span class="c">#   make shared log and proxy</span>
+    <span class="c">#</span>
+    <span class="n">manager</span> <span class="o">=</span> <span class="n">LoggingManager</span><span class="p">()</span>
+    <span class="n">manager</span><span class="o">.</span><span class="n">register</span><span class="p">(</span>   <span class="s">&#39;setup_logger&#39;</span><span class="p">,</span>
+                        <span class="n">logger_factory</span><span class="p">,</span>
+                        <span class="n">proxytype</span><span class="o">=</span><span class="n">LoggerProxy</span><span class="p">,</span>
+                        <span class="n">exposed</span> <span class="o">=</span> <span class="p">(</span> <span class="s">&#39;critical&#39;</span><span class="p">,</span> <span class="s">&#39;log&#39;</span><span class="p">,</span>
+                                    <span class="s">&#39;info&#39;</span><span class="p">,</span> <span class="s">&#39;debug&#39;</span><span class="p">,</span> <span class="s">&#39;warning&#39;</span><span class="p">,</span> <span class="s">&#39;error&#39;</span><span class="p">))</span>
+    <span class="n">manager</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+    <span class="n">logger_proxy</span> <span class="o">=</span> <span class="n">manager</span><span class="o">.</span><span class="n">setup_logger</span><span class="p">(</span><span class="n">logger_name</span><span class="p">,</span> <span class="n">args</span><span class="p">)</span>
+
+    <span class="c">#</span>
+    <span class="c">#   make sure we are not logging at the same time in different processes</span>
+    <span class="c">#</span>
+    <span class="n">logging_mutex</span> <span class="o">=</span> <span class="n">manager</span><span class="o">.</span><span class="n">Lock</span><span class="p">()</span>
+
+    <span class="k">return</span> <span class="n">logger_proxy</span><span class="p">,</span> <span class="n">logging_mutex</span>
+
+
+</div>
+<span class="kn">import</span> <span class="nn">unittest</span><span class="o">,</span> <span class="nn">os</span><span class="o">,</span><span class="nn">sys</span>
+<span class="kn">from</span> <span class="nn">.proxy_logger</span> <span class="kn">import</span> <span class="o">*</span>
+<span class="kn">import</span> <span class="nn">traceback</span>
+
+
+<span class="k">class</span> <span class="nc">Test_Logging</span><span class="p">(</span><span class="n">unittest</span><span class="o">.</span><span class="n">TestCase</span><span class="p">):</span>
+
+
+
+    <span class="k">def</span> <span class="nf">test_rotating_log</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">            test rotating via proxy</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nb">open</span><span class="p">(</span><span class="s">&quot;/tmp/lg.log&quot;</span><span class="p">,</span> <span class="s">&quot;w&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+        <span class="n">args</span><span class="o">=</span><span class="p">{}</span>
+        <span class="n">args</span><span class="p">[</span><span class="s">&quot;file_name&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&quot;/tmp/lg.log&quot;</span>
+        <span class="n">args</span><span class="p">[</span><span class="s">&quot;rotating&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">True</span>
+        <span class="n">args</span><span class="p">[</span><span class="s">&quot;maxBytes&quot;</span><span class="p">]</span><span class="o">=</span><span class="mi">20000</span>
+        <span class="n">args</span><span class="p">[</span><span class="s">&quot;backupCount&quot;</span><span class="p">]</span><span class="o">=</span><span class="mi">10</span>
+        <span class="c">#args[&quot;level&quot;]= logging.INFO</span>
+        <span class="p">(</span><span class="n">my_log</span><span class="p">,</span>
+         <span class="n">logging_mutex</span><span class="p">)</span> <span class="o">=</span> <span class="n">make_shared_logger_and_proxy</span> <span class="p">(</span><span class="n">setup_std_shared_logger</span><span class="p">,</span>
+                                                        <span class="s">&quot;my_logger&quot;</span><span class="p">,</span> <span class="n">args</span><span class="p">)</span>
+        <span class="k">with</span> <span class="n">logging_mutex</span><span class="p">:</span>
+            <span class="n">my_log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;This is a debug message&#39;</span><span class="p">)</span>
+            <span class="n">my_log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&#39;This is an info message&#39;</span><span class="p">)</span>
+            <span class="n">my_log</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s">&#39;This is a warning message&#39;</span><span class="p">)</span>
+            <span class="n">my_log</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s">&#39;This is an error message&#39;</span><span class="p">)</span>
+            <span class="n">my_log</span><span class="o">.</span><span class="n">critical</span><span class="p">(</span><span class="s">&#39;This is a critical error message&#39;</span><span class="p">)</span>
+            <span class="n">my_log</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">logging</span><span class="o">.</span><span class="n">ERROR</span><span class="p">,</span> <span class="s">&#39;This is a debug message&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assert_</span><span class="p">(</span><span class="nb">open</span><span class="p">(</span><span class="s">&quot;/tmp/lg.log&quot;</span><span class="p">)</span> <span class="o">.</span><span class="n">read</span><span class="p">()</span> <span class="o">==</span> \
+<span class="sd">&quot;&quot;&quot;This is a warning message</span>
+<span class="sd">This is an error message</span>
+<span class="sd">This is a critical error message</span>
+<span class="sd">This is a debug message</span>
+<span class="sd">&quot;&quot;&quot;</span><span class="p">)</span>
+
+
+<span class="c">#</span>
+<span class="c">#   debug code not run if called as a module</span>
+<span class="c">#</span>
+<span class="k">if</span> <span class="n">__name__</span> <span class="o">==</span> <span class="s">&#39;__main__&#39;</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="s">&quot;--debug&quot;</span><span class="p">):</span>
+        <span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="s">&quot;--debug&quot;</span><span class="p">)</span>
+    <span class="n">unittest</span><span class="o">.</span><span class="n">main</span><span class="p">()</span>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+    
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+    <h3> Quick Reference:</h3>
+    <ul>
+        <h4><a href="../../decorators/decorators.html#core">Core:</a></h4>   
+        <ul>
+            <li><a href="../../decorators/originate.html">@originate</a>                           </li>
+            <li><a href="../../decorators/split.html">@split</a>                                   </li>
+            <li><a href="../../decorators/transform.html">@transform</a>                           </li>
+            <li><a href="../../decorators/merge.html">@merge</a>                                   </li>
+        </ul>
+
+        <h4><a href="../../decorators/decorators.html#advanced">Advanced</a></h4>   
+        <ul>
+            <li><a href="../../decorators/subdivide.html">@subdivide</a>                           </li>
+            <li><a href="../../decorators/transform_ex.html">@transform (add_inputs) </a>          </li>
+            <li><a href="../../decorators/collate.html">@collate</a>                               </li>
+            <li><a href="../../decorators/collate_ex.html">@collate (add_inputs)</a>               </li>
+            <li><a href="../../decorators/graphviz.html">@graphviz</a>                             </li>
+            <li><a href="../../decorators/mkdir.html">@mkdir</a>                                   </li>
+            <li><a href="../../decorators/follows.html">@follows / mkdir</a>                       </li>
+            <li><a href="../../decorators/posttask.html">@posttask touch_file</a>                  </li>
+            <li><a href="../../decorators/active_if.html">@active_if</a>                           </li>
+            <li><a href="../../decorators/jobs_limit.html">@jobs_limit</a>                         </li>
+        </ul>
+    
+        <h4><a href="../../decorators/decorators.html#combinatorics">Combinatorial:</a></h4>   
+        <ul>
+            <li><a href="../../decorators/product.html">@product </a>                              </li>
+            <li><a href="../../decorators/permutations.html">@permutations </a>                    </li>
+            <li><a href="../../decorators/combinations.html">@combinations </a>                    </li>
+            <li><a href="../../decorators/combinations_with_replacement.html">@combinations_ _with_replacement </a>                    </li>
+        </ul>
+
+                        
+        <h4><a href="../../decorators/decorators.html#esoteric">Esoteric</a></h4>   
+        <ul>
+            <li><a href="../../decorators/files_ex.html">@files (on the fly)</a>                   </li>
+            <li><a href="../../decorators/parallel.html">@parallel</a>                             </li>
+            <li><a href="../../decorators/check_if_uptodate.html">@check_if_uptodate</a>           </li>
+        </ul>
+
+
+        <h4 ><a href="../../decorators/indicator_objects.html">Indicator objects</a></h4>
+        <h4 >Pipeline functions</h4>
+        <ul>
+            <li><a href="../../pipeline_functions.html#pipeline-functions-pipeline-run">pipeline_run</a>                       </li>
+            <li><a href="../../pipeline_functions.html#pipeline-functions-pipeline-printout">pipeline_printout</a>                      </li>
+            <li><a href="../../pipeline_functions.html#pipeline-functions-pipeline-printout-graph">pipeline_printout_graph</a>          </li>
+            <li><a href="../../pipeline_functions.html#pipeline-functions-pipeline-get-task-names">pipeline_get_task_names</a>          </li>
+            <li><a href="../../drmaa_wrapper_functions.html#drmaa-wrapper-functions-drmaa_wrapper-run_job">drmaa_wrapper.run_job</a>          </li>
+        </ul>
+
+         <a href="../../todo.html">Future plans</a>
+    </ul>
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        Ruffus v. 2.6.2
+            <li><a href="../../index.html">Home</a> | </li>
+            <li><a href="../../contents.html">Contents</a> | </li>
+            <li><a href="../../installation.html">Install</a>  | </li>
+            <li><a href="../../tutorials/new_tutorial/introduction.html">Manual</a>  / </li>
+            <li><a href="../../tutorials/new_tutorial/manual_contents.html">(TOC)</a>  | </li>
+            <li><a href="../../faq.html">FAQ</a>  | </li>
+            <li><a href="../../cheatsheet.html">Cheat sheet</a> | </li>
+            <li><a href="../../tutorials/new_tutorial/command_line.html">Command Line</a> | </li>
+            <li><a href="../../gallery.html">Gallery</a> |  </li>
+            <li><a href="../../tutorials/new_syntax.html">New syntax in v 2.6</a> | </li>
+            <li><a href="../../history.html">Latest Changes</a> &raquo; </li>
+
+          <li><a href="../index.html" >Module code</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2009-2013 Leo Goodstadt.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

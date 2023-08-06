@@ -1,0 +1,456 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta content="Ruffus is a Computation Pipeline library for python. It is open-sourced, powerful and user-friendly, and widely used in science and bioinformatics" name="description" />
+<meta content="python, pipeline, computation, cluster, Ruffus, bioinformatics, parallel' name='keywords" name="keywords" />
+<meta content="Leo Goodstadt" name="Author" />
+<meta content="Leo Goodstadt" name="Publisher" />
+<meta content="ruffus&#64;llew.org.uk" name="Email" />
+<meta content="index, follow" name="robots" />
+<meta content="en-uk" name="language" />
+<meta content="United Kingdom" name="country" />
+<meta content="Leo Goodstadt 2009-2014" name="copyright" />
+
+    <title>Chapter 14: Multiprocessing, drmaa and Computation Clusters &mdash; ruffus 2.6.2 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/ruffus.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '2.6.2',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <script type="text/javascript" src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    <link rel="top" title="ruffus 2.6.2 documentation" href="../../index.html" />
+    <link rel="next" title="Chapter 15: Logging progress through a pipeline" href="logging.html" />
+    <link rel="prev" title="Chapter 13: @merge multiple input into a single result" href="merge.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="logging.html" title="Chapter 15: Logging progress through a pipeline"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="merge.html" title="Chapter 13: @merge multiple input into a single result"
+             accesskey="P">previous</a> |</li>
+        Ruffus v. 2.6.2
+            <li><a href="../../index.html">Home</a> | </li>
+            <li><a href="../../contents.html">Contents</a> | </li>
+            <li><a href="../../installation.html">Install</a>  | </li>
+            <li><a href="introduction.html">Manual</a>  / </li>
+            <li><a href="manual_contents.html">(TOC)</a>  | </li>
+            <li><a href="../../faq.html">FAQ</a>  | </li>
+            <li><a href="../../cheatsheet.html">Cheat sheet</a> | </li>
+            <li><a href="command_line.html">Command Line</a> | </li>
+            <li><a href="../../gallery.html">Gallery</a> |  </li>
+            <li><a href="../new_syntax.html">New syntax in v 2.6</a> | </li>
+            <li><a href="../../history.html">Latest Changes</a> &raquo; </li>
+ 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="new-manual-multiprocessing-chapter-num-multiprocessing-drmaa-and-computation-clusters">
+<span id="new-manual-multiprocessing"></span><span id="index-0"></span><h1><strong>Chapter 14</strong>: Multiprocessing, <tt class="docutils literal"><span class="pre">drmaa</span></tt> and Computation Clusters<a class="headerlink" href="#new-manual-multiprocessing-chapter-num-multiprocessing-drmaa-and-computation-clusters" title="Permalink to this headline">¶</a></h1>
+<div class="admonition seealso">
+<p class="first admonition-title">See also</p>
+<ul class="last simple">
+<li><a class="reference internal" href="manual_contents.html#new-manual-table-of-contents"><em>Manual Table of Contents</em></a></li>
+<li><a class="reference internal" href="../../decorators/jobs_limit.html#decorators-jobs-limit"><em>&#64;jobs_limit</em></a> syntax</li>
+<li><a class="reference internal" href="../../pipeline_functions.html#pipeline-functions-pipeline-run"><em>pipeline_run()</em></a> syntax</li>
+<li><a class="reference internal" href="../../drmaa_wrapper_functions.html#drmaa-wrapper-run-job"><em>drmaa_wrapper.run_job()</em></a> syntax</li>
+</ul>
+</div>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p>Remember to look at the example code:</p>
+<blockquote class="last">
+<div><ul class="simple">
+<li><a class="reference internal" href="multiprocessing_code.html#new-manual-multiprocessing-code"><em>Chapter 14: Python Code for Multiprocessing, drmaa and Computation Clusters</em></a></li>
+</ul>
+</div></blockquote>
+</div>
+<div class="section" id="overview">
+<h2>Overview<a class="headerlink" href="#overview" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="multi-processing">
+<span id="index-1"></span><h3>Multi Processing<a class="headerlink" href="#multi-processing" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p><em>Ruffus</em> uses python <a class="reference external" href="http://docs.python.org/library/multiprocessing.html">multiprocessing</a> to run
+each job in a separate process.</p>
+<p>This means that jobs do <em>not</em> necessarily complete in the order of the defined parameters.
+Task hierachies are, of course, inviolate: upstream tasks run before downstream, dependent tasks.</p>
+<p>Tasks that are independent (i.e. do not precede each other) may be run in parallel as well.</p>
+<p>The number of concurrent jobs can be set in <a class="reference internal" href="../../pipeline_functions.html#pipeline-functions-pipeline-run"><em>pipeline_run</em></a>:</p>
+<blockquote>
+<div><div class="highlight-python"><div class="highlight"><pre><span class="n">pipeline_run</span><span class="p">([</span><span class="n">parallel_task</span><span class="p">],</span> <span class="n">multiprocess</span> <span class="o">=</span> <span class="mi">5</span><span class="p">)</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>If <tt class="docutils literal"><span class="pre">multiprocess</span></tt> is set to 1, then jobs will be run on a single process.</p>
+</div></blockquote>
+</div>
+<div class="section" id="data-sharing">
+<span id="index-2"></span><h3>Data sharing<a class="headerlink" href="#data-sharing" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>Running jobs in separate processes allows <em>Ruffus</em> to make full use of the multiple
+processors in modern computers. However, some <a class="reference external" href="http://docs.python.org/library/multiprocessing.html#multiprocessing-programming">multiprocessing guidelines</a>
+should be borne in mind when writing <em>Ruffus</em> pipelines. In particular:</p>
+<ul class="simple">
+<li>Try not to pass large amounts of data between jobs, or at least be aware that this has to be marshalled
+across process boundaries.</li>
+<li>Only data which can be <a class="reference external" href="http://docs.python.org/library/pickle.html">pickled</a> can be passed as
+parameters to <em>Ruffus</em> task functions. Happily, that applies to almost any native Python data type.
+The use of the rare, unpicklable object will cause python to complain (fail) loudly when <em>Ruffus</em> pipelines
+are run.</li>
+</ul>
+</div></blockquote>
+</div>
+</div>
+<div class="section" id="restricting-parallelism-with-jobs-limit">
+<span id="new-manual-jobs-limit"></span><span id="index-3"></span><h2>Restricting parallelism with <a class="reference internal" href="../../decorators/jobs_limit.html#decorators-jobs-limit"><em>&#64;jobs_limit</em></a><a class="headerlink" href="#restricting-parallelism-with-jobs-limit" title="Permalink to this headline">¶</a></h2>
+<blockquote>
+<div><p>Calling <a class="reference internal" href="../../pipeline_functions.html#pipeline-functions-pipeline-run"><em>pipeline_run(multiprocess = NNN)</em></a> allows
+multiple jobs (from multiple independent tasks) to be run in parallel. However, there
+are some operations that consume so many resources that we might want them to run
+with less or no concurrency.</p>
+<p>For example, we might want to download some files via FTP but the server restricts
+requests from each IP address. Even if the rest of the pipeline is running 100 jobs in
+parallel, the FTP downloading must be restricted to 2 files at a time. We would really
+like to keep the pipeline running as is, but let this one operation run either serially,
+or with little concurrency.</p>
+<ul class="simple">
+<li><a class="reference internal" href="../../pipeline_functions.html#pipeline-functions-pipeline-run"><em>pipeline_run(multiprocess = NNN)</em></a> sets the pipeline-wide concurrency but</li>
+<li><a class="reference internal" href="../../decorators/jobs_limit.html#decorators-jobs-limit"><em>&#64;jobs_limit(MMM)</em></a> sets concurrency at <tt class="docutils literal"><span class="pre">MMM</span></tt> only for jobs in the decorated task.</li>
+</ul>
+<p>The optional name (e.g. <tt class="docutils literal"><span class="pre">&#64;jobs_limit(3,</span> <span class="pre">&quot;ftp_download_limit&quot;)</span></tt>) allows the same limit to
+be shared across multiple tasks. To be pedantic: a limit of <tt class="docutils literal"><span class="pre">3</span></tt> jobs at a time would be applied
+across all tasks which have a <tt class="docutils literal"><span class="pre">&#64;jobs_limit</span></tt> named <tt class="docutils literal"><span class="pre">&quot;ftp_download_limit&quot;</span></tt>.</p>
+<p>The <a class="reference internal" href="multiprocessing_code.html#new-manual-multiprocessing-code"><em>example code</em></a> uses up to 10 processes across the
+pipeline, but runs the <tt class="docutils literal"><span class="pre">stage1_big</span></tt> and <tt class="docutils literal"><span class="pre">stage1_small</span></tt> tasks 3 at a time (shared across
+both tasks). <tt class="docutils literal"><span class="pre">stage2</span></tt> jobs run 5 at a time.</p>
+</div></blockquote>
+</div>
+<div class="section" id="using-drmaa-to-dispatch-work-to-computational-clusters-or-grid-engines-from-ruffus-jobs">
+<span id="new-manual-ruffus-drmaa-wrapper-run-job"></span><h2>Using <tt class="docutils literal"><span class="pre">drmaa</span></tt> to dispatch work to Computational Clusters or Grid engines from Ruffus jobs<a class="headerlink" href="#using-drmaa-to-dispatch-work-to-computational-clusters-or-grid-engines-from-ruffus-jobs" title="Permalink to this headline">¶</a></h2>
+<blockquote>
+<div><p>Ruffus has been widely used to manage work on computational clusters or grid engines. Though Ruffus
+task functions cannot (yet!) run natively and transparently on remote cluster nodes, it is trivial
+to dispatch work across the cluster.</p>
+<p>From version 2.4 onwards, Ruffus includes an optional helper module which interacts with
+<a class="reference external" href="https://github.com/drmaa-python/drmaa-python">python bindings</a> for the widely used <a class="reference external" href="http://en.wikipedia.org/wiki/DRMAA">drmaa</a>
+Open Grid Forum API specification. This allows jobs to dispatch work to a computational cluster and wait until it completes.</p>
+<p>Here are the necessary steps</p>
+</div></blockquote>
+<div class="section" id="use-a-shared-drmaa-session">
+<h3>1) Use a shared drmaa session:<a class="headerlink" href="#use-a-shared-drmaa-session" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>Before your pipeline runs:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="c">#</span>
+<span class="c">#   start shared drmaa session for all jobs / tasks in pipeline</span>
+<span class="c">#</span>
+<span class="kn">import</span> <span class="nn">drmaa</span>
+<span class="n">drmaa_session</span> <span class="o">=</span> <span class="n">drmaa</span><span class="o">.</span><span class="n">Session</span><span class="p">()</span>
+<span class="n">drmaa_session</span><span class="o">.</span><span class="n">initialize</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>Cleanup after your pipeline completes:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="c">#</span>
+<span class="c">#   pipeline functions go here</span>
+<span class="c">#</span>
+<span class="k">if</span> <span class="n">__name__</span> <span class="o">==</span> <span class="s">&#39;__main__&#39;</span><span class="p">:</span>
+    <span class="n">drmaa_session</span><span class="o">.</span><span class="n">exit</span><span class="p">()</span>
+</pre></div>
+</div>
+</div></blockquote>
+</div>
+<div class="section" id="import-ruffus-drmaa-wrapper">
+<h3>2) import <tt class="docutils literal"><span class="pre">ruffus.drmaa_wrapper</span></tt><a class="headerlink" href="#import-ruffus-drmaa-wrapper" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><ul class="simple">
+<li>The optional <tt class="docutils literal"><span class="pre">ruffus.drmaa_wrapper</span></tt> module needs to be imported explicitly:</li>
+</ul>
+<div class="highlight-python"><div class="highlight"><pre><span class="hll"><span class="c"># imported ruffus.drmaa_wrapper explicitly</span>
+</span><span class="kn">from</span> <span class="nn">ruffus.drmaa_wrapper</span> <span class="kn">import</span> <span class="n">run_job</span><span class="p">,</span> <span class="n">error_drmaa_job</span>
+</pre></div>
+</div>
+</div></blockquote>
+</div>
+<div class="section" id="call-drmaa-wrapper-run-job">
+<h3>3) call <a class="reference internal" href="../../drmaa_wrapper_functions.html#drmaa-wrapper-run-job"><em>drmaa_wrapper.run_job()</em></a><a class="headerlink" href="#call-drmaa-wrapper-run-job" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p><a class="reference internal" href="../../drmaa_wrapper_functions.html#drmaa-wrapper-run-job"><em>drmaa_wrapper.run_job()</em></a> dispatches the work to a cluster node within a normal Ruffus job and waits for completion</p>
+<p>This is the equivalent of <a class="reference external" href="http://docs.python.org/2/library/os.html#os.system">os.system</a>  or
+<a class="reference external" href="http://docs.python.org/2/library/subprocess.html#subprocess.check_call">subprocess.check_output</a> but the code will run remotely as specified:</p>
+<blockquote>
+<div><div class="highlight-python"><div class="highlight"><pre><span class="hll">    <span class="c"># ruffus.drmaa_wrapper.run_job</span>
+</span>    <span class="n">stdout_res</span><span class="p">,</span> <span class="n">stderr_res</span>  <span class="o">=</span> <span class="n">run_job</span><span class="p">(</span><span class="n">cmd_str</span>           <span class="o">=</span> <span class="s">&quot;touch &quot;</span> <span class="o">+</span> <span class="n">output_file</span><span class="p">,</span>
+                                      <span class="n">job_name</span>          <span class="o">=</span> <span class="n">job_name</span><span class="p">,</span>
+                                      <span class="n">logger</span>            <span class="o">=</span> <span class="n">logger</span><span class="p">,</span>
+                                      <span class="n">drmaa_session</span>     <span class="o">=</span> <span class="n">drmaa_session</span><span class="p">,</span>
+                                      <span class="n">run_locally</span>       <span class="o">=</span> <span class="n">options</span><span class="o">.</span><span class="n">local_run</span><span class="p">,</span>
+                                      <span class="n">job_other_options</span> <span class="o">=</span> <span class="n">job_other_options</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The complete code is available <a class="reference internal" href="multiprocessing_code.html#using-ruffus-drmaa-wrapper"><em>here</em></a></p>
+</div></blockquote>
+<ul class="simple">
+<li><a class="reference internal" href="../../drmaa_wrapper_functions.html#drmaa-wrapper-run-job"><em>drmaa_wrapper.run_job()</em></a> is a convenience wrapper around the <a class="reference external" href="https://github.com/drmaa-python/drmaa-python">python drmaa bindings</a>
+<a class="reference external" href="http://drmaa-python.readthedocs.org/en/latest/tutorials.html#waiting-for-a-job">RunJob</a> function.
+It takes care of writing drmaa <em>job templates</em> for you.</li>
+<li>Each call creates a separate drmaa <em>job template</em>.</li>
+</ul>
+</div></blockquote>
+</div>
+<div class="section" id="use-multithread-pipeline-run-multithread-nnn">
+<h3>4) Use multithread: <a class="reference internal" href="../../pipeline_functions.html#pipeline-functions-pipeline-run"><em>pipeline_run(multithread = NNN)</em></a><a class="headerlink" href="#use-multithread-pipeline-run-multithread-nnn" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><div class="admonition warning">
+<p class="first admonition-title">Warning</p>
+<p><a class="reference internal" href="../../drmaa_wrapper_functions.html#drmaa-wrapper-run-job"><em>drmaa_wrapper.run_job()</em></a></p>
+<blockquote class="last">
+<div><p><strong>requires</strong> <tt class="docutils literal"><span class="pre">pipeline_run</span></tt> <a class="reference internal" href="../../pipeline_functions.html#pipeline-functions-pipeline-run"><em>(multithread = NNN)</em></a></p>
+<p><strong>and will not work with</strong>  <tt class="docutils literal"><span class="pre">pipeline_run</span></tt> <a class="reference internal" href="../../pipeline_functions.html#pipeline-functions-pipeline-run"><em>(multiprocess = NNN)</em></a></p>
+</div></blockquote>
+</div>
+<dl class="docutils">
+<dt>Using multithreading rather than multiprocessing</dt>
+<dd><ul class="first simple">
+<li>allows the drmaa session to be shared</li>
+<li>prevents &#8220;processing storms&#8221; which lock up the queue submission node when hundreds or thousands of grid engine / cluster commands complete at the same time.</li>
+</ul>
+<div class="highlight-python"><div class="highlight"><pre><span class="n">pipeline_run</span> <span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">multithread</span> <span class="o">=</span> <span class="n">NNN</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>or if you are using ruffus.cmdline:</p>
+<div class="last highlight-python"><div class="highlight"><pre><span class="n">cmdline</span><span class="o">.</span><span class="n">run</span> <span class="p">(</span><span class="n">options</span><span class="p">,</span> <span class="n">multithread</span> <span class="o">=</span> <span class="n">options</span><span class="o">.</span><span class="n">jobs</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd>
+</dl>
+<p>Normally multithreading reduces the amount of parallelism in python due to the python <a class="reference external" href="http://en.wikipedia.org/wiki/Global_Interpreter_Lock">Global interpreter Lock (GIL)</a>.
+However, as the work load is almost entirely on another computer (i.e. a cluster / grid engine node) with a separate python interpreter, any cost benefit calculations of this sort are moot.</p>
+</div></blockquote>
+</div>
+<div class="section" id="develop-locally">
+<h3>5) Develop locally<a class="headerlink" href="#develop-locally" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p><a class="reference internal" href="../../drmaa_wrapper_functions.html#drmaa-wrapper-run-job"><em>drmaa_wrapper.run_job()</em></a> provides two convenience parameters for developing grid engine pipelines:</p>
+<ul>
+<li><p class="first">commands can run locally, i.e. on the local machine rather than on cluster nodes:</p>
+<blockquote>
+<div><div class="highlight-python"><div class="highlight"><pre><span class="n">run_job</span><span class="p">(</span><span class="n">cmd_str</span><span class="p">,</span> <span class="n">run_locally</span> <span class="o">=</span> <span class="bp">True</span><span class="p">)</span>
+</pre></div>
+</div>
+</div></blockquote>
+</li>
+<li><p class="first">Output files can be <a class="reference external" href="http://en.wikipedia.org/wiki/Touch_(Unix)">touch</a>ed, i.e. given the appearance of the work having being done without actually running the commands</p>
+<blockquote>
+<div><div class="highlight-python"><div class="highlight"><pre><span class="n">run_job</span><span class="p">(</span><span class="n">cmd_str</span><span class="p">,</span> <span class="n">touch_only</span> <span class="o">=</span> <span class="bp">True</span><span class="p">)</span>
+</pre></div>
+</div>
+</div></blockquote>
+</li>
+</ul>
+</div></blockquote>
+</div>
+</div>
+<div class="section" id="forcing-a-pipeline-to-appear-up-to-date">
+<span id="new-manual-pipeline-run-touch"></span><span id="index-4"></span><h2>Forcing a pipeline to appear up to date<a class="headerlink" href="#forcing-a-pipeline-to-appear-up-to-date" title="Permalink to this headline">¶</a></h2>
+<blockquote>
+<div><p>Sometimes, we <em>know</em> that a pipeline has run to completion, that everything is up-to-date. However, Ruffus still insists on the basis
+of file modification times that you need to rerun.</p>
+<p>For example, sometimes a trivial accounting modification needs to be made to a data file.
+Even though you know that this changes nothing in practice, Ruffus will detect the modification and
+ask to rerun everything from that point forwards.</p>
+<p>One way to convince Ruffus that everything is fine is to manually <a class="reference external" href="http://en.wikipedia.org/wiki/Touch_(Unix)">touch</a>
+all subsequent data files one by one in sequence so that the file timestamps follow the appropriate progression.</p>
+<p>You can also ask <em>Ruffus</em> to do this automatically for you by running the pipeline in <a class="reference external" href="http://en.wikipedia.org/wiki/Touch_(Unix)">touch</a>
+mode:</p>
+<blockquote>
+<div><div class="highlight-python"><div class="highlight"><pre><span class="n">pipeline_run</span><span class="p">(</span> <span class="n">touch_files_only</span> <span class="o">=</span> <span class="bp">True</span><span class="p">)</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p><a class="reference internal" href="../../pipeline_functions.html#pipeline-functions-pipeline-run"><em>pipeline_run</em></a> will run your pipeline script normally working backwards from any specified final target, or else the
+last task in the pipeline. It works out where it should begin running, i.e. with the first out-of-date data files.
+After that point, instead of calling your pipeline task functions, each missing or out-of-date file is
+<a class="reference external" href="http://en.wikipedia.org/wiki/Touch_(Unix)">touch-ed</a> in turn so that the file modification dates
+follow on successively.</p>
+<p>This turns out to be useful way to check that your pipeline runs correctly by creating a series of dummy (empty files).
+However, <em>Ruffus</em> does not know how to read your mind to know which files to create from <a class="reference internal" href="../../decorators/split.html#decorators-split"><em>&#64;split</em></a> or
+<a class="reference internal" href="../../decorators/subdivide.html#decorators-subdivide"><em>&#64;subdivide</em></a> tasks.</p>
+<p>Using <a class="reference internal" href="command_line.html#new-manual-cmdline"><em>ruffus.cmdline</em></a> from version 2.4, you can just specify:</p>
+<blockquote>
+<div><div class="highlight-bash"><div class="highlight"><pre>your script --touch_files_only <span class="o">[</span>--other_options_of_your_own_etc<span class="o">]</span>
+</pre></div>
+</div>
+</div></blockquote>
+</div></blockquote>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h3><a href="../../contents.html">Table Of Contents</a></h3>
+  <ul>
+<li><a class="reference internal" href="#"><strong>Chapter 14</strong>: Multiprocessing, <tt class="docutils literal"><span class="pre">drmaa</span></tt> and Computation Clusters</a><ul>
+<li><a class="reference internal" href="#overview">Overview</a><ul>
+<li><a class="reference internal" href="#multi-processing">Multi Processing</a></li>
+<li><a class="reference internal" href="#data-sharing">Data sharing</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#restricting-parallelism-with-jobs-limit">Restricting parallelism with <tt class="docutils literal"><span class="pre">&#64;jobs_limit</span></tt></a></li>
+<li><a class="reference internal" href="#using-drmaa-to-dispatch-work-to-computational-clusters-or-grid-engines-from-ruffus-jobs">Using <tt class="docutils literal"><span class="pre">drmaa</span></tt> to dispatch work to Computational Clusters or Grid engines from Ruffus jobs</a><ul>
+<li><a class="reference internal" href="#use-a-shared-drmaa-session">1) Use a shared drmaa session:</a></li>
+<li><a class="reference internal" href="#import-ruffus-drmaa-wrapper">2) import <tt class="docutils literal"><span class="pre">ruffus.drmaa_wrapper</span></tt></a></li>
+<li><a class="reference internal" href="#call-drmaa-wrapper-run-job">3) call <tt class="docutils literal"><span class="pre">drmaa_wrapper.run_job()</span></tt></a></li>
+<li><a class="reference internal" href="#use-multithread-pipeline-run-multithread-nnn">4) Use multithread: <tt class="docutils literal"><span class="pre">pipeline_run(multithread</span> <span class="pre">=</span> <span class="pre">NNN)</span></tt></a></li>
+<li><a class="reference internal" href="#develop-locally">5) Develop locally</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#forcing-a-pipeline-to-appear-up-to-date">Forcing a pipeline to appear up to date</a></li>
+</ul>
+</li>
+</ul>
+
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="merge.html"
+                        title="previous chapter"><strong>Chapter 13</strong>: <tt class="docutils literal"><span class="pre">&#64;merge</span></tt> multiple input into a single result</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="logging.html"
+                        title="next chapter"><strong>Chapter 15</strong>: Logging progress through a pipeline</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="../../_sources/tutorials/new_tutorial/multiprocessing.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+    
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+    <h3> Quick Reference:</h3>
+    <ul>
+        <h4><a href="../../decorators/decorators.html#core">Core:</a></h4>   
+        <ul>
+            <li><a href="../../decorators/originate.html">@originate</a>                           </li>
+            <li><a href="../../decorators/split.html">@split</a>                                   </li>
+            <li><a href="../../decorators/transform.html">@transform</a>                           </li>
+            <li><a href="../../decorators/merge.html">@merge</a>                                   </li>
+        </ul>
+
+        <h4><a href="../../decorators/decorators.html#advanced">Advanced</a></h4>   
+        <ul>
+            <li><a href="../../decorators/subdivide.html">@subdivide</a>                           </li>
+            <li><a href="../../decorators/transform_ex.html">@transform (add_inputs) </a>          </li>
+            <li><a href="../../decorators/collate.html">@collate</a>                               </li>
+            <li><a href="../../decorators/collate_ex.html">@collate (add_inputs)</a>               </li>
+            <li><a href="../../decorators/graphviz.html">@graphviz</a>                             </li>
+            <li><a href="../../decorators/mkdir.html">@mkdir</a>                                   </li>
+            <li><a href="../../decorators/follows.html">@follows / mkdir</a>                       </li>
+            <li><a href="../../decorators/posttask.html">@posttask touch_file</a>                  </li>
+            <li><a href="../../decorators/active_if.html">@active_if</a>                           </li>
+            <li><a href="../../decorators/jobs_limit.html">@jobs_limit</a>                         </li>
+        </ul>
+    
+        <h4><a href="../../decorators/decorators.html#combinatorics">Combinatorial:</a></h4>   
+        <ul>
+            <li><a href="../../decorators/product.html">@product </a>                              </li>
+            <li><a href="../../decorators/permutations.html">@permutations </a>                    </li>
+            <li><a href="../../decorators/combinations.html">@combinations </a>                    </li>
+            <li><a href="../../decorators/combinations_with_replacement.html">@combinations_ _with_replacement </a>                    </li>
+        </ul>
+
+                        
+        <h4><a href="../../decorators/decorators.html#esoteric">Esoteric</a></h4>   
+        <ul>
+            <li><a href="../../decorators/files_ex.html">@files (on the fly)</a>                   </li>
+            <li><a href="../../decorators/parallel.html">@parallel</a>                             </li>
+            <li><a href="../../decorators/check_if_uptodate.html">@check_if_uptodate</a>           </li>
+        </ul>
+
+
+        <h4 ><a href="../../decorators/indicator_objects.html">Indicator objects</a></h4>
+        <h4 >Pipeline functions</h4>
+        <ul>
+            <li><a href="../../pipeline_functions.html#pipeline-functions-pipeline-run">pipeline_run</a>                       </li>
+            <li><a href="../../pipeline_functions.html#pipeline-functions-pipeline-printout">pipeline_printout</a>                      </li>
+            <li><a href="../../pipeline_functions.html#pipeline-functions-pipeline-printout-graph">pipeline_printout_graph</a>          </li>
+            <li><a href="../../pipeline_functions.html#pipeline-functions-pipeline-get-task-names">pipeline_get_task_names</a>          </li>
+            <li><a href="../../drmaa_wrapper_functions.html#drmaa-wrapper-functions-drmaa_wrapper-run_job">drmaa_wrapper.run_job</a>          </li>
+        </ul>
+
+         <a href="../../todo.html">Future plans</a>
+    </ul>
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="logging.html" title="Chapter 15: Logging progress through a pipeline"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="merge.html" title="Chapter 13: @merge multiple input into a single result"
+             >previous</a> |</li>
+        Ruffus v. 2.6.2
+            <li><a href="../../index.html">Home</a> | </li>
+            <li><a href="../../contents.html">Contents</a> | </li>
+            <li><a href="../../installation.html">Install</a>  | </li>
+            <li><a href="introduction.html">Manual</a>  / </li>
+            <li><a href="manual_contents.html">(TOC)</a>  | </li>
+            <li><a href="../../faq.html">FAQ</a>  | </li>
+            <li><a href="../../cheatsheet.html">Cheat sheet</a> | </li>
+            <li><a href="command_line.html">Command Line</a> | </li>
+            <li><a href="../../gallery.html">Gallery</a> |  </li>
+            <li><a href="../new_syntax.html">New syntax in v 2.6</a> | </li>
+            <li><a href="../../history.html">Latest Changes</a> &raquo; </li>
+ 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2009-2013 Leo Goodstadt.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

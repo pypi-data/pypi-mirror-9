@@ -1,0 +1,404 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta content="Ruffus is a Computation Pipeline library for python. It is open-sourced, powerful and user-friendly, and widely used in science and bioinformatics" name="description" />
+<meta content="python, pipeline, computation, cluster, Ruffus, bioinformatics, parallel' name='keywords" name="keywords" />
+<meta content="Leo Goodstadt" name="Author" />
+<meta content="Leo Goodstadt" name="Publisher" />
+<meta content="ruffus&#64;llew.org.uk" name="Email" />
+<meta content="index, follow" name="robots" />
+<meta content="en-uk" name="language" />
+<meta content="United Kingdom" name="country" />
+<meta content="Leo Goodstadt 2009-2014" name="copyright" />
+
+    <title>Chapter 12: Splitting up large tasks / files with @split &mdash; ruffus 2.6.2 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/ruffus.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '2.6.2',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <script type="text/javascript" src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    <link rel="top" title="ruffus 2.6.2 documentation" href="../../index.html" />
+    <link rel="next" title="Chapter 13: @merge multiple input into a single result" href="merge.html" />
+    <link rel="prev" title="Chapter 11: Pipeline topologies and a compendium of Ruffus decorators" href="decorators_compendium.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="merge.html" title="Chapter 13: @merge multiple input into a single result"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="decorators_compendium.html" title="Chapter 11: Pipeline topologies and a compendium of Ruffus decorators"
+             accesskey="P">previous</a> |</li>
+        Ruffus v. 2.6.2
+            <li><a href="../../index.html">Home</a> | </li>
+            <li><a href="../../contents.html">Contents</a> | </li>
+            <li><a href="../../installation.html">Install</a>  | </li>
+            <li><a href="introduction.html">Manual</a>  / </li>
+            <li><a href="manual_contents.html">(TOC)</a>  | </li>
+            <li><a href="../../faq.html">FAQ</a>  | </li>
+            <li><a href="../../cheatsheet.html">Cheat sheet</a> | </li>
+            <li><a href="command_line.html">Command Line</a> | </li>
+            <li><a href="../../gallery.html">Gallery</a> |  </li>
+            <li><a href="../new_syntax.html">New syntax in v 2.6</a> | </li>
+            <li><a href="../../history.html">Latest Changes</a> &raquo; </li>
+ 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="new-manual-split-chapter-num-splitting-up-large-tasks-files-with-split">
+<span id="new-manual-split"></span><span id="index-0"></span><h1><strong>Chapter 12</strong>: Splitting up large tasks / files with <strong>&#64;split</strong><a class="headerlink" href="#new-manual-split-chapter-num-splitting-up-large-tasks-files-with-split" title="Permalink to this headline">¶</a></h1>
+<div class="admonition seealso">
+<p class="first admonition-title">See also</p>
+<ul class="last simple">
+<li><a class="reference internal" href="manual_contents.html#new-manual-table-of-contents"><em>Manual Table of Contents</em></a></li>
+<li><a class="reference internal" href="../../decorators/split.html#decorators-split"><em>&#64;split</em></a> syntax</li>
+<li><a class="reference internal" href="split_code.html#new-manual-split-code"><em>Example code for this chapter</em></a></li>
+</ul>
+</div>
+<div class="section" id="overview">
+<h2>Overview<a class="headerlink" href="#overview" title="Permalink to this headline">¶</a></h2>
+<blockquote>
+<div><p>A common requirement in computational pipelines is to split up a large task into
+small jobs which can be run on different processors, (or sent to a computational
+cluster). Very often, the number of jobs depends dynamically on the size of the
+task, and cannot be known beforehand.</p>
+<p><em>Ruffus</em> uses the <a class="reference internal" href="../../decorators/split.html#decorators-split"><em>&#64;split</em></a> decorator to indicate that
+the <a class="reference internal" href="../../glossary.html#term-task"><em class="xref std std-term">task</em></a> function will produce an indeterminate number of independent <em>Outputs</em> from a single <em>Input</em>.</p>
+</div></blockquote>
+</div>
+<div class="section" id="example-calculate-variance-for-a-large-list-of-numbers-in-parallel">
+<h2>Example: Calculate variance for a large list of numbers in parallel<a class="headerlink" href="#example-calculate-variance-for-a-large-list-of-numbers-in-parallel" title="Permalink to this headline">¶</a></h2>
+<blockquote>
+<div><p>Suppose we wanted to calculate the <a class="reference external" href="http://en.wikipedia.org/wiki/Variance">variance</a> for
+100,000 numbers, how can we parallelise the calculation so that we can get an answer as
+speedily as possible?</p>
+<p>We need to</p>
+<blockquote>
+<div><ul class="simple">
+<li>break down the problem into manageable chunks</li>
+<li>solve these in parallel, possibly on a computational cluster and then</li>
+<li>merge the partial solutions back together for a final result.</li>
+</ul>
+</div></blockquote>
+<p>To complicate things, we usually do not want to hard-code the number of parallel chunks beforehand.
+The degree of parallelism is often only apparent as we process our data.</p>
+<p><strong>Ruffus</strong> was designed to solve such problems which are common, for example, in bioinformatics and genomics.</p>
+<p>A flowchart for our variance problem might look like this:</p>
+<a class="reference internal image-reference" href="../../_images/manual_split_merge_example.jpg"><img alt="../../_images/manual_split_merge_example.jpg" src="../../_images/manual_split_merge_example.jpg" style="width: 251.1px; height: 197.4px;" /></a>
+<p>(In this toy example, we create our own starting data in <tt class="docutils literal"><span class="pre">create_random_numbers()</span></tt>.)</p>
+</div></blockquote>
+</div>
+<div class="section" id="output-files-for-split">
+<h2>Output files for <a class="reference internal" href="../../decorators/split.html#decorators-split"><em>&#64;split</em></a><a class="headerlink" href="#output-files-for-split" title="Permalink to this headline">¶</a></h2>
+<blockquote>
+<div><p>The <em>Ruffus</em> decorator <a class="reference internal" href="../../decorators/split.html#decorators-split"><em>&#64;split</em></a> is designed specifically with this run-time flexibility in mind:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="nd">@split</span><span class="p">(</span><span class="n">create_random_numbers</span><span class="p">,</span> <span class="s">&quot;*.chunks&quot;</span><span class="p">)</span>
+<span class="k">def</span> <span class="nf">split_problem</span> <span class="p">(</span><span class="n">input_file_names</span><span class="p">,</span> <span class="n">output_files</span><span class="p">):</span>
+    <span class="k">pass</span>
+</pre></div>
+</div>
+<p>This will split the incoming <tt class="docutils literal"><span class="pre">input_file_names</span></tt> into <tt class="docutils literal"><span class="pre">NNN</span></tt> number of <em>outputs</em> where <tt class="docutils literal"><span class="pre">NNN</span></tt> is not predetermined:</p>
+<p>The <em>output</em> (second) parameter of <a class="reference internal" href="../../decorators/split.html#decorators-split"><em>&#64;split</em></a> often contains a <a class="reference external" href="http://docs.python.org/library/glob.html"><cite>glob</cite></a> pattern like the <tt class="docutils literal"><span class="pre">*.chunks</span></tt> above.</p>
+<p>Only <strong>after</strong> the task function has completed, will Ruffus match the <strong>Output</strong> parameter (<tt class="docutils literal"><span class="pre">*.chunks</span></tt>)
+against the files which have been created by <tt class="docutils literal"><span class="pre">split_problem()</span></tt> (e.g. <tt class="docutils literal"><span class="pre">1.chunks</span></tt>, <tt class="docutils literal"><span class="pre">2.chunks</span></tt>, <tt class="docutils literal"><span class="pre">3.chunks</span></tt>)</p>
+</div></blockquote>
+</div>
+<div class="section" id="be-careful-in-specifying-output-globs">
+<h2>Be careful in specifying  <strong>Output</strong> globs<a class="headerlink" href="#be-careful-in-specifying-output-globs" title="Permalink to this headline">¶</a></h2>
+<blockquote>
+<div><p>Note that it is your responsibility to keep the <strong>Output</strong> specification tight enough so that Ruffus does not
+pick up extraneous files.</p>
+<p>You can specify multiple <a class="reference external" href="http://docs.python.org/library/glob.html"><cite>glob</cite></a> patterns to match <em>all</em> the files which are the
+result of the splitting task function. These can even cover different directories,
+or groups of file names. This is a more extreme example:</p>
+<blockquote>
+<div><div class="highlight-python"><div class="highlight"><pre><span class="nd">@split</span><span class="p">(</span><span class="s">&quot;input.file&quot;</span><span class="p">,</span> <span class="p">[</span><span class="s">&#39;a*.bits&#39;</span><span class="p">,</span> <span class="s">&#39;b*.pieces&#39;</span><span class="p">,</span> <span class="s">&#39;somewhere_else/c*.stuff&#39;</span><span class="p">])</span>
+<span class="k">def</span> <span class="nf">split_function</span> <span class="p">(</span><span class="n">input_filename</span><span class="p">,</span> <span class="n">output_files</span><span class="p">):</span>
+    <span class="s">&quot;Code to split up &#39;input.file&#39;&quot;</span>
+</pre></div>
+</div>
+</div></blockquote>
+</div></blockquote>
+</div>
+<div class="section" id="clean-up-previous-pipeline-runs">
+<h2>Clean up previous pipeline runs<a class="headerlink" href="#clean-up-previous-pipeline-runs" title="Permalink to this headline">¶</a></h2>
+<blockquote>
+<div><p>Problem arise when the current directory contains results of previous pipeline runs.</p>
+<ul class="simple">
+<li>For example, if the previous analysis involved a large data set, there might be 3 chunks: <tt class="docutils literal"><span class="pre">1.chunks</span></tt>, <tt class="docutils literal"><span class="pre">2.chunks</span></tt>, <tt class="docutils literal"><span class="pre">3.chunks</span></tt>.</li>
+<li>In the current analysis, there might be a smaller data set which divides into only 2 chunks, <tt class="docutils literal"><span class="pre">1.chunks</span></tt> and <tt class="docutils literal"><span class="pre">2.chunks</span></tt>.</li>
+<li>Unfortunately, <tt class="docutils literal"><span class="pre">3.chunks</span></tt> from the previous run is still hanging around and will be included erroneously by the glob <tt class="docutils literal"><span class="pre">*.chunks</span></tt>.</li>
+</ul>
+<div class="admonition warning">
+<p class="first admonition-title">Warning</p>
+<p class="last"><strong>Your first duty in</strong> <a class="reference internal" href="../../decorators/split.html#decorators-split"><em>&#64;split</em></a> <strong>tasks functions should be to clean up</strong></p>
+</div>
+<p>To help you clean up thoroughly, Ruffus initialises the <strong>output</strong> parameter to all files which match specification.</p>
+<p>The first order of business is thus invariably to cleanup ( delete with <tt class="docutils literal"><span class="pre">os.unlink</span></tt>) all files in <strong>Output</strong>.</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="c">#---------------------------------------------------------------</span>
+<span class="c">#</span>
+<span class="c">#   split initial file</span>
+<span class="c">#</span>
+<span class="nd">@split</span><span class="p">(</span><span class="n">create_random_numbers</span><span class="p">,</span> <span class="s">&quot;*.chunks&quot;</span><span class="p">)</span>
+<span class="k">def</span> <span class="nf">split_problem</span> <span class="p">(</span><span class="n">input_file_names</span><span class="p">,</span> <span class="n">output_files</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        splits random numbers file into xxx files of chunk_size each</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c">#</span>
+<span class="hll">    <span class="c">#   clean up any files from previous runs</span>
+</span>    <span class="c">#</span>
+    <span class="c">#for ff in glob.glob(&quot;*.chunks&quot;):</span>
+    <span class="k">for</span> <span class="n">ff</span> <span class="ow">in</span> <span class="n">input_file_names</span><span class="p">:</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">unlink</span><span class="p">(</span><span class="n">ff</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>(The first time you run the example code, <tt class="docutils literal"><span class="pre">*.chunks</span></tt> will initialise <tt class="docutils literal"><span class="pre">output_files</span></tt> to an empty list. )</p>
+</div></blockquote>
+</div>
+<div class="section" id="to-many">
+<span id="new-manual-split-one-to-many"></span><h2>1 to many<a class="headerlink" href="#to-many" title="Permalink to this headline">¶</a></h2>
+<blockquote>
+<div><p><a class="reference internal" href="../../decorators/split.html#decorators-split"><em>&#64;split</em></a> is a one to many operator because its
+outputs are a list of <em>independent</em> items.</p>
+<p>If <a class="reference internal" href="../../decorators/split.html#decorators-split"><em>&#64;split</em></a> generates 5 files, then this will lead to 5 jobs downstream.</p>
+<p>This means we can just connect our old friend <a class="reference internal" href="../../decorators/transform.html#decorators-transform"><em>&#64;transform</em></a> to our pipeline
+and the results of <a class="reference internal" href="../../decorators/split.html#decorators-split"><em>&#64;split</em></a> will be analysed in parallel. This code should look
+familiar:</p>
+<blockquote>
+<div><div class="highlight-python"><div class="highlight"><pre><span class="c">#---------------------------------------------------------------</span>
+<span class="c">#</span>
+<span class="c">#   Calculate sum and sum of squares for each chunk file</span>
+<span class="c">#</span>
+<span class="nd">@transform</span><span class="p">(</span><span class="n">split_problem</span><span class="p">,</span> <span class="n">suffix</span><span class="p">(</span><span class="s">&quot;.chunks&quot;</span><span class="p">),</span> <span class="s">&quot;.sums&quot;</span><span class="p">)</span>
+<span class="k">def</span> <span class="nf">sum_of_squares</span> <span class="p">(</span><span class="n">input_file_name</span><span class="p">,</span> <span class="n">output_file_name</span><span class="p">):</span>
+    <span class="k">pass</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>Which results in output like this:</p>
+<blockquote>
+<div><div class="highlight-pycon"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="n">pipeline_run</span><span class="p">()</span>
+<span class="go">    Job  = [[random_numbers.list] -&gt; *.chunks] completed</span>
+<span class="go">Completed Task = split_problem</span>
+<span class="go">    Job  = [1.chunks -&gt; 1.sums] completed</span>
+<span class="go">    Job  = [10.chunks -&gt; 10.sums] completed</span>
+<span class="go">    Job  = [2.chunks -&gt; 2.sums] completed</span>
+<span class="go">    Job  = [3.chunks -&gt; 3.sums] completed</span>
+<span class="go">    Job  = [4.chunks -&gt; 4.sums] completed</span>
+<span class="go">    Job  = [5.chunks -&gt; 5.sums] completed</span>
+<span class="go">    Job  = [6.chunks -&gt; 6.sums] completed</span>
+<span class="go">    Job  = [7.chunks -&gt; 7.sums] completed</span>
+<span class="go">    Job  = [8.chunks -&gt; 8.sums] completed</span>
+<span class="go">    Job  = [9.chunks -&gt; 9.sums] completed</span>
+<span class="go">Completed Task = sum_of_squares</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>Have a look at the <a class="reference internal" href="split_code.html#new-manual-split-code"><em>Example code for this chapter</em></a></p>
+</div></blockquote>
+</div>
+<div class="section" id="nothing-to-many">
+<span id="new-manual-split-nothing-to-many"></span><h2>Nothing to many<a class="headerlink" href="#nothing-to-many" title="Permalink to this headline">¶</a></h2>
+<blockquote>
+<div><p>Normally we would use <a class="reference internal" href="originate.html#new-manual-originate"><em>&#64;originate</em></a> to create files from
+scratch, for example at the beginning of the pipeline.</p>
+<p>However, sometimes, it is not possible to determine ahead of time how many files you
+will be creating from scratch. <a class="reference internal" href="../../decorators/split.html#decorators-split"><em>&#64;split</em></a> can also be useful even in such cases:</p>
+<blockquote>
+<div><div class="highlight-python"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">random</span> <span class="kn">import</span> <span class="n">randint</span>
+<span class="kn">from</span> <span class="nn">ruffus</span> <span class="kn">import</span> <span class="o">*</span>
+<span class="kn">import</span> <span class="nn">os</span>
+
+<span class="c"># Create between 2 and 5 files</span>
+<span class="hll"><span class="nd">@split</span><span class="p">(</span><span class="bp">None</span><span class="p">,</span> <span class="s">&quot;*.start&quot;</span><span class="p">)</span>
+</span><span class="k">def</span> <span class="nf">create_initial_files</span><span class="p">(</span><span class="n">no_input_file</span><span class="p">,</span> <span class="n">output_files</span><span class="p">):</span>
+    <span class="c"># cleanup first</span>
+    <span class="k">for</span> <span class="n">oo</span> <span class="ow">in</span> <span class="n">output_files</span><span class="p">:</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">unlink</span><span class="p">(</span><span class="n">oo</span><span class="p">)</span>
+    <span class="c"># make new files</span>
+    <span class="k">for</span> <span class="n">ii</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">randint</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span><span class="mi">5</span><span class="p">)):</span>
+        <span class="nb">open</span><span class="p">(</span><span class="s">&quot;</span><span class="si">%d</span><span class="s">.start&quot;</span> <span class="o">%</span> <span class="n">ii</span><span class="p">,</span> <span class="s">&quot;w&quot;</span><span class="p">)</span>
+
+<span class="nd">@transform</span><span class="p">(</span><span class="n">create_initial_files</span><span class="p">,</span> <span class="n">suffix</span><span class="p">(</span><span class="s">&quot;.start&quot;</span><span class="p">),</span> <span class="s">&quot;.processed&quot;</span><span class="p">)</span>
+<span class="k">def</span> <span class="nf">process_files</span><span class="p">(</span><span class="n">input_file</span><span class="p">,</span> <span class="n">output_file</span><span class="p">):</span>
+    <span class="nb">open</span><span class="p">(</span><span class="n">output_file</span><span class="p">,</span> <span class="s">&quot;w&quot;</span><span class="p">)</span>
+
+<span class="n">pipeline_run</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>Giving:</p>
+<div class="highlight-pycon"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="n">pipeline_run</span><span class="p">()</span>
+<span class="go">    Job  = [None -&gt; *.start] completed</span>
+<span class="go">Completed Task = create_initial_files</span>
+<span class="go">    Job  = [0.start -&gt; 0.processed] completed</span>
+<span class="go">    Job  = [1.start -&gt; 1.processed] completed</span>
+<span class="go">Completed Task = process_files</span>
+</pre></div>
+</div>
+</div></blockquote>
+</div></blockquote>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h3><a href="../../contents.html">Table Of Contents</a></h3>
+  <ul>
+<li><a class="reference internal" href="#"><strong>Chapter 12</strong>: Splitting up large tasks / files with <strong>&#64;split</strong></a><ul>
+<li><a class="reference internal" href="#overview">Overview</a></li>
+<li><a class="reference internal" href="#example-calculate-variance-for-a-large-list-of-numbers-in-parallel">Example: Calculate variance for a large list of numbers in parallel</a></li>
+<li><a class="reference internal" href="#output-files-for-split">Output files for <tt class="docutils literal"><span class="pre">&#64;split</span></tt></a></li>
+<li><a class="reference internal" href="#be-careful-in-specifying-output-globs">Be careful in specifying  <strong>Output</strong> globs</a></li>
+<li><a class="reference internal" href="#clean-up-previous-pipeline-runs">Clean up previous pipeline runs</a></li>
+<li><a class="reference internal" href="#to-many">1 to many</a></li>
+<li><a class="reference internal" href="#nothing-to-many">Nothing to many</a></li>
+</ul>
+</li>
+</ul>
+
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="decorators_compendium.html"
+                        title="previous chapter"><strong>Chapter 11</strong>: Pipeline topologies and a compendium of <em>Ruffus</em> decorators</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="merge.html"
+                        title="next chapter"><strong>Chapter 13</strong>: <tt class="docutils literal"><span class="pre">&#64;merge</span></tt> multiple input into a single result</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="../../_sources/tutorials/new_tutorial/split.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+    
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+    <h3> Quick Reference:</h3>
+    <ul>
+        <h4><a href="../../decorators/decorators.html#core">Core:</a></h4>   
+        <ul>
+            <li><a href="../../decorators/originate.html">@originate</a>                           </li>
+            <li><a href="../../decorators/split.html">@split</a>                                   </li>
+            <li><a href="../../decorators/transform.html">@transform</a>                           </li>
+            <li><a href="../../decorators/merge.html">@merge</a>                                   </li>
+        </ul>
+
+        <h4><a href="../../decorators/decorators.html#advanced">Advanced</a></h4>   
+        <ul>
+            <li><a href="../../decorators/subdivide.html">@subdivide</a>                           </li>
+            <li><a href="../../decorators/transform_ex.html">@transform (add_inputs) </a>          </li>
+            <li><a href="../../decorators/collate.html">@collate</a>                               </li>
+            <li><a href="../../decorators/collate_ex.html">@collate (add_inputs)</a>               </li>
+            <li><a href="../../decorators/graphviz.html">@graphviz</a>                             </li>
+            <li><a href="../../decorators/mkdir.html">@mkdir</a>                                   </li>
+            <li><a href="../../decorators/follows.html">@follows / mkdir</a>                       </li>
+            <li><a href="../../decorators/posttask.html">@posttask touch_file</a>                  </li>
+            <li><a href="../../decorators/active_if.html">@active_if</a>                           </li>
+            <li><a href="../../decorators/jobs_limit.html">@jobs_limit</a>                         </li>
+        </ul>
+    
+        <h4><a href="../../decorators/decorators.html#combinatorics">Combinatorial:</a></h4>   
+        <ul>
+            <li><a href="../../decorators/product.html">@product </a>                              </li>
+            <li><a href="../../decorators/permutations.html">@permutations </a>                    </li>
+            <li><a href="../../decorators/combinations.html">@combinations </a>                    </li>
+            <li><a href="../../decorators/combinations_with_replacement.html">@combinations_ _with_replacement </a>                    </li>
+        </ul>
+
+                        
+        <h4><a href="../../decorators/decorators.html#esoteric">Esoteric</a></h4>   
+        <ul>
+            <li><a href="../../decorators/files_ex.html">@files (on the fly)</a>                   </li>
+            <li><a href="../../decorators/parallel.html">@parallel</a>                             </li>
+            <li><a href="../../decorators/check_if_uptodate.html">@check_if_uptodate</a>           </li>
+        </ul>
+
+
+        <h4 ><a href="../../decorators/indicator_objects.html">Indicator objects</a></h4>
+        <h4 >Pipeline functions</h4>
+        <ul>
+            <li><a href="../../pipeline_functions.html#pipeline-functions-pipeline-run">pipeline_run</a>                       </li>
+            <li><a href="../../pipeline_functions.html#pipeline-functions-pipeline-printout">pipeline_printout</a>                      </li>
+            <li><a href="../../pipeline_functions.html#pipeline-functions-pipeline-printout-graph">pipeline_printout_graph</a>          </li>
+            <li><a href="../../pipeline_functions.html#pipeline-functions-pipeline-get-task-names">pipeline_get_task_names</a>          </li>
+            <li><a href="../../drmaa_wrapper_functions.html#drmaa-wrapper-functions-drmaa_wrapper-run_job">drmaa_wrapper.run_job</a>          </li>
+        </ul>
+
+         <a href="../../todo.html">Future plans</a>
+    </ul>
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="merge.html" title="Chapter 13: @merge multiple input into a single result"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="decorators_compendium.html" title="Chapter 11: Pipeline topologies and a compendium of Ruffus decorators"
+             >previous</a> |</li>
+        Ruffus v. 2.6.2
+            <li><a href="../../index.html">Home</a> | </li>
+            <li><a href="../../contents.html">Contents</a> | </li>
+            <li><a href="../../installation.html">Install</a>  | </li>
+            <li><a href="introduction.html">Manual</a>  / </li>
+            <li><a href="manual_contents.html">(TOC)</a>  | </li>
+            <li><a href="../../faq.html">FAQ</a>  | </li>
+            <li><a href="../../cheatsheet.html">Cheat sheet</a> | </li>
+            <li><a href="command_line.html">Command Line</a> | </li>
+            <li><a href="../../gallery.html">Gallery</a> |  </li>
+            <li><a href="../new_syntax.html">New syntax in v 2.6</a> | </li>
+            <li><a href="../../history.html">Latest Changes</a> &raquo; </li>
+ 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2009-2013 Leo Goodstadt.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>
