@@ -1,0 +1,132 @@
+readonly IRONIC_API_URL=$(get_kernel_parameter ironic_api_url)
+readonly IRONIC_BOOT_OPTION=$(get_kernel_parameter boot_option)
+readonly IRONIC_BOOT_MODE=$(get_kernel_parameter boot_mode)
+
+if [ -z "$ISCSI_TARGET_IQN" ]; then
+  err_msg "iscsi_target_iqn is not defined"
+  troubleshoot
+fi
+
+t=0
+while ! target_disk=$(find_disk "$DISK"); do
+  if [ $t -eq 10 ]; then
+    break
+  fi
+  t=$(($t + 1))
+  sleep 1
+done
+
+if [ -z "$target_disk" ]; then
+  err_msg "Could not find disk to use."
+  troubleshoot
+fi
+
+echo "start iSCSI target on $target_disk"
+start_iscsi_target "$ISCSI_TARGET_IQN" "$target_disk" ALL
+if [ $? -ne 0 ]; then
+  err_msg "Failed to start iscsi target."
+  troubleshoot
+fi
+
+if [ "$BOOT_METHOD" = "$VMEDIA_BOOT_TAG" ]; then
+  TOKEN_FILE="$VMEDIA_DIR/token"
+  if [ -f "$TOKEN_FILE" ]; then
+    TOKEN_HEADER="-H 'X-Auth-Token: $(cat $TOKEN_FILE)'"
+  else TOKEN_HEADER=""
+  fi
+else
+  TOKEN_FILE=token-$DEPLOYMENT_ID
+
+  # Allow multiple versions of the tftp client
+  if tftp -r $TOKEN_FILE -g $BOOT_SERVER || tftp $BOOT_SERVER -c get $TOKEN_FILE; then
+      TOKEN_HEADER="-H 'X-Auth-Token: $(cat $TOKEN_FILE)'"
+  else
+      TOKEN_HEADER=""
+  fi
+fi
+
+DATA="'{\"address\":\"$BOOT_IP_ADDRESS\",\"key\":\"$DEPLOYMENT_KEY\",\"iqn\":\"$ISCSI_TARGET_IQN\",\"error\":\"$FIRST_ERR_MSG\"}'"
+
+echo "request Ironic API to deploy image"
+eval curl -i -X POST \
+     "$TOKEN_HEADER" \
+     "-H 'Accept: application/json'" \
+     "-H 'Content-Type: application/json'" \
+     -d "$DATA" \
+     $IRONIC_API_URL/nodes/$DEPLOYMENT_ID/vendor_passthru/pass_deploy_info
+
+echo "waiting for notice of complete"
+nc -l -p 10000
+
+echo "stop iSCSI target on $target_disk"
+
+stop_iscsi_target
+
+# If localboot is set, install a bootloader
+if [ "$IRONIC_BOOT_OPTION" = "local" ]; then
+    echo "Installing bootloader"
+
+    # We need to run partprobe to ensure all partitions are visible
+    partprobe $target_disk
+
+    # root partition is always the last partition of the disk
+    readonly root_part=$(ls $target_disk* | tr " " "\n" | tail -n1)
+    readonly root_part_mount=/mnt/rootfs
+
+    mkdir -p $root_part_mount
+
+    mount $root_part $root_part_mount
+    mount -o bind /dev $root_part_mount/dev
+    mount -o bind /sys $root_part_mount/sys
+    mount -o bind /proc $root_part_mount/proc
+
+    # If boot mode is uefi, then mount the system partition in /boot/efi.
+    # Grub expects the efi system partition to be mounted here.
+    if [ "$IRONIC_BOOT_MODE" = "uefi" ]; then
+
+        # efi system partition is labelled as "efi-part" by Ironic.
+        # lsblk output looks like this:
+        #   NAME="sda1" LABEL="efi-part"
+        readonly efi_system_part=$(lsblk -Pio NAME,LABEL $target_disk | \
+                                   awk -F'"' '/"efi-part"/{print $2}')
+        readonly efi_system_part_dev_file="/dev/$efi_system_part"
+        readonly efi_system_part_mount="$root_part_mount/boot/efi"
+        mkdir -p $efi_system_part_mount
+        mount $efi_system_part_dev_file $efi_system_part_mount
+    fi
+
+    # TODO(lucasagomes): Add extlinux as a fallback
+    # Find grub version
+    V=
+    if [ -x $root_part_mount/usr/sbin/grub2-install ]; then
+        V=2
+    fi
+
+    # Install grub
+    ret=1
+    if chroot $root_part_mount /bin/bash -c "/usr/sbin/grub$V-install ${target_disk}"; then
+        echo "Generating the grub configuration file"
+
+        # tell GRUB2 to preload its "lvm" module to gain LVM booting on direct-attached disks
+        if [ "$V" = "2" ]; then
+            echo "GRUB_PRELOAD_MODULES=lvm" >> $root_part_mount/etc/default/grub
+        fi
+
+        chroot $root_part_mount /bin/bash -c "/usr/sbin/grub$V-mkconfig -o /boot/grub$V/grub.cfg"
+        ret=$?
+    fi
+
+    # If we had mounted efi system partition, umount it.
+    if [ "$IRONIC_BOOT_MODE" = "uefi" ]; then
+        umount $efi_system_part_mount
+    fi
+
+    umount $root_part_mount/dev
+    umount $root_part_mount/sys
+    umount $root_part_mount/proc
+    umount $root_part_mount
+
+    if [ $ret -eq 0 ]; then
+         echo "Bootloader successfully installed"
+    fi
+fi
