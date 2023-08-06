@@ -1,0 +1,202 @@
+#!/usr/bin/python
+# -*- coding:utf-8 -*-
+
+# Author: Anxo Beltrán Álvarez
+# Contact: anxo.beltran@interoud.com
+
+"""
+Customs check for Zabbix to gather the number of Time Holes between Events of an EPG Channel
+"""
+
+from optparse import OptionParser
+
+import os
+import sys
+import subprocess
+import traceback
+
+reload(sys)
+sys.setdefaultencoding('utf-8')
+
+import ConfigParser
+import psycopg2
+import pytz
+import calendar
+DEV_NULL=open('/dev/null', "w")
+
+conffile = "./chic.cfg"
+
+logfile = "/dev/null"
+loglevel = 20
+workdir = "./chic/"
+
+dbuser = "epg"
+dbpassword = "mipassword"
+dbhost = "localhost"
+dbport = 5432
+dbname = "epg"
+interval = 86400
+assumedwidth = 600
+
+# channelid must be set
+
+# command line options parser ##################################################
+
+parser = OptionParser()
+
+# parser.add_option("-w", "--workdir", dest="workdir", default=workdir,
+#         help="Work directory (default: %s)" % workdir)
+parser.add_option("-l", "--logfile",
+        dest="logfile", help="Log file (default: %s)" % logfile,
+        default=logfile)
+parser.add_option("--dbuser",
+        dest="dbuser", help="dbuser (default: %s)" % dbuser,
+        default=dbuser)
+parser.add_option("--dbpassword",
+        dest="dbpassword", help="dbpassword (default: %s)" % dbpassword,
+        default=dbpassword)
+parser.add_option("--dbhost",
+        dest="dbhost", help="dbhost (default: %s)" % dbhost,
+        default=dbhost)
+parser.add_option("--dbport",
+        dest="dbport", help="dbport (default: %s)" % dbport,
+        default=dbport)
+parser.add_option("--dbname",
+        dest="dbname", help="dbname (default: %s)" % dbname,
+        default=dbname)
+parser.add_option("--loglevel",
+        dest="loglevel", help="Log level (default: %s)" % loglevel,
+        default=loglevel)
+parser.add_option("--interval",
+        dest="interval", help="interval (default: %s)" % interval,
+        default=interval, type="int")
+parser.add_option("--assumedwidth",
+        dest="assumedwidth", help="assumedwidth (default: %s)" % assumedwidth,
+        default=assumedwidth, type="int")
+parser.add_option("-v", action="store_true", dest="verbose", default=False)
+(options, args) = parser.parse_args()
+
+logfile = options.logfile
+loglevel = options.loglevel
+dbuser = options.dbuser
+dbpassword = options.dbpassword
+dbhost = options.dbhost
+dbport = options.dbport
+dbname = options.dbname
+interval = options.interval
+assumedwidth = options.assumedwidth
+verbose = options.verbose
+
+if len(args) == 1:
+	channelid = args[0]
+else:
+	print 'You must enter a channel id'
+	sys.exit(0)
+
+# logging ######################################################################
+import logging
+hdlr = logging.FileHandler(logfile)
+hdlr.setFormatter(logging.Formatter('%(levelname)s %(asctime)s %(message)s'))
+logger = logging.getLogger('chic')
+logger.addHandler(hdlr)
+logger.setLevel(int(loglevel))
+
+# setting up ###################################################################
+logger.info("Default encoding: %s" % sys.getdefaultencoding())
+
+################################################################################
+def connect_to_database(db_name, db_user, db_pw, db_host, db_port):
+    try:
+        conn=psycopg2.connect("dbname='%s' user='%s' host='%s' port=%s password='%s'" \
+            % (db_name, db_user, db_host, db_port, db_pw))
+        #conn.set_isolation_level(0)
+        
+        return conn
+    except Exception as e:
+        logger.error(e)
+        traceback.print_exc()
+        sys.exit(1)
+
+def execute_query(conn, query):
+    # This way makes new cursors for each query
+    try:
+        cur = conn.cursor()
+        cur.execute(query)
+        rows = cur.fetchall()
+        
+        return rows
+    except Exception as e:
+        logger.error(e)
+        traceback.print_exc()
+        sys.exit(1)
+
+def get_channel_external_id(conn, internal_id):
+    try:
+        query = "SELECT external_id\
+                 FROM aka_aka_vodkatv_epg_channel\
+                 WHERE id='%s';" % (internal_id)
+
+        # A single row expected...
+        channel_row = execute_query(conn, query)
+
+        return channel_row
+    except Exception as e:
+        logger.error(e)
+        traceback.print_exc()
+        sys.exit(1)
+
+def get_channel_holes(conn):
+    try:
+        query = "SELECT channel_name,\
+                 name,\
+                 id,\
+                 external_id,\
+                 start,\
+                 aka_aka_vodkatv_epg_event.end,\
+                 channel_id\
+                 FROM aka_aka_vodkatv_epg_event\
+                 WHERE start>now() AND start<(now() + interval '%i second')\
+                 AND channel_id = '%s'\
+                 ORDER BY start ASC;" % (interval, channelid)
+
+        rows = execute_query(conn, query)
+
+        holecount = 0
+        if len(rows) > 0:
+            for i in range(0, len(rows) - 1):
+                nextprogramstartts = calendar.timegm(rows[i + 1][4].astimezone(pytz.utc).utctimetuple())
+                lastprogramestimatedendts = calendar.timegm(rows[i][5].astimezone(pytz.utc).utctimetuple())
+                diff = nextprogramstartts - lastprogramestimatedendts
+
+                if diff > assumedwidth:
+                    holecount = holecount + 1
+                    
+                    # Ask for the channel's external id
+                    channel_row = get_channel_external_id(conn, channelid)
+                    log_message = "Hole detected at '%s' (%s, %s) between '%s' (%s, %s) [start: %s, end: %s ]\
+ and  '%s' (%s, %s) [start: %s, end: %s ]" \
+% ( rows[i][0], rows[i][6], channel_row[0][0], rows[i][1], rows[i][2], rows[i][3], rows[i][4], rows[i][5],
+    rows[i+1][1], rows[i+1][2], rows[i+1][3], rows[i+1][4], rows[i+1][5])
+                    if verbose:
+                        print(log_message)
+                    else:
+                        logger.info(log_message)
+        if verbose:
+            print "Number of found holes: %s" % holecount
+        else:
+            print holecount
+
+    except Exception as e:
+        logger.error(e)
+        traceback.print_exc()
+        sys.exit(1)
+
+def main():
+    conn = connect_to_database(dbname, dbuser, dbpassword, dbhost, dbport)
+    get_channel_holes(conn)
+        
+
+# main #########################################################################
+if __name__ == '__main__':
+    main()
+

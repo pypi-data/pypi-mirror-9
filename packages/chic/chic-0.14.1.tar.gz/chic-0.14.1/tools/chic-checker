@@ -1,0 +1,455 @@
+#!/usr/bin/python
+# -*- coding:utf-8 -*-
+
+# Author: Pablo Saavedra Rodinho
+# Contact: pablo.saavedra@treitos.com
+
+"""
+Save a group of streams from http or udp and generates a db with related info
+
+"""
+
+from optparse import OptionParser
+
+import os
+import sys
+import subprocess
+
+reload(sys)
+sys.setdefaultencoding('utf-8')
+
+import ConfigParser
+import simplejson as json
+
+
+import time
+from datetime import datetime
+import struct
+import socket
+
+import urllib2
+import httplib2
+
+DEV_NULL=open('/dev/null', "w")
+
+conffile = "./chic.cfg"
+
+logfile = "/dev/stdout"
+loglevel = 20
+workdir = "./chic/"
+
+
+# command line options parser ##################################################
+
+parser = OptionParser()
+
+parser.add_option("-f", "--file", dest="conffile",
+        help="The configuration file (default: %s)" % conffile,
+        default=conffile)
+parser.add_option("-w", "--workdir", dest="workdir", default=workdir,
+        help="Work directory (default: %s)" % workdir)
+parser.add_option("-l", "--logfile",
+        dest="logfile", help="Log file (default: %s)" % logfile,
+        default=logfile)
+parser.add_option("--loglevel",
+        dest="loglevel", help="Log level (default: %s)" % loglevel,
+        default=loglevel)
+(options, args) = parser.parse_args()
+
+conffile = options.conffile
+
+workdir = options.workdir
+logfile = options.logfile
+loglevel = options.loglevel
+
+
+
+# logging ######################################################################
+import logging
+hdlr = logging.FileHandler(logfile)
+hdlr.setFormatter(logging.Formatter('%(levelname)s %(asctime)s %(message)s'))
+logger = logging.getLogger('chic')
+logger.addHandler(hdlr)
+logger.setLevel(int(loglevel))
+
+
+# setting up ###################################################################
+
+logger.info("Default encoding: %s" % sys.getdefaultencoding())
+
+if not os.path.isfile(workdir):
+    try:
+        os.mkdir(workdir)
+    except OSError, e:
+        m = str(e)
+        logger.warning(m)
+
+prefix = workdir + "/dumps/"
+if not os.path.isfile(prefix):
+    try:
+        os.mkdir(prefix)
+    except OSError, e:
+        m = str(e)
+        logger.warning(m)
+
+
+################################################################################
+
+
+def main():
+    global conffile
+    '''
+['key_http']
+uri="http://localhost:8082"
+protocol="http"
+chunkduration=30
+
+['key_udp']
+ip="127.0.0.1"
+port=1234
+protocol="udp"
+chunkduration=30
+
+    '''
+    dbfilename = workdir + '/checks.db'
+    dbfilename_tmp = workdir + '/checks.db.tmp'
+
+    try:
+        dbfile = open(dbfilename)
+        db_json = json.load(dbfile)
+        dbfile.close()
+    except Exception:
+        db_json = None
+
+    res = {}
+
+    try:
+      # RawConfigParser not interpolate attribute values
+      cfg = ConfigParser.RawConfigParser()
+      cfg.readfp(file(conffile))
+
+    except Exception, e:
+        print ("Conffile %s error: %s" % (conffile,e))
+
+    for s in cfg.sections():
+        key = s
+        try:
+          uri = None
+          ip = None
+          port = None
+          chunkduration = 10
+          protocol = None
+          threshold = 1
+          mosaic = False
+          if s == 'global':
+              for o in cfg.options(s):
+                  try:
+                      vars()[o] = cfg.get(s,o)
+                  except Exception, e:
+                      print "Error parsing %s - %s: %s" % (s,o,e)
+              continue
+
+          for o in cfg.options(s):
+              uri = eval (cfg.get(s,o)) if o == 'uri' else uri
+              ip = eval (cfg.get(s,o)) if o == 'ip' else ip
+              port = eval (cfg.get(s,o)) if o == 'port' else port
+              chunkduration = eval (cfg.get(s,o)) if o == 'chunkduration' else chunkduration
+              protocol = eval (cfg.get(s,o)) if o == 'protocol' else protocol
+              threshold = eval (cfg.get(s,o)) if o == 'threshold' else threshold
+              mosaic = eval (cfg.get(s,o)) if o == 'mosaic' else mosaic
+
+          logger.info ("Checking %s stream [protocol=%s uri=%s ip=%s port=%s chunkduration=%s threshold=%s]" \
+              % (key,protocol, uri, ip,port,chunkduration,threshold))
+
+          if protocol == "udp":
+            res[key] = check_udp(key,ip,port,chunkduration,threshold,db_json)
+          if protocol == "http":
+            res[key] = check_http(key,uri,chunkduration,threshold,db_json)
+          if protocol == "hls":
+            res[key] = check_hls(key,uri,chunkduration,threshold,db_json)
+
+          if mosaic == True:
+              logger.info ("Marked to generate mosaic")
+              res[key]["mosaic"] = True
+          else:
+              res[key]["mosaic"] = False
+
+        except IOError, e:
+          logger.error ("Problem on %s stream: %s" % (key,e))
+
+    dbfile = open(dbfilename_tmp,"w+b")
+    json.dump(res,dbfile, sort_keys=True, \
+        indent=4, separators=(',', ': '))
+    dbfile.flush()
+    dbfile.close()
+    if os.path.isfile(dbfilename):
+        os.remove(dbfilename)
+    os.rename(dbfilename_tmp, dbfilename)
+
+def check_hls(key,uri,chunkduration, threshold, db_json):
+    global workdir
+    
+    res = {}
+    res["key"] = key
+    res["chunkduration"] = chunkduration
+    res["uri"] = uri
+    res["protocol"] = "hls"
+    res["threshold"] = threshold
+
+    dumpfilename = str(workdir) + '/dumps/' + str(key) + ".dump"
+    res["dumpfile"] = dumpfilename
+
+    try:
+        base_hls_url = uri.split("playlist.m3u8")[0]
+    
+        h = httplib2.Http()
+        try:
+            resp, content = h.request(uri, "GET")
+        except Exception, e:
+            res["size"] = 0
+            logger.error("URI (%s) non available: %s" % (uri,e))
+            res_extra(res,db_json)
+            return res
+        
+        status=resp["status"]
+        if status != "200":
+            res["size"] = 0
+            logger.error("HTTP error on URI (%s): %s" % (uri,status))
+            res_extra(res,db_json)
+            return res
+        
+        try:
+            logger.debug("Content of %s URL: %s" % (uri,content))
+            for l in content.split("\n"):
+                if l.find(".m3u8") != -1:
+                    streamlist=l
+            streamlist_url=base_hls_url+streamlist
+            h = httplib2.Http()
+            resp, content = h.request(streamlist_url, "GET")
+        except Exception, e:
+            res["size"] = 0
+            logger.error("URI (%s) non available: %s" % (streamlist_url,e))
+            res_extra(res,db_json)
+            return res
+    
+        status=resp["status"]
+        if status!="200":
+            res["size"] = 0
+            logger.error("HTTP error on URI (%s): %s" % (uri,status))
+            res_extra(res,db_json)
+            return res
+    
+    
+        logger.debug("Content of %s URL: %s" % (streamlist_url,content))
+        for l in content.split("\n"):
+                if l.find(".ts") != -1:
+                    chunklist=l
+
+        chunklist_url=base_hls_url+chunklist
+    
+        http_f = urllib2.urlopen(chunklist_url,data=None,timeout=chunkduration)
+    
+        dumpfile = open(dumpfilename,"w+b")
+        logger.debug("Content of %s URL dumped in %s file" \
+                % (chunklist_url,dumpfilename))
+        c_time = time.time()
+        max_time = c_time + chunkduration
+        while c_time < max_time:
+            try:
+                data = http_f.read(1500)
+                dumpfile.write(data)
+            except Exception, e:
+                logger.error("Error dumping " + dumpfilename + " file: " + str(e))
+                break
+            c_time = time.time()
+        dumpfile.flush()
+        dumpfile.close()
+    
+        try:
+            res["size"] = os.stat(dumpfilename).st_size
+        except Exception,e:
+            res["size"] = 0
+            logger.error("No recoverable stats for %s file: %s" % (dumpfilename,e))
+
+    except Exception, e:
+        res["size"] = 0
+        logger.error("Error checking %s key: %s" % (key,e))
+     
+    res_extra(res, db_json)
+    return res
+
+def check_http(key,uri,chunkduration,threshold,db_json):
+    global workdir
+    
+    res = {}
+    res["key"] = key
+    res["chunkduration"] = chunkduration
+    res["uri"] = uri
+    res["protocol"] = "http"
+    res["threshold"] = threshold
+    
+    dumpfilename = str(workdir) + '/dumps/' + str(key) + ".dump"
+    res["dumpfile"] = dumpfilename
+    
+    try:
+        http_f = urllib2.urlopen(uri,data=None,timeout=chunkduration)
+
+        dumpfile = open(dumpfilename,"w+b")
+
+        c_time = time.time()
+        max_time = c_time + chunkduration
+        while c_time < max_time:
+            try:
+                data = http_f.read(1500)
+                dumpfile.write(data)
+            except Exception, e:
+                logger.error("Error dumping " + dumpfilename + " file: " + str(e))
+                break
+            c_time = time.time()
+        dumpfile.flush()
+        dumpfile.close()
+
+        try:
+            res["size"] = os.stat(dumpfilename).st_size
+        except Exception,e:
+            res["size"] = 0
+            logger.error("No recoverable stats for %s file: %s" % (dumpfilename,e))
+    except Exception, e:
+        res["size"] = 0
+        logger.error("Error checking %s key: %s" % (key,e))
+     
+    res_extra(res,db_json)
+    return res
+
+
+def check_udp(key, ip,port,chunkduration,threshold,db_json):
+    global workdir
+    
+    res = {}
+    res["key"] = key
+    res["chunkduration"] = chunkduration
+    res["ip"] = ip
+    res["port"] = port
+    res["protocol"] = "udp"
+    res["threshold"] = threshold
+    
+    try:
+        dumpfilename = str(workdir) + '/dumps/' + key + ".dump"
+        res["dumpfile"] = dumpfilename
+
+        # cmd = '''/usr/bin/udp-cat  %s:%s -timeout 5 > %s''' % \
+        #    (ip, port, dumpfilename)
+        # m = "Command: " + cmd
+        # logger.info(m)
+        # udpcat = subprocess.Popen(cmd.split(), shell=False, bufsize=1024,
+        #              stdin=subprocess.PIPE, stderr=DEV_NULL,
+        #              stdout=DEV_NULL, close_fds=True)
+        # udpcat.wait()
+        
+        # Look up multicast group address in name server and find out IP version
+        addrinfo = socket.getaddrinfo(ip, None)[0]
+
+        # Create a socket
+        s = socket.socket(addrinfo[0], socket.SOCK_DGRAM)
+    
+        # Allow multiple copies of this program on one machine
+        # (not strictly needed)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+        # Bind it to the ip:port
+        s.bind((ip, port))
+
+        # Timeout
+        s.settimeout(chunkduration)
+
+        m = "Socket TIMEOUT: " + str(s.gettimeout())
+        logger.debug(m)
+
+        group_bin = socket.inet_pton(addrinfo[0], addrinfo[4][0])
+        # Join group
+        if addrinfo[0] == socket.AF_INET: # IPv4
+            mreq = group_bin + struct.pack('=I', socket.INADDR_ANY)
+            s.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+        else:
+            mreq = group_bin + struct.pack('@I', 0)
+            s.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_JOIN_GROUP, mreq)
+
+        dumpfile = open(dumpfilename,"w+b")
+
+        c_time = time.time()
+        max_time = c_time + chunkduration
+        while c_time < max_time:
+            try:
+                data, sender = s.recvfrom(1500)
+                dumpfile.write(data)
+            except Exception, e:
+                logger.error("Error dumping " + dumpfilename + " file: " + str(e))
+                break
+            c_time = time.time()
+        dumpfile.flush()
+        dumpfile.close()
+
+        try:
+            res["size"] = os.stat(dumpfilename).st_size
+        except Exception,e:
+            res["size"] = 0
+            logger.error("No recoverable stats for %s file: %s" % (dumpfilename,e))
+
+    except Exception, e:
+        res["size"] = 0
+        logger.error("Error checking %s key: %s" % (key,e))
+
+    res_extra(res,db_json)
+    return res
+
+
+def res_extra(res,db_json):
+    key = res["key"]
+
+    status_name = "Undefined"
+    if res.has_key("protocol") and \
+       res["protocol"] == "udp" and \
+       res.has_key("ip") and \
+       res.has_key("port"):
+           status_name = "udp " + res["ip"] + ":" + str(res["port"])
+    if res.has_key("protocol") and \
+       res["protocol"] == "http" and \
+       res.has_key("uri"):
+           status_name = "http " + res["uri"]
+    if res.has_key("protocol") and \
+       res["protocol"] == "hls" and \
+       res.has_key("uri"):
+           status_name = "hls " + res["uri"]
+
+    if res.has_key("size"):
+        if res["size"] != 0:
+            old_size = 0
+            try:
+                old_size = db_json[key]["size"]
+            except Exception:
+                logger.debug("No previous size found for %s key" % key)
+
+            measure = 0
+            if res.has_key("threshold"):
+                _diff = abs(res["size"] - old_size)
+                logger.debug ("Difference between current (%s) and old value (%s): %s" \
+                        % (res["size"], old_size, _diff))
+                if res["threshold"] < _diff:
+                    logger.debug("Threshold (%s) reached" % res["threshold"])
+                    measure = _diff
+
+            res["ok"] = 1
+            res["status"] = "[%s] [%s] [%s]" % ("Ok", measure, status_name)
+            logger.debug("New entry:  " + str(res))
+            return
+
+    res["ok"] = 0
+    res["status"] = "[%s] [-1] [%s]" % ("Fail", status_name)
+    logger.debug("New entry:  " + str(res))
+
+
+# main #########################################################################
+
+if __name__ == '__main__':
+    main()
+

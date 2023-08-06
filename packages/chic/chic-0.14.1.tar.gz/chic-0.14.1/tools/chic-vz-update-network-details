@@ -1,0 +1,89 @@
+#! /usr/bin/env python
+
+import os 
+import sys
+
+VZ_DIR="/var/lib/vz/private/"
+
+
+VZS=os.listdir(VZ_DIR)
+
+vz_conf_file_newline_symbol="%0A"
+
+sysname, nodename, release, version, machine = os.uname()
+
+for v in VZS:
+    try:
+        int (v)
+    except Exception:
+        print "Skipping %s directory" % v
+        continue
+
+    try:
+
+        vz_conf_file = file ("/etc/vz/conf/%s.conf" % v)
+        motd= file ("%s/%s/etc/motd" % (VZ_DIR,v))
+        interfaces = file ("%s/%s/etc/network/interfaces" % (VZ_DIR,v))
+        
+        vz_conf_file_in_array = []
+        for l in vz_conf_file.readlines():
+             vz_conf_file_in_array.append(l)
+        vz_conf_file.close()
+
+        motd_in_array = []
+        for l in motd.readlines():
+             motd_in_array.append(l)
+        motd.close()
+        
+        network_setup = "NETWORK DETAILS" + vz_conf_file_newline_symbol
+        network_setup_previous_line = ""
+        for l in interfaces.readlines():
+            l = l.strip()
+            if network_setup_previous_line == "" and l == "":
+               continue
+            if l.count("auto lo") > 0:
+                continue
+            if l.count("inet loopback") > 0:
+                continue
+            if not l.startswith("#"):
+                network_setup = network_setup + l + vz_conf_file_newline_symbol
+                network_setup_previous_line = l
+
+        network_setup = network_setup + "END NETWORK DETAILS" + vz_conf_file_newline_symbol
+        interfaces.close()
+
+        # Lo volvemos a abrir para esta vez sobreescribirlo
+        description_found=False
+        vz_conf_file = file ("/etc/vz/conf/%s.conf" % v, "w")
+        for l in vz_conf_file_in_array:
+          if l.strip().startswith("DESCRIPTION="):
+            description_found=True
+            if l.count("NETWORK DETAILS") > 0:
+                before = l.split("NETWORK DETAILS")[0]
+                after = l.split("END NETWORK DETAILS" + vz_conf_file_newline_symbol)[-1]
+                vz_conf_file.write(before + network_setup + after)
+            else:
+                vz_conf_file.write(l.strip()[0:-1] + vz_conf_file_newline_symbol + network_setup + '"')
+          else:
+              vz_conf_file.write(l)
+
+        if not description_found:
+                vz_conf_file.write('DESCRIPTION="' + network_setup + '"')
+
+        vz_conf_file.close()
+
+
+        # Actualizamos el fichero motd del host virtual
+        motd= file ("%s/%s/etc/motd" % (VZ_DIR,v), "w")
+        for l in motd_in_array:
+          if l.strip().startswith("NODE="):
+              continue
+          motd.write(l)
+        description = "NODE=" + v + " in " + nodename
+        motd.write(description)
+        motd.close()
+
+
+    except Exception, e:
+        print "Error:" + str(e)
+        sys.exit(-1)
