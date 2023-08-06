@@ -1,0 +1,236 @@
+#!/usr/bin/env python
+
+# Package imports
+from common import Error
+from common import to_snake
+# Flask imports
+from flask import Flask
+from flask import request
+# Flask extentions
+from flask.ext.basicauth import BasicAuth
+from flask.ext.mongoengine import Document as meDocument
+from flask.ext.mongoengine import MongoEngine
+# Other
+import json
+from collections import OrderedDict
+from bson.objectid import ObjectId
+
+__all__ = ["Document", "PermissionedDocument", "APIServer", "InvalidAPIUsage"]
+
+class MongoEncoder(json.JSONEncoder):
+    """
+    A custom JSON encoder that properly handles ObjectIds and thus can properly
+    serialize MongoEngine.Document instances
+    """
+    def default(self, o):
+        if isinstance(o, ObjectId):
+            return str(o)
+        return json.JSONEncoder.default(self, o)
+
+class Document(meDocument):
+    """
+    An alias for :class:`flask.ext.mongoengine.Document`
+    """
+    meta = {"abstract": True}
+
+class PermissionedDocument(Document):
+    """
+    :class:`~apibuilder.server.Document` subclass that can hold private
+    attributes only accessible by authenticated users. The class attribute
+    :attr:`_private_vars` holds a list of all variable names that should be
+    interpreted as private. For example, one could define a class as follows::
+
+        class SecretStuff(PermissionedDocument):
+            _private_vars = ["secrets"]
+            secrets = StringField()
+            public_info = StringField()
+
+    Instances of this class will have a private attribute :attr:`secrets` and a
+    public attribute :attr:`public_info`.
+    """
+    _private_vars = []
+    meta = {"abstract": True}
+    def to_mongo(self, is_authenticated=True):
+        """
+        Overrides :func:`mongoengine.Document.to_mongo` to handle private
+        variables.
+
+        :param is_authenticated: Whether or not this document is being accessed
+            by an authenticated user
+
+        The argument :attr:`is_authenticated` should be ``True`` if
+        the document is being accessed by an authenticated user. In this case,
+        this function will return a dictionary with all of the attributes of
+        this object, both public and private. The argument
+        :attr:`is_authenticated` should be ``False`` if the document is being
+        accessed by a user that has not autenticated. In this case, this
+        function will return a dictionary with only the public attributes of
+        this object. The default value is ``True`` so as not to break
+        :mod:`mongoengine`.
+        """
+        res = super(PermissionedDocument, self).to_mongo()
+        if not is_authenticated:
+            for var in self._private_vars:
+                if var in res:
+                    res.pop(var)
+        return res
+
+class InvalidAPIUsage(Error):
+    """
+    A custom :class:`Exception` class for invalid requests. This exception
+    should be thrown when a request is received by the server that is somehow
+    invalid.
+
+    :param message: The message that should be shown to the user in the HTTP
+        response rendered from this error
+    :param status_code: The status code that should be assigned to the HTTP
+        response rendered from this error. Defaults to 400.
+    """
+    def __init__(self, message, status_code=400):
+        super(InvalidAPIUsage, self).__init__(self)
+        self.message = message
+        self.status_code = status_code
+
+class APIServer(Flask):
+    """
+    A :class:`flask.Flask` subclass used to create API servers. It has the
+    ability to generate a set of default endpoints to manage a
+    :class:`~apibuilder.server.Document` type.
+
+    The constuctor for this class forwards all of its arguments to the
+    constructor for :class:`flask.Flask`.
+    """
+    def __init__(self, *args, **kwargs):
+        super(APIServer, self).__init__(*args, **kwargs)
+        # Default configuration
+        self.registered_document_types = OrderedDict()
+        self.config["MONGODB_DB"] = "test"
+        self.config["BASIC_AUTH_USERNAME"] = "admin"
+        self.config["BASIC_AUTH_PASSWORD"] = "password"
+        # Custom error handler for our custom exception
+        @self.errorhandler(InvalidAPIUsage)
+        def handle_invalid_usage(error):
+            return error.message, error.status_code
+        # Set up flask extensions
+        self.basic_auth = BasicAuth(self)
+        @self.before_first_request
+        def setup():
+            # We must wait to setup MongoEngine because it relies on app.config,
+            # which hasn't been set up yet
+            self.mongoengine = MongoEngine(self)
+    def register_document(self, doc_name=None):
+        """
+        Class wrapper that generates default endpoints for a document type.
+
+        :param doc_name: The name of the document type to wrap. This name will
+            be used in URLs for the endpoints for the document type. If this
+            parameter is not supplied, a name is generated by converting the
+            class name to snake case.
+
+        This function can be used as follows::
+
+            @app.register_document()
+            class Example(Document):
+                attr1 = StringField()
+                attr2 = StringField()
+
+        This would cause the :obj:`app` to create endpoints at the URL
+        "/example" for this document type.
+
+        Or to explicitly provide a document name::
+
+            @app.register_document("ex")
+            class Example(Document):
+                attr1 = StringField()
+                attr2 = StringField()
+
+        The would could the :obj:`app` to create endpoints at the URL "/ex" for
+        this document type.
+
+        Either way, the :obj:`app` generates 5 endpoints for the document type
+        (the ones documented on the `API Builder Default Endpoints
+        <http://docs.apibuilder.apiary.io>`_ page).
+        """
+        def wrapper(document_class):
+            document_name = doc_name or to_snake(document_class.__name__)
+            if document_name in self.registered_document_types.keys():
+                raise ValueError("A document type with the name %s has already been registered" % document_name)
+            else:
+                self.registered_document_types[document_name] = document_class
+            # Get route
+            url = "/{}/<id>".format(document_name)
+            endpoint = "get_{}".format(document_name)
+            self.route(url, endpoint=endpoint,
+                    methods=["GET"])(self.__get_route(document_class))
+            # Update route
+            endpoint = "update_{}".format(document_name)
+            self.route(url, endpoint=endpoint,
+                    methods=["PUT"])(self.__update_route(document_class))
+            # Delete route
+            endpoint = "delete_{}".format(document_name)
+            self.route(url, endpoint=endpoint,
+                    methods=["DELETE"])(self.__delete_route(document_class))
+            # List route
+            url = "/{}".format(document_name)
+            endpoint = "list_{}".format(document_name)
+            self.route(url, endpoint=endpoint,
+                    methods=["GET"])(self.__list_route(document_class))
+            # Create route
+            endpoint = "create_{}".format(document_name)
+            self.route(url, endpoint=endpoint,
+                    methods=["POST"])(self.__create_route(document_class))
+            return document_class
+        return wrapper
+    def __get_route(self, document_class):
+        if issubclass(document_class, PermissionedDocument):
+            get_data = lambda doc: doc.to_mongo(self.basic_auth.authenticate())
+        else:
+            get_data = lambda doc: doc.to_mongo()
+        def f(id):
+            obj = document_class.objects.get_or_404(id=id)
+            return json.dumps(get_data(obj), cls=MongoEncoder)
+        return f
+    def __update_route(self, document_class):
+        @self.basic_auth.required
+        def f(id):
+            obj = document_class.objects.get_or_404(id=id)
+            params = request.get_json()
+            if not all(k in params for k,v in document_class._fields.iteritems()
+                    if v.required):
+                raise InvalidAPIUsage("Request is missing some parameter(s)")
+            updates = {"set__{}".format(k): params[k] for k,v in
+                    document_class._fields.iteritems() if k in params and
+                    params[k] != obj[k]}
+            obj.update(**updates)
+            return ('', 204)
+        return f
+    def __delete_route(self, document_class):
+        @self.basic_auth.required
+        def f(id):
+            obj = document_class.objects.get_or_404(id=id)
+            obj.delete()
+            return ('', 204)
+        return f
+    def __list_route(self, document_class):
+        if issubclass(document_class, PermissionedDocument):
+            get_data = lambda doc: doc.to_mongo(self.basic_auth.authenticate())
+        else:
+            get_data = lambda doc: doc.to_mongo()
+        def f():
+            params = {k:v for k,v in request.args.iteritems()}
+            return json.dumps([get_data(obj) for obj in
+                document_class.objects(**params)], cls=MongoEncoder)
+        return f
+    def __create_route(self, document_class):
+        @self.basic_auth.required
+        def f():
+            params = request.get_json()
+            if params is None:
+                raise InvalidAPIUsage("Request did not contain any data")
+            if not all(k in params for k,v in document_class._fields.iteritems()
+                    if v.required):
+                raise InvalidAPIUsage("Request is missing some parameter(s)")
+            obj = document_class(**params)
+            obj.save()
+            return json.dumps(obj.to_mongo(), cls=MongoEncoder), 201
+        return f
