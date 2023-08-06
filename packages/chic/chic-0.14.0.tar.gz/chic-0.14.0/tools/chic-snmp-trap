@@ -1,0 +1,400 @@
+#!/usr/bin/python
+# -*- coding:utf-8 -*-
+
+# Author: Pablo Saavedra Rodinho
+# Contact: pablo.saavedra@treitos.com
+
+"""
+Save a group of check stauts and send traps to a snmp traps server
+
+"""
+
+from optparse import OptionParser
+
+import os
+import sys
+import subprocess
+
+reload(sys)
+sys.setdefaultencoding('utf-8')
+
+import ConfigParser
+import simplejson as json
+
+
+import time
+from datetime import datetime
+
+DEV_NULL=open('/dev/null', "w")
+
+conffile = "./chic.cfg"
+
+logfile = "/dev/stdout"
+loglevel = 20
+workdir = "./chic/"
+
+oid=".1.3.6.1.4.1.99993.1.1"
+server="localhost"
+host="localhost"
+hostname="localhost"
+alias="alias"
+groups=""
+
+snmpget_cmd = '''/usr/bin/snmpget -v 1 localhost -c public '%s' '''
+
+snmptrap_cmd = '/usr/bin/snmptrap -v 1 -c public %(server)s %(oid)s %(host)s 6 %(specific_trap)s \'\'\
+  %(oid)s.1.0 s "%(hostname)s"\
+  %(oid)s.2.0 s "%(alias)s"\
+  %(oid)s.4.0 s "%(groups)s"\
+  %(oid)s.5.0 s "%(description)s"\
+  %(oid)s.6.0 s "%(element_id)s"\
+  %(oid)s.7.0 s "%(event_id)s"\
+  %(oid)s.8.0 s "%(severity)s";'
+
+
+
+# command line options parser ##################################################
+
+parser = OptionParser()
+
+parser.add_option("-f", "--file", dest="conffile",
+        help="The configuration file (default: %s)" % conffile,
+        default=conffile)
+parser.add_option("-w", "--workdir", dest="workdir", default=workdir,
+        help="Work directory (default: %s)" % workdir)
+parser.add_option("-l", "--logfile",
+        dest="logfile", help="Log file (default: %s)" % logfile,
+        default=logfile)
+parser.add_option("--loglevel",
+        dest="loglevel", help="Log level (default: %s)" % loglevel,
+        default=loglevel)
+(options, args) = parser.parse_args()
+
+conffile = options.conffile
+
+workdir = options.workdir
+logfile = options.logfile
+loglevel = options.loglevel
+
+
+
+# logging ######################################################################
+import logging
+hdlr = logging.FileHandler(logfile)
+hdlr.setFormatter(logging.Formatter('%(levelname)s %(asctime)s %(message)s'))
+logger = logging.getLogger('chic')
+logger.addHandler(hdlr)
+logger.setLevel(int(loglevel))
+
+
+# setting up ###################################################################
+
+logger.info("Default encoding: %s" % sys.getdefaultencoding())
+
+if not os.path.isfile(workdir):
+    try:
+        os.mkdir(workdir)
+    except OSError, e:
+        m = str(e)
+        logger.warning(m)
+
+
+################################################################################
+'''
+snmptrap -v 1 [COMMON OPTIONS] [-Ci] enterprise-oid agent generic-trap specific-trap uptime [OID TYPE VALUE]
+
+Generic and Specific Type
+-------------------------
+
+generic-trap::
+
+  coldStart trap (0)
+  warmStart trap (1)
+  linkDown trap(2)
+  linkUp trap(3)
+  authenticationFailure trap(4)
+  egpNeighborLoss trap(5)
+  enterprise trap(6) <<<<<<<<<<<<<<
+
+specific-trap::
+
+  If the Trap type value is six, the trap is enterprise specific and is
+  defined in a private MIB. It can take any integer value between 0 and
+  2147483647.
+  Else Trap set to 0.
+
+
+If any of the required version 1 parameters, enterprise-oid, agent, and
+uptime are specified as empty, it defaults to 1.3.6.1.4.1.3.1.1
+(enterprises.cmu.1.1), hostname, and host-uptime respectively
+
+params = {
+"oid": ".1.3.6.1.4.1.99993.1.1",
+"server": "192.1.128.22",
+"host": "192.1.129.221",
+"specific_trap": 1,
+"hostname": "Host",
+"alias": "Alias",
+"groups": "g1",
+"description": "Description",
+"element_id": "1",
+"event_id": "2",
+"severity": "High",
+}
+
+snmptrap -v 1 -c public %(server)s %(oid)s %(host)s 6 %(specific_trap)s ''
+  %(oid)s.1.0 s %(hostname)s
+  %(oid)s.2.0 s "%(alias)s"
+  %(oid)s.4.0 s "%(groups)s"
+  %(oid)s.5.0 s "%(description)s"
+  %(oid)s.6.0 s "%(element_id)s"
+  %(oid)s.7.0 s "%(event_id)s"
+  %(oid)s.8.0 i %(severity)s;
+
+'''
+
+def main():
+    global conffile
+    '''
+[global]
+oid=.1.3.6.1.4.1.99993.1.1
+server=10.0.128.22
+host=10.0.129.221
+hostname=Host
+alias=Alias
+groups=g1
+
+
+[custom]
+sensor_oid=NET-SNMP-EXTEND-MIB::nsExtendOutputFull."dummy"
+description=Description
+element_id=1
+event_id=2
+severity=High
+threshold=1000
+
+[example]
+sensor_oid=.1.3.6.1.4.1.8072.1.3.2.3.1.2.38"
+description=Description
+element_id=1
+event_id=2
+severity=High
+expected_value=OK
+
+[example2]
+command=uptime
+description=Description
+element_id=1
+event_id=2
+severity=High
+expected_value=OK
+
+    '''
+
+    dbfilename = workdir + '/checks.db'
+    dbfilename_tmp = workdir + '/checks.db.tmp'
+
+    try:
+        dbfile = open(dbfilename)
+        db_json = json.load(dbfile)
+        dbfile.close()
+    except Exception:
+        db_json = None
+
+    res = {}
+
+    try:
+      # RawConfigParser not interpolate attribute values
+      cfg = ConfigParser.RawConfigParser()
+      cfg.readfp(file(conffile))
+
+    except Exception, e:
+        print ("Conffile %s error: %s" % (conffile,e))
+    
+    try:
+        for o in cfg.options("global"):
+            try:
+                vars()[o] = cfg.get("global",o)
+            except Exception, e:
+                print "Error parsing %s - %s: %s" % (s,o,e)
+    except Exception, e:
+        print ("Error processing global parameters from conffile: %s" % (e))
+
+    for s in cfg.sections():
+        key = s
+        # print key
+        try:
+          if s == 'global':
+              continue
+
+          # print vars()
+          params = {}
+          params["oid"]=vars()["oid"]
+          params["server"]=vars()["server"]
+          params["host"]=vars()["host"]
+          params["hostname"]=vars()["hostname"]
+          params["alias"]=vars()["alias"]
+          params["groups"]=vars()["groups"]
+
+          for o in cfg.options(s):
+              params[o] = cfg.get(s,o)
+
+          logger.info ("Checking %s key." \
+              % (key))
+
+          # print params
+          if params.has_key("command"):
+            res[key] = check_command(key,params,db_json)
+          else:
+            res[key] = check_snmpget(key,params,db_json)
+
+        except IOError, e:
+          logger.error ("Problem on %s stream: %s" % (key,e))
+
+    dbfile = open(dbfilename_tmp,"w+b")
+    json.dump(res,dbfile, sort_keys=True, \
+        indent=4, separators=(',', ': '))
+    dbfile.flush()
+    dbfile.close()
+    if os.path.isfile(dbfilename):
+        os.remove(dbfilename)
+    os.rename(dbfilename_tmp, dbfilename)
+
+
+def check_command(key, params, db_json):
+    res = params.copy()
+    res["key"] = key
+    try:
+        # ejecutar comando
+        # guardar valor en res
+        cmd = res["command"]
+        m = "Command: " + cmd
+        logger.info(m)
+        command = subprocess.Popen(cmd, shell=True, bufsize=1024,
+                     stdin=subprocess.PIPE, stderr=DEV_NULL,
+                     stdout=subprocess.PIPE, close_fds=True)
+        value = ""
+        for l in command.stdout:
+            value = value + l
+        command.wait()
+        res["value"]=value
+    except Exception, e:
+        res["value"] = 0
+        logger.error("Error checking %s key as a simple command: %s" % (key,e))
+
+    res_extra(res,db_json)
+    return res
+
+
+def check_snmpget(key, params, db_json):
+    res = params.copy()
+    res["key"] = key
+    try:
+        # ejecutar snmpget
+        # guardar valor en res
+        cmd = snmpget_cmd % res["sensor_oid"]
+        m = "Command: [" + cmd + "]"
+        logger.info(m)
+        command = subprocess.Popen([cmd], shell=True, bufsize=1024,
+                     stdin=subprocess.PIPE, stderr=DEV_NULL,
+                     stdout=subprocess.PIPE, close_fds=True)
+        value = ""
+        for l in command.stdout:
+            if l.find("=")!=-1:
+                try:
+                    value = l.split("=")[1].split(":")[1].strip()
+                except Exception, e:
+                    print e
+                    pass
+        command.wait()
+        res["value"]=value
+    except Exception, e:
+        res["value"] = 0
+        logger.error("Error checking %s key as SNMP command: %s" % (key,e))
+
+    res_extra(res,db_json)
+    return res
+
+
+
+def res_extra(res,db_json):
+    key = res["key"]
+
+    # recuperar valor antiguo de db_json
+    # si valor varia mandar el trap
+    # el specific_trap depende de si el valor coincide o no con
+    # params["expected_value"]
+
+    old_specific_trap = None
+    try:
+        old_specific_trap = db_json[key]["specific_trap"]
+    except Exception:
+        logger.debug("No previous specific_trap found for %s key" % key)
+
+    res["specific_trap"]=0
+    try:
+      if res.has_key("threshold_min") and \
+      float(res["threshold_min"]) > float(res["value"]):
+          logger.debug("threshold_min (%s) > value (%s)" % ( res["threshold_min"] , res["value"]))
+          res["specific_trap"]=1
+          logger.debug("specific_trap=%s" % res["specific_trap"])
+    except Exception, e:
+        logger.debug("Threshold can not be compared: %s" % e)
+
+    try:
+      if res.has_key("threshold_max") and \
+      float(res["threshold_max"]) < float(res["value"]):
+          logger.debug("threshold_max (%s) < value (%s)" % ( res["threshold_max"] , res["value"]))
+          res["specific_trap"]=1
+          logger.debug("specific_trap=%s" % res["specific_trap"])
+    except Exception, e:
+        logger.debug("Threshold can not be compared: %s" % e)
+
+    if res.has_key("expected_value") and \
+    res["expected_value"] != res["value"]:
+        logger.debug("expected_value (%s) != value (%s)" % ( res["expected_value"] , res["value"]))
+        res["specific_trap"]=1
+        logger.debug("specific_trap=%s" % res["specific_trap"])
+
+    if res["specific_trap"] == 0:
+        logger.debug("specific_trap=%s" % res["specific_trap"])
+
+    if res.has_key("specific_trap") and \
+    old_specific_trap != res["specific_trap"]:
+        logger.debug("current specific_trap (%s) != old specific_trap (%s)" % ( res["specific_trap"] , old_specific_trap))
+        # enviar trap
+        # res = {
+        # "oid": ".1.3.6.1.4.1.99993.1.1",
+        # "server": "10.0.128.22",
+        # "host": "10.0.129.221",
+        # "specific_trap": 1,
+        # "hostname": "Host",
+        # "alias": "Alias",
+        # "groups": "g1",
+        # "description": "Description",
+        # "element_id": "1",
+        # "event_id": "2",
+        # "severity": "High",
+        # }
+
+        cmd = snmptrap_cmd % res
+        m = "Command: " + cmd
+        logger.info(m)
+        snmptrap = subprocess.Popen([cmd], shell=True, bufsize=1024,
+                     stdin=subprocess.PIPE, stderr=DEV_NULL,
+                     stdout=DEV_NULL, close_fds=True)
+        snmptrap.wait()
+    else:
+        logger.debug("current specific_trap (%s) == old specific_trap (%s)" % ( res["specific_trap"] , old_specific_trap))
+        logger.debug("Nothing to do")
+
+    logger.debug("New entry:  " + str(res))
+
+
+# main #########################################################################
+
+if __name__ == '__main__':
+    main()
+
+
+
