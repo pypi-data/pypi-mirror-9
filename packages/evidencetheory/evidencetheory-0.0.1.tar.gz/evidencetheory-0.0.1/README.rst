@@ -1,0 +1,43 @@
+Evidence Theory
+===============
+
+A Python Library to attack the problem of **Fusion Information**.
+Dempster-Shafer Theory implemention is our first goal.
+
+| Install:
+| \_\_\_\_\_\_\_\_
+
+::
+
+        pip install evidencetheory
+
+Usage:
+------
+
+::
+
+        from evidence.theory import dst # load dempster-shafer functions
+        from evidenec.tests.assets import INPUT
+        print INPUT['bba1'] # path for the bba example
+
+Knowing the format of file ``bba1``:
+
+::
+
+        bba = []
+        with open(INPUT['bba1'], 'r') as f:
+            N = int(f.readline())
+            for _  in range(N):
+                bba += [ float(f.readline()) ]
+        print bba # verify a table with values between 0 and 1 
+
+We want to get a Belief function ``Bel`` from a table ``bba`` (basic
+belief assignament function), so the following is how to do that:
+
+::
+
+        bel1 = dst.Bel(m=bba)
+        for i in range(1<<len(bba)):
+            print bel1(A=i) # i is a set represents in binary form.
+
+For now, please review code in ``evidence.theory.dst``.
