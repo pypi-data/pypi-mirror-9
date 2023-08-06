@@ -1,0 +1,63 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+#    This file is part of RDF-PATCH
+#    Copyright (C) 2013 Pierre-Antoine Champin <pchampin@liris.cnrs.fr> /
+#    Universite de Lyon <http://www.universite-lyon.fr>
+#
+#    RDF-PATCH is free software: you can redistribute it and/or modify
+#    it under the terms of the GNU Lesser General Public License as published
+#    by the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version.
+#
+#    RDF-PATCH is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU Lesser General Public License for more details.
+#
+#    You should have received a copy of the GNU Lesser General Public License
+#    along with RDF-PATCH.  If not, see <http://www.gnu.org/licenses/>.
+"""
+Command line tool for LD Patch
+"""
+
+# invalid module name #pylint: disable=C0103
+
+from os.path import abspath, dirname
+from sys import argv, path, stdin, stdout
+
+try:
+    import ldpatch # unused import #pylint: disable=W0611
+except ImportError, ex:
+    try:
+        SOURCE_DIR = dirname(dirname(abspath(__file__)))
+    except NameError, ex2:
+        # __file__ is not define in py2exe, so raise ImportError anyway
+        raise ex
+    path.append(SOURCE_DIR)
+    import ldpatch
+
+if len(argv) not in (2, 3) or "--help" in argv:
+    print "usage: %s <patch-file> [<base-iri>]" % argv[0]
+    print "  Reads a Turtle file from stdin,"
+    print "  applies it LD-Patch from <patch-file>,"
+    print "  and outputs the resulting graph in Turtle on stdout."
+    print "  Relative URIs in the patch are resolved against <base-iri> if provided,"
+    print "  otherwise agains the URI of the patch itself."
+    exit(-1)
+
+from rdflib import Graph
+from ldpatch import apply as ldpatch_apply
+
+g = Graph()
+g.load(stdin, format="turtle")
+
+if len(argv) == 3:
+    baseiri = argv[2]
+else:
+    baseiri = None
+
+with open(argv[1]) as f:
+    ldpatch_apply(f, g, baseiri)
+
+g.serialize(stdout, format="turtle")
