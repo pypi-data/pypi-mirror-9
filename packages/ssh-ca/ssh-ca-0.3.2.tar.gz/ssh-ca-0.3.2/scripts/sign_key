@@ -1,0 +1,195 @@
+#!/usr/bin/env python
+
+"""Sign a user's SSH public key.
+
+This script is used to sign a user's SSH public key using a certificate
+authority's private key. The signed public key can be presented along with the
+user's private key to get access to servers that trust the CA.
+
+The final output of this script is an S3 URL containing the user's signed
+certificate. The user needs to take this URL and download the file it points
+at.  This URL should be used with the get_cert script.
+
+"""
+
+import argparse
+import ConfigParser
+import os
+import sys
+import tempfile
+import time
+import urlparse
+import urllib
+
+from contextlib import closing
+
+import ssh_ca
+import ssh_ca.s3
+from ssh_ca.utils import parse_time, epoch2timefmt
+
+
+def get_public_key(path_or_url):
+    parsed = urlparse.urlparse(path_or_url)
+    fd = None
+    try:
+        if parsed.scheme in ('http', 'https'):
+            fd = urllib.urlopen(path_or_url)
+        else:
+            fd = open(path_or_url)
+        key_contents = fd.readline()
+    finally:
+        if fd:
+            fd.close()
+    return key_contents
+
+
+if __name__ == '__main__':
+    default_authority = os.getenv('SSH_CA_AUTHORITY', 's3')
+    default_config = os.path.expanduser(
+        os.getenv('SSH_CA_CONFIG', '~/.ssh_ca/config'))
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        '-a', '--authority', dest='authority', default=default_authority,
+        help='Pick one: s3')
+    parser.add_argument(
+        '-c', '--config-file', default=default_config,
+        help='The configuration file to use.  Can also be '
+             'specified in the SSH_CA_CONFIG environment '
+             'variable.  Default: %(default)s')
+    parser.add_argument(
+        '-e', '--environment', required=True, help='Environment name')
+    parser.add_argument(
+        '--principal', action='append',
+        help='A principal (username) that the user is allowed to use')
+    parser.add_argument(
+        '-p', dest='public_path',
+        help='Path to public key. May be a local file or one located at a '
+             'http/https url. If set we try to upload this. Otherwise we try '
+             'to download one.')
+    parser.add_argument(
+        '-u', required=True, dest='username', help='username / email address')
+    parser.add_argument(
+        '--upload', dest='upload_only', action='store_true',
+        help='Only upload the public key')
+    parser.add_argument(
+        '-r', '--reason',
+        help='Specify the reason for the user needing this cert.')
+    parser.add_argument(
+        '-t', '--expires-in', default='+2h',
+        help='Expires in. A relative time like +1w. Or YYYYMMDDHHMMSS. '
+             'Default: %(default)s')
+    parser.add_argument(
+        '-s', '--starts-in', default='+0m',
+        help='Certificate becomes active in. '
+             'A relative time like +1h. Or YYYYMMDDHHMMSS. '
+             'Default: %(default)s')
+    args = parser.parse_args()
+
+    public_path = args.public_path
+    environment = args.environment
+    username = args.username
+
+    now = int(time.time())
+    starts_in = parse_time(args.starts_in, now)
+    expires_in = parse_time(args.expires_in, now)
+    if starts_in > expires_in:
+        sys.stderr.write("You must specify an --expires-in later then "
+                         "the --starts-in\n")
+        sys.exit(-1)
+
+    if expires_in < int(time.time()):
+        sys.stderr.write("You must specify an --expires-in in the future\n")
+        sys.exit(-1)
+
+    # always tell S3 to expire the key when the cert expires
+    url_expires = expires_in - now
+
+    # Keys which expire really soon don't make much sense
+    if url_expires < (5 * 60):
+        sys.stderr.write("*" * 50 + "\n")
+        sys.stderr.write("WARNING: Very short cert expire time of %dsec!\n" %
+                         (url_expires,))
+        sys.stderr.write("*" * 50 + "\n")
+
+    starts_in = epoch2timefmt(starts_in)
+    expires_in = epoch2timefmt(expires_in)
+
+    ssh_ca_section = 'ssh-ca-' + args.authority
+
+    config = None
+    if args.config_file:
+        config = ConfigParser.ConfigParser()
+        config.read(args.config_file)
+
+    # Get a valid CA key file
+    ca_key = ssh_ca.get_config_value(config, environment, 'private_key')
+    if ca_key:
+        ca_key = os.path.expanduser(ca_key)
+    else:
+        ca_key = os.path.expanduser('~/.ssh/ssh_ca_%s' % (environment,))
+    if not os.path.isfile(ca_key):
+        print 'CA key file %s does not exist.' % (ca_key,)
+        sys.exit(1)
+
+    try:
+        # Create our CA
+        ca = ssh_ca.s3.S3Authority(config, ssh_ca_section, ca_key)
+    except ssh_ca.SSHCAInvalidConfiguration, e:
+        print 'Issue with creating CA: %s' % e.message
+        sys.exit(1)
+
+    if args.upload_only:
+        if not public_path:
+            print 'Upload needs a public key specified.'
+            sys.exit(1)
+        key_contents = get_public_key(public_path)
+        ca.upload_public_key(username, key_contents)
+        print 'Public key %s for username %s uploaded.' % (public_path,
+                                                           username)
+        sys.exit(0)
+
+    # Figure out if we use a local new public key or an existing one
+    if public_path:
+        ca.upload_public_key(username, public_path)
+        delete_public_key = False
+    else:
+        public_key_contents = ca.get_public_key(username, environment)
+        if public_key_contents is None:
+            print 'Key for user %s not found.' % (username)
+            sys.exit(1)
+        (fd, public_path) = tempfile.mkstemp()
+        with closing(os.fdopen(fd, 'w')) as f:
+            f.write(public_key_contents)
+        delete_public_key = True
+
+    if args.reason:
+        reason = args.reason
+    else:
+        prompt = 'Specify the reason for the user needing this cert:\n'
+        reason = raw_input(prompt).strip()
+        if len(reason) > 256:
+            print 'Reason is way too long. Type less.'
+            sys.exit(1)
+
+    if args.principal:
+        principals = args.principal
+    else:
+        p_conf = ssh_ca.get_config_value(config, environment, 'principals')
+        if p_conf:
+            principals = [p.strip() for p in p_conf.split(',')]
+        else:
+            principals = ['ec2-user', 'ubuntu']
+
+    # Sign the key
+    cert_contents = ca.sign_public_user_key(
+        public_path, username, starts_in, expires_in,
+        reason, principals)
+
+    print
+    print 'Public key signed, certificate available for download here:'
+    print ca.upload_public_key_cert(username, environment, cert_contents,
+                                    url_expires)
+
+    if delete_public_key:
+        os.remove(public_path)
