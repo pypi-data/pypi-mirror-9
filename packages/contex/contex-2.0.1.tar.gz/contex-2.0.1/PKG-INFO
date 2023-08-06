@@ -1,0 +1,193 @@
+Metadata-Version: 1.1
+Name: contex
+Version: 2.0.1
+Summary: Contextual string manipulation
+Home-page: https://notabug.org/Uglemat/Contex
+Author: Mattias Ugelvik
+Author-email: uglemat@gmail.com
+License: GPL3+
+Description: Contex - Contextual string manipulation
+        =======================================
+        
+        This library provides two related abstractions, ``StringContext`` and
+        ``MatchContext``.
+        
+        The problem with our abstractions
+        ---------------------------------
+        
+        I'll present two "problems" that this library attempts to solve. The
+        first one is rather contrived, the second one is more realistic.
+        Afterwards I will show how ``contex`` can help.
+        
+        Problem 1
+        ~~~~~~~~~
+        
+        You have a string such as ``"abcde"`` and you want to "surround" index 2
+        with parentheses. Thus
+        ``''.join([string[:2], '(', string[2], ')', string[2:])``, or something
+        similar. This is inelegant, bugprone, and hard to read! ``StringContext``
+        tries to solve this problem.
+        
+        Problem 2
+        ~~~~~~~~~
+        
+        You have a bunch of files of the form ``Photo<number>.jpg``. The only
+        problem is that all the numbers are one too high, so that
+        ``'Photo034.jpg'`` should actually be ``'Photo033.jpg'``. This is not a
+        hard problem, or it should not be, but it doesn't feel very good to
+        solve it.
+        
+        The almost-solutions
+        ^^^^^^^^^^^^^^^^^^^^
+        
+        One attempt is to use ``re.sub`` for this. You could just do this:
+        
+        ::
+        
+            >>> re.sub(r'([0-9]+)', lambda match: '{:0>3}'.format(int(match.group(1)) - 1),  'Photo034.jpg')
+            'Photo033.jpg'
+        
+        But this is a fragile solution, because it can't deal with more
+        complicated filenames. What happens when you have filenames such as
+        ``'Vacation2008Photo_034.jpg'``? You can no longer do it. So you decide
+        to "do it right", and you end up with this:
+        
+        ::
+        
+            >>> regex = r'(?<={})([0-9]+)(?={})'.format('Vacation2008Photo_', r'\.jpg')
+            >>> regex
+            '(?<=Vacation2008Photo_)([0-9]+)(?=\\.jpg)'
+            >>> re.sub(regex, lambda match: '{:0>3}'.format(int(match.group(1)) - 1), 'Vacation2008Photo_034.jpg')
+            'Vacation2008Photo_033.jpg'
+        
+        What a wonderful sight! This works, but obviously isn't desirable.
+        
+        Contex to the rescue
+        --------------------
+        
+        It is my thesis that our abstractions aren't fit for this sort of
+        problem. The problems above "hit it where it hurts" so to speak, because
+        in order to be solved elegantly they require context, and in the one
+        dimensional world of strings this means: what came before? what came
+        after? Which part of the string are we focusing on right now? This is
+        exactly what ``StringContext`` is. It contains 3 parts: ``before``,
+        ``focus``, ``after``:
+        
+        ::
+        
+            >>> import contex
+            >>> contex.T('Hello')
+            StringContext('', 'Hello', '')
+            >>> contex.T('abcde')[2:]
+            StringContext('ab', 'cde', '')
+            >>> contex.T('abcde')[2:][0]
+            StringContext('', 'a', 'bcde')
+            >>> contex.T('abcde')[2]
+            StringContext('ab', 'c', 'de')
+            >>> view = contex.T('abcde')[2]
+            >>> view.before, view.focus, view.after
+            ('ab', 'c', 'de')
+            >>> view.replace(lambda focus: '({})'.format(focus))
+            StringContext('ab', '(c)', 'de')
+            >>> str(view.replace(lambda focus: '({})'.format(focus)))
+            'ab(c)de'
+        
+        As you can see, slicing has the function of shifting the focus of the
+        string. "I want to look at this part now". These points are true of
+        ``StringContext`` and ``MatchContext``:
+        
+        -  They are treated as immutable objects: methods that "change" stuff
+           doesn't mutate but returns a new version.
+        -  All methods operates on the full string, not merely the ``focus``
+           point. So ``StringContext.reverse`` doesn't reverse the ``focus``
+           only, it reverses everything; ``StringContext.search`` searches
+           everything, you get the picture.
+        -  The 3 composite parts are normal strings. I rejected the idea of a
+           tree of ``StringContext`` objects because it seemed too complicated,
+           more confusing than useful.
+        -  Methods that needs ``str`` arguments also accept ``StringContext``
+           arguments: it will be converted to a ``str`` automatically.
+        
+        MatchContext
+        ~~~~~~~~~~~~
+        
+        ``MatchContext`` is what you get when you do regular expression
+        searches. It's a subclass of ``StringContext`` and contains information
+        relevant to the match/search it was created for, namely the "span" - a
+        ``(start, end)`` tuple of indices of the string, ``start`` and ``end``
+        are both referred to as ``points`` - of the various regex groups that
+        happened to match. It also contains useful methods pertaining to these
+        regex groups, like ``MatchContext.group`` and ``MatchContext.expand``.
+        Q: But what happens to the regex spans when you manipulate the string,
+        for example with ``MatchContext.replace``? A: They move around in
+        sensible ways. The details can be found in the docstring for
+        ``MatchContext.replace``, but the gist of it is that if ``focus`` grows
+        in length by 3 when you replace it, then any point at the very end or
+        after focus also grows by 3. If the point is before ``focus`` then it
+        stays the same. If it is in the middle of ``focus`` then it might
+        "shrink" if ``focus`` becomes too small to contain it.
+        
+        This is how you'd use it to solve problem number 2:
+        
+        ::
+        
+            >>> contex.match('Vacation2008Photo_034.jpg', r'Vacation2008Photo_(?P<number>[0-9]+)\.jpg')
+            MatchContext('', 'Vacation2008Photo_034.jpg', '')
+            >>> m = contex.match('Vacation2008Photo_034.jpg', r'Vacation2008Photo_(?P<number>[0-9]+)\.jpg')
+            >>> m.group('number')
+            MatchContext('Vacation2008Photo_', '034', '.jpg')
+            >>> result = m.group('number').replace(lambda num: '{:0>3}'.format(int(num) - 1))
+            >>> result
+            MatchContext('Vacation2008Photo_', '033', '.jpg')
+            >>> str(result)
+            'Vacation2008Photo_033.jpg'
+        
+        The ``.group`` method is like slicing, it says "I want to look at this
+        part of the string now".
+        
+        Conclusion
+        ----------
+        
+        This is not to say that there's anything wrong with strings as we use them now, or that these abstractions can serve
+        as a replacement. It's rather to say that in solving certain problems they make you do dirty things, like fiddling around
+        with indices, consequently making 1-off bugs, and so on. I've shown that ``contex`` can solve some problems like those above
+        nicely. How often can this contextual abstraction be of use? I don't really know.
+        
+        Using Contex
+        ------------
+        
+        The ``contex`` package contains 4 functions:
+        
+        -  ``T(string)`` for bringing a string into the world of contex by converting it
+           into a ``StringContext`` object,
+        -  ``search(string, pattern, flags=0)`` and
+        -  ``match(string, pattern, flags=0)`` for regex searches (with the same semantic difference as in the ``re`` module),
+        -  ``find(string, substring)`` for normal string search
+           
+        ``contex`` also contains the ``StringContext`` and ``MatchContext`` classes.
+        
+        Installing
+        ----------
+        
+        ``contex`` should work in both Python 2.7 and 3. 
+        
+        Install with ``$ pip install contex``. If you want to install for Python 3 you might want to replace ``pip`` with ``pip3``, depending on how your system is configured.
+        
+        
+        Developing
+        ----------
+        
+        Contex is documented and tested. Run ``$ nosetests`` or
+        ``$ python3 setup.py test`` to run the tests. The code is hosted at https://notabug.org/Uglemat/Contex
+        
+        License
+        -------
+        
+        The library is licensed under the GNU General Public License 3 or later.
+        This README file is public domain.
+        
+Platform: UNKNOWN
+Classifier: Topic :: Text Processing :: General
+Classifier: License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 2.7
