@@ -1,0 +1,369 @@
+.. -*- coding: utf-8 -*-
+
+Kerberiser cubicweb avec l'aide d'Apache
+========================================
+
+Principe général
+----------------
+
+Un service kerberos est composé de deux serveurs, le serveur
+d'authentification (AS) et le serveur de tickets ("Ticket Granting
+Service" ou TGS). L'ensemble "authentication server" et "ticket
+server" s'appelle "Key Distribution Center" (KDC).
+
+Le serveur d'authentification délivre un ticket initial (un "Ticket
+Granting Ticket" ou TGT) aux utilisateurs qui le demandent
+(typiquement lors d'un login système initial, sinon avec `kinit`).
+
+Lorsqu'un utilisateur demande à utiliser un service, le TGT est envoyé
+au serveur de tickets pour obtenir un ticket pour le service.
+
+Les utilisateurs et les services sont représentés dans une base de
+données spécifique. Un "user principal" ou "sercice principal"
+représente un utilisateur ou un service dans cette base, associé à un
+secret partagé (mot de passe pour les utilisateurs).
+
+Installer et configurer Kerberos
+--------------------------------
+
+Déléguer à apache l'authentification avec kerberos, exploitant le
+ticket de service émis par l'utilisateur (le navigateur web).
+
+Prérequis: l'utilisateur a obtenu un TGT dans le realm concerné, le
+service est correctement configuré, cubicweb est correctement
+configuré.
+
+Installation et bases
+~~~~~~~~~~~~~~~~~~~~~
+
+Commandes::
+
+ apt-get install krb5-admin-server krb5-kdc krb5-config
+ dpkg-reconfigure krb5-config # -> /etc/krb5.conf
+ krb5_newrealm # mot de passe pour chiffrer '/var/lib/krb5kdc/principal' toto
+
+Contenu de /etc/krb5kdc/kdc.conf::
+
+ [kdcdefaults]
+    kdc_ports = 750,88
+
+ [realms]
+    PLUK.FR = {
+        database_name = /var/lib/krb5kdc/principal
+        admin_keytab = FILE:/etc/krb5kdc/kadm5.keytab
+        acl_file = /etc/krb5kdc/kadm5.acl
+        key_stash_file = /etc/krb5kdc/stash
+        kdc_ports = 750,88
+        max_life = 10h 0m 0s
+        max_renewable_life = 7d 0h 0m 0s
+        master_key_type = des3-hmac-sha1
+        supported_enctypes = aes256-cts:normal arcfour-hmac:normal des3-hmac-sha1:normal des-cbc-crc:normal des:normal des:v4 des:norealm des:onlyrealm des:afs3
+        default_principal_flags = +preauth
+    }
+
+Extrait de /etc/krb5.conf::
+
+ [libdefaults]
+        default_realm = PLUK.FR
+ [realms]
+        PLUK.FR = {
+                kdc = toto.logilab.fr
+                admin_server = toto.logilab.fr
+        }
+
+
+Démarrer les services::
+
+ /etc/init.d/krb5-admin-server start
+ /etc/init.d/krb5-kdc start
+
+
+Distribuer des permissions
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Pour donner un privilège administratif à un administrateur à distance
+(i.e. sans utiliser kadmin.local qui tape directement dans la base de
+données), il faut éditer /etc/krb5kdc/kadm5.acl::
+
+ # This file Is the access control list for krb5 administration.
+ # When this file is edited run /etc/init.d/krb5-admin-server restart to activate
+ # One common way to set up Kerberos administration is to allow any principal
+ # ending in /admin  is given full administrative rights.
+ # To enable this, uncomment the following line:
+ */admin *
+
+Donner les droits à root::
+
+ toto:/etc# kadmin.local
+ Authenticating as principal root/admin@PLUK.FR with password.
+ kadmin.local:  addprinc root/admin
+ WARNING: no policy specified for root/admin@PLUK.FR; defaulting to no policy
+ Enter password for principal "root/admin@PLUK.FR": <PASSWORD>
+ Re-enter password for principal "root/admin@PLUK.FR": <PASSWORD>
+ Principal "root/admin@PLUK.FR" created.
+ kadmin.local:  quit
+
+Redémarrer le server (krb5-admin-server).
+
+A partir de là on peut vérifier que ``kadmin`` nous accepte::
+
+ toto:/etc# kadmin
+ Authenticating as principal root/admin@PLUK.FR with password.
+ Password for root/admin@PLUK.FR:
+ kadmin:  listprincs
+ K/M@PLUK.FR
+ kadmin/admin@PLUK.FR
+ kadmin/changepw@PLUK.FR
+ kadmin/history@PLUK.FR
+ kadmin/toto.logilab.fr@PLUK.FR
+ krbtgt/PLUK.FR@PLUK.FR
+ root/admin@PLUK.FR
+ kadmin:  quit
+
+Pour ajouter un autre : même démarche (on le fait pour un utilisateur
+``auc``).
+
+L'obtention d'un un ticket (un ``TGT`` c'est à dire un ticket
+d'obtention de tickets, à partir duquel des tickets spécifiques à des
+services vont pouvoir être obtenus) se fait avec ``kinit``.
+
+Intialement on n'a rien::
+
+ toto:/etc# klist -5
+ klist: No credentials cache found (ticket cache FILE:/tmp/krb5cc_0)
+
+En tant que auc::
+
+ auc@toto:/etc$ klist
+ klist: No credentials cache found (ticket cache FILE:/tmp/krb5cc_1000)
+
+
+ Kerberos 4 ticket cache: /tmp/tkt1000
+ klist: You have no tickets cached
+
+ auc@toto:/etc$ kinit -5
+ Password for auc@PLUK.FR:
+
+ auc@toto:/etc$ klist -5
+ Ticket cache: FILE:/tmp/krb5cc_1000
+ Default principal: auc@PLUK.FR
+
+ Valid starting     Expires            Service principal
+ 07/09/10 16:23:22  07/10/10 02:23:22  krbtgt/PLUK.FR@PLUK.FR
+	renew until 07/10/10 16:23:21
+
+
+Il faut ajouter un "service principal" pour le serveur web::
+
+ kadmin:  addprinc HTTP/toto.logilab.fr
+ WARNING: no policy specified for HTTP/toto.logilab.fr@PLUK.FR; defaulting to no policy
+ Enter password for principal "HTTP/toto.logilab.fr@PLUK.FR": 
+ Re-enter password for principal "HTTP/toto.logilab.fr@PLUK.FR": 
+ Principal "HTTP/toto.logilab.fr@PLUK.FR" created.
+
+ kadmin:  ktadd -k /etc/apache2/apache.keytab HTTP/toto.logilab.fr
+ Entry for principal HTTP/toto.logilab.fr with kvno 4, encryption type AES-256 CTS mode with 96-bit SHA-1 HMAC added to keytab WRFILE:/etc/apache2/apache.keytab.
+ Entry for principal HTTP/toto.logilab.fr with kvno 4, encryption type ArcFour with HMAC/md5 added to keytab WRFILE:/etc/apache2/apache.keytab.
+ Entry for principal HTTP/toto.logilab.fr with kvno 4, encryption type Triple DES cbc mode with HMAC/sha1 added to keytab WRFILE:/etc/apache2/apache.keytab.
+ Entry for principal HTTP/toto.logilab.fr with kvno 4, encryption type DES cbc mode with CRC-32 added to keytab WRFILE:/etc/apache2/apache.keytab.
+
+ kadmin:  quit
+
+
+En plus de créer le `service principal`, on l'a exporté dans un
+fichier `apache.keytab` qui permettra à mod_auth_kerberos de ne pas
+aller poser de question au `KDC`.
+
+On peut vérifier que cela est bien accepté::
+
+ toto:/etc# kinit -k -t /etc/apache2/apache.keytab HTTP/toto.logilab.fr
+ toto:/etc# klist HTTP/toto.logilab.fr
+
+Donner les permissions nécessaires à apache::
+
+ chown www-data /etc/apache2/apache.keytab
+
+Configurer apache 2
+-------------------
+
+Eléments génériques
+~~~~~~~~~~~~~~~~~~~
+
+On installe apache2 plus le module prenant en charge kerberos. On
+active un certain nombre de modules nécessaires.
+
+Commandes::
+
+ apt-get install apache2 libapache2-mod-auth-kerb
+ a2enmod rewrite ssl proxy_http proxy_balancer proxy headers auth_kerb
+
+Il faut éditer la configuration d'un certain nombre de modules.
+
+Contenu de /etc/apache2/mods-enabled/proxy.conf (aspect sécurité à
+revoir de près)::
+
+ <IfModule mod_proxy.c>
+        #turning ProxyRequests on and allowing proxying from all may allow
+        #spammers to use your proxy to send email.
+
+        ProxyRequests On
+
+        <Proxy *>
+                AddDefaultCharset off
+                Order allow,deny
+                Allow from all
+                #Allow from .example.com
+        </Proxy>
+
+        # Enable/disable the handling of HTTP/1.1 "Via:" headers.
+        # ("Full" adds the server version; "Block" removes all outgoing Via: headers)
+        # Set to one of: Off | On | Full | Block
+
+        ProxyVia On
+ </IfModule>
+
+
+On note en particulier: ``ProxyRequests On``, ``ProxyVia On``, ``Order
+allow, deny`` et ``Allow from all``.
+
+Site cw-kerberos
+~~~~~~~~~~~~~~~~
+
+On construit un ``site`` apache2 nommé ``cw-kerberos``.
+
+Dans /etc/apache2/sites-available/cw-kerberos::
+
+ <VirtualHost _default_:443>
+        ServerName 172.17.7.127
+        ServerAdmin webmaster@localhost
+
+        ErrorLog /var/log/apache2/error.log
+
+        # Possible values include: debug, info, notice, warn, error, crit,
+        # alert, emerg.
+        LogLevel warn
+
+        CustomLog /var/log/apache2/ssl_access.log combined
+
+        #   SSL Engine Switch:
+        #   Enable/Disable SSL for this virtual host.
+        SSLEngine on
+
+        BrowserMatch ".*MSIE.*" \
+                nokeepalive ssl-unclean-shutdown \
+                downgrade-1.0 force-response-1.0
+
+    <Location />
+        AuthType Kerberos
+        AuthName "Cubicweb Myinstance"
+        # either use the KDC or keytabs
+        KrbVerifyKDC On
+        # Krb5Keytab /etc/apache2/apache.keytab
+
+        # turning it on can help debugging
+        KrbMethodK5Passwd Off
+
+        KrbServiceName HTTP/toto.logilab.fr@PLUK.FR
+        KrbMethodNegotiate On
+        KrbAuthRealms PLUK.FR
+        Require valid-user
+        RequestHeader set X-REMOTE-USER %{remoteUser}e
+    </Location>
+
+    RewriteEngine On
+    # Put Apache-specified username in headers:
+    RewriteRule ^/(.*) http://127.0.0.1:8080/https/$1 [L,P,E=remoteUser:%{LA-U:REMOTE_USER}]
+ </VirtualHost>
+
+
+Configuration CubicWeb
+~~~~~~~~~~~~~~~~~~~~~~
+
+Utiliser et configurer le cube trustedauth : il faut créer un
+fichier contenant la "clef secrète" (dont la taille doit être un
+multiple de 16 octets) et donner le chemin vers ce fichier dans le
+all-in-one.conf::
+
+ secret-key-filepath=/path/to/secret
+
+Dans le all-in-one.conf de l'instance, ne pas oublier de mettre des
+valeurs raisonnables pour certains champs::
+
+  https-url=https://toto.logilab.fr
+  base-url=http://toto.logilab.fr
+
+Démarrer l'instance en mode debug (``-l debug``) fournira suffisamment
+d'information pour identifier où ça se passe mal.
+
+Configuration Navigateur
+------------------------
+
+Firefox
+~~~~~~~
+
+Dans about:config, filtrer sur "negotiate", puis éditer::
+
+  network.negotiate-auth.trusted-uris: toto.logilab.fr
+
+Quand ça marche pas, on peut s'aider de la façon suivante::
+
+ export NSPR_LOG_MODULES=negotiateauth:5
+ export NSPR_LOG_FILE=/tmp/moz.log
+ firefox &
+ tail -f /tmp/moz.log
+
+On peut voir des choses du genre (l'utilisateur a oublié kinit)::
+
+ -1219798832[805d668]:   service = toto.logilab.fr
+ -1219798832[805d668]:   using negotiate-gss
+ -1219798832[805d668]: entering nsAuthGSSAPI::nsAuthGSSAPI()
+ -1219798832[805d668]: Attempting to load gss functions
+ -1219798832[805d668]: entering nsAuthGSSAPI::Init()
+ -1219798832[805d668]: nsHttpNegotiateAuth::GenerateCredentials() [challenge=Negotiate]
+ -1219798832[805d668]: entering nsAuthGSSAPI::GetNextToken()
+ -1219798832[805d668]: gss_init_sec_context() failed: Unspecified GSS failure.  Minor code may provide more information
+ Unknown code H 1
+
+Configuration kerberos eronnée ou *autre realm*::
+
+ -1219798832[805d668]:   service = toto.logilab.fr
+ -1219798832[805d668]:   using negotiate-gss
+ -1219798832[805d668]: entering nsAuthGSSAPI::nsAuthGSSAPI()
+ -1219798832[805d668]: entering nsAuthGSSAPI::Init()
+ -1219798832[805d668]: nsHttpNegotiateAuth::GenerateCredentials() [challenge=Negotiate]
+ -1219798832[805d668]: entering nsAuthGSSAPI::GetNextToken()
+ -1219798832[805d668]: gss_init_sec_context() failed: Unspecified GSS failure.  Minor code may provide more information
+ Server not found in Kerberos database
+
+ -1219798832[805d668]:   leaving nsAuthGSSAPI::GetNextToken [rv=80004005]
+
+Négociation complète::
+
+ -1250670912[b5517060]:   using REQ_DELEGATE
+ -1250670912[b5517060]:   service = toto.logilab.fr
+ -1250670912[b5517060]:   using negotiate-gss
+ -1250670912[b5517060]: entering nsAuthGSSAPI::nsAuthGSSAPI()
+ -1250670912[b5517060]: entering nsAuthGSSAPI::Init()
+ -1250670912[b5517060]: nsHttpNegotiateAuth::GenerateCredentials_1_9_2() [challenge=Negotiate]
+ -1250670912[b5517060]: entering nsAuthGSSAPI::GetNextToken()
+ -1250670912[b5517060]:   leaving nsAuthGSSAPI::GetNextToken [rv=0]
+ -1250670912[b5517060]:   Sending a token of length 1230
+
+Google chrome
+-------------
+
+Démarrer chrome (à partir du build 6.0.472) avec::
+
+ --auth-server-whitelist="*example.com,*foobar.com,*baz"
+
+Informations généralement très utiles sur:
+http://sites.google.com/a/chromium.org/dev/developers/design-documents/http-authentication.
+
+Conclusion
+----------
+
+A partir de là il devrait être possible de pointer un navigateur vers
+https://toto.logilab.fr et espérer que ça se passe bien.
+
+Les "clients" web et pyro doivent être sécurisés (la clef secrête doit
+rester inviolable).
