@@ -1,0 +1,1310 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>bioblend.galaxy.objects.wrappers &mdash; BioBlend 0.5.3-dev documentation</title>
+    
+    <link rel="stylesheet" href="../../../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../../../',
+        VERSION:     '0.5.3-dev',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../../../_static/doctools.js"></script>
+    <link rel="top" title="BioBlend 0.5.3-dev documentation" href="../../../../index.html" />
+    <link rel="up" title="bioblend.galaxy" href="../../galaxy.html" /> 
+  </head>
+  <body role="document">
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../../../index.html">BioBlend 0.5.3-dev documentation</a> &raquo;</li>
+          <li><a href="../../../index.html" >Module code</a> &raquo;</li>
+          <li><a href="../../../bioblend.html" >bioblend</a> &raquo;</li>
+          <li><a href="../../galaxy.html" accesskey="U">bioblend.galaxy</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for bioblend.galaxy.objects.wrappers</h1><div class="highlight"><pre>
+<span class="c"># pylint: disable=W0622,E1101</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">A basic object-oriented interface for Galaxy entities.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">bioblend</span>
+<span class="kn">import</span> <span class="nn">abc</span><span class="o">,</span> <span class="nn">collections</span><span class="o">,</span> <span class="nn">httplib</span><span class="o">,</span> <span class="nn">json</span>
+
+
+<span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s">&#39;Wrapper&#39;</span><span class="p">,</span>
+    <span class="s">&#39;Step&#39;</span><span class="p">,</span>
+    <span class="s">&#39;Workflow&#39;</span><span class="p">,</span>
+    <span class="s">&#39;ContentInfo&#39;</span><span class="p">,</span>
+    <span class="s">&#39;LibraryContentInfo&#39;</span><span class="p">,</span>
+    <span class="s">&#39;HistoryContentInfo&#39;</span><span class="p">,</span>
+    <span class="s">&#39;DatasetContainer&#39;</span><span class="p">,</span>
+    <span class="s">&#39;History&#39;</span><span class="p">,</span>
+    <span class="s">&#39;Library&#39;</span><span class="p">,</span>
+    <span class="s">&#39;Folder&#39;</span><span class="p">,</span>
+    <span class="s">&#39;Dataset&#39;</span><span class="p">,</span>
+    <span class="s">&#39;HistoryDatasetAssociation&#39;</span><span class="p">,</span>
+    <span class="s">&#39;LibraryDatasetDatasetAssociation&#39;</span><span class="p">,</span>
+    <span class="s">&#39;LibraryDataset&#39;</span><span class="p">,</span>
+    <span class="s">&#39;Tool&#39;</span><span class="p">,</span>
+    <span class="s">&#39;Preview&#39;</span><span class="p">,</span>
+    <span class="s">&#39;LibraryPreview&#39;</span><span class="p">,</span>
+    <span class="s">&#39;HistoryPreview&#39;</span><span class="p">,</span>
+    <span class="s">&#39;WorkflowPreview&#39;</span><span class="p">,</span>
+    <span class="p">]</span>
+
+
+<span class="c"># sometimes the Galaxy API returns JSONs that contain other JSONs</span>
+<span class="k">def</span> <span class="nf">_recursive_loads</span><span class="p">(</span><span class="n">jdef</span><span class="p">):</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">jdef</span><span class="p">)</span>
+    <span class="k">except</span> <span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">jdef</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="n">collections</span><span class="o">.</span><span class="n">Sequence</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="nb">basestring</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">r</span><span class="p">):</span>
+            <span class="n">r</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">_recursive_loads</span><span class="p">(</span><span class="n">v</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="n">collections</span><span class="o">.</span><span class="n">Mapping</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">r</span><span class="o">.</span><span class="n">iteritems</span><span class="p">():</span>
+            <span class="n">r</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="n">_recursive_loads</span><span class="p">(</span><span class="n">v</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">r</span>
+
+
+<div class="viewcode-block" id="Wrapper"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.Wrapper">[docs]</a><span class="k">class</span> <span class="nc">Wrapper</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Abstract base class for Galaxy entity wrappers.</span>
+
+<span class="sd">    Wrapper instances wrap deserialized JSON dictionaries such as the</span>
+<span class="sd">    ones obtained by the Galaxy web API, converting key-based access to</span>
+<span class="sd">    attribute-based access (e.g., ``library[&#39;name&#39;] -&gt; library.name``).</span>
+
+<span class="sd">    Dict keys that are converted to attributes are listed in the</span>
+<span class="sd">    ``BASE_ATTRS`` class variable: this is the &#39;stable&#39; interface.</span>
+<span class="sd">    Note that the wrapped dictionary is accessible via the ``wrapped``</span>
+<span class="sd">    attribute.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">BASE_ATTRS</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;id&#39;</span><span class="p">,</span> <span class="s">&#39;name&#39;</span><span class="p">)</span>
+    <span class="n">__metaclass__</span> <span class="o">=</span> <span class="n">abc</span><span class="o">.</span><span class="n">ABCMeta</span>
+
+    <span class="nd">@abc.abstractmethod</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">wrapped</span><span class="p">,</span> <span class="n">parent</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">gi</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        :type wrapped: dict</span>
+<span class="sd">        :param wrapped: JSON-serializable dictionary</span>
+
+<span class="sd">        :type parent: :class:`Wrapper`</span>
+<span class="sd">        :param parent: the parent of this wrapper</span>
+
+<span class="sd">        :type gi: :class:`GalaxyInstance`</span>
+<span class="sd">        :param gi: the GalaxyInstance through which we can access this wrapper</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">wrapped</span><span class="p">,</span> <span class="n">collections</span><span class="o">.</span><span class="n">Mapping</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s">&#39;wrapped object must be a mapping type&#39;</span><span class="p">)</span>
+        <span class="c"># loads(dumps(x)) is a bit faster than deepcopy and allows type checks</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">dumped</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">wrapped</span><span class="p">)</span>
+        <span class="k">except</span> <span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&#39;wrapped object must be JSON-serializable&#39;</span><span class="p">)</span>
+        <span class="nb">object</span><span class="o">.</span><span class="n">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s">&#39;wrapped&#39;</span><span class="p">,</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">dumped</span><span class="p">))</span>
+        <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">BASE_ATTRS</span><span class="p">:</span>
+            <span class="nb">object</span><span class="o">.</span><span class="n">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">wrapped</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">k</span><span class="p">))</span>
+        <span class="nb">object</span><span class="o">.</span><span class="n">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s">&#39;parent&#39;</span><span class="p">,</span> <span class="n">parent</span><span class="p">)</span>
+        <span class="nb">object</span><span class="o">.</span><span class="n">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s">&#39;is_modified&#39;</span><span class="p">,</span> <span class="bp">False</span><span class="p">)</span>
+        <span class="nb">object</span><span class="o">.</span><span class="n">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s">&#39;gi&#39;</span><span class="p">,</span> <span class="n">gi</span><span class="p">)</span>
+
+    <span class="nd">@abc.abstractproperty</span>
+    <span class="k">def</span> <span class="nf">gi_module</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        The GalaxyInstance module that deals with objects of this type.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">is_mapped</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        :obj:`True` if this wrapper is mapped to an actual Galaxy entity.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">id</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span>
+
+<div class="viewcode-block" id="Wrapper.unmap"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.Wrapper.unmap">[docs]</a>    <span class="k">def</span> <span class="nf">unmap</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Disconnect this wrapper from Galaxy.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nb">object</span><span class="o">.</span><span class="n">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s">&#39;id&#39;</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Wrapper.clone"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.Wrapper.clone">[docs]</a>    <span class="k">def</span> <span class="nf">clone</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Return an independent copy of this wrapper.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">__class__</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">wrapped</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Wrapper.touch"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.Wrapper.touch">[docs]</a>    <span class="k">def</span> <span class="nf">touch</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Mark this wrapper as having been modified since its creation.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nb">object</span><span class="o">.</span><span class="n">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s">&#39;is_modified&#39;</span><span class="p">,</span> <span class="bp">True</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">parent</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">touch</span><span class="p">()</span>
+</div>
+<div class="viewcode-block" id="Wrapper.to_json"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.Wrapper.to_json">[docs]</a>    <span class="k">def</span> <span class="nf">to_json</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Return a JSON dump of this wrapper.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">wrapped</span><span class="p">)</span>
+</div>
+    <span class="nd">@classmethod</span>
+<div class="viewcode-block" id="Wrapper.from_json"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.Wrapper.from_json">[docs]</a>    <span class="k">def</span> <span class="nf">from_json</span><span class="p">(</span><span class="n">cls</span><span class="p">,</span> <span class="n">jdef</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Build a new wrapper from a JSON dump.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">cls</span><span class="p">(</span><span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">jdef</span><span class="p">))</span>
+
+    <span class="c"># FIXME: things like self.x[0] = &#39;y&#39; do NOT call self.__setattr__</span></div>
+    <span class="k">def</span> <span class="nf">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">wrapped</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">AttributeError</span><span class="p">(</span><span class="s">&quot;can&#39;t set attribute&quot;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">wrapped</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+            <span class="nb">object</span><span class="o">.</span><span class="n">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">touch</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s">&quot;</span><span class="si">%s</span><span class="s">(</span><span class="si">%r</span><span class="s">)&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">__class__</span><span class="o">.</span><span class="n">__name__</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">wrapped</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="Step"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.Step">[docs]</a><span class="k">class</span> <span class="nc">Step</span><span class="p">(</span><span class="n">Wrapper</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Abstract base class for workflow steps.</span>
+
+<span class="sd">    Steps are the main building blocks of a Galaxy workflow.  A step</span>
+<span class="sd">    can refer to either an input dataset (type &#39;data_input`) or a</span>
+<span class="sd">    computational tool (type &#39;tool`).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">BASE_ATTRS</span> <span class="o">=</span> <span class="n">Wrapper</span><span class="o">.</span><span class="n">BASE_ATTRS</span> <span class="o">+</span> <span class="p">(</span>
+        <span class="s">&#39;input_steps&#39;</span><span class="p">,</span> <span class="s">&#39;tool_id&#39;</span><span class="p">,</span> <span class="s">&#39;tool_inputs&#39;</span><span class="p">,</span> <span class="s">&#39;tool_version&#39;</span><span class="p">,</span> <span class="s">&#39;type&#39;</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">step_dict</span><span class="p">,</span> <span class="n">parent</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">Step</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="n">step_dict</span><span class="p">,</span> <span class="n">parent</span><span class="o">=</span><span class="n">parent</span><span class="p">,</span> <span class="n">gi</span><span class="o">=</span><span class="n">parent</span><span class="o">.</span><span class="n">gi</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s">&#39;tool&#39;</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">tool_inputs</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">tool_inputs</span><span class="o">.</span><span class="n">iteritems</span><span class="p">():</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">tool_inputs</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">v</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">gi_module</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">workflows</span>
+
+</div>
+<div class="viewcode-block" id="Workflow"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.Workflow">[docs]</a><span class="k">class</span> <span class="nc">Workflow</span><span class="p">(</span><span class="n">Wrapper</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Workflows represent ordered sequences of computations on Galaxy.</span>
+
+<span class="sd">    A workflow defines a sequence of steps that produce one or more</span>
+<span class="sd">    results from an input dataset.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">BASE_ATTRS</span> <span class="o">=</span> <span class="n">Wrapper</span><span class="o">.</span><span class="n">BASE_ATTRS</span> <span class="o">+</span> <span class="p">(</span>
+        <span class="s">&#39;deleted&#39;</span><span class="p">,</span> <span class="s">&#39;inputs&#39;</span><span class="p">,</span> <span class="s">&#39;published&#39;</span><span class="p">,</span> <span class="s">&#39;steps&#39;</span><span class="p">,</span> <span class="s">&#39;tags&#39;</span>
+        <span class="p">)</span>
+    <span class="n">POLLING_INTERVAL</span> <span class="o">=</span> <span class="mi">10</span>  <span class="c"># for output state monitoring</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">wf_dict</span><span class="p">,</span> <span class="n">gi</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">Workflow</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="n">wf_dict</span><span class="p">,</span> <span class="n">gi</span><span class="o">=</span><span class="n">gi</span><span class="p">)</span>
+        <span class="n">missing_ids</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">steps</span><span class="o">.</span><span class="n">iteritems</span><span class="p">():</span>
+            <span class="c"># convert step ids to str for consistency with outer keys</span>
+            <span class="n">v</span><span class="p">[</span><span class="s">&#39;id&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">v</span><span class="p">[</span><span class="s">&#39;id&#39;</span><span class="p">])</span>
+            <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">v</span><span class="p">[</span><span class="s">&#39;input_steps&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">itervalues</span><span class="p">():</span>
+                <span class="n">i</span><span class="p">[</span><span class="s">&#39;source_step&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">i</span><span class="p">[</span><span class="s">&#39;source_step&#39;</span><span class="p">])</span>
+            <span class="n">step</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_step</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">steps</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="n">step</span>
+            <span class="k">if</span> <span class="n">step</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s">&#39;tool&#39;</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">step</span><span class="o">.</span><span class="n">tool_inputs</span><span class="p">:</span>
+                <span class="n">missing_ids</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">k</span><span class="p">)</span>
+        <span class="n">input_labels_to_ids</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">id_</span><span class="p">,</span> <span class="n">d</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">inputs</span><span class="o">.</span><span class="n">iteritems</span><span class="p">():</span>
+            <span class="n">input_labels_to_ids</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">d</span><span class="p">[</span><span class="s">&#39;label&#39;</span><span class="p">],</span> <span class="nb">set</span><span class="p">())</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">id_</span><span class="p">)</span>
+        <span class="n">tool_labels_to_ids</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">steps</span><span class="o">.</span><span class="n">itervalues</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">s</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s">&#39;tool&#39;</span><span class="p">:</span>
+                <span class="n">tool_labels_to_ids</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">tool_id</span><span class="p">,</span> <span class="nb">set</span><span class="p">())</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">id</span><span class="p">)</span>
+        <span class="nb">object</span><span class="o">.</span><span class="n">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s">&#39;input_labels_to_ids&#39;</span><span class="p">,</span> <span class="n">input_labels_to_ids</span><span class="p">)</span>
+        <span class="nb">object</span><span class="o">.</span><span class="n">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s">&#39;tool_labels_to_ids&#39;</span><span class="p">,</span> <span class="n">tool_labels_to_ids</span><span class="p">)</span>
+        <span class="n">dag</span><span class="p">,</span> <span class="n">inv_dag</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_dag</span><span class="p">()</span>
+        <span class="n">heads</span><span class="p">,</span> <span class="n">tails</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">dag</span><span class="p">),</span> <span class="nb">set</span><span class="p">(</span><span class="n">inv_dag</span><span class="p">)</span>
+        <span class="nb">object</span><span class="o">.</span><span class="n">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s">&#39;_dag&#39;</span><span class="p">,</span> <span class="n">dag</span><span class="p">)</span>
+        <span class="nb">object</span><span class="o">.</span><span class="n">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s">&#39;_inv_dag&#39;</span><span class="p">,</span> <span class="n">inv_dag</span><span class="p">)</span>
+        <span class="nb">object</span><span class="o">.</span><span class="n">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s">&#39;input_ids&#39;</span><span class="p">,</span> <span class="n">heads</span> <span class="o">-</span> <span class="n">tails</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">input_ids</span> <span class="o">==</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">inputs</span><span class="p">)</span>
+        <span class="nb">object</span><span class="o">.</span><span class="n">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s">&#39;output_ids&#39;</span><span class="p">,</span> <span class="n">tails</span> <span class="o">-</span> <span class="n">heads</span><span class="p">)</span>
+        <span class="nb">object</span><span class="o">.</span><span class="n">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s">&#39;missing_ids&#39;</span><span class="p">,</span> <span class="n">missing_ids</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">gi_module</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">workflows</span>
+
+    <span class="k">def</span> <span class="nf">_get_dag</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Return the workflow&#39;s DAG.</span>
+
+<span class="sd">        For convenience, this method computes a &#39;direct&#39; (step =&gt;</span>
+<span class="sd">        successors) and an &#39;inverse&#39; (step =&gt; predecessors)</span>
+<span class="sd">        representation of the same DAG.</span>
+
+<span class="sd">        For instance, a workflow with a single tool *c*, two inputs</span>
+<span class="sd">        *a, b* and three outputs *d, e, f* is represented by (direct)::</span>
+
+<span class="sd">          {&#39;a&#39;: {&#39;c&#39;}, &#39;b&#39;: {&#39;c&#39;}, &#39;c&#39;: set([&#39;d&#39;, &#39;e&#39;, &#39;f&#39;])}</span>
+
+<span class="sd">        and by (inverse)::</span>
+
+<span class="sd">          {&#39;c&#39;: set([&#39;a&#39;, &#39;b&#39;]), &#39;d&#39;: {&#39;c&#39;}, &#39;e&#39;: {&#39;c&#39;}, &#39;f&#39;: {&#39;c&#39;}}</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">dag</span><span class="p">,</span> <span class="n">inv_dag</span> <span class="o">=</span> <span class="p">{},</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">steps</span><span class="o">.</span><span class="n">itervalues</span><span class="p">():</span>
+            <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">s</span><span class="o">.</span><span class="n">input_steps</span><span class="o">.</span><span class="n">itervalues</span><span class="p">():</span>
+                <span class="n">head</span><span class="p">,</span> <span class="n">tail</span> <span class="o">=</span> <span class="n">i</span><span class="p">[</span><span class="s">&#39;source_step&#39;</span><span class="p">],</span> <span class="n">s</span><span class="o">.</span><span class="n">id</span>
+                <span class="n">dag</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">head</span><span class="p">,</span> <span class="nb">set</span><span class="p">())</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">tail</span><span class="p">)</span>
+                <span class="n">inv_dag</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">tail</span><span class="p">,</span> <span class="nb">set</span><span class="p">())</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">head</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">dag</span><span class="p">,</span> <span class="n">inv_dag</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">dag</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dag</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">inv_dag</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_inv_dag</span>
+
+<div class="viewcode-block" id="Workflow.sorted_step_ids"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.Workflow.sorted_step_ids">[docs]</a>    <span class="k">def</span> <span class="nf">sorted_step_ids</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Return a topological sort of the workflow&#39;s DAG.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">ids</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">input_ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">input_ids</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="n">inv_dag</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">((</span><span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="o">.</span><span class="n">copy</span><span class="p">())</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">inv_dag</span><span class="o">.</span><span class="n">iteritems</span><span class="p">())</span>
+        <span class="k">while</span> <span class="n">input_ids</span><span class="p">:</span>
+            <span class="n">head</span> <span class="o">=</span> <span class="n">input_ids</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span>
+            <span class="n">ids</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">head</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">tail</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">dag</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">head</span><span class="p">,</span> <span class="p">[]):</span>
+                <span class="n">incoming</span> <span class="o">=</span> <span class="n">inv_dag</span><span class="p">[</span><span class="n">tail</span><span class="p">]</span>
+                <span class="n">incoming</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">head</span><span class="p">)</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">incoming</span><span class="p">:</span>
+                    <span class="n">input_ids</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">tail</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">ids</span>
+</div>
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">_build_step</span><span class="p">(</span><span class="n">step_dict</span><span class="p">,</span> <span class="n">parent</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">stype</span> <span class="o">=</span> <span class="n">step_dict</span><span class="p">[</span><span class="s">&#39;type&#39;</span><span class="p">]</span>
+        <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&#39;not a step dict&#39;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">stype</span> <span class="ow">not</span> <span class="ow">in</span> <span class="nb">set</span><span class="p">([</span><span class="s">&#39;data_input&#39;</span><span class="p">,</span> <span class="s">&#39;tool&#39;</span><span class="p">]):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&#39;unknown step type: </span><span class="si">%r</span><span class="s">&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">stype</span><span class="p">,))</span>
+        <span class="k">return</span> <span class="n">Step</span><span class="p">(</span><span class="n">step_dict</span><span class="p">,</span> <span class="n">parent</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">data_input_ids</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Return the list of data input steps for this workflow.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">set</span><span class="p">(</span><span class="n">id_</span> <span class="k">for</span> <span class="n">id_</span><span class="p">,</span> <span class="n">s</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">steps</span><span class="o">.</span><span class="n">iteritems</span><span class="p">()</span>
+                   <span class="k">if</span> <span class="n">s</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s">&#39;data_input&#39;</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">tool_ids</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Return the list of tool steps for this workflow.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">set</span><span class="p">(</span><span class="n">id_</span> <span class="k">for</span> <span class="n">id_</span><span class="p">,</span> <span class="n">s</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">steps</span><span class="o">.</span><span class="n">iteritems</span><span class="p">()</span>
+                   <span class="k">if</span> <span class="n">s</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s">&#39;tool&#39;</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">input_labels</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Return the labels of this workflow&#39;s input steps.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">input_labels_to_ids</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">is_runnable</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Return True if the workflow can be run on Galaxy.</span>
+
+<span class="sd">        A workflow is considered runnable on a Galaxy instance if all</span>
+<span class="sd">        of the tools it uses are installed in that instance.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">missing_ids</span>
+
+<div class="viewcode-block" id="Workflow.convert_input_map"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.Workflow.convert_input_map">[docs]</a>    <span class="k">def</span> <span class="nf">convert_input_map</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">input_map</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Convert ``input_map`` to the format required by the Galaxy web API.</span>
+
+<span class="sd">        :type input_map: dict</span>
+<span class="sd">        :param input_map: a mapping from input labels to datasets</span>
+
+<span class="sd">        :rtype: dict</span>
+<span class="sd">        :return: a mapping from input slot ids to dataset ids in the</span>
+<span class="sd">          format required by the Galaxy web API.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">m</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">label</span><span class="p">,</span> <span class="n">slot_ids</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">input_labels_to_ids</span><span class="o">.</span><span class="n">iteritems</span><span class="p">():</span>
+            <span class="n">datasets</span> <span class="o">=</span> <span class="n">input_map</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">label</span><span class="p">,</span> <span class="p">[])</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">datasets</span><span class="p">,</span> <span class="n">collections</span><span class="o">.</span><span class="n">Iterable</span><span class="p">):</span>
+                <span class="n">datasets</span> <span class="o">=</span> <span class="p">[</span><span class="n">datasets</span><span class="p">]</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">datasets</span><span class="p">)</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">slot_ids</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s">&#39;not enough datasets for &quot;</span><span class="si">%s</span><span class="s">&quot;&#39;</span> <span class="o">%</span> <span class="n">label</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">id_</span><span class="p">,</span> <span class="n">ds</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">slot_ids</span><span class="p">,</span> <span class="n">datasets</span><span class="p">):</span>
+                <span class="n">m</span><span class="p">[</span><span class="n">id_</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;id&#39;</span><span class="p">:</span> <span class="n">ds</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="s">&#39;src&#39;</span><span class="p">:</span> <span class="n">ds</span><span class="o">.</span><span class="n">SRC</span><span class="p">}</span>
+        <span class="k">return</span> <span class="n">m</span>
+</div>
+<div class="viewcode-block" id="Workflow.preview"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.Workflow.preview">[docs]</a>    <span class="k">def</span> <span class="nf">preview</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">getf</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">workflows</span><span class="o">.</span><span class="n">get_previews</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">p</span> <span class="o">=</span> <span class="p">[</span><span class="n">_</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">getf</span><span class="p">(</span><span class="n">published</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span> <span class="k">if</span> <span class="n">_</span><span class="o">.</span><span class="n">id</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">except</span> <span class="ne">IndexError</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&#39;no object for id </span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">p</span>
+</div>
+<div class="viewcode-block" id="Workflow.run"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.Workflow.run">[docs]</a>    <span class="k">def</span> <span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">input_map</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">history</span><span class="o">=</span><span class="s">&#39;&#39;</span><span class="p">,</span> <span class="n">params</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">import_inputs</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+            <span class="n">replacement_params</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">wait</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+            <span class="n">polling_interval</span><span class="o">=</span><span class="n">POLLING_INTERVAL</span><span class="p">,</span> <span class="n">break_on_error</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Run the workflow in the current Galaxy instance.</span>
+
+<span class="sd">        :type input_map: dict</span>
+<span class="sd">        :param input_map: a mapping from workflow input labels to</span>
+<span class="sd">          datasets, e.g.: ``dict(zip(workflow.input_labels,</span>
+<span class="sd">          library.get_datasets()))``</span>
+
+<span class="sd">        :type history: :class:`History` or str</span>
+<span class="sd">        :param history: either a valid history object (results will be</span>
+<span class="sd">          stored there) or a string (a new history will be created with</span>
+<span class="sd">          the given name).</span>
+
+<span class="sd">        :type params: :class:`~collections.Mapping`</span>
+<span class="sd">        :param params: parameter settings for workflow steps (see below)</span>
+
+<span class="sd">        :type import_inputs: bool</span>
+<span class="sd">        :param import_inputs: If :obj:`True`, workflow inputs will be</span>
+<span class="sd">          imported into the history; if :obj:`False`, only workflow</span>
+<span class="sd">          outputs will be visible in the history.</span>
+
+<span class="sd">        :type replacement_params: :class:`~collections.Mapping`</span>
+<span class="sd">        :param replacement_params: pattern-based replacements for</span>
+<span class="sd">          post-job actions (see the docs for</span>
+<span class="sd">          :meth:`~bioblend.galaxy.workflows.WorkflowClient.run_workflow`)</span>
+
+<span class="sd">        :type wait: boolean</span>
+<span class="sd">        :param wait: whether to wait while the returned datasets are</span>
+<span class="sd">          in a pending state</span>
+
+<span class="sd">        :type polling_interval: float</span>
+<span class="sd">        :param polling_interval: polling interval in seconds</span>
+
+<span class="sd">        :type break_on_error: boolean</span>
+<span class="sd">        :param break_on_error: whether to break as soon as at least one</span>
+<span class="sd">          of the returned datasets is in the &#39;error&#39; state</span>
+
+<span class="sd">        :rtype: tuple</span>
+<span class="sd">        :return: list of output datasets, output history</span>
+
+<span class="sd">        The ``params`` dict should be structured as follows::</span>
+
+<span class="sd">          PARAMS = {STEP_ID: PARAM_DICT, ...}</span>
+<span class="sd">          PARAM_DICT = {NAME: VALUE, ...}</span>
+
+<span class="sd">        For backwards compatibility, the following (deprecated) format is</span>
+<span class="sd">        also supported::</span>
+
+<span class="sd">          PARAMS = {TOOL_ID: PARAM_DICT, ...}</span>
+
+<span class="sd">        in which case PARAM_DICT affects all steps with the given tool id.</span>
+<span class="sd">        If both by-tool-id and by-step-id specifications are used, the</span>
+<span class="sd">        latter takes precedence.</span>
+
+<span class="sd">        Finally (again, for backwards compatibility), PARAM_DICT can also</span>
+<span class="sd">        be specified as::</span>
+
+<span class="sd">          PARAM_DICT = {&#39;param&#39;: NAME, &#39;value&#39;: VALUE}</span>
+
+<span class="sd">        Note that this format allows only one parameter to be set per step.</span>
+
+<span class="sd">        Example: set &#39;a&#39; to 1 for the third workflow step::</span>
+
+<span class="sd">          params = {workflow.steps[2].id: {&#39;a&#39;: 1}}</span>
+
+<span class="sd">        .. warning::</span>
+
+<span class="sd">          This is a blocking operation that can take a very long time.</span>
+<span class="sd">          If ``wait`` is set to :obj:`False`, the method will return</span>
+<span class="sd">          as soon as the workflow has been *scheduled*, otherwise it</span>
+<span class="sd">          will wait until the workflow has been *run*.  With a large</span>
+<span class="sd">          number of steps, however, the delay may not be negligible</span>
+<span class="sd">          even in the former case (e.g., minutes for 100 steps).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_mapped</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s">&#39;workflow is not mapped to a Galaxy object&#39;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_runnable</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s">&#39;workflow has missing tools: </span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="s">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
+                <span class="s">&#39;</span><span class="si">%s</span><span class="s">[</span><span class="si">%s</span><span class="s">]&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">steps</span><span class="p">[</span><span class="n">_</span><span class="p">]</span><span class="o">.</span><span class="n">tool_id</span><span class="p">,</span> <span class="n">_</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">missing_ids</span>
+                <span class="p">))</span>
+        <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&#39;dataset_map&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">convert_input_map</span><span class="p">(</span><span class="n">input_map</span> <span class="ow">or</span> <span class="p">{}),</span>
+            <span class="s">&#39;params&#39;</span><span class="p">:</span> <span class="n">params</span><span class="p">,</span>
+            <span class="s">&#39;import_inputs_to_history&#39;</span><span class="p">:</span> <span class="n">import_inputs</span><span class="p">,</span>
+            <span class="s">&#39;replacement_params&#39;</span><span class="p">:</span> <span class="n">replacement_params</span><span class="p">,</span>
+            <span class="p">}</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">history</span><span class="p">,</span> <span class="n">History</span><span class="p">):</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">kwargs</span><span class="p">[</span><span class="s">&#39;history_id&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">history</span><span class="o">.</span><span class="n">id</span>
+            <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s">&#39;history does not have an id&#39;</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">history</span><span class="p">,</span> <span class="nb">basestring</span><span class="p">):</span>
+            <span class="n">kwargs</span><span class="p">[</span><span class="s">&#39;history_name&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">history</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+                <span class="s">&#39;history must be either a history wrapper or a string&#39;</span>
+                <span class="p">)</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">workflows</span><span class="o">.</span><span class="n">run_workflow</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="c"># res structure: {&#39;history&#39;: HIST_ID, &#39;outputs&#39;: [DS_ID, DS_ID, ...]}</span>
+        <span class="n">out_hist</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">histories</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">res</span><span class="p">[</span><span class="s">&#39;history&#39;</span><span class="p">])</span>
+        <span class="k">assert</span> <span class="nb">set</span><span class="p">(</span><span class="n">res</span><span class="p">[</span><span class="s">&#39;outputs&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">issubset</span><span class="p">(</span><span class="n">out_hist</span><span class="o">.</span><span class="n">dataset_ids</span><span class="p">)</span>
+        <span class="n">outputs</span> <span class="o">=</span> <span class="p">[</span><span class="n">out_hist</span><span class="o">.</span><span class="n">get_dataset</span><span class="p">(</span><span class="n">_</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">res</span><span class="p">[</span><span class="s">&#39;outputs&#39;</span><span class="p">]]</span>
+
+        <span class="k">if</span> <span class="n">wait</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">_wait_datasets</span><span class="p">(</span><span class="n">outputs</span><span class="p">,</span> <span class="n">polling_interval</span><span class="o">=</span><span class="n">polling_interval</span><span class="p">,</span>
+                                   <span class="n">break_on_error</span><span class="o">=</span><span class="n">break_on_error</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">outputs</span><span class="p">,</span> <span class="n">out_hist</span>
+</div>
+<div class="viewcode-block" id="Workflow.export"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.Workflow.export">[docs]</a>    <span class="k">def</span> <span class="nf">export</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Export a re-importable representation of the workflow.</span>
+
+<span class="sd">        :rtype: dict</span>
+<span class="sd">        :return: a JSON-serializable dump of the workflow</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">workflows</span><span class="o">.</span><span class="n">export_workflow_json</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Workflow.delete"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.Workflow.delete">[docs]</a>    <span class="k">def</span> <span class="nf">delete</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">workflows</span><span class="o">.</span><span class="n">delete</span><span class="p">(</span><span class="n">id_</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">unmap</span><span class="p">()</span>
+
+</div></div>
+<div class="viewcode-block" id="Dataset"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.Dataset">[docs]</a><span class="k">class</span> <span class="nc">Dataset</span><span class="p">(</span><span class="n">Wrapper</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Abstract base class for Galaxy datasets.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">BASE_ATTRS</span> <span class="o">=</span> <span class="n">Wrapper</span><span class="o">.</span><span class="n">BASE_ATTRS</span> <span class="o">+</span> <span class="p">(</span>
+        <span class="s">&#39;data_type&#39;</span><span class="p">,</span> <span class="s">&#39;file_name&#39;</span><span class="p">,</span> <span class="s">&#39;file_size&#39;</span><span class="p">,</span> <span class="s">&#39;state&#39;</span><span class="p">,</span> <span class="s">&#39;deleted&#39;</span><span class="p">,</span> <span class="s">&#39;file_ext&#39;</span>
+        <span class="p">)</span>
+    <span class="n">__metaclass__</span> <span class="o">=</span> <span class="n">abc</span><span class="o">.</span><span class="n">ABCMeta</span>
+    <span class="n">POLLING_INTERVAL</span> <span class="o">=</span> <span class="mi">1</span>  <span class="c"># for state monitoring</span>
+
+    <span class="nd">@abc.abstractmethod</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ds_dict</span><span class="p">,</span> <span class="n">container</span><span class="p">,</span> <span class="n">gi</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">Dataset</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="n">ds_dict</span><span class="p">,</span> <span class="n">gi</span><span class="o">=</span><span class="n">gi</span><span class="p">)</span>
+        <span class="nb">object</span><span class="o">.</span><span class="n">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s">&#39;container&#39;</span><span class="p">,</span> <span class="n">container</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">container_id</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Deprecated property.</span>
+
+<span class="sd">        Id of the dataset container. Use :attr:`.container.id` instead.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">container</span><span class="o">.</span><span class="n">id</span>
+
+    <span class="nd">@abc.abstractproperty</span>
+    <span class="k">def</span> <span class="nf">_stream_url</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">pass</span>
+
+<div class="viewcode-block" id="Dataset.get_stream"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.Dataset.get_stream">[docs]</a>    <span class="k">def</span> <span class="nf">get_stream</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">chunk_size</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Open dataset for reading and return an iterator over its contents.</span>
+
+<span class="sd">        :type chunk_size: int</span>
+<span class="sd">        :param chunk_size: read this amount of bytes at a time</span>
+
+<span class="sd">        .. warning::</span>
+
+<span class="sd">          Due to a change in the Galaxy API endpoint, this method does</span>
+<span class="sd">          not work on :class:`LibraryDataset` instances with Galaxy</span>
+<span class="sd">          ``release_2014.06.02`` and ``release_2014.08.11``.  Methods</span>
+<span class="sd">          that delegate work to this one are also affected:</span>
+<span class="sd">          :meth:`peek`, :meth:`download`, :meth:`get_contents`.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;stream&#39;</span><span class="p">:</span> <span class="bp">True</span><span class="p">}</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">LibraryDataset</span><span class="p">):</span>
+            <span class="n">kwargs</span><span class="p">[</span><span class="s">&#39;params&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;ld_ids%5B%5D&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="p">}</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">make_get_request</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_stream_url</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">LibraryDataset</span><span class="p">)</span> <span class="ow">and</span> <span class="n">r</span><span class="o">.</span><span class="n">status_code</span> <span class="o">==</span> <span class="mi">500</span><span class="p">:</span>
+            <span class="c"># compatibility with older Galaxy releases</span>
+            <span class="n">kwargs</span><span class="p">[</span><span class="s">&#39;params&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;ldda_ids%5B%5D&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="p">}</span>
+            <span class="n">r</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">make_get_request</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_stream_url</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="n">r</span><span class="o">.</span><span class="n">raise_for_status</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">r</span><span class="o">.</span><span class="n">iter_content</span><span class="p">(</span><span class="n">chunk_size</span><span class="p">)</span>  <span class="c"># FIXME: client can&#39;t close r</span>
+</div>
+<div class="viewcode-block" id="Dataset.peek"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.Dataset.peek">[docs]</a>    <span class="k">def</span> <span class="nf">peek</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">chunk_size</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Open dataset for reading and return the first chunk.</span>
+
+<span class="sd">        See :meth:`.get_stream` for param info.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_stream</span><span class="p">(</span><span class="n">chunk_size</span><span class="o">=</span><span class="n">chunk_size</span><span class="p">)</span><span class="o">.</span><span class="n">next</span><span class="p">()</span>
+        <span class="k">except</span> <span class="ne">StopIteration</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s">&#39;&#39;</span>
+</div>
+<div class="viewcode-block" id="Dataset.download"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.Dataset.download">[docs]</a>    <span class="k">def</span> <span class="nf">download</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">file_object</span><span class="p">,</span> <span class="n">chunk_size</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Open dataset for reading and save its contents to ``file_object``.</span>
+
+<span class="sd">        :type outf: :obj:`file`</span>
+<span class="sd">        :param outf: output file object</span>
+
+<span class="sd">        See :meth:`.get_stream` for info on other params.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">for</span> <span class="n">chunk</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_stream</span><span class="p">(</span><span class="n">chunk_size</span><span class="o">=</span><span class="n">chunk_size</span><span class="p">):</span>
+            <span class="n">file_object</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">chunk</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Dataset.get_contents"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.Dataset.get_contents">[docs]</a>    <span class="k">def</span> <span class="nf">get_contents</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">chunk_size</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Open dataset for reading and return its **full** contents.</span>
+
+<span class="sd">        See :meth:`.get_stream` for param info.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="s">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">get_stream</span><span class="p">(</span><span class="n">chunk_size</span><span class="o">=</span><span class="n">chunk_size</span><span class="p">))</span>
+</div>
+<div class="viewcode-block" id="Dataset.refresh"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.Dataset.refresh">[docs]</a>    <span class="k">def</span> <span class="nf">refresh</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Re-fetch the attributes pertaining to this object.</span>
+
+<span class="sd">        Returns: self</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">gi_client</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">gi</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">container</span><span class="o">.</span><span class="n">API_MODULE</span><span class="p">)</span>
+        <span class="n">ds_dict</span> <span class="o">=</span> <span class="n">gi_client</span><span class="o">.</span><span class="n">show_dataset</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">container</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="n">ds_dict</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">container</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span>
+</div>
+<div class="viewcode-block" id="Dataset.wait"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.Dataset.wait">[docs]</a>    <span class="k">def</span> <span class="nf">wait</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">polling_interval</span><span class="o">=</span><span class="n">POLLING_INTERVAL</span><span class="p">,</span> <span class="n">break_on_error</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">_wait_datasets</span><span class="p">([</span><span class="bp">self</span><span class="p">],</span> <span class="n">polling_interval</span><span class="o">=</span><span class="n">polling_interval</span><span class="p">,</span>
+                               <span class="n">break_on_error</span><span class="o">=</span><span class="n">break_on_error</span><span class="p">)</span>
+
+</div></div>
+<div class="viewcode-block" id="HistoryDatasetAssociation"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.HistoryDatasetAssociation">[docs]</a><span class="k">class</span> <span class="nc">HistoryDatasetAssociation</span><span class="p">(</span><span class="n">Dataset</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Maps to a Galaxy ``HistoryDatasetAssociation``.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">BASE_ATTRS</span> <span class="o">=</span> <span class="n">Dataset</span><span class="o">.</span><span class="n">BASE_ATTRS</span> <span class="o">+</span> <span class="p">(</span><span class="s">&#39;tags&#39;</span><span class="p">,</span> <span class="s">&#39;visible&#39;</span><span class="p">)</span>
+    <span class="n">SRC</span> <span class="o">=</span> <span class="s">&#39;hda&#39;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ds_dict</span><span class="p">,</span> <span class="n">container</span><span class="p">,</span> <span class="n">gi</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">HistoryDatasetAssociation</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span>
+            <span class="n">ds_dict</span><span class="p">,</span> <span class="n">container</span><span class="p">,</span> <span class="n">gi</span><span class="o">=</span><span class="n">gi</span>
+            <span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">gi_module</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">histories</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">_stream_url</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">base_url</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">_make_url</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">histories</span><span class="p">,</span> <span class="n">module_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">container</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="n">contents</span><span class="o">=</span><span class="bp">True</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="s">&quot;</span><span class="si">%s</span><span class="s">/</span><span class="si">%s</span><span class="s">/display&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">base_url</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="p">)</span>
+
+<div class="viewcode-block" id="HistoryDatasetAssociation.delete"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.HistoryDatasetAssociation.delete">[docs]</a>    <span class="k">def</span> <span class="nf">delete</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">histories</span><span class="o">.</span><span class="n">delete_dataset</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">container</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">container</span><span class="o">.</span><span class="n">refresh</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">refresh</span><span class="p">()</span>
+
+</div></div>
+<span class="k">class</span> <span class="nc">LibRelatedDataset</span><span class="p">(</span><span class="n">Dataset</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ds_dict</span><span class="p">,</span> <span class="n">container</span><span class="p">,</span> <span class="n">gi</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">LibRelatedDataset</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="n">ds_dict</span><span class="p">,</span> <span class="n">container</span><span class="p">,</span> <span class="n">gi</span><span class="o">=</span><span class="n">gi</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">gi_module</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">libraries</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">_stream_url</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">base_url</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">_make_url</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">libraries</span><span class="p">)</span>
+        <span class="k">return</span> <span class="s">&quot;</span><span class="si">%s</span><span class="s">/datasets/download/uncompressed&quot;</span> <span class="o">%</span> <span class="n">base_url</span>
+
+
+<div class="viewcode-block" id="LibraryDatasetDatasetAssociation"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.LibraryDatasetDatasetAssociation">[docs]</a><span class="k">class</span> <span class="nc">LibraryDatasetDatasetAssociation</span><span class="p">(</span><span class="n">LibRelatedDataset</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Maps to a Galaxy ``LibraryDatasetDatasetAssociation``.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">SRC</span> <span class="o">=</span> <span class="s">&#39;ldda&#39;</span>
+
+</div>
+<div class="viewcode-block" id="LibraryDataset"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.LibraryDataset">[docs]</a><span class="k">class</span> <span class="nc">LibraryDataset</span><span class="p">(</span><span class="n">LibRelatedDataset</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Maps to a Galaxy ``LibraryDataset``.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">SRC</span> <span class="o">=</span> <span class="s">&#39;ld&#39;</span>
+
+<div class="viewcode-block" id="LibraryDataset.delete"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.LibraryDataset.delete">[docs]</a>    <span class="k">def</span> <span class="nf">delete</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">purged</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">libraries</span><span class="o">.</span><span class="n">delete_library_dataset</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">container</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="n">purged</span><span class="o">=</span><span class="n">purged</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">container</span><span class="o">.</span><span class="n">refresh</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">refresh</span><span class="p">()</span>
+
+</div></div>
+<div class="viewcode-block" id="ContentInfo"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.ContentInfo">[docs]</a><span class="k">class</span> <span class="nc">ContentInfo</span><span class="p">(</span><span class="n">Wrapper</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Instances of this class wrap dictionaries obtained by getting</span>
+<span class="sd">    ``/api/{histories,libraries}/&lt;ID&gt;/contents`` from Galaxy.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">BASE_ATTRS</span> <span class="o">=</span> <span class="n">Wrapper</span><span class="o">.</span><span class="n">BASE_ATTRS</span> <span class="o">+</span> <span class="p">(</span><span class="s">&#39;type&#39;</span><span class="p">,)</span>
+    <span class="n">__metaclass__</span> <span class="o">=</span> <span class="n">abc</span><span class="o">.</span><span class="n">ABCMeta</span>
+
+    <span class="nd">@abc.abstractmethod</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">info_dict</span><span class="p">,</span> <span class="n">gi</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">ContentInfo</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="n">info_dict</span><span class="p">,</span> <span class="n">gi</span><span class="o">=</span><span class="n">gi</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="LibraryContentInfo"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.LibraryContentInfo">[docs]</a><span class="k">class</span> <span class="nc">LibraryContentInfo</span><span class="p">(</span><span class="n">ContentInfo</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Instances of this class wrap dictionaries obtained by getting</span>
+<span class="sd">    ``/api/libraries/&lt;ID&gt;/contents`` from Galaxy.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">info_dict</span><span class="p">,</span> <span class="n">gi</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">LibraryContentInfo</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="n">info_dict</span><span class="p">,</span> <span class="n">gi</span><span class="o">=</span><span class="n">gi</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s">&#39;F&#39;</span><span class="p">):</span>
+            <span class="nb">object</span><span class="o">.</span><span class="n">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s">&#39;id&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">gi_module</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">libraries</span>
+
+</div>
+<div class="viewcode-block" id="HistoryContentInfo"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.HistoryContentInfo">[docs]</a><span class="k">class</span> <span class="nc">HistoryContentInfo</span><span class="p">(</span><span class="n">ContentInfo</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Instances of this class wrap dictionaries obtained by getting</span>
+<span class="sd">    ``/api/histories/&lt;ID&gt;/contents`` from Galaxy.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">BASE_ATTRS</span> <span class="o">=</span> <span class="n">ContentInfo</span><span class="o">.</span><span class="n">BASE_ATTRS</span> <span class="o">+</span> <span class="p">(</span><span class="s">&#39;deleted&#39;</span><span class="p">,</span> <span class="s">&#39;state&#39;</span><span class="p">,</span> <span class="s">&#39;visible&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">info_dict</span><span class="p">,</span> <span class="n">gi</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">HistoryContentInfo</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="n">info_dict</span><span class="p">,</span> <span class="n">gi</span><span class="o">=</span><span class="n">gi</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">gi_module</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">histories</span>
+
+</div>
+<div class="viewcode-block" id="DatasetContainer"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.DatasetContainer">[docs]</a><span class="k">class</span> <span class="nc">DatasetContainer</span><span class="p">(</span><span class="n">Wrapper</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Abstract base class for dataset containers (histories and libraries).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">BASE_ATTRS</span> <span class="o">=</span> <span class="n">Wrapper</span><span class="o">.</span><span class="n">BASE_ATTRS</span> <span class="o">+</span> <span class="p">(</span><span class="s">&#39;deleted&#39;</span><span class="p">,)</span>
+    <span class="n">__metaclass__</span> <span class="o">=</span> <span class="n">abc</span><span class="o">.</span><span class="n">ABCMeta</span>
+
+    <span class="nd">@abc.abstractmethod</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">c_dict</span><span class="p">,</span> <span class="n">content_infos</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">gi</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        :type content_infos: list of :class:`ContentInfo`</span>
+<span class="sd">        :param content_infos: info objects for the container&#39;s contents</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">DatasetContainer</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="n">c_dict</span><span class="p">,</span> <span class="n">gi</span><span class="o">=</span><span class="n">gi</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">content_infos</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">content_infos</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="nb">object</span><span class="o">.</span><span class="n">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s">&#39;content_infos&#39;</span><span class="p">,</span> <span class="n">content_infos</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">dataset_ids</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">_</span><span class="o">.</span><span class="n">id</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">content_infos</span> <span class="k">if</span> <span class="n">_</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s">&#39;file&#39;</span><span class="p">]</span>
+
+<div class="viewcode-block" id="DatasetContainer.preview"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.DatasetContainer.preview">[docs]</a>    <span class="k">def</span> <span class="nf">preview</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">getf</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">gi_module</span><span class="o">.</span><span class="n">get_previews</span>
+        <span class="c"># self.state could be stale: check both regular and deleted containers</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">p</span> <span class="o">=</span> <span class="p">[</span><span class="n">_</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">getf</span><span class="p">()</span> <span class="k">if</span> <span class="n">_</span><span class="o">.</span><span class="n">id</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">except</span> <span class="ne">IndexError</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">p</span> <span class="o">=</span> <span class="p">[</span><span class="n">_</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">getf</span><span class="p">(</span><span class="n">deleted</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span> <span class="k">if</span> <span class="n">_</span><span class="o">.</span><span class="n">id</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span>
+            <span class="k">except</span> <span class="ne">IndexError</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&#39;no object for id </span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">p</span>
+</div>
+<div class="viewcode-block" id="DatasetContainer.refresh"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.DatasetContainer.refresh">[docs]</a>    <span class="k">def</span> <span class="nf">refresh</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Re-fetch the attributes pertaining to this object.</span>
+
+<span class="sd">        Returns: self</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">fresh</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">gi_module</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span>
+            <span class="n">fresh</span><span class="o">.</span><span class="n">wrapped</span><span class="p">,</span> <span class="n">content_infos</span><span class="o">=</span><span class="n">fresh</span><span class="o">.</span><span class="n">content_infos</span><span class="p">,</span> <span class="n">gi</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">gi</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span>
+</div>
+<div class="viewcode-block" id="DatasetContainer.get_dataset"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.DatasetContainer.get_dataset">[docs]</a>    <span class="k">def</span> <span class="nf">get_dataset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ds_id</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Retrieve the dataset corresponding to the given id.</span>
+
+<span class="sd">        :type ds_id: str</span>
+<span class="sd">        :param ds_id: dataset id</span>
+
+<span class="sd">        :rtype: :class:`~.HistoryDatasetAssociation` or</span>
+<span class="sd">          :class:`~.LibraryDataset`</span>
+<span class="sd">        :return: the dataset corresponding to ``ds_id``</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">gi_client</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">gi</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">API_MODULE</span><span class="p">)</span>
+        <span class="n">ds_dict</span> <span class="o">=</span> <span class="n">gi_client</span><span class="o">.</span><span class="n">show_dataset</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="n">ds_id</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">DS_TYPE</span><span class="p">(</span><span class="n">ds_dict</span><span class="p">,</span> <span class="bp">self</span><span class="p">,</span> <span class="n">gi</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="DatasetContainer.get_datasets"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.DatasetContainer.get_datasets">[docs]</a>    <span class="k">def</span> <span class="nf">get_datasets</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Get all datasets contained inside this dataset container.</span>
+
+<span class="sd">        :type name: str</span>
+<span class="sd">        :param name: return only datasets with this name</span>
+
+<span class="sd">        :rtype: list of :class:`~.HistoryDatasetAssociation` or list of</span>
+<span class="sd">          :class:`~.LibraryDataset`</span>
+<span class="sd">        :return: datasets with the given name contained inside this</span>
+<span class="sd">          container</span>
+
+<span class="sd">        .. note::</span>
+
+<span class="sd">          when filtering library datasets by name, specify their full</span>
+<span class="sd">          paths starting from the library&#39;s root folder, e.g.,</span>
+<span class="sd">          ``/seqdata/reads.fastq``.  Full paths are available through</span>
+<span class="sd">          the ``content_infos`` attribute of</span>
+<span class="sd">          :class:`~.Library` objects.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">name</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">ds_ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">dataset_ids</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">ds_ids</span> <span class="o">=</span> <span class="p">[</span><span class="n">_</span><span class="o">.</span><span class="n">id</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">content_infos</span> <span class="k">if</span> <span class="n">_</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="n">name</span><span class="p">]</span>
+        <span class="k">return</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">get_dataset</span><span class="p">(</span><span class="n">_</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">ds_ids</span><span class="p">]</span>
+
+</div></div>
+<div class="viewcode-block" id="History"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.History">[docs]</a><span class="k">class</span> <span class="nc">History</span><span class="p">(</span><span class="n">DatasetContainer</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Maps to a Galaxy history.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">BASE_ATTRS</span> <span class="o">=</span> <span class="n">DatasetContainer</span><span class="o">.</span><span class="n">BASE_ATTRS</span> <span class="o">+</span> <span class="p">(</span><span class="s">&#39;annotation&#39;</span><span class="p">,</span> <span class="s">&#39;state_ids&#39;</span><span class="p">,</span> <span class="s">&#39;tags&#39;</span><span class="p">)</span>
+    <span class="n">DS_TYPE</span> <span class="o">=</span> <span class="n">HistoryDatasetAssociation</span>
+    <span class="n">CONTENT_INFO_TYPE</span> <span class="o">=</span> <span class="n">HistoryContentInfo</span>
+    <span class="n">API_MODULE</span> <span class="o">=</span> <span class="s">&#39;histories&#39;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">hist_dict</span><span class="p">,</span> <span class="n">content_infos</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">gi</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">History</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span>
+            <span class="n">hist_dict</span><span class="p">,</span> <span class="n">content_infos</span><span class="o">=</span><span class="n">content_infos</span><span class="p">,</span> <span class="n">gi</span><span class="o">=</span><span class="n">gi</span>
+            <span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">gi_module</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">histories</span>
+
+<div class="viewcode-block" id="History.update"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.History.update">[docs]</a>    <span class="k">def</span> <span class="nf">update</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">annotation</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwds</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Update history metadata information. Some of the attributes that can be</span>
+<span class="sd">        modified are documented below.</span>
+
+<span class="sd">        :type name: string</span>
+<span class="sd">        :param name: Replace history name with the given string</span>
+<span class="sd">        :type annotation: string</span>
+<span class="sd">        :param annotation: Replace history annotation with given string</span>
+<span class="sd">        :type deleted: boolean</span>
+<span class="sd">        :param deleted: Mark or unmark history as deleted</span>
+<span class="sd">        :type published: boolean</span>
+<span class="sd">        :param published: Mark or unmark history as published</span>
+<span class="sd">        :type importable: boolean</span>
+<span class="sd">        :param importable: Mark or unmark history as importable</span>
+<span class="sd">        :type tags: list</span>
+<span class="sd">        :param tags: Replace history tags with the given list</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c"># TODO: wouldn&#39;t it be better if name and annotation were attributes?</span>
+        <span class="c"># TODO: do we need to ensure the attributes of `self` are the same as</span>
+        <span class="c"># the ones returned by the call to `update_history` below?</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">histories</span><span class="o">.</span><span class="n">update_history</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span> <span class="n">annotation</span><span class="o">=</span><span class="n">annotation</span><span class="p">,</span> <span class="o">**</span><span class="n">kwds</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">res</span> <span class="o">!=</span> <span class="n">httplib</span><span class="o">.</span><span class="n">OK</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s">&#39;failed to update history&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">refresh</span><span class="p">()</span>
+        <span class="k">return</span> <span class="bp">self</span>
+</div>
+<div class="viewcode-block" id="History.delete"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.History.delete">[docs]</a>    <span class="k">def</span> <span class="nf">delete</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">purge</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">histories</span><span class="o">.</span><span class="n">delete</span><span class="p">(</span><span class="n">id_</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="n">purge</span><span class="o">=</span><span class="n">purge</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">unmap</span><span class="p">()</span>
+</div>
+<div class="viewcode-block" id="History.import_dataset"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.History.import_dataset">[docs]</a>    <span class="k">def</span> <span class="nf">import_dataset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lds</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Import a dataset into the history from a library.</span>
+
+<span class="sd">        :type lds: :class:`~.LibraryDataset`</span>
+<span class="sd">        :param lds: the library dataset to import</span>
+
+<span class="sd">        :rtype: :class:`~.HistoryDatasetAssociation`</span>
+<span class="sd">        :return: the imported history dataset</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_mapped</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s">&#39;history is not mapped to a Galaxy object&#39;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">lds</span><span class="p">,</span> <span class="n">LibraryDataset</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s">&#39;lds is not a LibraryDataset&#39;</span><span class="p">)</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">histories</span><span class="o">.</span><span class="n">upload_dataset_from_library</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="n">lds</span><span class="o">.</span><span class="n">id</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">res</span><span class="p">,</span> <span class="n">collections</span><span class="o">.</span><span class="n">Mapping</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                <span class="s">&#39;upload_dataset_from_library: unexpected reply: </span><span class="si">%r</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">res</span>
+                <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">refresh</span><span class="p">()</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_dataset</span><span class="p">(</span><span class="n">res</span><span class="p">[</span><span class="s">&#39;id&#39;</span><span class="p">])</span>
+</div>
+<div class="viewcode-block" id="History.upload_file"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.History.upload_file">[docs]</a>    <span class="k">def</span> <span class="nf">upload_file</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Upload the file specified by path to this history.</span>
+
+<span class="sd">        :type path: str</span>
+<span class="sd">        :param path: path of the file to upload</span>
+
+<span class="sd">        See :meth:`~bioblend.galaxy.tools.ToolClient.upload_file` for</span>
+<span class="sd">        the optional parameters.</span>
+
+<span class="sd">        :rtype: :class:`~.HistoryDatasetAssociation`</span>
+<span class="sd">        :return: the uploaded dataset</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">out_dict</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">tools</span><span class="o">.</span><span class="n">upload_file</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">refresh</span><span class="p">()</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_dataset</span><span class="p">(</span><span class="n">out_dict</span><span class="p">[</span><span class="s">&#39;outputs&#39;</span><span class="p">][</span><span class="mi">0</span><span class="p">][</span><span class="s">&#39;id&#39;</span><span class="p">])</span>
+</div>
+    <span class="n">upload_dataset</span> <span class="o">=</span> <span class="n">upload_file</span>
+
+<div class="viewcode-block" id="History.paste_content"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.History.paste_content">[docs]</a>    <span class="k">def</span> <span class="nf">paste_content</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">content</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Upload a string to a new dataset in this history.</span>
+
+<span class="sd">        :type content: str</span>
+<span class="sd">        :param content: content of the new dataset to upload</span>
+
+<span class="sd">        See :meth:`~bioblend.galaxy.tools.ToolClient.upload_file` for</span>
+<span class="sd">        the optional parameters.</span>
+
+<span class="sd">        :rtype: :class:`~.HistoryDatasetAssociation`</span>
+<span class="sd">        :return: the uploaded dataset</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">out_dict</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">tools</span><span class="o">.</span><span class="n">paste_content</span><span class="p">(</span><span class="n">content</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">refresh</span><span class="p">()</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_dataset</span><span class="p">(</span><span class="n">out_dict</span><span class="p">[</span><span class="s">&#39;outputs&#39;</span><span class="p">][</span><span class="mi">0</span><span class="p">][</span><span class="s">&#39;id&#39;</span><span class="p">])</span>
+</div>
+<div class="viewcode-block" id="History.export"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.History.export">[docs]</a>    <span class="k">def</span> <span class="nf">export</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">gzip</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">include_hidden</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">include_deleted</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+               <span class="n">wait</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Start a job to create an export archive for this history.  See</span>
+<span class="sd">        :meth:`~bioblend.galaxy.histories.HistoryClient.export_history`</span>
+<span class="sd">        for parameter and return value info.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">histories</span><span class="o">.</span><span class="n">export_history</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="p">,</span>
+            <span class="n">gzip</span><span class="o">=</span><span class="n">gzip</span><span class="p">,</span>
+            <span class="n">include_hidden</span><span class="o">=</span><span class="n">include_hidden</span><span class="p">,</span>
+            <span class="n">include_deleted</span><span class="o">=</span><span class="n">include_deleted</span><span class="p">,</span>
+            <span class="n">wait</span><span class="o">=</span><span class="n">wait</span>
+            <span class="p">)</span>
+</div>
+<div class="viewcode-block" id="History.download"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.History.download">[docs]</a>    <span class="k">def</span> <span class="nf">download</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">jeha_id</span><span class="p">,</span> <span class="n">outf</span><span class="p">,</span> <span class="n">chunk_size</span><span class="o">=</span><span class="n">bioblend</span><span class="o">.</span><span class="n">CHUNK_SIZE</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Download an export archive for this history.  Use :meth:`export`</span>
+<span class="sd">        to create an export and get the required ``jeha_id``.  See</span>
+<span class="sd">        :meth:`~bioblend.galaxy.histories.HistoryClient.download_history`</span>
+<span class="sd">        for parameter and return value info.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">histories</span><span class="o">.</span><span class="n">download_history</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="n">jeha_id</span><span class="p">,</span> <span class="n">outf</span><span class="p">,</span> <span class="n">chunk_size</span><span class="o">=</span><span class="n">chunk_size</span>
+            <span class="p">)</span>
+
+</div></div>
+<div class="viewcode-block" id="Library"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.Library">[docs]</a><span class="k">class</span> <span class="nc">Library</span><span class="p">(</span><span class="n">DatasetContainer</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Maps to a Galaxy library.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">BASE_ATTRS</span> <span class="o">=</span> <span class="n">DatasetContainer</span><span class="o">.</span><span class="n">BASE_ATTRS</span> <span class="o">+</span> <span class="p">(</span><span class="s">&#39;description&#39;</span><span class="p">,</span> <span class="s">&#39;synopsis&#39;</span><span class="p">)</span>
+    <span class="n">DS_TYPE</span> <span class="o">=</span> <span class="n">LibraryDataset</span>
+    <span class="n">CONTENT_INFO_TYPE</span> <span class="o">=</span> <span class="n">LibraryContentInfo</span>
+    <span class="n">API_MODULE</span> <span class="o">=</span> <span class="s">&#39;libraries&#39;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lib_dict</span><span class="p">,</span> <span class="n">content_infos</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">gi</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">Library</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span>
+            <span class="n">lib_dict</span><span class="p">,</span> <span class="n">content_infos</span><span class="o">=</span><span class="n">content_infos</span><span class="p">,</span> <span class="n">gi</span><span class="o">=</span><span class="n">gi</span>
+            <span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">gi_module</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">libraries</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">folder_ids</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">_</span><span class="o">.</span><span class="n">id</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">content_infos</span> <span class="k">if</span> <span class="n">_</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s">&#39;folder&#39;</span><span class="p">]</span>
+
+<div class="viewcode-block" id="Library.delete"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.Library.delete">[docs]</a>    <span class="k">def</span> <span class="nf">delete</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">libraries</span><span class="o">.</span><span class="n">delete</span><span class="p">(</span><span class="n">id_</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">unmap</span><span class="p">()</span>
+</div>
+    <span class="k">def</span> <span class="nf">__pre_upload</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">folder</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_mapped</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s">&#39;library is not mapped to a Galaxy object&#39;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">None</span> <span class="k">if</span> <span class="n">folder</span> <span class="ow">is</span> <span class="bp">None</span> <span class="k">else</span> <span class="n">folder</span><span class="o">.</span><span class="n">id</span>
+
+<div class="viewcode-block" id="Library.upload_data"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.Library.upload_data">[docs]</a>    <span class="k">def</span> <span class="nf">upload_data</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">folder</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Upload data to this library.</span>
+
+<span class="sd">        :type data: str</span>
+<span class="sd">        :param data: dataset contents</span>
+
+<span class="sd">        :type folder: :class:`~.Folder`</span>
+<span class="sd">        :param folder: a folder object, or :obj:`None` to upload to</span>
+<span class="sd">          the root folder</span>
+
+<span class="sd">        :rtype: :class:`~.LibraryDataset`</span>
+<span class="sd">        :return: the dataset object that represents the uploaded content</span>
+
+<span class="sd">        Optional keyword arguments: ``file_type``, ``dbkey``.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">fid</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">__pre_upload</span><span class="p">(</span><span class="n">folder</span><span class="p">)</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">libraries</span><span class="o">.</span><span class="n">upload_file_contents</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">folder_id</span><span class="o">=</span><span class="n">fid</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
+            <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">refresh</span><span class="p">()</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_dataset</span><span class="p">(</span><span class="n">res</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="s">&#39;id&#39;</span><span class="p">])</span>
+</div>
+<div class="viewcode-block" id="Library.upload_from_url"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.Library.upload_from_url">[docs]</a>    <span class="k">def</span> <span class="nf">upload_from_url</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">url</span><span class="p">,</span> <span class="n">folder</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Upload data to this library from the given URL.</span>
+
+<span class="sd">        :type url: str</span>
+<span class="sd">        :param url: URL from which data should be read</span>
+
+<span class="sd">        See :meth:`.upload_data` for info on other params.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">fid</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">__pre_upload</span><span class="p">(</span><span class="n">folder</span><span class="p">)</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">libraries</span><span class="o">.</span><span class="n">upload_file_from_url</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="n">url</span><span class="p">,</span> <span class="n">folder_id</span><span class="o">=</span><span class="n">fid</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
+            <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">refresh</span><span class="p">()</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_dataset</span><span class="p">(</span><span class="n">res</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="s">&#39;id&#39;</span><span class="p">])</span>
+</div>
+<div class="viewcode-block" id="Library.upload_from_local"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.Library.upload_from_local">[docs]</a>    <span class="k">def</span> <span class="nf">upload_from_local</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">folder</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Upload data to this library from a local file.</span>
+
+<span class="sd">        :type path: str</span>
+<span class="sd">        :param path: local file path from which data should be read</span>
+
+<span class="sd">        See :meth:`.upload_data` for info on other params.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">fid</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">__pre_upload</span><span class="p">(</span><span class="n">folder</span><span class="p">)</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">libraries</span><span class="o">.</span><span class="n">upload_file_from_local_path</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">folder_id</span><span class="o">=</span><span class="n">fid</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
+            <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">refresh</span><span class="p">()</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_dataset</span><span class="p">(</span><span class="n">res</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="s">&#39;id&#39;</span><span class="p">])</span>
+</div>
+<div class="viewcode-block" id="Library.upload_from_galaxy_fs"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.Library.upload_from_galaxy_fs">[docs]</a>    <span class="k">def</span> <span class="nf">upload_from_galaxy_fs</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">paths</span><span class="p">,</span> <span class="n">folder</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">link_data_only</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Upload data to this library from filesystem paths on the server.</span>
+
+<span class="sd">        .. note::</span>
+<span class="sd">          For this method to work, the Galaxy instance must have the</span>
+<span class="sd">          ``allow_library_path_paste`` option set to ``True`` in the</span>
+<span class="sd">          ``config/galaxy.ini`` configuration file.</span>
+
+<span class="sd">        :type paths: str or :class:`~collections.Iterable` of str</span>
+<span class="sd">        :param paths: server-side file paths from which data should be read</span>
+
+<span class="sd">        :type link_data_only: str</span>
+<span class="sd">        :param link_data_only: either &#39;copy_files&#39; (default) or</span>
+<span class="sd">          &#39;link_to_files&#39;. Setting to &#39;link_to_files&#39; symlinks instead of</span>
+<span class="sd">          copying the files</span>
+
+<span class="sd">        :rtype: list of :class:`~.LibraryDataset`</span>
+<span class="sd">        :return: the dataset objects that represent the uploaded content</span>
+
+<span class="sd">        See :meth:`.upload_data` for info on other params.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">fid</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">__pre_upload</span><span class="p">(</span><span class="n">folder</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">paths</span><span class="p">,</span> <span class="nb">basestring</span><span class="p">):</span>
+            <span class="n">paths</span> <span class="o">=</span> <span class="p">(</span><span class="n">paths</span><span class="p">,)</span>
+        <span class="n">paths</span> <span class="o">=</span> <span class="s">&#39;</span><span class="se">\n</span><span class="s">&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">paths</span><span class="p">)</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">libraries</span><span class="o">.</span><span class="n">upload_from_galaxy_filesystem</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="n">paths</span><span class="p">,</span> <span class="n">folder_id</span><span class="o">=</span><span class="n">fid</span><span class="p">,</span> <span class="n">link_data_only</span><span class="o">=</span><span class="n">link_data_only</span><span class="p">,</span>
+            <span class="o">**</span><span class="n">kwargs</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">res</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s">&#39;upload_from_galaxy_filesystem: no reply&#39;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">res</span><span class="p">,</span> <span class="n">collections</span><span class="o">.</span><span class="n">Sequence</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                <span class="s">&#39;upload_from_galaxy_filesystem: unexpected reply: </span><span class="si">%r</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">res</span>
+                <span class="p">)</span>
+        <span class="n">new_datasets</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">get_dataset</span><span class="p">(</span><span class="n">ds_info</span><span class="p">[</span><span class="s">&#39;id&#39;</span><span class="p">])</span> <span class="k">for</span> <span class="n">ds_info</span> <span class="ow">in</span> <span class="n">res</span>
+            <span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">refresh</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">new_datasets</span>
+</div>
+<div class="viewcode-block" id="Library.copy_from_dataset"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.Library.copy_from_dataset">[docs]</a>    <span class="k">def</span> <span class="nf">copy_from_dataset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">hda</span><span class="p">,</span> <span class="n">folder</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">message</span><span class="o">=</span><span class="s">&#39;&#39;</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Copy a history dataset into this library.</span>
+
+<span class="sd">        :type hda: :class:`~.HistoryDatasetAssociation`</span>
+<span class="sd">        :param hda: history dataset to copy into the library</span>
+
+<span class="sd">        See :meth:`.upload_data` for info on other params.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">fid</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">__pre_upload</span><span class="p">(</span><span class="n">folder</span><span class="p">)</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">libraries</span><span class="o">.</span><span class="n">copy_from_dataset</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="n">hda</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="n">folder_id</span><span class="o">=</span><span class="n">fid</span><span class="p">,</span> <span class="n">message</span><span class="o">=</span><span class="n">message</span>
+            <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">refresh</span><span class="p">()</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_dataset</span><span class="p">(</span><span class="n">res</span><span class="p">[</span><span class="s">&#39;library_dataset_id&#39;</span><span class="p">])</span>
+</div>
+<div class="viewcode-block" id="Library.create_folder"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.Library.create_folder">[docs]</a>    <span class="k">def</span> <span class="nf">create_folder</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">base_folder</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Create a folder in this library.</span>
+
+<span class="sd">        :type name: str</span>
+<span class="sd">        :param name: folder name</span>
+
+<span class="sd">        :type description: str</span>
+<span class="sd">        :param description: optional folder description</span>
+
+<span class="sd">        :type base_folder: :class:`~.Folder`</span>
+<span class="sd">        :param base_folder: parent folder, or :obj:`None` to create in</span>
+<span class="sd">          the root folder</span>
+
+<span class="sd">        :rtype: :class:`~.Folder`</span>
+<span class="sd">        :return: the folder just created</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">bfid</span> <span class="o">=</span> <span class="bp">None</span> <span class="k">if</span> <span class="n">base_folder</span> <span class="ow">is</span> <span class="bp">None</span> <span class="k">else</span> <span class="n">base_folder</span><span class="o">.</span><span class="n">id</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">libraries</span><span class="o">.</span><span class="n">create_folder</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="n">description</span><span class="p">,</span> <span class="n">base_folder_id</span><span class="o">=</span><span class="n">bfid</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">refresh</span><span class="p">()</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_folder</span><span class="p">(</span><span class="n">res</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="s">&#39;id&#39;</span><span class="p">])</span>
+</div>
+<div class="viewcode-block" id="Library.get_folder"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.Library.get_folder">[docs]</a>    <span class="k">def</span> <span class="nf">get_folder</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">f_id</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Retrieve the folder corresponding to the given id.</span>
+
+<span class="sd">        :rtype: :class:`~.Folder`</span>
+<span class="sd">        :return: the folder corresponding to ``f_id``</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">f_dict</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">libraries</span><span class="o">.</span><span class="n">show_folder</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="n">f_id</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">Folder</span><span class="p">(</span><span class="n">f_dict</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="n">gi</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="p">)</span>
+
+</div></div>
+<div class="viewcode-block" id="Folder"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.Folder">[docs]</a><span class="k">class</span> <span class="nc">Folder</span><span class="p">(</span><span class="n">Wrapper</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Maps to a folder in a Galaxy library.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">BASE_ATTRS</span> <span class="o">=</span> <span class="n">Wrapper</span><span class="o">.</span><span class="n">BASE_ATTRS</span> <span class="o">+</span> <span class="p">(</span><span class="s">&#39;description&#39;</span><span class="p">,</span> <span class="s">&#39;item_count&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">f_dict</span><span class="p">,</span> <span class="n">container_id</span><span class="p">,</span> <span class="n">gi</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">Folder</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="n">f_dict</span><span class="p">,</span> <span class="n">gi</span><span class="o">=</span><span class="n">gi</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s">&#39;F&#39;</span><span class="p">):</span>  <span class="c"># folder id from library contents</span>
+            <span class="nb">object</span><span class="o">.</span><span class="n">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s">&#39;id&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
+        <span class="nb">object</span><span class="o">.</span><span class="n">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s">&#39;container_id&#39;</span><span class="p">,</span> <span class="n">container_id</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">gi_module</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">libraries</span>
+
+</div>
+<div class="viewcode-block" id="Tool"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.Tool">[docs]</a><span class="k">class</span> <span class="nc">Tool</span><span class="p">(</span><span class="n">Wrapper</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Maps to a Galaxy tool.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">BASE_ATTRS</span> <span class="o">=</span> <span class="n">Wrapper</span><span class="o">.</span><span class="n">BASE_ATTRS</span> <span class="o">+</span> <span class="p">(</span><span class="s">&#39;version&#39;</span><span class="p">,)</span>
+    <span class="n">POLLING_INTERVAL</span> <span class="o">=</span> <span class="mi">10</span>  <span class="c"># for output state monitoring</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">t_dict</span><span class="p">,</span> <span class="n">gi</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">Tool</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="n">t_dict</span><span class="p">,</span> <span class="n">gi</span><span class="o">=</span><span class="n">gi</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">gi_module</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">tools</span>
+
+<div class="viewcode-block" id="Tool.run"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.Tool.run">[docs]</a>    <span class="k">def</span> <span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inputs</span><span class="p">,</span> <span class="n">history</span><span class="p">,</span> <span class="n">wait</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+            <span class="n">polling_interval</span><span class="o">=</span><span class="n">POLLING_INTERVAL</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Execute this tool in the given history with inputs from dict</span>
+<span class="sd">        ``inputs``.</span>
+
+<span class="sd">        :type inputs: dict</span>
+<span class="sd">        :param inputs: dictionary of input datasets and parameters for</span>
+<span class="sd">          the tool (see below)</span>
+
+<span class="sd">        :type history: :class:`History`</span>
+<span class="sd">        :param history: the history where to execute the tool</span>
+
+<span class="sd">        :type wait: boolean</span>
+<span class="sd">        :param wait: whether to wait while the returned datasets are</span>
+<span class="sd">          in a pending state</span>
+
+<span class="sd">        :type polling_interval: float</span>
+<span class="sd">        :param polling_interval: polling interval in seconds</span>
+
+<span class="sd">        :rtype: list of :class:`HistoryDatasetAssociation`</span>
+<span class="sd">        :return: list of output datasets</span>
+
+<span class="sd">        The ``inputs`` dict should contain input datasets and parameters</span>
+<span class="sd">        in the (largely undocumented) format used by the Galaxy API.</span>
+<span class="sd">        Some examples can be found in `Galaxy&#39;s API test suite</span>
+<span class="sd">        &lt;https://bitbucket.org/galaxy/galaxy-central/src/tip/test/api/test_tools.py&gt;`_.</span>
+<span class="sd">        The value of an input dataset can also be a :class:`Dataset`</span>
+<span class="sd">        object, which will be automatically converted to the needed</span>
+<span class="sd">        format.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">inputs</span><span class="o">.</span><span class="n">iteritems</span><span class="p">():</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="n">Dataset</span><span class="p">):</span>
+                <span class="n">inputs</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;src&#39;</span><span class="p">:</span> <span class="n">v</span><span class="o">.</span><span class="n">SRC</span><span class="p">,</span> <span class="s">&#39;id&#39;</span><span class="p">:</span> <span class="n">v</span><span class="o">.</span><span class="n">id</span><span class="p">}</span>
+        <span class="n">out_dict</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">tools</span><span class="o">.</span><span class="n">run_tool</span><span class="p">(</span><span class="n">history</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="n">inputs</span><span class="p">)</span>
+        <span class="n">outputs</span> <span class="o">=</span> <span class="p">[</span><span class="n">history</span><span class="o">.</span><span class="n">get_dataset</span><span class="p">(</span><span class="n">_</span><span class="p">[</span><span class="s">&#39;id&#39;</span><span class="p">])</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">out_dict</span><span class="p">[</span><span class="s">&#39;outputs&#39;</span><span class="p">]]</span>
+        <span class="k">if</span> <span class="n">wait</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">_wait_datasets</span><span class="p">(</span><span class="n">outputs</span><span class="p">,</span> <span class="n">polling_interval</span><span class="o">=</span><span class="n">polling_interval</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">outputs</span>
+
+</div></div>
+<div class="viewcode-block" id="Preview"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.Preview">[docs]</a><span class="k">class</span> <span class="nc">Preview</span><span class="p">(</span><span class="n">Wrapper</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Abstract base class for Galaxy entity &#39;previews&#39;.</span>
+
+<span class="sd">    Classes derived from this one model the short summaries returned</span>
+<span class="sd">    by global getters such as ``/api/libraries``.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">BASE_ATTRS</span> <span class="o">=</span> <span class="n">Wrapper</span><span class="o">.</span><span class="n">BASE_ATTRS</span> <span class="o">+</span> <span class="p">(</span><span class="s">&#39;deleted&#39;</span><span class="p">,)</span>
+    <span class="n">__metaclass__</span> <span class="o">=</span> <span class="n">abc</span><span class="o">.</span><span class="n">ABCMeta</span>
+
+    <span class="nd">@abc.abstractmethod</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pw_dict</span><span class="p">,</span> <span class="n">gi</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">Preview</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="n">pw_dict</span><span class="p">,</span> <span class="n">gi</span><span class="o">=</span><span class="n">gi</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="LibraryPreview"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.LibraryPreview">[docs]</a><span class="k">class</span> <span class="nc">LibraryPreview</span><span class="p">(</span><span class="n">Preview</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Models Galaxy library &#39;previews&#39;.</span>
+
+<span class="sd">    Instances of this class wrap dictionaries obtained by getting</span>
+<span class="sd">    ``/api/libraries`` from Galaxy.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pw_dict</span><span class="p">,</span> <span class="n">gi</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">LibraryPreview</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="n">pw_dict</span><span class="p">,</span> <span class="n">gi</span><span class="o">=</span><span class="n">gi</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">gi_module</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">libraries</span>
+
+</div>
+<div class="viewcode-block" id="HistoryPreview"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.HistoryPreview">[docs]</a><span class="k">class</span> <span class="nc">HistoryPreview</span><span class="p">(</span><span class="n">Preview</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Models Galaxy history &#39;previews&#39;.</span>
+
+<span class="sd">    Instances of this class wrap dictionaries obtained by getting</span>
+<span class="sd">    ``/api/histories`` from Galaxy.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">BASE_ATTRS</span> <span class="o">=</span> <span class="n">Preview</span><span class="o">.</span><span class="n">BASE_ATTRS</span> <span class="o">+</span> <span class="p">(</span><span class="s">&#39;tags&#39;</span><span class="p">,)</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pw_dict</span><span class="p">,</span> <span class="n">gi</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">HistoryPreview</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="n">pw_dict</span><span class="p">,</span> <span class="n">gi</span><span class="o">=</span><span class="n">gi</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">gi_module</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">histories</span>
+
+</div>
+<div class="viewcode-block" id="WorkflowPreview"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.wrappers.WorkflowPreview">[docs]</a><span class="k">class</span> <span class="nc">WorkflowPreview</span><span class="p">(</span><span class="n">Preview</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Models Galaxy workflow &#39;previews&#39;.</span>
+
+<span class="sd">    Instances of this class wrap dictionaries obtained by getting</span>
+<span class="sd">    ``/api/workflows`` from Galaxy.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">BASE_ATTRS</span> <span class="o">=</span> <span class="n">Preview</span><span class="o">.</span><span class="n">BASE_ATTRS</span> <span class="o">+</span> <span class="p">(</span><span class="s">&#39;published&#39;</span><span class="p">,</span> <span class="s">&#39;tags&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pw_dict</span><span class="p">,</span> <span class="n">gi</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">WorkflowPreview</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="n">pw_dict</span><span class="p">,</span> <span class="n">gi</span><span class="o">=</span><span class="n">gi</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">gi_module</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">gi</span><span class="o">.</span><span class="n">workflows</span></div>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <form class="search" action="../../../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../../../index.html">BioBlend 0.5.3-dev documentation</a> &raquo;</li>
+          <li><a href="../../../index.html" >Module code</a> &raquo;</li>
+          <li><a href="../../../bioblend.html" >bioblend</a> &raquo;</li>
+          <li><a href="../../galaxy.html" >bioblend.galaxy</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer" role="contentinfo">
+        &copy; Copyright 2012, Enis Afgan.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.3b2.
+    </div>
+  </body>
+</html>

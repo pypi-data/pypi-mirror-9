@@ -1,0 +1,219 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>bioblend.galaxy.objects.galaxy_instance &mdash; BioBlend 0.5.3-dev documentation</title>
+    
+    <link rel="stylesheet" href="../../../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../../../',
+        VERSION:     '0.5.3-dev',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../../../_static/doctools.js"></script>
+    <link rel="top" title="BioBlend 0.5.3-dev documentation" href="../../../../index.html" />
+    <link rel="up" title="bioblend.galaxy" href="../../galaxy.html" /> 
+  </head>
+  <body role="document">
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../../../index.html">BioBlend 0.5.3-dev documentation</a> &raquo;</li>
+          <li><a href="../../../index.html" >Module code</a> &raquo;</li>
+          <li><a href="../../../bioblend.html" >bioblend</a> &raquo;</li>
+          <li><a href="../../galaxy.html" accesskey="U">bioblend.galaxy</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for bioblend.galaxy.objects.galaxy_instance</h1><div class="highlight"><pre>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">A representation of a Galaxy instance based on oo wrappers.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">time</span>
+
+<span class="kn">import</span> <span class="nn">bioblend</span>
+<span class="kn">import</span> <span class="nn">bioblend.galaxy</span>
+
+<span class="kn">import</span> <span class="nn">client</span>
+
+
+<span class="c"># dataset states corresponding to a &#39;pending&#39; condition</span>
+<span class="n">_PENDING_DS_STATES</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span>
+    <span class="p">[</span><span class="s">&quot;new&quot;</span><span class="p">,</span> <span class="s">&quot;upload&quot;</span><span class="p">,</span> <span class="s">&quot;queued&quot;</span><span class="p">,</span> <span class="s">&quot;running&quot;</span><span class="p">,</span> <span class="s">&quot;setting_metadata&quot;</span><span class="p">]</span>
+    <span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">_get_error_info</span><span class="p">(</span><span class="n">hda</span><span class="p">):</span>
+    <span class="n">msg</span> <span class="o">=</span> <span class="n">hda</span><span class="o">.</span><span class="n">id</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">msg</span> <span class="o">+=</span> <span class="s">&#39; (</span><span class="si">%s</span><span class="s">): &#39;</span> <span class="o">%</span> <span class="n">hda</span><span class="o">.</span><span class="n">name</span>
+        <span class="n">msg</span> <span class="o">+=</span> <span class="n">hda</span><span class="o">.</span><span class="n">wrapped</span><span class="p">[</span><span class="s">&#39;misc_info&#39;</span><span class="p">]</span>
+    <span class="k">except</span> <span class="ne">StandardError</span><span class="p">:</span>  <span class="c"># avoid &#39;error while generating an error report&#39;</span>
+        <span class="n">msg</span> <span class="o">+=</span> <span class="s">&#39;: error&#39;</span>
+    <span class="k">return</span> <span class="n">msg</span>
+
+
+<div class="viewcode-block" id="GalaxyInstance"><a class="viewcode-back" href="../../../../api_docs/galaxy/all.html#bioblend.galaxy.objects.galaxy_instance.GalaxyInstance">[docs]</a><span class="k">class</span> <span class="nc">GalaxyInstance</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A representation of an instance of Galaxy, identified by a URL and</span>
+<span class="sd">    a user&#39;s API key.</span>
+
+<span class="sd">    :type url: str</span>
+<span class="sd">    :param url: a FQDN or IP for a given instance of Galaxy. For example:</span>
+<span class="sd">      ``http://127.0.0.1:8080``</span>
+
+<span class="sd">    :type api_key: str</span>
+<span class="sd">    :param api_key: user&#39;s API key for the given instance of Galaxy, obtained</span>
+<span class="sd">      from the Galaxy web UI.</span>
+
+<span class="sd">    This is actually a factory class which instantiates the entity-specific</span>
+<span class="sd">    clients.</span>
+
+<span class="sd">    Example: get a list of all histories for a user with API key &#39;foo&#39;::</span>
+
+<span class="sd">      from bioblend.galaxy.objects import *</span>
+<span class="sd">      gi = GalaxyInstance(&#39;http://127.0.0.1:8080&#39;, &#39;foo&#39;)</span>
+<span class="sd">      histories = gi.histories.list()</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">url</span><span class="p">,</span> <span class="n">api_key</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">email</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">password</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">gi</span> <span class="o">=</span> <span class="n">bioblend</span><span class="o">.</span><span class="n">galaxy</span><span class="o">.</span><span class="n">GalaxyInstance</span><span class="p">(</span><span class="n">url</span><span class="p">,</span> <span class="n">api_key</span><span class="p">,</span> <span class="n">email</span><span class="p">,</span> <span class="n">password</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">log</span> <span class="o">=</span> <span class="n">bioblend</span><span class="o">.</span><span class="n">log</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">__histories</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">ObjHistoryClient</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">__libraries</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">ObjLibraryClient</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">__workflows</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">ObjWorkflowClient</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">__tools</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">ObjToolClient</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">histories</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Client module for Galaxy histories.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">__histories</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">libraries</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Client module for Galaxy libraries.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">__libraries</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">workflows</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Client module for Galaxy workflows.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">__workflows</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">tools</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Client module for Galaxy tools.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">__tools</span>
+
+    <span class="k">def</span> <span class="nf">_wait_datasets</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">datasets</span><span class="p">,</span> <span class="n">polling_interval</span><span class="p">,</span> <span class="n">break_on_error</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Wait for datasets to come out of the pending states.</span>
+
+<span class="sd">        :type datasets: :class:`~collections.Iterable` of</span>
+<span class="sd">          :class:`~.wrappers.Dataset`</span>
+<span class="sd">        :param datasets: datasets</span>
+
+<span class="sd">        :type polling_interval: float</span>
+<span class="sd">        :param polling_interval: polling interval in seconds</span>
+
+<span class="sd">        :type break_on_error: bool</span>
+<span class="sd">        :param break_on_error: if :obj:`True`, break as soon as at least</span>
+<span class="sd">          one of the datasets is in the &#39;error&#39; state.</span>
+
+<span class="sd">        .. warning::</span>
+
+<span class="sd">          This is a blocking operation that can take a very long time.</span>
+<span class="sd">          Also, note that this method does not return anything;</span>
+<span class="sd">          however, each input dataset is refreshed (possibly multiple</span>
+<span class="sd">          times) during the execution.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">def</span> <span class="nf">poll</span><span class="p">(</span><span class="n">ds_list</span><span class="p">):</span>
+            <span class="n">pending</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">ds</span> <span class="ow">in</span> <span class="n">ds_list</span><span class="p">:</span>
+                <span class="n">ds</span><span class="o">.</span><span class="n">refresh</span><span class="p">()</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&#39;{0.id}: {0.state}&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">ds</span><span class="p">))</span>
+                <span class="k">if</span> <span class="n">break_on_error</span> <span class="ow">and</span> <span class="n">ds</span><span class="o">.</span><span class="n">state</span> <span class="o">==</span> <span class="s">&#39;error&#39;</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="n">_get_error_info</span><span class="p">(</span><span class="n">ds</span><span class="p">))</span>
+                <span class="k">if</span> <span class="n">ds</span><span class="o">.</span><span class="n">state</span> <span class="ow">in</span> <span class="n">_PENDING_DS_STATES</span><span class="p">:</span>
+                    <span class="n">pending</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ds</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">pending</span>
+        <span class="c">#--</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&#39;waiting for datasets&#39;</span><span class="p">)</span>
+        <span class="k">while</span> <span class="n">datasets</span><span class="p">:</span>
+            <span class="n">datasets</span> <span class="o">=</span> <span class="n">poll</span><span class="p">(</span><span class="n">datasets</span><span class="p">)</span>
+            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">polling_interval</span><span class="p">)</span></div>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <form class="search" action="../../../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../../../index.html">BioBlend 0.5.3-dev documentation</a> &raquo;</li>
+          <li><a href="../../../index.html" >Module code</a> &raquo;</li>
+          <li><a href="../../../bioblend.html" >bioblend</a> &raquo;</li>
+          <li><a href="../../galaxy.html" >bioblend.galaxy</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer" role="contentinfo">
+        &copy; Copyright 2012, Enis Afgan.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.3b2.
+    </div>
+  </body>
+</html>
