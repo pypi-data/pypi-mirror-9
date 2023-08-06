@@ -1,0 +1,39 @@
+.. :changelog:
+
+Changelog
+---------
+
+0.9.2 (2015-02-20)
+++++++++++++++++++
+
+* First release on PyPI.
+
+0.9.3 (2015-02-27)
+++++++++++++++++++
+
+* Add api for reindexing the search index
+* Small bugfixes related to sorting querysets in reports
+* Extra unit tests for report sorting
+* Remove redundant AutoSlug for BackOfficeTab
+
+0.9.4 (2015-02-27)
+++++++++++++++++++
+
+* Fix issue where the translation system could be triggered too soon
+
+0.9.5 (2015-03-03)
+++++++++++++++++++
+
+* Add possibility to add report-wide actions using ``is_report_action=True``.
+* Add full CRUD example to examples page on demo website
+* Small bugfix concerning the confirmation dialog
+
+0.9.6 (2015-03-04)
+++++++++++++++++++
+
+* Escape AdvancedReport field values by default for security
+* Add link_to HTML decorator possibility by providing the BackOfficeReportMixin
+* Small cleanups and fix MANIFEST.in
+* Fix setup.py and add changelog to docs
+* Converted README to reST format
+
