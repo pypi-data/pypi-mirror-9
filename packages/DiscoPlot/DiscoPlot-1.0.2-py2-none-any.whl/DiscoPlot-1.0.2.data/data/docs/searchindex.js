@@ -1,0 +1,1 @@
+Search.setIndex({envversion:42,terms:{index:0,search:0,page:0},objtypes:{},objnames:{},filenames:["index","DiscoPlot","modules"],titles:["Welcome to DiscoPlot&#8217;s documentation!","DiscoPlot package","DiscoPlot"],objects:{},titleterms:{welcom:0,discoplot:[0,1,2],submodul:1,indic:0,content:1,packag:1,tabl:0,document:0,modul:1}})
