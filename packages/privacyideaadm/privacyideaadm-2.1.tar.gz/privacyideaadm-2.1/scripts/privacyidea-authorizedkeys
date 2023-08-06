@@ -1,0 +1,118 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+#
+#  privacyIDEA
+#  2015-03-05 Cornelius Kölbel, <cornelius@privacyidea.org>
+#             Adapt authitems to new version 2.1
+#
+#  (c) 2014-2015 Cornelius Kölbel, cornelius@privacyidea.org
+#
+# This code is free software; you can redistribute it and/or
+# modify it under the terms of the GNU AFFERO GENERAL PUBLIC LICENSE
+# License as published by the Free Software Foundation; either
+# version 3 of the License, or any later version.
+#
+# This code is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU AFFERO GENERAL PUBLIC LICENSE for more details.
+#
+# You should have received a copy of the GNU Affero General Public
+# License along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+"""
+This tool is used to fetch the ssh public keys for 
+the given user on this machine. 
+
+This tool is to be used with the sshd_config entry
+
+ AuthorizedKeysCommand
+ 
+Run this script as the user specified in
+
+ AuthorizedKeysCommandUser.
+ 
+The settings, where the privacyIDEA server is located and which
+realm is used, is located in the file
+/etc/privacyidea/authorizedkeyscommand.
+
+You need to create the following section:
+
+   [Default]
+   url = https://privacyidea
+   admin = admin
+   password = secret
+   
+"""
+
+VERSION = '2.1'
+DEBUG = False
+DESCRIPTION = __doc__
+DEFAULT_CONFIG = "/etc/privacyidea/authorizedkeyscommand"
+
+import argparse
+import socket
+from privacyideautils.clientutils import *
+import ConfigParser
+import sys
+
+
+def create_arguments():
+    parser = argparse.ArgumentParser(description=DESCRIPTION)
+    parser.add_argument("user",
+                        help="The username of the user who is trying"
+                        "to authenticate")
+    parser.add_argument("-v", "--version",
+                        help="Print the version of the program.",
+                        action='version', version='%(prog)s ' + VERSION)
+    parser.add_argument("--nosslcheck",
+                        help="Do not check SSL certificates.",
+                        action="store_true")
+    args = parser.parse_args()
+    return args
+
+
+def main():
+    args = create_arguments()
+    
+    try:
+        config = ConfigParser.RawConfigParser()
+        config.read(DEFAULT_CONFIG)
+        url = config.get("Default", "url")
+        admin = config.get("Default", "admin")
+        password = config.get("Default", "password")
+        nosslcheck = config.get("Default", "nosslcheck")
+    except Exception as ex:
+        print "You need to provide the config file!"
+        print ex
+        sys.exit(1)
+
+    # Create the privacyideaclient instance
+    client = privacyideaclient(admin, password, url,
+                               no_ssl_check=args.nosslcheck or nosslcheck)
+    params = {"hostname": socket.gethostname()}
+    response = client.get("/machine/authitem/ssh", params)
+    result = response.data.get("result")
+    
+    if result.get("status"):
+        value = result.get("value")
+        ssh_key_list = value.get("ssh", [])
+        for sshkey in ssh_key_list:
+            user = sshkey.get("user", "root")
+            key = sshkey.get("sshkey")
+            # print all keys for the requested user
+            if user == args.user:
+                print "%s" % key
+    else:
+        print "error fetching list"
+
+
+if __name__ == '__main__':
+    if DEBUG:
+        main()
+    else:
+        try:
+            main()
+        except Exception as ex:
+            print "Error: %s" % ex
+            sys.exit(5)
