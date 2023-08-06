@@ -1,0 +1,249 @@
+#!/usr/bin/env python
+
+""" Command-line utility that sends requests to the Bracket REST API.
+"""
+from __future__ import print_function
+
+import json
+import os
+import signal
+import sys
+
+from argparse import ArgumentParser
+from datetime import datetime
+from urlparse import urlparse
+
+import brkt_requests
+
+
+DEFAULT_PORTAL_URL = 'https://portal.brkt.com'
+CONFIG_FILE_PATH = os.path.expanduser('~') + '/.api_client'
+CONFIG_SERVER_ROOT = 'server_root'
+CONFIG_MAC_KEY = 'mac_key'
+CONFIG_ACCESS_TOKEN = 'access_token'
+
+# Exit quietly if we receive SIGPIPE.  This happens when piping output to
+# head or tail.
+signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+
+
+def _read_config():
+    if not os.path.isfile(CONFIG_FILE_PATH):
+        return {}
+    with open(CONFIG_FILE_PATH, 'r') as f:
+        json_string = f.read()
+        return json.loads(json_string)
+
+
+def _set_config():
+    server_root = raw_input('Server root [%s]: ' % DEFAULT_PORTAL_URL)
+    access_token = raw_input('Access token: ')
+    mac_key = raw_input('MAC key: ')
+
+    if not server_root:
+        server_root = DEFAULT_PORTAL_URL
+
+    config = {
+        CONFIG_SERVER_ROOT: server_root,
+        CONFIG_ACCESS_TOKEN: access_token,
+        CONFIG_MAC_KEY: mac_key
+    }
+
+    with open(CONFIG_FILE_PATH, 'w') as f:
+        json_string = json.dumps(config, sort_keys=True, indent=4)
+        f.write(json_string)
+        f.write('\n')
+
+
+def _split_name_value(s, separator):
+    """ If s is in the form of "name<separator>value", return a tuple of the
+        name and value.  Otherwise return a tuple of two Nones.
+    """
+    name = None
+    value = None
+    i = s.find(separator)
+    if i >= 0:
+        name = s[:i]
+        value = s[i + len(separator):]
+    return name, value
+
+
+def _set_dotted_path(d, dotted_path, value):
+    elements = dotted_path.split('.')
+    path_parts = elements[0:-1]
+    field_name = elements[-1]
+
+    for path_part in path_parts:
+        if not path_part in d:
+            d[path_part] = {}
+        d = d[path_part]
+
+    d[field_name] = value
+
+
+def _log_response_time(start_time):
+    response_time = (datetime.utcnow() - start_time).total_seconds()
+    print('Server response time: %.3f seconds.' % response_time)
+
+
+# Parse command line arguments.
+parser = ArgumentParser(prog='brkt_api_client', description=__doc__)
+parser.add_argument(
+    'method',
+    choices=['GET', 'get', 'POST', 'post', 'DELETE', 'delete'],
+    help='HTTP method',
+    nargs='?'
+)
+parser.add_argument(
+    'path',
+    metavar='PATH',
+    help='The URI path, e.g. /v1/api/config/brktvolume',
+    nargs='?'
+)
+parser.add_argument(
+    'request_items',
+    metavar='REQUEST_ITEM',
+    nargs='*',
+    help=(
+        'Simple JSON field (dotted.path=value), raw JSON ('
+        'dotted.path:=["a", "b", "c"]), or HTTP header (name:value).'
+    )
+)
+parser.add_argument(
+    '-v', '--verbose',
+    action='store_true',
+    help='Verbose mode: print the request payload.'
+)
+parser.add_argument(
+    '-q', '--quiet',
+    action='store_true',
+    help="Don't print the response payload."
+)
+parser.add_argument(
+    '--print-headers',
+    dest='print_headers',
+    action='store_true',
+    help='Print response headers.'
+)
+parser.add_argument(
+    '--no-op',
+    dest='no_op',
+    action='store_true',
+    help="Print the request, but don't send it."
+)
+parser.add_argument(
+    '--set-config',
+    dest='set_config',
+    action='store_true',
+    help='Set server connection configuration parameters'
+)
+args = parser.parse_args()
+
+if args.set_config:
+    _set_config()
+    exit(0)
+
+config = _read_config()
+server_root = config.get(CONFIG_SERVER_ROOT, None)
+mac_key = config.get(CONFIG_MAC_KEY, None)
+access_token = config.get(CONFIG_ACCESS_TOKEN, None)
+
+if not (server_root and mac_key and access_token):
+    print(
+        'Server connection parameters not set.  Please rerun with '
+        '--set-config',
+        file=sys.stderr
+    )
+    exit(1)
+
+if not args.method:
+    print('HTTP method not specified.', file=sys.stderr)
+    exit(1)
+if not args.path:
+    print('URI path not specified.', file=sys.stderr)
+    exit(1)
+
+# Parse URI.
+uri = server_root + args.path
+p = urlparse(uri)
+if p.scheme and p.netloc:
+    root = '%s://%s' % (p.scheme, p.netloc)
+else:
+    print('Invalid URI: %s' % uri, file=sys.stderr)
+    exit(1)
+
+request_headers = {}
+request_data = {}
+
+# Parse request items.
+for item in args.request_items:
+    # Raw JSON.
+    (name, value) = _split_name_value(item, ':=')
+    if name:
+        object = json.loads(value)
+        _set_dotted_path(request_data, name, object)
+        continue
+
+    # Simple JSON field.
+    (name, value) = _split_name_value(item, '=')
+    if name:
+        _set_dotted_path(request_data, name, value)
+        continue
+
+    # HTTP header.
+    (name, value) = _split_name_value(item, ':')
+    if name:
+        request_headers[name] = value
+        continue
+
+    print('Cannot parse request item: "%s".' % item, file=sys.stderr)
+    parser.print_help()
+    exit(1)
+
+session = brkt_requests.APISession(mac_key, access_token)
+
+# Send request and print response.
+start_time = datetime.utcnow()
+
+if args.method.upper() == 'POST' and (args.verbose or args.no_op):
+    print('Request:')
+    print(json.dumps(request_data))
+
+if args.no_op:
+    exit(0)
+
+if args.method.upper() == 'GET':
+    response = session.get(uri, headers=request_headers)
+elif args.method.upper() == 'POST':
+    response = session.post(
+        uri,
+        headers=request_headers,
+        data=json.dumps(request_data)
+    )
+elif args.method.upper() == 'DELETE':
+    response = session.delete(uri, headers=request_headers)
+
+if args.verbose:
+    _log_response_time(start_time)
+
+if args.print_headers:
+    for name, value in response.headers.iteritems():
+        print('%s: %s' % (name, value))
+    print()
+
+if response.status_code == 502:
+    print('Cannot connect to %s' % root, file=sys.stderr)
+    exit(1)
+
+if response.status_code / 100 == 2:
+    if not args.quiet:
+        content_type = response.headers.get('Content-Type')
+        if (content_type and
+                content_type.lower().startswith('application/json')):
+            print(json.dumps(response.json, sort_keys=True, indent=4))
+        else:
+            print(response.text)
+else:
+    print('Server returned %d.' % response.status_code, file=sys.stderr)
+    print('  Response content:\n%s' % response.content, file=sys.stderr)
+    exit(1)
