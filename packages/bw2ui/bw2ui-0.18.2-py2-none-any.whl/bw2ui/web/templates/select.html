@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+
+{% block extrahead %}
+<style>
+.ui-dialog-titlebar-close{
+    display: none;
+}
+</style>
+{% endblock %}
+
+
+{% block body %}
+<h1>Define the functional unit to assess</h1>
+<div class="span-7 colborder">
+    <p>
+        <h3>1. Chose database</h3>
+        <br>
+        {% for name in db_names %}
+        <input type="radio" name="database-select" value="{{ name }}"> {{ name }}<br>
+        {% endfor %}
+    </p>
+    <h3>2. Search by name:</h3>
+    <input id="activity-input" type="text" size=40>
+</div>
+<div class="span-16 last">
+    <h3>Selected activities:</h3>
+    <p>(click to change amounts)</p>
+    <div id="selected-activities"></div>
+</div>
+<hr>
+<div class="clear span-24">
+    <h1>Chose the LCIA method</h1>
+    <h3>Chosen method: <span id="chosen-method">(click below to chose a method)</span></h3>
+    <div id="lcia_methods"></div>
+</div>
+<hr>
+<div>
+    <form action="/lca" method="post" name="calculate-form">
+        <input type="hidden" name="activity" value="" id="hidden-activity">
+        <input type="hidden" name="method" value="" id="hidden-method">
+        <button type="submit">Calculate!</button>
+    </form>
+</div>
+
+<div id="in-progress" title="Calculation in progress">The LCA calculation has been started. Please wait until it finishes, and you will be redirected to the report.</div>
+
+<div id="getting-names" title="Getting list of activitiy names">Please wait until all activity names have been retrieved.</div>
+
+<script>
+var selected_method = [];
+
+$(document).ready(function() {
+    var methodColumns = [{
+            name: "name",
+            label: "Name",
+            cell: "string",
+            editable: false
+        }, {
+            name: "unit",
+            label: "Unit",
+            cell: "string",
+            editable: false
+        }, {
+            name: "num_cfs",
+            label: "Number of CFs",
+            cell: "integer",
+            editable: false
+        }],
+        methodData = {{ lcia_methods|safe }},
+        activityColumns = [{
+            name: "amount",
+            label: "Amount",
+            cell: "number",
+            editable: true
+        }, {
+            name: "name",
+            label: "Name",
+            cell: "string",
+            editable: false
+        }, {
+            name: "unit",
+            label: "Unit",
+            cell: "string",
+            editable: false
+        }, {
+            name: "location",
+            label: "Location",
+            cell: "string",
+            editable: false
+        }, {
+            name: "key",
+            label: "Key",
+            cell: "string",
+            editable: false,
+            renderable: false
+        }];
+
+    var lcia_click_callback = function (model) {
+        $("#chosen-method").html(model.attributes.name);
+        selected_method = model.attributes.key;
+    };
+
+    BackgridTable(methodData, methodColumns, "#lcia_methods", ['name'], "Filter by name", 20, lcia_click_callback);
+    var activity_grid = BackgridTable([], activityColumns, "#selected-activities");
+
+    var get_activities = function () {
+        var data = [];
+        for (var i = activity_grid.collection.models.length - 1; i >= 0; i--) {
+            data.push({
+                'amount': activity_grid.collection.models[i].attributes.amount,
+                'key': activity_grid.collection.models[i].attributes.key,
+            })
+        };
+        return data;
+    }
+
+    $("#activity-input").autocomplete({
+        disabled: true,
+        source: ["foo", "bar", "baz"],
+        select: function( event, ui ) {
+            activity_grid.insertRow([{
+                'amount': 1.0,
+                'name':     ui.item.value.n,
+                'unit':     ui.item.value.u,
+                'location': ui.item.value.l,
+                'key':      ui.item.value.k
+            }]);
+            $("#activity-input").val("");
+            return false;
+        },
+        focus: function( event, ui ) { return false; }
+    });
+
+    $("#activity-input").prop('disabled', true);
+    $('input[name=database-select]:radio').change(function () {
+        var url = "/database/" + $(this).val() + "/names";
+        $('#getting-names').dialog("open");
+        $.getJSON(url, function(result) {
+            $("#activity-input").autocomplete("option", "source", result);
+            $("#activity-input").autocomplete("option", "disabled", false);
+            $("#activity-input").prop('disabled', false);
+            $('#getting-names').dialog("close");
+            $("#activity-input").focus();
+        });
+    });
+
+    $("#in-progress").dialog({
+      height: 140,
+      modal: true,
+      autoOpen: false,
+      closeOnEscape: false
+    });
+
+    $("#getting-names").dialog({
+      height: 140,
+      modal: true,
+      autoOpen: false,
+      closeOnEscape: false
+    });
+
+    $('form[name=calculate-form]').submit( function (e) {
+        e.preventDefault();
+        $('#in-progress').dialog("open");
+        var submission_data = {
+            method: selected_method,
+            activities: get_activities()
+        }
+        console.log("Starting LCA report");
+        console.log(submission_data);
+        $.ajax({
+            type: "POST",
+            url: '{{ url_for('lca') }}',
+            data: JSON.stringify(submission_data),
+            contentType: "application/json",
+            // dataType: "json",
+            success: function (a) {
+                console.log(a);
+                document.location.href='/report/' + a;
+            }
+        });
+    });
+});
+</script>
+{% endblock %}
