@@ -1,0 +1,10 @@
+__version__ = "1.0.6"
+__git_commiter_name__ = "Guy Rozendorn"
+__git_commiter_email__ = "guy@rzn.co.il"
+__git_branch__ = '(detached from v1.0.6)'
+__git_remote_tracking_branch__ = '(No remote tracking)'
+__git_remote_url__ = '(Not remote tracking)'
+__git_head_hash__ = '424301d07a48fc2a6500411bae614565790b7caf'
+__git_head_subject__ = 'APR-11 install/upgrade instructions mixup for suse and ubuntu'
+__git_head_message__ = ''
+__git_dirty_diff__ = ''
