@@ -1,0 +1,89 @@
+import sys
+
+from compiler import compile, is_embedded_push, get_embedded_push_value
+from errors import ParseError, MachineError, CompileError
+from parser import parse
+from interpreter import isstring, Machine
+
+
+def repl(optimize=True, persist=True):
+    """Starts a simple REPL for this machine.
+
+    Args:
+        optimize: Controls whether to run inputted code through the
+        optimizer.
+
+        persist: If True, the machine is not deleted after each line.
+    """
+
+    def print_code(vm, ops_per_line=8):
+        """Prints code and state for VM."""
+        print("IP: %d" % vm.instruction_pointer)
+        print("DS: %s" % str(vm.stack))
+        print("RS: %s" % str(vm.return_stack))
+
+        def to_str(op):
+            if is_embedded_push(op):
+                op = get_embedded_push_value(op)
+
+            if isstring(op):
+                return repr(op)[1:-1]
+            elif callable(op):
+                return vm.lookup(op)
+            else:
+                return str(op)
+
+        for addr, op in enumerate(vm.code):
+            if (addr % ops_per_line) == 0 and (addr+1) < len(vm.code):
+                if addr > 0:
+                    sys.stdout.write("\n")
+                sys.stdout.write("%0*d  " % (max(4, len(str(len(vm.code)))), addr))
+            sys.stdout.write("%s " % to_str(op))
+        sys.stdout.write("\n")
+
+    print("Extra commands for the REPL:")
+    print(".code    - print code")
+    print(".raw     - print raw code")
+    print(".quit    - exit immediately")
+    print(".reset   - reset machine (IP and stacks)")
+    print(".restart - create a clean, new machine")
+    print("")
+
+    machine = Machine([])
+
+    while True:
+        try:
+            source = raw_input("> ").strip()
+
+            if source[0] == ".":
+                if source == ".quit":
+                    return
+                elif source == ".code":
+                    print_code(machine)
+                elif source == ".raw":
+                    print(machine.code)
+                elif source == ".reset":
+                    machine.reset()
+                elif source == ".restart":
+                    machine = Machine([])
+                else:
+                    raise ParseError("Unknown command: %s" % source)
+                continue
+
+            code = compile(parse(source), silent=False, optimize=optimize)
+
+            if not persist:
+                machine.reset()
+
+            machine.code += code
+            machine.run()
+        except EOFError:
+            return
+        except KeyboardInterrupt:
+            return
+        except ParseError, e:
+            print("Parser error: %s" % e)
+        except MachineError, e:
+            print("Machine error: %s" % e)
+        except CompileError, e:
+            print("Compile error: %s" % e)
