@@ -1,0 +1,30 @@
+#!/usr/bin/env python
+import sys
+sys.path.append('xypath')
+import xypath
+import tcore
+from nose.tools import assert_raises
+
+# Inheriting from tcore.TCore means that self.table contains an
+# example table automatically, without us having to open a file
+class TestTable(tcore.TCore):
+
+    def test_get_at_gets_the_correct_cell(self):
+        cells = self.table.get_at(4, 17)
+
+        assert isinstance(cells, xypath.xypath.Bag)
+        cells.assert_one() # will raise exception if more than one cell in bag
+        assert cells.value == 900
+
+    def test_get_at_returns_empty_bag_for_invalid_coordinates(self):
+        cells = self.table.get_at(9999,9999)
+        assert isinstance(cells, xypath.xypath.Bag)
+        assert len(cells) == 0
+
+    def test_get_at_complains_nicely(self):
+        assert_raises(AssertionError, self.table.get_at, 'kitten')
+
+    def test_table_has_name(self):
+        assert self.table.name == u'ESTIMATES'
+        copy = xypath.Table.from_bag(self.table)
+        assert copy.name == u'ESTIMATES'
