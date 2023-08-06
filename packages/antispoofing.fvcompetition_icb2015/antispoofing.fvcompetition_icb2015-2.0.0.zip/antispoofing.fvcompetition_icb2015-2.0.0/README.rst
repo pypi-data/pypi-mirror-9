@@ -1,0 +1,105 @@
+=======================================================================
+The 1st Competition on Counter Measures to Finger Vein Spoofing Attacks
+=======================================================================
+
+This package provides the source code to run the experiments published in the paper `The 1st Competition on Counter Measures to Finger Vein Spoofing Attacks <http://publications.idiap.ch/index.php/publications/show/>`_.
+It relies on some satellite packages from Bob_ to compute the evaluation. 
+
+.. note::
+  Currently, this package only works in Unix-like environments and under MacOS.
+  Due to limitations of the Bob_ library, MS Windows operating systems are not supported.
+  We are working on a port of Bob_ for MS Windows, but it might take a while.
+  In the meanwhile you could use our VirtualBox_ images that can be downloaded `here <http://www.idiap.ch/software/bob/images>`_.
+
+
+Installation
+============
+The installation of this package relies on the `BuildOut <http://www.buildout.org>`_ system. By default, the command line sequence::
+
+  $ ./python bootstrap.py
+  $ ./bin/buildout
+
+There are a few exceptions, which are not automatically downloaded:
+
+Bob
+---
+To install Bob_, please visit http://www.idiap.ch/software/bob and follow the installation instructions.
+Please verify that you have at least version 2.0 of Bob installed.
+If you have installed Bob in a non-standard directory, please open the buildout.cfg file from the base directory and set the ``prefixes`` directory accordingly.
+
+.. note::
+  The experiments that we report in the Paper_ were generated with Bob_ version 2.0.
+  If you use different versions of either of these packages, the results might differ slightly.
+  For example, we are aware that, due to some initialization differences, the results using Bob 1.2.0 and 1.2.1 are not identical, but similar.
+
+
+Image Databases
+---------------
+The experiments are run on external image database.
+We do not provide the images from the database itselve.
+Hence, please contact the database owners to obtain a copy of the images.
+The database used in the competition can be downloaded here:
+
+- Spoofing-Attack Finger Vein Database [``fvspoofingattack``]: http://www.idiap.ch/dataset/fvspoofingattack
+
+.. note::
+  After downloading the databases, you will need to tell our software, where it can find them by changing the **run_icb2015_competition.sh** file.
+  In particular, please update the ``PATHDATABASE`` to indicate the directory of the dataset: PATHDATABASE="YOUR_PATH/FVspoofingAttack".
+
+
+Please let all other configuration parameters unchanged as this might influence the competition analysis and, hence, the reproducibility of the results.
+
+Getting help
+------------
+In case anything goes wrong, please feel free to open a new ticket in our GitLab_ page, or send an email to pedro.tome@idiap.ch.
+
+
+Recreating the results of the Paper_
+====================================
+
+After successfully setting up the databases, you are now able to run the anti-spoofing finger vein evaluation as explained in the Paper_.
+
+Running the experiments
+-----------------------
+The competition results are run using the **run_icb2015_competition.sh** file.
+
+Additionally, the individual scripts used can be found in ``bin/`` directory.
+See ``./bin/icb2015_baseline_countermeasure.py --help`` and ``./bin/icb2015_evaluation_results.py --help`` for a complete list of options.
+
+1. Run the competition results on the Spoofing-Attack Finger Vein database::
+
+    $ ./run_icb2015_competition.sh
+
+.. note::
+  All output directories of the scripts will be automatically generated if they do not exist yet.
+  The submissions folder contains the score files submitted to the competition.
+
+
+Cite our paper
+--------------
+
+If you use the results in any of your contributions, please cite the following paper::
+
+  @inproceedings{Tome_ICB2015_AntiSpoofFVCompetition,
+         author = {Tome, Pedro and Raghavendra, R. and Busch, Christoph and Tirunagari, Santosh and Poh, Norman and Shekar, B. H. and Gragnaniello, Diego and Sansone, Carlo and Verdoliva, Luisa and Marcel, S{\'{e}}bastien},
+       keywords = {Biometrics, Finger vein, Spoofing Attacks, Competition},
+          month = dec,
+          title = {The 1st Competition on Counter Measures to Finger Vein Spoofing Attacks},
+      booktitle = {International Conference on Biometrics (ICB)},
+         series = {},
+         volume = {},
+           year = {2015},
+          pages = {},
+       location = {Thailand},
+            url = {http://publications.idiap.ch/index.php/publications/show/}
+  }
+
+
+
+.. _paper: http://publications.idiap.ch/index.php/publications/show/
+.. _idiap: http://www.idiap.ch
+.. _bob: http://www.idiap.ch/software/bob
+.. _bioidiap at github: http://www.github.com/bioidiap
+.. _gitlab: https://pypi.python.org/pypi/antispoofing.fvcompetition_icb2015
+.. _virtualbox: http://www.virtualbox.org
+
