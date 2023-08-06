@@ -1,0 +1,3 @@
+FORMAT="eng"
+SIGFIGS=7
+ERROR=None
