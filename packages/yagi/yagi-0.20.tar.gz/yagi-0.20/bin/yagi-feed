@@ -1,0 +1,36 @@
+#!/usr/bin/env python
+
+import os
+import sys
+import logging
+
+possible_topdir = os.path.normpath(os.path.join(os.path.abspath(sys.argv[0]),
+                                   os.pardir,
+                                   os.pardir))
+if os.path.exists(os.path.join(possible_topdir, 'yagi', '__init__.py')):
+    sys.path.insert(0, possible_topdir)
+
+import yagi.commandline
+import yagi.config
+import yagi.feed.feed
+import yagi.log
+
+LOG = logging.getLogger("yagi.feed")
+
+if __name__ == '__main__':
+    args = yagi.commandline.parse_args('Yagi Event Worker')
+    if args.config:
+        yagi.config.setup(config_path=args.config)
+        yagi.log.setup_logging()
+    LOG.info('Initializing yagi feed...')
+    if yagi.config.get('event_feed', 'daemonize') == 'True':
+        try:
+            import daemon
+        except ImportError, e:
+            LOG.error("No daemon library found! Cannot daemonize the feed.")
+            sys.exit(1)
+        context = daemon.DaemonContext()
+        LOG.debug('Starting daemon')
+        context.pidfile = yagi.config.get('event_worker', 'pidfile')
+        context.open()
+    yagi.feed.feed.start()
