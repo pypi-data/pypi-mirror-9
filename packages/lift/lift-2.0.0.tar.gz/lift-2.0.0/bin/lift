@@ -1,0 +1,232 @@
+#!/usr/bin/python3
+
+# LIFT Integration-Functional Testing - A meta test framework
+# Copyright © 2014-2015 Arkena S.A and Nicolas Delvaux
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301,
+# USA.
+
+"""The lift binary"""
+
+import os
+import re
+import sys
+import argparse
+
+import lift
+from lift.exception import InvalidDescriptionFile
+from lift.loader import (load_config_file,
+                         load_upper_inheritance,
+                         string_to_remote)
+
+
+def parse():
+    """Command line argument parsing"""
+
+    def is_dir(parser, path):
+        """Additional type checker for argparse, validate a directory path"""
+        if not os.path.isdir(path):
+            parser.error('%s: no such directory.' % path)
+        else:
+            return path
+
+    def is_remote(parser, rstring):
+        """Additional type checker for argparse, validate a remote string"""
+        res = string_to_remote(rstring)
+        if res is None:
+            parser.error('%s is not a valid remote string.' % rstring)
+        else:
+            return res
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-V', '--version', action='version',
+                        version=lift.version)
+    parser.add_argument('-n', '--no-color', action='store_true',
+                        help='Disable colored output')
+    parser.add_argument('-q', '--quiet', action='store_true',
+                        help='Do not print the output of tests as they run')
+    parser.add_argument('-d', '--detailed-summary', action='store_true',
+                        help='Print the output of failed test in the final'
+                        ' summary')
+    parser.add_argument('--regex', action='store_true',
+                        help='Process test_expression as standard Python regex')
+    parser.add_argument('--no-upper-inheritance', action='store_true',
+                        help='Do not load remotes/environment from upper level'
+                        ' lift.yaml files')
+    parser.add_argument('-f', '--folder',
+                        type=lambda p: is_dir(parser, p), default='.',
+                        help='Specify the root folder in which tests will be '
+                        'looked for (default to the current working directory)')
+    parser.add_argument('-r', '--remote',
+                        type=lambda p: is_remote(parser, p), action='append',
+                        help='Define a remote. The value should be in the '
+                        'following form: "REMOTENAME=USERNAME:PASSWORD@HOST". '
+                        'Note that the PASSWORD field (along with the ":" '
+                        'separator) is optional if SSH keys are properly set. '
+                        'This option can be used multiple times to define '
+                        'multiple remotes. Remotes defined via this option '
+                        'supersede those defined via lift.yaml files.')
+    parser.add_argument('--put-remotes-in-environment', action='store_true',
+                        help='All defined remotes will be passed as '
+                        'environment variables to tests. Variables will be '
+                        'in the following form: '
+                        '"LIFT_REMOTE_remotename=login:password@host". '
+                        'Note that the password (along with the ":" '
+                        'separator) will not be there if it was not defined '
+                        'in the first place. Please do not use this option '
+                        'if some of your binary tests can not be trusted to '
+                        'keep these credentials for themselves.')
+    parser.add_argument('test_expression', nargs='*',
+                        help='Specify tests to run. By default, all discovered'
+                        ' tests are ran. '
+                        'You can use the same format as the one found in the'
+                        ' lift output, ie. "FOLDER/TEST_NAME". '
+                        'If you set the "--regex" option, expressions will be'
+                        ' matched as standard Python regex. For example, ".*foo"'
+                        ' will match all tests containing the word "foo". '
+                        'See http://docs.python.org/library/re.html for more '
+                        'information.')
+    return parser.parse_args()
+
+
+if __name__ != '__main__':
+    sys.exit('The lift binary can only be executed.')
+
+
+# Parse arguments
+args = parse()
+
+if args.remote is not None:
+    preset_remotes = dict(args.remote)
+else:
+    preset_remotes = {}
+
+# Do we have a description file to parse?
+if not os.path.isfile(os.path.join(args.folder, 'lift.yaml')):
+    sys.exit('No lift.yaml file found in this folder.')
+
+# Folder mapping, used for remotes and environment inheritance
+mapping = []
+
+# Load remotes/environment from upper level lift.yaml files
+if not args.no_upper_inheritance:
+    remotes, environment = load_upper_inheritance(args.folder, preset_remotes)
+else:
+    remotes = {}
+    environment = {}
+
+# Initialize variables needed for the final summary
+tests_count = 0.0
+all_failed_tests = []
+
+for directory, _, _ in os.walk(args.folder):
+    if not os.path.isfile(os.path.join(directory, 'lift.yaml')):
+        continue
+
+    # Figures out the inheritance of remotes and environments
+
+    # inherit from the closer known upper folder
+    for ancestor in reversed(mapping):
+        if not directory.startswith(ancestor['dir']):
+            continue
+        remotes = ancestor['remotes'].copy()
+        environment = ancestor['environment'].copy()
+        break
+
+    # Load the description file
+    try:
+        tests, remotes, environment = load_config_file(os.path.join(directory, 'lift.yaml'),
+                                                       remotes,
+                                                       environment,
+                                                       preset_remotes,
+                                                       args.put_remotes_in_environment)
+        mapping.append({'dir': directory,
+                        'remotes': remotes,
+                        'environment': environment})
+    except InvalidDescriptionFile as e:
+        sys.exit('%s is not a valid description file: %s'
+                 % (os.path.join(directory, 'lift.yaml'), e))
+
+    for test in tests:
+        test_string = '%s/%s' % (directory, test.name)
+
+        # Should we ignore this test?
+        if args.test_expression:
+            if not args.regex and test_string not in args.test_expression:
+                # This is not one of the test the user explicitly asked for
+                continue
+            elif args.regex:
+                matched = False
+                for regex in args.test_expression:
+                    if re.match(regex, test_string):
+                        matched = True
+                        break
+                if not matched:
+                    # test not matched, ignore it
+                    continue
+
+        tests_count += 1
+        print('\nTesting: {0:-<{1}}'.format(test_string + ' ', 71))
+        if not args.quiet:
+            test.streaming_output = sys.stdout
+
+        cwd = os.getcwd()
+        status = test.run()
+        os.chdir(cwd)  # Tests may change directory and fail to cleanup
+
+        res_string = '\n%s  {0:>{1}}\n' % test_string
+        if status:
+            # TODO: align status according to output size
+            if not args.no_color:
+                # Green
+                print('\nResult: \033[92mOK\033[0m')
+            else:
+                print('\nResult: OK')
+        else:
+            all_failed_tests.append(test)
+            if not args.no_color:
+                # Red
+                print('\nResult: \033[91mFAIL\033[0m')
+            else:
+                print('\nResult: FAIL')
+
+# All tests were run, summary time
+if tests_count == 0:
+    sys.exit('No test was run!')
+
+print('\nEnd of tests.')
+if all_failed_tests:
+    print('=' * 80)
+    print('\nSummary of failed tests:\n')
+for test in all_failed_tests:
+    if test.return_code != test.expected_return_code:
+        print('\n%s/%s returned %s instead of %d\n' % (test.directory,
+                                                       test.name,
+                                                       str(test.return_code),
+                                                       test.expected_return_code))
+        if args.detailed_summary and test.output:
+            print('The output was:\n%s\n' % test.output)
+
+        print('####')
+
+success_count = tests_count - len(all_failed_tests)
+print('\nPass rate: %d/%d (%d%%)\n' % (success_count,
+                                       tests_count,
+                                       int(round((success_count / tests_count) * 100))))
+
+if all_failed_tests:
+    sys.exit(1)
+else:
+    print('Congratulation! \o/\n')
