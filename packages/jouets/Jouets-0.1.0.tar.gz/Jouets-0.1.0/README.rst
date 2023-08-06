@@ -1,0 +1,60 @@
+Jouets — Programmes « amusants » à connotation mathématique ou informatique
+===========================================================================
+
+|sources| |pypi| |documentation| |license|
+
+Ces programmes n'ont pas ou peu d'utilité pratique, si ce n'est mettre en œuvre
+des concepts des deux disciplines.
+
+Les programmes sont :
+
+- `aperitif <http://paternault.fr/informatique/jouets/aperitif.html>`_ : Recherche de solutions au problème des apéritifs
+- `chemin <http://paternault.fr/informatique/jouets/chemin.html>`_ : Recherche du score maximal d’un jeu
+- `dobble <http://paternault.fr/informatique/jouets/dobble.html>`_ : Création de jeu de cartes de Dobble
+- `egyptienne <http://paternault.fr/informatique/jouets/egyptienne.html>`_ : Décomposition en fractions égyptiennes
+- `erathostene <http://paternault.fr/informatique/jouets/erathostene.html>`_ : Crible d’Érathostène optimisé en espace
+- `fractale <http://paternault.fr/informatique/jouets/fractale.html>`_ : Tracé de fractale itératif et infini
+- `labyrinthe <http://paternault.fr/informatique/jouets/labyrinthe.html>`_ : Construction de labyrinthes
+- `peste et choléra <http://paternault.fr/informatique/jouets/peste.html>`_ : Simulation de propagation d'épidémies
+- `sudoku <http://paternault.fr/informatique/jouets/sudoku.html>`_ : Solveur de sudoku
+- `d'autres </spalax/jouets/merge_requests?label_name=id%C3%A9e>`_ en projets…
+
+Documentation
+-------------
+
+* La version compilée de la documentation est disponible `sur mon site web
+  <http://paternault.fr/informatique/jouets/>`_.
+
+* Pour la compiler depuis les sources, télécharger le paquet, et lancer::
+
+      cd doc && make html
+
+Téléchargement, installation et exécution
+-----------------------------------------
+
+* Depuis les sources :
+
+  * Téléchargement : https://pypi.python.org/pypi/jouets
+  * Installation (dans un `virtualenv`, pour éviter les conflits avec le
+    gestionnaire de paquets de votre distribution)::
+
+        python3 setup.py install
+
+* Avec `pip`::
+
+    pip install jouets
+
+* Pour utiliser les programmes sans les installer, il suffit de les exécuter
+  depuis la racine du projet. Par exemple ::
+
+      ./bin/erathostene
+
+.. |documentation| image:: https://img.shields.io/badge/doc-latest-brightgreen.svg
+  :target: http://paternault.fr/informatique/jouets
+.. |pypi| image:: https://img.shields.io/pypi/v/jouets.svg
+  :target: http://pypi.python.org/pypi/jouets
+.. |license| image:: https://img.shields.io/pypi/l/jouets.svg
+  :target: http://www.gnu.org/licenses/gpl-3.0.html
+.. |sources| image:: https://img.shields.io/badge/sources-jouets-brightgreen.svg
+  :target: http://git.framasoft.org/spalax/jouets
+
