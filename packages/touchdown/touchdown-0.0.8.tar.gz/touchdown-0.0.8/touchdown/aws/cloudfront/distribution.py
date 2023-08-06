@@ -1,0 +1,311 @@
+# Copyright 2014-2015 Isotoma Limited
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import uuid
+
+from touchdown.core.resource import Resource
+from touchdown.core.plan import Plan, Present
+from touchdown.core import argument, serializers
+
+from ..account import Account
+from ..common import SimpleDescribe, SimpleApply, SimpleDestroy, RefreshMetadata
+
+from ..iam import ServerCertificate
+from ..s3 import Bucket
+from .. import route53
+
+from .common import S3Origin, CloudFrontList, CloudFrontResourceList
+
+
+class CustomOrigin(Resource):
+
+    resource_name = "custom_origin"
+    dot_ignore = True
+    extra_serializers = {
+        "CustomOriginConfig": serializers.Dict(
+            HTTPPort=serializers.Argument("http_port"),
+            HTTPSPort=serializers.Argument("https_port"),
+            OriginProtocolPolicy=serializers.Argument("protocol"),
+        )
+    }
+
+    name = argument.String(field='Id')
+    domain_name = argument.String(field='DomainName')
+    origin_path = argument.String(default='', field='OriginPath')
+    http_port = argument.Integer(default=80)
+    https_port = argument.Integer(default=443)
+    protocol = argument.String(choices=['http-only', 'match-viewer'], default='match-viewer')
+
+
+class DefaultCacheBehavior(Resource):
+
+    resource_name = "default_cache_behaviour"
+    dot_ignore = True
+
+    extra_serializers = {
+        # TrustedSigners are not supported yet, so include stub in serialized form
+        "TrustedSigners": serializers.Const({
+            "Enabled": False,
+            "Quantity": 0,
+        }),
+        "AllowedMethods": CloudFrontList(
+            inner=serializers.Context(serializers.Argument("allowed_methods"), serializers.List()),
+            CachedMethods=serializers.Context(serializers.Argument("cached_methods"), CloudFrontList()),
+        ),
+        "ForwardedValues": serializers.Resource(
+            group="forwarded-values",
+            Cookies=serializers.Resource(
+                group="cookies",
+                Forward=serializers.Expression(lambda r, o: "all" if o.forward_cookies == ["*"] else "none" if len(o.forward_cookies) == 0 else "whitelist"),
+            )
+        )
+    }
+
+    target_origin = argument.String(field='TargetOriginId')
+
+    forward_query_string = argument.Boolean(default=True, field="QueryString", group="forwarded-values")
+    forward_headers = argument.List(field="Headers", serializer=CloudFrontList(serializers.List()), group="forwarded-values")
+    forward_cookies = argument.List(field="WhitelistedNames", serializer=CloudFrontList(serializers.Expression(lambda r, o: [] if o == ['*'] else o)), group="cookies")
+
+    allowed_methods = argument.List(default=lambda x: ["GET", "HEAD"],)
+    cached_methods = argument.List(default=lambda x: ["GET", "HEAD"])
+
+    min_ttl = argument.Integer(default=0, field="MinTTL")
+    viewer_protocol_policy = argument.String(choices=['allow-all', 'https-only', 'redirect-to-https'], default='allow-all', field="ViewerProtocolPolicy")
+    smooth_streaming = argument.Boolean(default=False, field='SmoothStreaming')
+
+
+class CacheBehavior(DefaultCacheBehavior):
+
+    resource_name = "cache_behaviour"
+    path_pattern = argument.String(field='PathPattern')
+
+
+class ErrorResponse(Resource):
+
+    resource_name = "error_response"
+    dot_ignore = True
+
+    error_code = argument.Integer(field="ErrorCode")
+    response_page_path = argument.String(field="ResponsePagePath")
+    response_code = argument.Integer(field="ResponseCode")
+    min_ttl = argument.Integer(field="ErrorCachingMinTTL")
+
+
+class LoggingConfig(Resource):
+
+    resource_name = "logging_config"
+    dot_ignore = True
+
+    enabled = argument.Boolean(field="Enabled", default=False)
+    include_cookies = argument.Boolean(field="IncludeCookies", default=False)
+    bucket = argument.Resource(Bucket, field="Bucket", serializer=serializers.Default(default=None), default="")
+    prefix = argument.String(field="Prefix", default="")
+
+
+class Distribution(Resource):
+
+    resource_name = "distribution"
+
+    extra_serializers = {
+        "CallerReference": serializers.Expression(
+            lambda runner, object: runner.get_plan(object).object.get('CallerReference', str(uuid.uuid4()))
+        ),
+        "Aliases": CloudFrontList(serializers.Chain(
+            serializers.Context(serializers.Argument("name"), serializers.ListOfOne()),
+            serializers.Context(serializers.Argument("aliases"), serializers.List()),
+        )),
+        # We don't support GeoRestrictions yet - so include a stubbed default
+        # when serializing
+        "Restrictions": serializers.Const({
+            "GeoRestriction": {
+                "RestrictionType": "none",
+                "Quantity": 0,
+            },
+        }),
+        "ViewerCertificate": serializers.Resource(
+            group="viewer-certificate",
+            CloudFrontDefaultCertificate=serializers.Expression(lambda r, o: False if o.ssl_certificate else True),
+        )
+    }
+
+    name = argument.String()
+    comment = argument.String(field='Comment', default=lambda instance: instance.name)
+    aliases = argument.List()
+    root_object = argument.String(default='/', field="DefaultRootObject")
+    enabled = argument.Boolean(default=True, field="Enabled")
+    origins = argument.ResourceList(
+        (S3Origin, CustomOrigin),
+        field="Origins",
+        serializer=CloudFrontResourceList(),
+    )
+    default_cache_behavior = argument.Resource(
+        DefaultCacheBehavior,
+        field="DefaultCacheBehavior",
+        serializer=serializers.Resource(),
+    )
+    behaviors = argument.ResourceList(
+        CacheBehavior,
+        field="CacheBehaviors",
+        serializer=CloudFrontResourceList(),
+    )
+    error_responses = argument.ResourceList(
+        ErrorResponse,
+        field="CustomErrorResponses",
+        serializer=CloudFrontResourceList(),
+    )
+    logging = argument.Resource(
+        LoggingConfig,
+        default=lambda instance: dict(enabled=False),
+        field="Logging",
+        serializer=serializers.Resource(),
+    )
+    price_class = argument.String(
+        default="PriceClass_100",
+        choices=['PriceClass_100', 'PriceClass_200', 'PriceClass_All'],
+        field="PriceClass",
+    )
+
+    ssl_certificate = argument.Resource(
+        ServerCertificate,
+        field="IAMCertificateId",
+        serializer=serializers.Property("ServerCertificateId"),
+        group="viewer-certificate",
+    )
+
+    ssl_support_method = argument.String(
+        default="sni-only",
+        choices=["sni-only", "vip"],
+        field="SSLSupportMethod",
+        group="viewer-certificate",
+    )
+
+    ssl_minimum_protocol_version = argument.String(
+        default="TLSv1",
+        choices=["TLSv1", "SSLv3"],
+        field="MinimumProtocolVersion",
+        group="viewer-certificate",
+    )
+
+    account = argument.Resource(Account)
+
+
+class Describe(SimpleDescribe, Plan):
+
+    resource = Distribution
+    service_name = 'cloudfront'
+    describe_filters = {}
+    describe_action = "list_distributions"
+    describe_envelope = 'DistributionList.Items'
+    key = 'Id'
+
+    def get_describe_filters(self):
+        return {"Id": self.object['Id']}
+
+    def describe_object_matches(self, d):
+        return self.resource.name in d['Aliases'].get('Items', [])
+
+    def describe_object(self):
+        distribution = super(Describe, self).describe_object()
+        if distribution:
+            result = self.client.get_distribution(Id=distribution['Id'])
+            distribution = {
+                "ETag": result["ETag"],
+                "Id": distribution["Id"],
+                "DomainName": result["Distribution"]["DomainName"],
+            }
+            distribution.update(result['Distribution']['DistributionConfig'])
+            return distribution
+
+
+class Apply(SimpleApply, Describe):
+
+    create_action = "create_distribution"
+    #update_action = "update_distribution"
+    create_response = "not-that-useful"
+    waiter = "distribution_deployed"
+
+    signature = (
+        Present("name"),
+        Present("origins"),
+        Present("default_cache_behavior"),
+    )
+
+    def get_create_serializer(self):
+        return serializers.Dict(
+            DistributionConfig=serializers.Resource(),
+        )
+
+    def get_update_serializer(self):
+        return serializers.Dict(
+            Id=serializers.Identifier(),
+            DistributionConfig=serializers.Resource(),
+            IfMatch=serializers.Property("ETag"),
+        )
+
+
+class Destroy(SimpleDestroy, Describe):
+
+    destroy_action = "delete_distribution"
+
+    def get_destroy_serializer(self):
+        return serializers.Dict(
+            Id=self.resource_id,
+            IfMatch=serializers.Property('ETag'),
+        )
+
+    def destroy_object(self):
+        if not self.object:
+            return
+
+        if self.object.get('Enabled', False):
+            yield self.generic_action(
+                "Disable distribution",
+                self.client.update_distribution,
+                Id=self.object['Id'],
+                IfMatch=self.object['ETag'],
+                DistributionConfig=serializers.Resource(
+                    Enabled=False,
+                ),
+            )
+
+            yield self.get_waiter(
+                ["Waiting for distribution to enter disabled state"],
+                "distribution_deployed",
+            )
+
+            yield RefreshMetadata(self)
+
+        for change in super(Destroy, self).destroy_object():
+            yield change
+
+
+class AliasTarget(route53.AliasTarget):
+
+    """ Adapts a Distribution into a AliasTarget """
+
+    input = Distribution
+
+    def get_serializer(self, runner, **kwargs):
+        return serializers.Context(
+            serializers.Const(self.adapts),
+            serializers.Dict(
+                DNSName=serializers.Context(
+                    serializers.Property("DomainName"),
+                    serializers.Expression(lambda r, o: route53._normalize(o)),
+                ),
+                HostedZoneId="Z2FDTNDATAQYW2",
+                EvaluateTargetHealth=False,
+            )
+        )
