@@ -1,0 +1,849 @@
+
+''' A module for representing and manipulating maps between Triangulations.
+
+Provides four classes: PartialFunction, BasicPLFunction, PLFunction and Encoding. '''
+
+import flipper
+
+NT_TYPE_PERIODIC = 'Periodic'
+NT_TYPE_REDUCIBLE = 'Reducible'
+NT_TYPE_PSEUDO_ANOSOV = 'Pseudo-Anosov'
+
+class EdgeFlip(object):
+	''' Represents the change to a lamination caused by flipping an edge. '''
+	def __init__(self, source_triangulation, target_triangulation, edge_label):
+		assert(isinstance(source_triangulation, flipper.kernel.Triangulation))
+		assert(isinstance(target_triangulation, flipper.kernel.Triangulation))
+		assert(isinstance(edge_label, flipper.IntegerType))
+		
+		self.source_triangulation = source_triangulation
+		self.target_triangulation = target_triangulation
+		self.edge_label = edge_label
+		self.edge_index = flipper.kernel.norm(self.edge_label)
+		self.zeta = self.source_triangulation.zeta
+		assert(self.source_triangulation.is_flippable(self.edge_index))
+		
+		self.square = self.source_triangulation.square_about_edge(self.edge_label)
+	
+	def __repr__(self):
+		return str(self)
+	def __str__(self):
+		return 'Flip %s%d' % ('' if self.edge_index == self.edge_label else '~', self.edge_index)
+	
+	def __call__(self, other):
+		if isinstance(other, flipper.kernel.Lamination):
+			if other.triangulation != self.source_triangulation:
+				raise TypeError('Cannot apply EdgeFlip to a lamination not on the source triangulation.')
+			
+			a, b, c, d = self.square
+			geometric = list(other.geometric)
+			algebraic = list(other.algebraic)
+			m = max(geometric[a.index] + geometric[c.index], geometric[b.index] + geometric[d.index])
+			geometric[self.edge_index] = m - geometric[self.edge_index]
+			algebraic[self.edge_index] = b.sign() * algebraic[b.index] + c.sign() * algebraic[c.index]
+			
+			return flipper.kernel.Lamination(self.target_triangulation, geometric, algebraic)
+		else:
+			return NotImplemented
+	
+	def inverse(self):
+		''' Return the inverse of this map. '''
+		
+		return EdgeFlip(self.target_triangulation, self.source_triangulation, ~self.edge_label)
+	
+	def applied_geometric(self, lamination):
+		''' Return the action and condition matrices describing the PL map
+		applied to the geometric coordinates of the given lamination. '''
+		
+		assert(isinstance(lamination, flipper.kernel.Lamination))
+		
+		I = flipper.kernel.id_matrix(self.zeta)
+		Z = flipper.kernel.zero_matrix(self.zeta, 1)
+		a, b, c, d, e = [edge.index for edge in self.square] + [self.edge_index]
+		geometric = list(lamination.geometric)
+		if geometric[a] + geometric[c] >= geometric[b] + geometric[d]:
+			return I.tweak([(e, a), (e, c)], [(e, e), (e, e)]), Z.tweak([(0, a), (0, c)], [(0, b), (0, d)])
+		else:
+			return I.tweak([(e, b), (e, d)], [(e, e), (e, e)]), Z.tweak([(0, b), (0, d)], [(0, a), (0, c)])
+	
+	def encode(self):
+		''' Return the Encoding induced by this EdgeFlip. '''
+		
+		return Encoding(self.source_triangulation, self.target_triangulation, [self])
+
+class LinearTransformation(object):
+	''' Represents the change to a lamination caused by a linear map. '''
+	def __init__(self, source_triangulation, target_triangulation, geometric, algebraic):
+		assert(isinstance(source_triangulation, flipper.kernel.Triangulation))
+		assert(isinstance(target_triangulation, flipper.kernel.Triangulation))
+		assert(isinstance(geometric, flipper.kernel.Matrix))
+		assert(isinstance(algebraic, flipper.kernel.Matrix))
+		
+		self.source_triangulation = source_triangulation
+		self.target_triangulation = target_triangulation
+		self.geometric = geometric
+		self.algebraic = algebraic
+	
+	def __repr__(self):
+		return str(self)
+	def __str__(self):
+		return str(self.geometric) + str(self.algebraic)
+	
+	def __call__(self, other):
+		if isinstance(other, flipper.kernel.Lamination):
+			if other.triangulation != self.source_triangulation:
+				raise TypeError('Cannot apply LinearTransformation to a lamination not on the source triangulation.')
+			
+			geometric = self.geometric(other.geometric)
+			algebraic = self.algebraic(other.algebraic)
+			
+			return flipper.kernel.Lamination(self.target_triangulation, geometric, algebraic)
+		else:
+			return NotImplemented
+	
+	def inverse(self):
+		''' Return the inverse of this map.
+		
+		Note that these do not exist and so NotImplemented is returned. '''
+		
+		return NotImplemented
+	
+	def applied_geometric(self, lamination):
+		''' Return the action and condition matrices describing the PL map
+		applied to the geometric coordinates of the given lamination. '''
+		
+		assert(isinstance(lamination, flipper.kernel.Lamination))
+		
+		return self.geometric, flipper.kernel.zero_matrix(0)
+	
+	def encode(self):
+		''' Return the Encoding induced by this linear map. '''
+		
+		return Encoding(self.source_triangulation, self.target_triangulation, [self])
+
+class Encoding(object):
+	''' This represents a map between two Triagulations.
+	
+	If it maps to and from the same triangulation then it represents
+	a mapping class. This can be checked using self.is_mapping_class().
+	
+	The map is given by a sequence of EdgeFlips, LinearTransformations
+	and Isometries which act from right to left.
+	
+	>>> import flipper
+	>>> S = flipper.load.equipped_triangulation('S_1_1')
+	>>> aB = S.mapping_class('aB')
+	>>> bA = S.mapping_class('bA')
+	>>> ab = S.mapping_class('ab')
+	>>> i = S.mapping_class('')
+	>>> a = S.mapping_class('a')
+	>>> a
+	[Isometry [~2, 1, 0], Flip 2]
+	>>> x = S.triangulation.encode_flips([1])
+	>>> x
+	[Flip 1]
+	'''
+	def __init__(self, source_triangulation, target_triangulation, sequence, name=None):
+		assert(isinstance(source_triangulation, flipper.kernel.Triangulation))
+		assert(isinstance(target_triangulation, flipper.kernel.Triangulation))
+		assert(isinstance(sequence, (list, tuple)))
+		assert(all(isinstance(item, (EdgeFlip, LinearTransformation, flipper.kernel.Isometry)) for item in sequence))
+		assert(isinstance(name, flipper.StringType) or name is None)
+		
+		self.source_triangulation = source_triangulation
+		self.target_triangulation = target_triangulation
+		self.sequence = sequence
+		self.name = name
+		self.zeta = self.source_triangulation.zeta
+		
+		self._cache = {}  # For caching hard to compute results.
+	
+	def is_mapping_class(self):
+		''' Return if this encoding is a mapping class.
+		
+		That is, if it maps to the triangulation it came from.
+		
+		>>> aB.is_mapping_class(), bA.is_mapping_class()
+		(True, True)
+		>>> x.is_mapping_class()
+		False
+		'''
+		
+		return self.source_triangulation == self.target_triangulation
+	
+	def __repr__(self):
+		return str(self)
+	def __str__(self):
+		return str(self.sequence)
+	def __len__(self):
+		return len(self.sequence)
+	
+	def __eq__(self, other):
+		if isinstance(other, Encoding):
+			if self.source_triangulation != other.source_triangulation or \
+				self.target_triangulation != other.target_triangulation:
+				raise ValueError('Cannot compare Encodings between different triangulations.')
+			
+			return all(self(curve) == other(curve) for curve in self.source_triangulation.key_curves())
+		else:
+			return NotImplemented
+	def __ne__(self, other):
+		return not (self == other)
+	def is_homologous_to(self, other):
+		''' Return if this encoding is homologous to other.
+		
+		Two maps are homologous if and only if they induce the same map
+		from H_1(source_triangulation) to H_1(target_triangulation).
+		
+		>>> aB.is_homologous_to(aB), aB.is_homologous_to(bA), bA.is_homologous_to(ab), aB.is_homologous_to(i)
+		(True, False, False, False)
+		'''
+		
+		if isinstance(other, Encoding):
+			if self.source_triangulation != other.source_triangulation or \
+				self.target_triangulation != other.target_triangulation:
+				raise ValueError('Cannot compare Encodings between different triangulations.')
+			
+			return all(self(curve).is_homologous_to(other(curve)) for curve in self.source_triangulation.key_curves())
+		else:
+			return NotImplemented
+	
+	def __call__(self, other):
+		if isinstance(other, flipper.kernel.Lamination):
+			if self.source_triangulation != other.triangulation:
+				raise ValueError('Cannot apply an Encoding to a Lamination on a triangulation other than source_triangulation.')
+			
+			lamination = other
+			for item in reversed(self.sequence):
+				lamination = item(lamination)
+			
+			return lamination
+		else:
+			return NotImplemented
+	def __mul__(self, other):
+		if isinstance(other, Encoding):
+			if self.source_triangulation != other.target_triangulation:
+				raise ValueError('Cannot compose Encodings over different triangulations.')
+			return Encoding(other.source_triangulation, self.target_triangulation,
+				self.sequence + other.sequence,
+				other.name + '.' + self.name if self.name is not None and other.name is not None else None)
+		else:
+			return NotImplemented
+	def __pow__(self, k):
+		assert(self.is_mapping_class())
+		
+		if k == 0:
+			return self.source_triangulation.id_encoding()
+		elif k > 0:
+			return Encoding(self.source_triangulation, self.target_triangulation, self.sequence * k)
+		else:
+			return self.inverse()**abs(k)
+	
+	def inverse(self):
+		''' Return the inverse of this encoding.
+		
+		>>> aB.inverse()
+		[Flip ~2, Isometry [2, 1, ~0], Isometry [0, 2, ~1], Flip 1]
+		>>> aB.inverse() == bA, ab == ab.inverse(), i == i.inverse()
+		(True, False, True)
+		'''
+		
+		return Encoding(self.target_triangulation, self.source_triangulation, [item.inverse() for item in reversed(self.sequence)])
+	
+	def closing_isometries(self):
+		''' Return all the possible isometries from self.target_triangulation to self.source_triangulation.
+		
+		These are the maps that can be used to close this into a mapping class. '''
+		
+		return self.target_triangulation.isometries_to(self.source_triangulation)
+	
+	def order(self):
+		''' Return the order of this mapping class.
+		
+		If this has infinite order then return 0.
+		
+		This encoding must be a mapping class.
+		
+		>>> aB.order(), a.order()
+		(0, 0)
+		>>> i.order(), ab.order()
+		(1, 6)
+		'''
+		
+		assert(self.is_mapping_class())
+		
+		# We could do:
+		# for i in range(1, self.source_triangulation.max_order + 1):
+		#	if self**i == self.source_triangulation.id_encoding():
+		#		return i
+		# But this is quadratic in the order so instead we do:
+		curves = self.source_triangulation.key_curves()
+		possible_orders = set(range(1, self.source_triangulation.max_order+1))
+		for curve in curves:
+			curve_image = curve
+			for i in range(1, max(possible_orders)+1):
+				curve_image = self(curve_image)
+				if curve_image != curve:
+					possible_orders.discard(i)
+					if not possible_orders: return 0  # No finite orders remain so we are infinite order.
+		
+		return min(possible_orders)
+	
+	def is_periodic(self):
+		''' Return if this encoding has finite order.
+		
+		This encoding must be a mapping class.
+		
+		>>> aB.is_periodic(), a.is_periodic()
+		(False, False)
+		>>> i.is_periodic(), ab.is_periodic()
+		(True, True)
+		'''
+		
+		return self.order() > 0
+	
+	def applied_geometric(self, lamination):
+		''' Return the action and condition matrices describing the PL map
+		applied to the geometric coordinates of the given lamination. '''
+		
+		assert(isinstance(lamination, flipper.kernel.Lamination))
+		
+		As = flipper.kernel.id_matrix(self.zeta)
+		Cs = flipper.kernel.zero_matrix(self.zeta, 1)
+		for item in reversed(self.sequence):
+			A, C = item.applied_geometric(lamination)
+			Cs = Cs.join(C * As)
+			As = A * As
+			lamination = item(lamination)
+		
+		return As, Cs
+	
+	def invariant_lamination_uncached(self):
+		''' Return a rescaling constant and projectively invariant lamination.
+		
+		Assumes that the mapping class is pseudo-Anosov.
+		
+		To find this we start with a curve on the surface and repeatedly apply
+		the map until it appear to be projectively similar to a previous iteration.
+		Finally it uses:
+			flipper.kernel.symboliccomputation.perron_frobenius_eigen()
+		to find the nearby projective fixed point. If it cannot find one then it
+		raises a ComputationError.
+		
+		Note: In most pseudo-Anosov cases < 15 iterations are needed, if it fails
+		to converge after many iterations and a ComputationError is thrown then it
+		is extremely likely that the mapping class was not pseudo-Anosov.
+		
+		This encoding must be a mapping class. '''
+		
+		# Suppose that f_1, ..., f_m, g_1, ..., g_n, t_1, ..., t_k, p is the Thurston decomposition of self.
+		# That is: f_i are pA on subsurfaces, g_i are periodic on subsurfaces, t_i are Dehn twist along the curve of
+		# the canonical curve system and p is a permutation of the subsurfaces.
+		# Additionally, let S_i be the subsurface corresponding to f_i, P_i correspond to g_i and A_i correspond to t_i.
+		# Finally, let x_0 be a curve on the surface and define x_i := self(x_{i-1}).
+		#
+		# The algorithm covers 3 cases:  (Note we reorder the subsurfaces for ease of notation.)
+		#  1) x_0 meets at S_1, ..., S_m',
+		#  2) x_0 meets no S_i but meets A_1, ..., A_k', and
+		#  3) x_0 meets no S_i or A_i, that is x_0 is contained in a P_1.
+		#
+		# In the first case, x_i will converge exponentially to the stable laminations of f_1, ..., f_m'.
+		# Here the convergence is so fast we need only a few iterations.
+		#
+		# In the second case x_i will converge linearly to c, the cores of A_1, ..., A_k'. To speed this up
+		# we note that x_i = i*c + O(1), so rescale x_i by 1/i, round and check if this is c.
+		#
+		# Finally, the third case happens if and only if x_i is periodic. In this case self must be
+		# periodic or reducible. We test for periodicity at the beginning hence if we ever find a curve
+		# fixed by a power of self then we must reducible.
+		
+		assert(self.is_mapping_class())
+		
+		# We start with a fast test for periodicity.
+		# This isn't needed but it means that if we ever discover that
+		# self is not pA then it must be reducible.
+		if self.is_periodic():
+			raise flipper.AssumptionError('Mapping class is periodic.')
+		
+		triangulation = self.source_triangulation
+		max_order = triangulation.max_order
+		curves = [triangulation.key_curves()[0]]
+		
+		# A little helper function to determine how much two vectors differ by.
+		def projective_difference(A, B, error_reciprocal):
+			''' Return if the projective difference between A and B is less than 1 / error_reciprocal. '''
+			
+			A_sum, B_sum = sum(A), sum(B)
+			return max(abs((p * B_sum) - (q * A_sum)) for p, q in zip(A, B)) * error_reciprocal < A_sum * B_sum
+		
+		# We will remember the cells we've tested to avoid recalculating their eigenvectors again.
+		for i in range(100):
+			new_curve = self(curves[-1])
+			# print(new_curve)
+			
+			# Check if we have seen this curve before.
+			if new_curve in curves:  # self**(i-j)(curve) == curve, so self is reducible.
+				raise flipper.AssumptionError('Mapping class is reducible.')
+			
+			curves.append(new_curve)
+			for j in range(1, min(max_order, len(curves))):
+				old_curve = curves[-j-1]
+				if projective_difference(new_curve, old_curve, 100):
+					average_curve = sum(curves[-j:])
+					action_matrix, condition_matrix = (self**j).applied_geometric(average_curve)
+					try:
+						eigenvalue, eigenvector = flipper.kernel.symboliccomputation.directed_eigenvector(
+							action_matrix, condition_matrix, average_curve)
+					except flipper.ComputationError:
+						pass  # Could not find an eigenvector in the cone.
+					except flipper.AssumptionError:
+						raise flipper.AssumptionError('Mapping class is reducible.')
+					else:
+						# Test if the vector we found lies in the cone given by the condition matrix.
+						# We could also use: invariant_lamination.projectively_equal(self(invariant_lamination))
+						# but this is much faster.
+						if flipper.kernel.matrix.nonnegative(eigenvector) and condition_matrix.nonnegative_image(eigenvector):
+							# If it does then we have a projectively invariant lamination.
+							invariant_lamination = triangulation.lamination(eigenvector)
+							if not invariant_lamination.is_empty():  # But it might have been entirely peripheral.
+								if j == 1:
+									# We could raise an AssumptionError as this actually shows that self is reducible.
+									return eigenvalue, invariant_lamination
+								else:
+									if not invariant_lamination.projectively_equal(self(invariant_lamination)):
+										raise flipper.AssumptionError('Mapping class is reducible.')
+									else:
+										# We possibly could reconstruct something here but all the numbers are
+										# in the wrong number field. It's easier to just keep going.
+										pass
+					break
+			
+			# See if we are close to an invariant curve.
+			# Build some different vectors which are good candidates for reducing curves.
+			vectors = [[x - y for x, y in zip(new_curve, old_curve)] for old_curve in curves[max(len(curves) - max_order, 0):]]
+			
+			for vector in vectors:
+				new_small_curve = small_curve = triangulation.lamination(vector, algebraic=[0] * self.zeta)
+				if not small_curve.is_empty():
+					for j in range(1, max_order+1):
+						new_small_curve = self(new_small_curve)
+						if new_small_curve == small_curve:
+							if j == 1:
+								# We could raise an AssumptionError in this case too as this also shows that self is reducible.
+								return 1, small_curve
+							else:
+								raise flipper.AssumptionError('Mapping class is reducible.')
+		
+		raise flipper.ComputationError('Could not estimate invariant lamination.')
+	
+	def invariant_lamination(self):
+		''' A version of self.invariant_lamination_uncached with caching. '''
+		
+		if 'invariant_lamination' not in self._cache:
+			try:
+				self._cache['invariant_lamination'] = self.invariant_lamination_uncached()
+			except (flipper.AssumptionError, flipper.ComputationError) as error:
+				self._cache['invariant_lamination'] = error
+		
+		if isinstance(self._cache['invariant_lamination'], Exception):
+			raise self._cache['invariant_lamination']
+		else:
+			return self._cache['invariant_lamination']
+	
+	def splitting_sequences(self, take_roots=False):
+		''' Return a list of splitting sequences associated to this mapping class.
+		
+		Assumes (and checks) that the mapping class is pseudo-Anosov.
+		
+		This encoding must be a mapping class. '''
+		
+		if self.is_periodic():  # Actually this test is redundant but it is faster to test it now.
+			raise flipper.AssumptionError('Mapping class is not pseudo-Anosov.')
+		
+		dilatation, lamination = self.invariant_lamination()  # This could fail with a flipper.ComputationError.
+		try:
+			splittings = lamination.splitting_sequences(min_dilatation=None if take_roots else dilatation)
+		except flipper.AssumptionError:  # Lamination is not filling.
+			raise flipper.AssumptionError('Mapping class is not pseudo-Anosov.')
+		
+		return splittings
+	
+	def splitting_sequence(self):
+		''' Return the splitting sequence associated to this mapping class.
+		
+		Assumes (and checks) that the mapping class is pseudo-Anosov.
+		
+		This encoding must be a mapping class. '''
+		
+		# We get a list of all possible splitting sequences from
+		# self.splitting_sequences(). From there we use the fact that each
+		# of these differ by a periodic mapping class, which cannot be in the
+		# Torelli subgroup and so acts non-trivially on H_1(S).
+		# Thus we look for the map whose action on H_1(S) is conjugate to self
+		# via splitting.preperiodic.
+		
+		# To do this we take sufficiently many curves (the key_curves() of the
+		# underlying triangulation) and look for the splitting sequence in which
+		# they are mapped to homologous curves by:
+		#	preperiodic . self^{-1} and periodic . preperiodic.
+		# Note that we must use self.inverse().
+		
+		for splitting in self.splitting_sequences():
+			if (splitting.preperiodic * self.inverse()).is_homologous_to(splitting.mapping_class * splitting.preperiodic):
+				return splitting
+		
+		raise flipper.FatalError('Mapping class is not homologous to any splitting sequence.')
+	
+	def nielsen_thurston_type(self):
+		''' Return the Nielsen--Thurston type of this encoding.
+		
+		This encoding must be a mapping class.
+		
+		>>> ab.nielsen_thurston_type(), a.nielsen_thurston_type(), aB.nielsen_thurston_type()
+		('Periodic', 'Reducible', 'Pseudo-Anosov')
+		'''
+		
+		if self.is_periodic():
+			return NT_TYPE_PERIODIC
+		
+		try:
+			# This can also fail with a flipper.ComputationError if
+			# self.invariant_lamination() fails to find an invariant lamination.
+			self.splitting_sequence()
+		except flipper.AssumptionError:
+			return NT_TYPE_REDUCIBLE
+		
+		return NT_TYPE_PSEUDO_ANOSOV
+	
+	def is_abelian(self):
+		''' Return if this mapping class corresponds to an Abelian differential.
+		
+		This is an Abelian differential (rather than a quadratic differential) if and
+		only if its stable lamination is orientable.
+		
+		Assumes (and checks) that the mapping class is pseudo-Anosov.
+		
+		This encoding must be a mapping class.
+		
+		>>> aB.is_abelian()
+		True
+		>>> ab.is_abelian()  # doctest: +ELLIPSIS
+		Traceback (most recent call last):
+		    ...
+		AssumptionError: ...
+		>>> a.is_abelian()  # doctest: +ELLIPSIS
+		Traceback (most recent call last):
+		    ...
+		AssumptionError: ...
+		'''
+		
+		splitting = self.splitting_sequence()
+		lamination = splitting.lamination
+		return lamination.is_orientable()
+	
+	def dilatation(self):
+		''' Return the dilatation of this mapping class.
+		
+		This encoding must be a mapping class. '''
+		
+		if self.nielsen_thurston_type() != NT_TYPE_PSEUDO_ANOSOV:
+			return 0
+		else:
+			lmbda, _ = self.invariant_lamination()
+			return lmbda
+	
+	def is_conjugate_to(self, other):
+		''' Return if this mapping class is conjugate to other.
+		
+		It would also be straightforward to check if self^i ~~ other^j
+		for some i, j.
+		
+		Both encodings must be mapping classes.
+		
+		Assumes that both mapping classes are pseudo-Anosov. '''
+		
+		assert(isinstance(other, Encoding))
+		
+		# Nielsen-Thurston type is a conjugacy invariant.
+		if self.nielsen_thurston_type() != other.nielsen_thurston_type():
+			return False
+		
+		if self.nielsen_thurston_type() == NT_TYPE_PERIODIC:
+			if self.order() != other.order():
+				return False
+			
+			# We could also use action on H_1(S) as a conjugacy invaraiant.
+			
+			raise flipper.AssumptionError('Mapping class is periodic.')
+		elif self.nielsen_thurston_type() == NT_TYPE_REDUCIBLE:
+			# There's more to do here.
+			
+			raise flipper.AssumptionError('Mapping class is reducible.')
+		elif self.nielsen_thurston_type() == NT_TYPE_PSEUDO_ANOSOV:
+			splitting1 = self.splitting_sequence()
+			splitting2 = other.splitting_sequence()
+			
+			mapping_class1 = splitting1.mapping_class
+			source1 = mapping_class1.source_triangulation
+			
+			# The product of these is mapping_class2 = splitting2.mapping_class.
+			encodings2 = splitting2.encodings[splitting2.index:] + [splitting2.isometry.encode()]
+			for i in range(len(encodings2)):
+				mapping_class2 = flipper.kernel.product(encodings2[i:] + encodings2[:i])
+				source2 = mapping_class2.source_triangulation  #pylint: disable=maybe-no-member
+				
+				# Would could get away with only looking at those that projectively preserve the
+				# lamination but that involves comparing algebraic numbers and so is generally
+				# slower in practice.
+				for isom in source1.isometries_to(source2):
+					if isom.encode() * mapping_class1 == mapping_class2 * isom.encode():
+						return True
+			
+			return False
+	
+	def stratum(self):
+		''' Return a dictionary mapping each singularity to its stratum order.
+		
+		This is the number of bipods incident to the vertex.
+		
+		Assumes (and checks) that this mapping class is pseudo-Anosov.
+		
+		This encoding must be a mapping class. '''
+		
+		# This can fail with an flipper.AssumptionError.
+		return self.splitting_sequence().lamination.stratum()
+	
+	def bundle(self, canonical=True, _safety=True):
+		''' Return the bundle associated to this mapping class.
+		
+		This method can be run in two different modes:
+		If canonical=True:
+			Then the bundle returned is triangulated by a veering, layered
+			triangulation and has at most 6g+5n-6 additional loops drilled
+			from it, as described by Agol. These additional cusps are marked
+			as fake cusps and can be dealt with by filling along their
+			fibre slope.
+			
+			Assumes (and checks) that this mapping class is pseudo-Anosov.
+		If canonical=False:
+			Then the bundle returned is triangulated by a layered triangulation
+			obtained by stacking flat tetrahedra, one for each edge flip in
+			self.
+			
+			Assumes (and checks) that the resulting triangulation is an ideal
+			triangulation of a manifold and that the fibre surface immerses
+			into the two skeleton. If _safety=True then this should always happen.
+		
+		This encoding must be a mapping class. '''
+		
+		assert(self.is_mapping_class())
+		
+		if canonical:
+			# This can fail with an flipper.AssumptionError.
+			return self.splitting_sequence().mapping_class.bundle(canonical=False, _safety=False)
+		
+		VEERING_LEFT, VEERING_RIGHT = flipper.kernel.triangulation3.VEERING_LEFT, flipper.kernel.triangulation3.VEERING_RIGHT
+		id_perm3 = flipper.kernel.Permutation((0, 1, 2))
+		
+		all_odd_permutations = flipper.kernel.permutation.all_permutations(4, odd=True, even=False)
+		def permutation_from_pair(a, to_a, b, to_b):
+			''' Return the odd permutation in Sym(4) which sends a to to_a and b to to_b. '''
+			
+			for perm in all_odd_permutations:
+				if perm(a) == to_a and perm(b) == to_b:
+					return perm
+			
+			raise ValueError('Does not represent a gluing.')
+		
+		triangulation = self.source_triangulation
+		if _safety:
+			# We should add enough flips to ensure the triangulation is a manifold.
+			# Flipping and then unflipping every edge is certainly enough.
+			# However, we still have to be careful as there may be non-flippable edges.
+			
+			# Start by adding a flip and unflip each flippable edge.
+			safe_encoding = self
+			for i in triangulation.flippable_edges():
+				extra = triangulation.encode_flip(i)
+				safe_encoding = extra.inverse() * extra * safe_encoding
+			# Then add a flip and unflip for each non-flippable edge.
+			# To do this we must first flip the boundary edge.
+			for i in range(triangulation.zeta):
+				if not triangulation.is_flippable(i):
+					boundary_edge = triangulation.nonflippable_boundary(edge_index)
+					# The edge bounding i is always flippable and, after flipping it, i is too.
+					extra = triangulation.encode_flips([boundary_edge, i])
+					safe_encoding = extra.inverse() * extra * safe_encoding
+			
+			sequence = safe_encoding.sequence
+		else:
+			sequence = self.sequence
+		lower_triangulation, upper_triangulation = triangulation, triangulation
+		
+		num_flips = len([item for item in sequence if isinstance(item, EdgeFlip)])
+		triangulation3 = flipper.kernel.Triangulation3(num_flips)
+		
+		# These are maps taking triangles of lower (respectively upper) triangulation to either:
+		#  - A pair (triangle, permutation) where triangle is in upper (resp. lower) triangulation, or
+		#  - A pair (tetrahedron, permutation) of triangulation3.
+		# We start with no tetrahedra, so these maps are just the identity map between the two triangulations.
+		lower_map = dict((triangleA, (triangleB, id_perm3)) for triangleA, triangleB in zip(lower_triangulation, upper_triangulation))
+		upper_map = dict((triangleB, (triangleA, id_perm3)) for triangleA, triangleB in zip(lower_triangulation, upper_triangulation))
+		
+		# We also use these two functions to quickly tell what a triangle maps to.
+		maps_to_triangle = lambda X: isinstance(X[0], flipper.kernel.Triangle)
+		maps_to_tetrahedron = lambda X: not maps_to_triangle(X)
+		
+		tetra_count = 0
+		for item in reversed(sequence):
+			assert(str(item.source_triangulation) == str(upper_triangulation))
+			new_upper_triangulation = item.target_triangulation
+			new_upper_map = dict()
+			new_lower_map = dict()  # We are allowed to leave blanks in new_lower_map.
+			# These will be filled in at the end using lower_map.
+			
+			if isinstance(item, EdgeFlip):
+				# Get the next tetrahedra to add.
+				tetrahedron = triangulation3.tetrahedra[tetra_count]
+				tetra_count += 1
+				edge_label = item.edge_label  # The edge to flip.
+				
+				# Setup the next tetrahedron.
+				tetrahedron.edge_labels[(0, 1)] = VEERING_RIGHT
+				tetrahedron.edge_labels[(1, 2)] = VEERING_LEFT
+				tetrahedron.edge_labels[(2, 3)] = VEERING_RIGHT
+				tetrahedron.edge_labels[(0, 3)] = VEERING_LEFT
+				
+				
+				# We'll glue it into the core_triangulation so that it's 1--3 edge lies over edge_label.
+				# WARNINNG: This is reliant on knowing how flipper.kernel.Triangulation.flip_edge() relabels things!
+				cornerA = upper_triangulation.corner_of_edge(edge_label)
+				cornerB = upper_triangulation.corner_of_edge(~edge_label)
+				
+				# We'll need to swap sides on an inverse edge so our convertions below work.
+				if edge_label != item.edge_index: cornerA, cornerB = cornerB, cornerA
+				
+				(A, side_A), (B, side_B) = (cornerA.triangle, cornerA.side), (cornerB.triangle, cornerB.side)
+				if maps_to_tetrahedron(upper_map[A]):
+					tetra, perm = upper_map[A]
+					tetrahedron.glue(2, tetra, permutation_from_pair(0, perm(side_A), 2, perm(3)))
+				else:
+					tri, perm = upper_map[A]
+					new_lower_map[tri] = (tetrahedron, permutation_from_pair(perm(side_A), 0, 3, 2))
+				
+				if maps_to_tetrahedron(upper_map[B]):
+					tetra, perm = upper_map[B]
+					# The permutation needs to: 2 |--> perm(3), 0 |--> perm(side_A), and be odd.
+					tetrahedron.glue(0, tetra, permutation_from_pair(2, perm(side_B), 0, perm(3)))
+				else:
+					tri, perm = upper_map[B]
+					new_lower_map[tri] = (tetrahedron, permutation_from_pair(perm(side_B), 2, 3, 0))
+				
+				# Rebuild the upper_map.
+				new_cornerA = new_upper_triangulation.corner_of_edge(edge_label)
+				new_cornerB = new_upper_triangulation.corner_of_edge(~edge_label)
+				new_A, new_B = new_cornerA.triangle, new_cornerB.triangle
+				# Most of the triangles have stayed the same.
+				# This relies on knowing how the upper_triangulation.flip_edge() function works.
+				old_fixed_triangles = [triangle for triangle in upper_triangulation if triangle != A and triangle != B]
+				new_fixed_triangles = [triangle for triangle in new_upper_triangulation if triangle != new_A and triangle != new_B]
+				for old_triangle, new_triangle in zip(old_fixed_triangles, new_fixed_triangles):
+					new_upper_map[new_triangle] = upper_map[old_triangle]
+					if maps_to_triangle(upper_map[old_triangle]):  # Don't forget to update the lower_map too.
+						target_triangle, perm = upper_map[old_triangle]
+						new_lower_map[target_triangle] = (new_triangle, perm.inverse())
+				
+				# This relies on knowing how the upper_triangulation.flip_edge() function works.
+				perm_A = flipper.kernel.permutation.cyclic_permutation(new_upper_triangulation.corner_of_edge(edge_label).side, 3)
+				perm_B = flipper.kernel.permutation.cyclic_permutation(new_upper_triangulation.corner_of_edge(~edge_label).side, 3)
+				new_upper_map[new_A] = (tetrahedron, flipper.kernel.Permutation((3, 0, 2, 1)) * perm_A.embed(4).inverse())
+				new_upper_map[new_B] = (tetrahedron, flipper.kernel.Permutation((1, 2, 0, 3)) * perm_B.embed(4).inverse())
+				
+				
+			elif isinstance(item, flipper.kernel.Isometry):
+				for triangle in upper_triangulation:
+					new_triangle, perm = item(triangle), item.triangle_permutation(triangle)
+					old_target, old_perm = upper_map[triangle]
+					
+					if maps_to_triangle(upper_map[triangle]):
+						new_upper_map[new_triangle] = (old_target, old_perm * perm.inverse())
+						# Don't forget to update the lower_map too.
+						new_lower_map[old_target] = (new_triangle, perm * old_perm.inverse())
+					else:
+						new_upper_map[new_triangle] = (old_target, old_perm * perm.inverse().embed(4))
+				
+			else:
+				# We have no way to handle any other type that appears. But this would
+				# mean that this is not a mapping class.
+				assert(False)
+			
+			# Remember to rebuild the rest of lower_map, which hasn't changed.
+			for triangle in lower_triangulation:
+				if triangle not in new_lower_map:
+					new_lower_map[triangle] = lower_map[triangle]
+			
+			# Before switching to the new objects we've just built.
+			upper_triangulation = new_upper_triangulation
+			upper_map = new_upper_map
+			lower_map = new_lower_map
+		
+		# We're now back to the starting triangulation.
+		assert(lower_triangulation == upper_triangulation)
+		
+		# This is a map which send each triangle of upper_triangulation via isometry to a pair:
+		#	(triangle, permutation)
+		# where triangle in lower_triangulation and maps_to_tetrahedron(lower_map[triangle]).
+		full_forwards = dict()
+		for source_triangle in upper_triangulation:
+			target_triangle, perm = source_triangle, id_perm3
+			
+			c = 0
+			while maps_to_triangle(lower_map[target_triangle]):
+				target_triangle, new_perm = lower_map[target_triangle]
+				perm = new_perm * perm
+				
+				c += 1
+				assert(c <= 3 * upper_triangulation.zeta)
+			full_forwards[source_triangle] = (target_triangle, perm)
+		
+		# Now close the bundle up.
+		for source_triangle in upper_triangulation:
+			if maps_to_tetrahedron(upper_map[source_triangle]):
+				A, perm_A = upper_map[source_triangle]
+				target_triangle, perm = full_forwards[source_triangle]
+				B, perm_B = lower_map[target_triangle]
+				A.glue(perm_A(3), B, perm_B * perm.embed(4) * perm_A.inverse())
+		
+		# There are now no unglued faces.
+		assert(triangulation3.is_closed())
+		
+		# Install longitudes and meridians. This also calls Triangulation3.assign_cusp_indices().
+		triangulation3.install_peripheral_curves()
+		
+		# Construct an immersion of the fibre surface into the closed bundle.
+		fibre_immersion = dict()
+		for source_triangle in lower_triangulation:
+			if maps_to_triangle(lower_map[source_triangle]):
+				upper_triangle, upper_perm = lower_map[source_triangle]
+				target_triangle, perm = full_forwards[upper_triangle]
+				B, perm_B = lower_map[target_triangle]
+				fibre_immersion[source_triangle] = (B, perm_B * (perm * upper_perm).embed(4))
+			else:
+				B, perm_B = lower_map[source_triangle]
+				fibre_immersion[source_triangle] = lower_map[source_triangle]
+		
+		return flipper.kernel.Bundle(triangulation, triangulation3, fibre_immersion)
+
+def doctest_globs():
+	''' Return the globals needed to run doctest on this module. '''
+	
+	S = flipper.load.equipped_triangulation('S_1_1')
+	aB = S.mapping_class('aB')
+	bA = S.mapping_class('bA')
+	ab = S.mapping_class('ab')
+	i = S.mapping_class('')
+	a = S.mapping_class('a')
+	x = S.triangulation.encode_flips([1])
+	
+	return {'aB': aB, 'bA': bA, 'ab': ab, 'i': i, 'a': a, 'x': x}
+
