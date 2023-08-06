@@ -1,0 +1,161 @@
+{% extends "admin/change_form.html" %}
+{% block extrastyle %}
+    {{ block.super }}
+<style type="text/css">
+#progress-container { width: 100%; display: none; }
+#progress-bar { width: 5%; background-color: #ccc; color: #000; text-align: right; padding: 3px; }
+#upload-iframe { display: none; }
+</style>
+{% endblock %}
+{% block field_sets %}
+{% for fieldset in adminform %}
+  {% include "admin/viddler/viddlervideo/fieldset.html" %}
+{% endfor %}
+<p id="progress">
+  <div id="progress-container">
+    <div id="progress-bar">0%</div>
+  </div>
+</p>
+<ul class="messagelist" style="display: none;">
+    <li id="message"></li>
+</ul>
+
+<iframe name="upload-iframe" id="upload-iframe" src="" width="0" height="0" scrolling="no" frameborder="0" marginheight="0" marginwidth="0"></iframe>
+
+{% endblock %}
+
+{% block after_field_sets %}
+    <script type="text/javascript">
+        var $ = django.jQuery;
+        var endpoint  = '{{ endpoint }}';
+        var token     = '{{ uploadtoken }}';
+        var timer     = -1;
+        var timer2    = -1;
+        var progress  = 0;
+
+        //For Testing
+        function log(msg) {
+            // if (window.console) {
+            //     console.log(msg);
+            // }
+        }
+        function sync() {
+            var url = $("#upload-iframe")[0].contentWindow.location.href;
+            var msg;
+            console.log(url);
+            if (url !== "about:blank") {
+                msg = 'Synchronizing complete. You may <a href="' + url +
+                '">open the video</a> or <a href="{% url 'admin:viddler_viddlervideo_add' %}">Upload another video</a>.';
+                $('#message').html(msg);
+                clearInterval(timer2);
+            }
+        }
+        function clear(msg, msg_type) {
+            log('DONE');
+            $('#progress-container').fadeOut('fast', function() {
+                $('#progress-bar').css('width', '5%').html('0%');
+                $(':submit').each(
+                    function(index){
+                        $(this).attr('disabled', false);
+                    }
+                );
+                progress = 0;
+            });
+            // window.location = $("#upload-iframe")[0].contentWindow.location.href;
+            $('#message')[0].innerText = msg;
+            $('.messagelist').fadeIn();
+        }
+
+      //Fire off AJAX request to get upload progress
+      function checkProgress() {
+        $.ajax({
+          url: '{% url 'viddler_progress' %}?token=' + token,
+          cache: false,
+          dataType: 'json',
+          success: function(res) {
+            var np = parseInt(res.percent, 10);
+            progress = (np > progress) ? np : progress;
+            var status = parseInt(res.status, 10);
+            var ps = progress.toString();
+
+            log('Status: ' + status.toString());
+            log('Progress: ' + ps);
+
+            //If upload is NOT in progress, clear the interval
+            if (res.status != 1) {
+              clearInterval(timer);
+            }
+
+            //If there was an error or user cancelled, show the user an alert
+            //Can be customized to just show a message inline
+            if (res.status == 4 || res.status == 3) {
+              clear('Issue uploading your file: ' + res.error.description + ' : ' + res.error);
+            }
+            //Upload is finished
+            else if (res.status == 2) {
+              clear('Your upload is complete. Please wait while syncronizing.');
+              timer2 = setInterval(sync, 2000);
+            }
+            //Passes the above, just update the progress bar
+            else {
+              $('#progress-container').fadeIn('fast', function()
+              {
+                  $(':submit').each(
+                    function(index){
+                        $(this).attr('disabled', true)
+                    }
+                    );
+
+                if (progress > 5) {
+                  $('#progress-bar').css('width', ps + '%').html(ps + '%');
+                }
+              });
+            }
+          },
+          error: function(jqXHR, textStatus, errorThrown) {
+            //Any AJAX error, log the results
+            //These typically happen because the page you are requesting is not found or you have an programming error
+            log('Error Uploading');
+            log(jqXHR);
+            log(textStatus);
+            log(errorThrown);
+            clearInterval(timer);
+            clear('There was an error uploading your file. Please try again.');
+          }
+        });
+      }
+
+    /**
+    Fire off an event to call the checkProgress() method every second when
+    the user submits the form for upload.
+    **/
+    $('document').ready(function() {
+        $(':submit').each(
+            function(index){
+                $(this).attr('disabled', false)
+            }
+        );
+        $('#viddlervideo_form').attr('target', 'upload-iframe');
+        $(':submit').each(
+            function(index){
+                $(this).click(function() {
+                    //Set interval, 1000ms = 1 sec
+                    checkProgress();
+                    timer = setInterval(function() {
+                        //Progress less than 100, call again
+                        //Otherwise clear the interval
+                        if (progress < 100) {
+                            checkProgress();
+                        } else {
+                            //Should never reach this, but if it does, catch it
+                            clearInterval(timer);
+                            clear('Your upload is complete. Please wait while syncronizing.');
+                            timer2 = setInterval(sync, 2000);
+                        }
+                    }, 2000);
+                });
+            }
+        );
+    });
+    </script>
+{% endblock %}
