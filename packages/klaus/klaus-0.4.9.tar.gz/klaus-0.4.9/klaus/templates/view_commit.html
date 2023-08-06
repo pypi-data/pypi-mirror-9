@@ -1,0 +1,152 @@
+{% extends 'base.html' %}
+
+{% block extra_header %}{% endblock %} {# no branch selector on commits #}
+
+{% block title %}
+  Commit {{ rev }} - {{ repo.name }}
+{% endblock %}
+
+{% block content %}
+
+{% set summary, file_changes = repo.commit_diff(commit) %}
+<div class=full-commit>
+  {# TODO code duplication in history.html #}
+  <div class=commit>
+    <span class=line1>
+      <span>{{ commit.message|force_unicode }}</span>
+    </span>
+    <span class="line2 separated-by-dots">
+      <span>
+        {{ commit.author|force_unicode|extract_author_name }}
+      </span>
+      <span class=hastooltip title="{{ commit.commit_time|formattimestamp  }}">
+        {{ commit.commit_time|timesince }}
+      </span>
+    </span>
+    <span class=clearfloat></span>
+  </div>
+
+  <div class="summary separated-by-dots">
+    <span>
+      {{ summary.nfiles }} changed file(s)
+      with <span class=additions>{{ summary.nadditions }} addition(s)</span>
+      and <span class=deletions>{{ summary.ndeletions }} deletion(s)</span>.
+    </span>
+    <span>
+      <a href=# onclick="toggler.collapseAll('.file'); return false">Collapse all</a>
+    </span>
+    <span>
+      <a href=# onclick="toggler.expandAll('.file'); return false">Expand all</a>
+    </span>
+  </div>
+
+  <div class=diff>
+  {% for file in file_changes %}
+    <div class=file>
+      {% set fileno = loop.index0 %}
+
+      <div class=filename>
+        {% if not file.get('is_binary') %}
+        <div class="summary hastooltip"
+             title="{{ file.additions }} addition(s), {{ file.deletions }} deletion(s)">
+          <div class=additions>+{{ file.additions }}</div>
+          <div class=deletions>-{{ file.deletions }}</div>
+        </div>
+        {% endif %}
+        {# TODO dulwich doesn't do rename recognition
+        {% if file.old_filename != file.new_filename %}
+          {{ file.old_filename }} →
+        {% endif %}#}
+          {% if file.new_filename == '/dev/null' %}
+            <del>{{ file.old_filename|force_unicode }}</del>
+          {% else %}
+            <a href="{{ url_for('blob', repo=repo.name, rev=rev, path=file.new_filename) }}">
+              {{ file.new_filename|force_unicode }}
+            </a>
+          {% endif %}
+
+          <span class=togglers>
+            <a onclick="toggler.collapse(this.parentNode.parentNode.parentNode); return false"
+               class=collapse href=#>less</a>
+            <a onclick="toggler.expand(this.parentNode.parentNode.parentNode); return false"
+               class=expand href=#>more</a>
+          </span>
+      </div>
+
+      {% if file.get('is_binary') %}
+        <div class=emptydiff>Binary diff not shown</div>
+      {% else %}
+        <table>
+          {% for chunk in file.chunks %}
+
+            {%- for line in chunk -%}
+              <tr>
+
+                {#- left column: linenos -#}
+                {%- if line.old_lineno -%}
+                  <td class=linenos><a href="#{{fileno}}-L-{{line.old_lineno}}">{{ line.old_lineno }}</a></td>
+                  {%- if line.new_lineno -%}
+                    <td class=linenos><a href="#{{fileno}}-L-{{line.old_lineno}}">{{ line.new_lineno }}</a></td>
+                  {%- else -%}
+                    <td class=linenos></td>
+                  {%- endif -%}
+                {%- else %}
+                  {%- if line.old_lineno -%}
+                    <td class=linenos><a href="#{{fileno}}-R-{{line.old_lineno}}">{{ line.new_lineno }}</a></td>
+                  {%- else -%}
+                    <td class=linenos></td>
+                  {%- endif -%}
+                  <td class=linenos><a href="#{{fileno}}-R-{{line.new_lineno}}">{{ line.new_lineno }}</a></td>
+                {% endif %}
+
+                {#- right column: code -#}
+                <td class={{line.action}}>
+                  {#- lineno anchors -#}
+                  {%- if line.old_lineno -%}
+                    <a name="{{fileno}}-L-{{line.old_lineno}}"
+                       id="{{fileno}}-L-{{line.old_lineno}}"></a>
+                  {%- else -%}
+                    <a name="{{fileno}}-R-{{line.new_lineno}}"
+                       id="{{fileno}}-R-{{line.new_lineno}}"></a>
+                  {%- endif -%}
+
+                  {#- the actual line of code -#}
+                  <span class=line>{% autoescape false %}{{ line.line|force_unicode }}{% endautoescape %}</span>
+                </td>
+
+              </tr>
+            {%- endfor -%} {# lines #}
+
+            {% if not loop.last %}
+              <tr class=sep>
+                <td colspan=3></td>
+              </tr>
+            {% endif %}
+
+          {% else %}
+            <div class=emptydiff>(No changes)</div>
+          {%- endfor -%} {# chunks #}
+        </table>
+      {% endif %}
+
+      </div>
+  {% endfor %}
+  </div>
+
+</div>
+
+<script>
+  highlight_linenos({
+    linksSelector: '.linenos a',
+    getLineFromAnchor: function(anchor) {
+      /* If we got the first (old_lineno) anchor, the span we're looking for is
+         the second-next sibling, otherwise it's the next. */
+      if (anchor.nextSibling instanceof HTMLSpanElement)
+        return anchor.nextSibling;
+      else
+        return anchor.nextSibling.nextSibling;
+    }
+  });
+</script>
+
+{% endblock %}
