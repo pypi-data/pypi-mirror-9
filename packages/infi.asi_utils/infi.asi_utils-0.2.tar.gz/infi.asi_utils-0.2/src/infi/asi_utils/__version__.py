@@ -1,0 +1,11 @@
+__version__ = "0.2"
+__git_commiter_name__ = "Guy Rozendorn"
+__git_commiter_email__ = "guy@rzn.co.il"
+__git_branch__ = '(detached from v0.2)'
+__git_remote_tracking_branch__ = '(No remote tracking)'
+__git_remote_url__ = '(Not remote tracking)'
+__git_head_hash__ = '752da29b9f332fa293eff8042b38a13ca547352d'
+__git_head_subject__ = 'Finished release v0.2.'
+__git_head_message__ = '* release/v0.2:\n  buildout.cfg: implemented logs commands\n  fixing calls to /dev/sdX\n  fixing short command-line flags\n  support for output-file'
+__git_dirty_diff__ = ''
+__git_commit_date__ = '2015-03-12 12:52:43'
