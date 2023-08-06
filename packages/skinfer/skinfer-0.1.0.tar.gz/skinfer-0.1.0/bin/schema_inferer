@@ -1,0 +1,50 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""Generates a JSON schema based on samples
+"""
+
+from __future__ import absolute_import, division, print_function
+
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+from skinfer import schema_inferer
+import json
+
+
+def get_samples(args):
+    if args.jsonlines:
+        return schema_inferer.load_samples_from_jsonlines(args.samples)
+
+    return schema_inferer.load_samples_from_json(args.samples)
+
+
+def run(args):
+    try:
+        merged = schema_inferer.generate_and_merge_schemas(get_samples(args))
+
+        if args.output:
+            with open(args.output, 'w') as f:
+                json.dump(merged, f, indent=4)
+        else:
+            print(json.dumps(merged, indent=4))
+    except ValueError as e:
+        if 'Extra data: line' in e.message:
+            print("\nInvalid output: maybe you're missing --jsonlines option?\n"
+                  "NOTE: the --jsonlines option must appear before the samples arg\n")
+        raise
+
+
+if '__main__' == __name__:
+    import argparse
+    parser = argparse.ArgumentParser(description=__doc__)
+
+    parser.add_argument('-o', dest='output',
+                        help='Write JSON schema to this file')
+    parser.add_argument('--jsonlines', action='store_true',
+                        help='Assume samples are in JSON lines format')
+    parser.add_argument('samples', nargs='+', metavar='SAMPLE',
+                        help='JSON data sample files')
+
+    args = parser.parse_args()
+    run(args)
