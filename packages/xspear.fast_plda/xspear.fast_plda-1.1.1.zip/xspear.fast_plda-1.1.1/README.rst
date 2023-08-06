@@ -1,0 +1,73 @@
+Toolchain for fast and scalable PLDA
+====================================
+
+This package contains scripts that run the fast and scalable PLDA [1] and two-stage PLDA [2]. The package uses the framework of Bob `Spear` for handling the protocol, the toolchain and doing the post-processing (whitening and length-normalization). 
+
+If you use this package and/or its results, please you must cite the following publications:
+
+[1] The original Fast PLDA paper published at S+SSPR 2014::
+
+    @inproceedings{Sizov2014,
+      author = {Sizov, A and Lee, K.A. and Kinnunen, T.},
+      title = {Unifying Probabilistic Linear Discriminant Analysis Variants in Biometric Authentication},
+      booktitle = {Proc. S+SSPR},
+      year = {2014},
+      url = {to appear},
+    }
+
+[2] Two-stage PLDA applied for anti-spoofing:
+
+    @article{Sizov2015,
+      title={Joint Speaker Verification and Anti-Spoofing in the i-Vector Space},
+      author={Sizov, A. and Khoury, E. and Kinnunen, T. and Wu, Z. and Marcel, S.},
+      journal={Information Forensics and Security, {IEEE} Transactions on},
+      volume={10},
+      number={4},
+      pages={821-832},
+      year={2015},
+      publisher={IEEE}
+    }
+
+[3] The Spear paper published at ICASSP 2014::
+
+    @inproceedings{Khoury2014,
+      author = {Khoury, E. and El Shafey, L. and Marcel, S.},
+      title = {Spear: An open source toolbox for speaker recognition based on {B}ob},
+      booktitle = {IEEE Intl. Conf. on Acoustics, Speech and Signal Processing (ICASSP)},
+      year = {2014},
+      url = {http://publications.idiap.ch/downloads/papers/2014/Khoury_ICASSP_2014.pdf},
+    }
+
+
+Installation
+------------
+
+Just download this package and decompress it locally::
+
+  $ wget http://pypi.python.org/packages/source/x/xspear.fast_plda/xspear.fast_plda-1.1.1.zip
+  $ unzip xspear.fast_plda-1.1.1.zip
+  $ cd xspear.fast_plda-1.1.1
+
+Use buildout to bootstrap and have a working environment ready for
+experiments::
+
+  $ python bootstrap.py
+  $ ./bin/buildout
+
+This also requires that bob (== 1.2) is installed.
+
+
+Example of use
+--------------
+
+To reproduce our spoofing experiments you need to download the data
+  $ wget http://www.idiap.ch/resource/biometric/data/TIFS2015.zip
+  $ unzip TIFS2015.zip
+  
+and modify necessary directories for the scripts/TIFS2015/reproduce_* shell scripts.
+  
+For more details and options, please use --help option for the executable files in the bin/ directory:
+
+  $ bin/ivec_whitening_lnorm.py --help  
+
+.. _Spear: https://pypi.python.org/pypi/bob.spear/
