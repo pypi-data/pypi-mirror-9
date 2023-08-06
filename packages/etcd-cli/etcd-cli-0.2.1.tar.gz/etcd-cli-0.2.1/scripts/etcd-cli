@@ -1,0 +1,251 @@
+#!/usr/bin/env python
+
+import yaml
+import argparse
+import ConfigParser
+import logging
+import os
+from os.path import isfile, expanduser
+import etcd
+import etcd
+import glob
+import jinja2
+import re
+import socket
+
+def regex_val(val, regex):
+    try:
+        return re.match(_regex, val).group(0)
+    except:
+        raise argparse.ArgumentTypeError("String '{0}' does not match regex '{1}'".format(val, _regex))
+
+# Get arguments
+parser = argparse.ArgumentParser(add_help=False)
+parser.add_argument('-c', '--config', help='Configuration file')
+parser.add_argument('-d', '--debug', action='store_true', help='Print debug info')
+parser.add_argument('-y', '--yes', action='store_true', help='Answer yes to all queries')
+init_args, unknown = parser.parse_known_args()
+
+# Create formatter
+try:
+    import colorlog
+    formatter = colorlog.ColoredFormatter("[%(log_color)s%(levelname)-8s%(reset)s] %(log_color)s%(message)s%(reset)s")
+except ImportError:
+    formatter = logging.Formatter("[%(levelname)-8s] %(message)s")
+
+# Create console handle
+console = logging.StreamHandler()
+console.setFormatter(formatter)
+
+loglvl = logging.WARN
+if init_args.debug:
+    loglvl = logging.DEBUG
+
+# Create logger
+logger = logging.getLogger(__name__)
+logger.setLevel(loglvl)
+logger.addHandler(console)
+
+# Get configuration
+config = ConfigParser.ConfigParser()
+
+# Set defaults
+config.add_section('main')
+config.set('main', 'node', 'etcd')
+config.set('main', 'port', '4001')
+config.set('main', 'protocol', 'http')
+config.set('main', 'schemas', '/etc/etcd-cli/schemas')
+config.set('main', 'templates', '/etc/etcd-cli/templates')
+
+# Load config
+cfile = None
+if init_args.config:
+    if isfile(expanduser(init_args.config)):
+        cfile = expanduser(init_args.config)
+    else:
+        logger.error('Config file doesn\'t exist: {0}'.format(init_args.config))
+        exit(1)
+elif isfile(expanduser('~/.etcd-cli.conf')):
+    cfile = expanduser('~/.etcd-cli.conf')
+elif isfile('/etc/etcd-cli/etcd-cli.conf'):
+    cfile = '/etc/etcd-cli/etcd-cli.conf'
+
+if cfile and isfile(cfile):
+    logger.info("Loading config file: {0}".format(cfile))
+    config.read(cfile)
+
+# Load schema
+sdir = expanduser(config.get('main', 'schemas'))
+logger.info('Using schema dir: {0}'.format(sdir))
+schemas = {}
+for fn in glob.glob(sdir + '/*.yaml'):
+    logger.info("Load schema file: {0}".format(fn))
+    content = open(fn).read()
+    try:
+        schemas.update(yaml.load(content))
+    except Exception, e:
+        logger.critical('Failed to parse YAML in schema file: {0}'.format(e))
+        exit(1)
+
+resources = schemas.keys()
+
+# Add Parser
+parser = argparse.ArgumentParser()
+parser.add_argument('-c', '--config', help='Configuration file')
+parser.add_argument('-d', '--debug', action='store_true', help='Print debug info')
+parser.add_argument('-y', '--yes', action='store_true', help='Answer yes to all queries')
+
+subparser = parser.add_subparsers(dest = 'action')
+
+parsers = {}
+for action in [ 'list', 'set', 'get', 'delete' ]:
+
+    parsers[action, 'first'] = subparser.add_parser(action)
+    parsers[action, 'second'] = parsers[action, 'first'].add_subparsers(dest = 'resource')
+    for resource in resources:
+        parsers[action, resource] = parsers[action, 'second'].add_parser(resource)
+
+        if action in schemas[resource]:
+            if not schemas[resource][action]:
+                continue
+            for entry in schemas[resource][action].keys():
+                etype = None
+                if not 'type' in schemas[resource][action][entry]:
+                    logger.error("Schema: %s entry: %s needs to declare a type" % (resource, entry))
+                    exit(1)
+                etype = schemas[resource][action][entry]['type']
+
+                if etype != 'string' and etype != 'boolean':
+                    logger.error("Schema: %s entry: %s has an unsupported type: %s for this CLI" % (resource, entry, etype))
+                    exit(1)
+
+                # Boolean
+                eaction = 'store'
+                if etype == 'boolean':
+                    eaction = 'store_true'
+
+                # Description
+                descr = None
+                if 'description' in schemas[resource][action][entry]:
+                    descr = schemas[resource][action][entry]['description']
+
+                # Short name
+                short = None
+                if 'short' in schemas[resource][action][entry]:
+                    short = '-{0}'.format(schemas[resource][action][entry]['short'])
+
+                # Long name
+                elong = '--{0}'.format(entry)
+
+                # Regex
+                _regex = None
+                if 'regex' in schemas[resource][action][entry]:
+                    _regex = schemas[resource][action][entry]['regex']
+
+                # Allowed values
+                choices = None
+                if 'allowed' in schemas[resource][action][entry]:
+                    choices = schemas[resource][action][entry]['allowed']
+
+                # Required argument
+                required = False
+                if 'required' in schemas[resource][action][entry]:
+                    required = schemas[resource][action][entry]['required']
+
+                # Default
+                default = None
+                if 'default' in schemas[resource][action][entry]:
+                    default = schemas[resource][action][entry]['default']
+                    descr += ', defaults to: {0}'.format(default)
+
+                if short:
+                    parsers[action, resource].add_argument(short, elong, action=eaction, required=required, default=default, help=descr)
+                else:
+                    parsers[action, resource].add_argument(elong, action=eaction, required=required, default=default, help=descr)
+
+args = parser.parse_args()
+arglist = vars(args)
+
+# Needs to check if value is set, since not every value is required
+# Validate values using regex
+if schemas[args.resource][args.action]:
+    for key in schemas[args.resource][args.action].keys():
+        if 'regex' in schemas[args.resource][args.action][key]:
+            rx = schemas[args.resource][args.action][key]['regex']
+            val = arglist[key]
+            logger.info("Validate key '{0}' with regex '{1}'".format(key, rx))
+            if not re.match(rx, val):
+                logger.critical("String '{0}' does not match regex '{1}'".format(val, rx))
+                exit(1)
+
+# Load template
+fn = expanduser(config.get('main', 'templates')) + '/{0}.jinja'.format(args.resource)
+template = None
+if isfile(fn):
+    logger.info("Loading template: {0}".format(fn))
+    template = open(fn).read()
+else:
+    logger.error('Missing template file: {0}'.format(fn))
+    exit(1)
+
+# Parse JINJA
+template = jinja2.Template(open(fn).read())
+try:
+    jinja_res = template.render(arglist)
+except Exception, e:
+    logger.error('Failed to parse JINJA in template: {0}\n{1}'.format(fn, e))
+    exit(1)
+
+# Parse YAML
+try:
+    yaml_res = yaml.load(jinja_res)
+except Exception, e:
+    print jinja_res
+    logger.critical('Failed to parse YAML from template: {0}'.format(e))
+    exit(1)
+
+# Accept input
+if not args.yes:
+    print '{0}:\n\n{1}\n'.format(args.action, yaml.dump(yaml_res[args.action], default_flow_style=False))
+    if args.action != 'list' and args.action != 'get':
+        answer = raw_input('Do you want to proceed: [y/n]? ')
+        if answer and answer[0].lower() != 'y':
+            exit(1)
+
+# Connect to etcd
+c = etcd.Client(host=config.get('main', 'node'), protocol=config.get('main', 'protocol'), port=config.getint('main', 'port'))
+
+if args.action == 'list':
+    for key in yaml_res[args.action]:
+        logger.debug('List key: {0}'.format(key))
+        try:
+            r = c.read(key, recursive = True)
+        except:
+            logger.warning('Failed to get key \'{0}\''.format(key))
+            pass
+        for entry in r._children:
+            print entry['key']
+
+if args.action == 'set':
+    for key, val in yaml_res[args.action].items():
+        logger.debug('Set key: {0}'.format(key))
+        try:
+            c.write(key, val)
+        except:
+            logger.warning('Failed to set key \'{0}\''.format(key))
+            exit(1)
+
+if args.action == 'get':
+    for key in yaml_res[args.action]:
+        logger.debug('Get key: {0}'.format(key))
+        try:
+            r = c.read(key)
+            print '{0}: {1}'.format(key, r.value)
+        except:
+            logger.warning('Failed to get key \'{0}\''.format(key))
+            pass
+
+if args.action == 'delete':
+    for key in yaml_res[args.action]:
+        logger.info('Delete key: {0}'.format(key))
+        c.delete(key, recursive = True)
