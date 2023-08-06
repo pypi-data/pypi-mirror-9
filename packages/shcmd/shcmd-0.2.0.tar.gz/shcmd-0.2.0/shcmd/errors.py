@@ -1,0 +1,2 @@
+class ShCmdError(Exception):
+    pass
