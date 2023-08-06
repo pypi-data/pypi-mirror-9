@@ -1,0 +1,1 @@
+.. include:: ../daysgrounded/COPYING.rst
