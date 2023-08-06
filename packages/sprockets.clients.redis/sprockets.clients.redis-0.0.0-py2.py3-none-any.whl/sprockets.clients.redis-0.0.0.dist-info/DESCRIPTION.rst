@@ -1,0 +1,112 @@
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification,
+are permitted provided that the following conditions are met:
+
+ * Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+ * Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+ * Neither the name of Sprockets nor the names of its
+   contributors may be used to endorse or promote products derived from this
+   software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+Description: sprockets.clients.redis
+        =======================
+        Base functionality for accessing/modifying data in Redis.  Currently
+        there is only support for interacting with Redis servers in a sharded
+        manner.
+        
+        That is to say, there are multiple Redis servers we are distributing reads
+        and writes among them based on a consistent hash of the key value we're
+        operating on.  This is also known as "Client Side Partitioning".
+        
+        More information about setting up or managing Redis in this manner
+        can be found on the Redis documentation website: http://redis.io/topics/partitioning
+        
+        |Version| |Downloads| |Status| |Coverage| |License|
+        
+        Installation
+        ------------
+        ``sprockets.clients.redis`` is available on the
+        `Python Package Index <https://pypi.python.org/pypi/sprockets.clients.redis>`_
+        and can be installed via ``pip`` or ``easy_install``:
+        
+        .. code:: bash
+        
+          pip install sprockets.clients.redis
+        
+        Documentation
+        -------------
+        https://sprocketsclientsredis.readthedocs.org
+        
+        Requirements
+        ------------
+        .. include:: requirements.txt
+        
+        Example
+        -------
+        This examples demonstrates how to use a sharded Redis connection
+        in ``sprockets.clients.redis`` by ...
+        
+        .. code:: python
+        
+            import os
+            from sprockets import clients.redis
+        
+            os.environ['REDIS_URI'] = 'redis://localhost/'
+        
+            shard = clients.redis.ShardedRedisConnection()
+        
+            shard.set('foo', 1)
+            value = shard.get('foo')
+            shard.delete('foo')
+        
+        
+        Version History
+        ---------------
+        Available at https://sprocketsclientsredis.readthedocs.org/en/latest/history.html
+        
+        .. |Version| image:: https://badge.fury.io/py/sprockets.clients.redis.svg?
+           :target: http://badge.fury.io/py/sprockets.clients.redis
+        
+        .. |Status| image:: https://travis-ci.org/sprockets/sprockets.clients.redis.svg?branch=master
+           :target: https://travis-ci.org/sprockets/sprockets.clients.redis
+        
+        .. |Coverage| image:: https://img.shields.io/coveralls/sprockets/sprockets.clients.redis.svg?
+           :target: https://coveralls.io/r/sprockets/sprockets.clients.redis
+        
+        .. |Downloads| image:: https://pypip.in/d/sprockets.clients.redis/badge.svg?
+           :target: https://pypi.python.org/pypi/sprockets.clients.redis
+        
+        .. |License| image:: https://pypip.in/license/sprockets.clients.redis/badge.svg?
+           :target: https://sprocketsclientsredis.readthedocs.org
+        
+Platform: UNKNOWN
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: BSD License
+Classifier: Natural Language :: English
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 2
+Classifier: Programming Language :: Python :: 2.7
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.2
+Classifier: Programming Language :: Python :: 3.3
+Classifier: Programming Language :: Python :: 3.4
+Classifier: Programming Language :: Python :: Implementation :: CPython
+Classifier: Programming Language :: Python :: Implementation :: PyPy
+Classifier: Topic :: Software Development :: Libraries
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
