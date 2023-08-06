@@ -1,0 +1,108 @@
+#!/usr/bin/env python
+from __future__ import print_function, division
+
+import matplotlib
+matplotlib.use('Agg')
+
+import numpy as np
+import os, os.path, sys
+import pandas as pd
+import argparse
+
+from vespa.kepler import KOI_FPPCalculation
+from vespa.kepler import pipeline_weaksec, default_r_exclusion
+from keputils import koiutils as ku
+import kplr
+
+from pkg_resources import resource_filename
+
+import logging
+
+import warnings
+warnings.simplefilter("error")
+warnings.simplefilter("ignore", DeprecationWarning)
+
+if __name__=='__main__':
+
+    DATAFOLDER = resource_filename('vespa','data')
+    WEAKSECFILE = os.path.join(DATAFOLDER, 'weakSecondary_socv9p2vv.csv')
+    WEAKSECDATA = pd.read_csv(WEAKSECFILE,skiprows=8)
+    WEAKSECDATA.index = WEAKSECDATA['KOI'].apply(ku.koiname)
+
+    parser = argparse.ArgumentParser(description='Generate FP models for a list of KOIs')
+
+    parser.add_argument('kois',metavar='KOI',nargs='*',help='a KOI (or list of kois)')
+    parser.add_argument('-n','--n',type=int,default=2e4)
+    parser.add_argument('-o','--overwrite',action='store_true')
+    parser.add_argument('--noJRowefit',action='store_true')
+    parser.add_argument('-f','--file', default='kois.list')
+    parser.add_argument('--plotfolder', default=None)
+
+    args = parser.parse_args()
+
+    #client = kplr.API()
+
+    KOI_FPPDIR = os.getenv('KOI_FPPDIR',os.path.expanduser('~/.koifpp'))
+
+    if len(args.kois)==0:
+        try:
+            kois = np.atleast_1d(np.loadtxt(args.file))
+        except ValueError:
+            kois = np.atleast_1d(np.loadtxt(args.file, dtype=str))
+    else:
+        kois = args.kois
+
+
+    def initLogging(filename, logger):
+        if logger == None:
+            logger = logging.getLogger()
+        else:  # wish there was a logger.close()
+            for handler in logger.handlers[:]:  # make a copy of the list
+                logger.removeHandler(handler)
+
+        logger.setLevel(logging.INFO)
+        formatter = logging.Formatter(fmt='%(asctime)s: %(message)s')
+
+        fh = logging.FileHandler(filename)
+        fh.setFormatter(formatter)
+        logger.addHandler(fh)
+
+        sh = logging.StreamHandler(sys.stdout)
+        logger.addHandler(sh)
+        return logger
+
+    logger = None
+
+    for koi in kois:
+        koi = ku.koiname(koi)
+        koifolder = os.path.join(KOI_FPPDIR, koi)
+        if not os.path.exists(koifolder):
+            os.makedirs(koifolder)
+
+        logfile = os.path.join(koifolder,'run.log')
+
+        logger = initLogging(logfile, logger)
+
+        logger.info('Starting FPP calculation for {}...'.format(ku.koiname(koi)))
+
+        try:
+            #k = client.koi(ku.koiname(koi,koinum=True))
+
+            fpp = KOI_FPPCalculation(koi, n=args.n, recalc=args.overwrite)
+
+            if args.plotfolder is None:
+                plotfolder = fpp.folder
+            else:
+                plotfolder = os.path.join(args.plotfolder,ku.koiname(koi))
+
+            if not os.path.exists(plotfolder):
+                os.makedirs(plotfolder)
+
+            fpp.FPPplots(folder=plotfolder)
+
+            logger.info('FPP calculation for {} successful. Results/plots written to {}.'.format(ku.koiname(koi),os.path.abspath(plotfolder)))
+
+        except Exception, e:
+            logger.error('FPP calculation failed for {}'.format(koi), exc_info=True)
+
+
