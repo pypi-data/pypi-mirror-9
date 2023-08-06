@@ -1,0 +1,212 @@
+{% extends 'base.jinja' %}
+
+{% block breadcrumb %}{% endblock %}
+
+
+{% block main %}
+<section class="checkout-container">
+  {% if not (cart.sale and cart.sale.lines) %}
+    {% block empty_cart %}
+    <div class="container">
+      <div class="row">
+        <div class="col-md-4 col-md-offset-4 center">
+          <div class="alert alert-info">
+            <i class="fa fa-frown-o fa-4x"></i>
+            <h3>{{ _('Awwww !') }}</h3>
+            <p>{{ _('Your shopping cart is empty') }}</p>
+            <a href="{{ url_for('nereid.website.home') }}" >{{ _('Shop Now') }}</a>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endblock empty_cart %}
+  {% else %}
+    {% block shopping_cart %}
+
+    {% set currency = cart.sale.currency.code %}
+    <div class="container">
+      <!-- Shopping cart Starts -->
+      <div class="row">
+        <div class="col-md-8 col-xs-12 col-sm-12">
+          <div class="row">
+            <div class="col-md-12 col-sm-8 col-xs-6">
+              <h4> {{ _('Shopping Cart') }}</h4>
+            </div>
+            <div class="col-sm-4 col-xs-6 pull-right visible-xs-block visible-sm-inline">
+              <a class="btn btn-warning btn-block" href="{{ url_for('nereid.checkout.sign_in') }}">
+                <i class="fa fa-lock"></i>&nbsp;&nbsp; {{ _('Checkout') }}
+              </a>
+            </div>
+          </div>
+          <!--Cart table starts here -->
+          <div class="row">
+            {% block shopping_cart_table scoped %}
+            <div class="col-md-12">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th></th>
+                    <th>{{ _('Product') }}</th>
+                    <th class="text-right hidden-xs">{{ _('Price') }}</th>
+                    <th>{{ _('Quantity') }}</th>
+                    <th class="text-right hidden-xs">{{ _('SubTotal') }}</th>
+                  </tr>
+                </thead>
+                {% block lines scoped %}
+                <tbody>
+                  {% for line in cart.sale.lines %}
+                    {{ line.render() }}
+                  {% endfor %}
+                </tbody>
+               {% endblock lines %}
+              </table>
+            </div>
+            {% endblock shopping_cart_table %}
+          </div>
+          <div class="row">
+            <div class="col-md-12 hidden-xs">
+              <a href="{{ url_for('nereid.website.home') }}" class="btn btn-default btn-md" data-original-title="" title=""><i class="fa fa-angle-double-left"></i>&nbsp; {{ _('Continue Shopping') }}</a>
+              <form action="{{ url_for('nereid.cart.clear_cart') }}" method="post" id="clear-cart" class="inline-form">
+                <input name="csrf_token" type="hidden" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-default"><i class="fa fa-times"></i> {{ _('Clear Cart') }}</button>
+              </form>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4 col-sm-6 col-xs-12 pull-right">
+          <div class="order-summary">
+            <h4> {{ _('Order Summary') }}</h4>
+            {% if cart.sale.coupon %}
+            <!--Coupon row-->
+            <div class="row coupon-row">
+              <div class="col-md-12">
+                {# if the promotions module is installed #}
+                <form autocomplete="off">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                  <div class="col-xs-4">
+                    <label for="" class="">Have a Coupon ?</label>
+                  </div>
+                  <div class="col-xs-6">
+                    <input type="text" class="form-control input-sm" id="" placeholder="Enter your coupon code">
+                  </div>
+                  <div class="col-xs-2">
+                  <a class="btn btn-default btn-sm" data-original-title="" title="">Apply</a>
+                  </div>
+                </form>
+              </div>
+            </div>
+            {% endif %}
+
+            <!--Item Total-->
+            <div class="row">
+              <div class="col-md-12">
+                <div class="table-responsive">
+                  <table class="table text-right table-borderless">
+                    <tr>
+                      <td>{{ _('Subtotal') }}</td>
+                      <td>{{ cart.sale.untaxed_amount|currencyformat(currency) }}</td>
+                    </tr>
+                    <tr>
+                      <td>{{ _('Estimated Tax') }}</td>
+                      <td>{{ cart.sale.tax_amount|currencyformat(currency) }}</td>
+                    </tr>
+                    <tr>
+                      <td class="cart-total-sum">{{ _('Grand Total') }}</td>
+                      <td class="cart-total-sum">{{ cart.sale.total_amount|currencyformat(currency) }}</td>
+                    </tr>
+                  </table>
+                </div>
+              </div>
+              <div class="col-md-12">
+                <a class="btn btn-warning btn-block btn-lg" href="{{ url_for('nereid.checkout.sign_in') }}">
+                  <i class="fa fa-lock"></i>&nbsp;&nbsp; {{ _('Proceed to Checkout') }}
+                </a>
+              </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endblock shopping_cart %}
+  {% endif %}
+</section>
+{% endblock main %}
+
+{% block script_tags %}
+{{ super() }}
+<script>
+  $(document).ready(function(){
+    $("input.plus").click(function(){
+      $(this).button("loading");
+      var qty_element = $(this).siblings("input.qty");
+      var product_element = $(this).siblings("input.product");
+      var new_quantity = parseInt(qty_element.val()) + 1;
+      $.post('{{ url_for('nereid.cart.add_to_cart')  }}',
+        {'quantity': new_quantity, 'product': product_element.val()},
+        function(data){
+          window.location.reload(true);
+        }
+      );
+    });
+    $("input.minus").click(function(){
+      $(this).button("loading");
+      var qty_element = $(this).siblings("input.qty");
+      var product_element = $(this).siblings("input.product");
+      var new_quantity = parseInt(qty_element.val()) - 1;
+      if (new_quantity > 0){
+        $.post('{{ url_for('nereid.cart.add_to_cart')  }}',
+          {'quantity': new_quantity, 'product': product_element.val()},
+          function(data){
+            window.location.reload(true);
+          }
+        );
+      } else {
+        $(this).button("reset");
+      }
+    });
+
+    $(".qty").change(function() {
+      var qty_element = $(this);
+      var qty_change_form = qty_element.closest('form.qty_change_form');
+
+      if (!qty_change_form.length) {
+        return;
+      }
+      if (isNaN(parseInt(qty_element.val()))) {
+        qty_element.val('1');
+      }
+      $.post(
+        qty_change_form.attr('action'),
+        qty_change_form.serialize(),
+        function () {
+          window.location.reload();
+        }
+      );
+    });
+
+    $("a.clear-cart").click(function(){
+      $(this).button('loading');
+    });
+    $('.add-to-wishlist').on('click', function(){
+      var product_id = $(this).data('product');
+      var data = {'product': product_id, 'action': "add"}
+      $.ajax({
+        type: "POST",
+        url: "{{ url_for('wishlist.wishlist.wishlist_product') }}",
+        data: data,
+      }).done(function(){
+        $.pnotify({
+            title: 'message',
+            text: 'Product Added to your Default wishlist!',
+            history: false,
+            nonblock: true,
+            delay:2000,
+            nonblock_opacity: .4,
+            animation: 'show'
+          });
+      });
+    });
+  });
+</script>
+{% endblock script_tags %}

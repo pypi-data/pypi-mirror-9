@@ -1,0 +1,109 @@
+{% extends 'base.jinja' %}
+
+{% from '_helpers.jinja' import render_pagination, render_product_list  %}
+
+{% block title %}{{ node.name }} {{ super() }}{% endblock %}
+{% block meta_description %}{{ (node.description or '')|striptags|truncate(300) }}{% endblock %}
+
+{% block breadcrumb %}
+  {{ super() }}
+  {% for url, title in make_tree_crumbs(node=node, add_home=False)[1:] %}
+    {{ render_breadcrumb_item(title, url) }}
+  {% endfor %}
+{% endblock breadcrumb %}
+
+{% block main %}
+<section>
+  <div class="container">
+
+    <div class="row">
+      <div class="col-md-12">
+        <h3 class="center">{{ node.name }}</h3>
+        {% if node.description %}
+        <p class="node-description">
+            {{ node.description|safe }}
+        </p>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if products.page==1 and node.children %}
+    <div class="row" id="subcategories">
+      {% for child in node.children %}
+      <div class="col-md-3 col-sm-4 col-xs-6">
+        <div class="thumbnail subcategory">
+          <a href="{{ child.get_absolute_url() }}">
+            <img src="{{ child.image and child.image.transform_command().thumbnail(500, 500, 'a') or url_for('nereid.webshop.send_static_file', filename='images/no-image.jpg') }}" alt="{{ child.name|truncate(50) }}" class="img-rounded img-responsive">
+          </a>
+          <div class="caption">
+            <h5 class="center">
+              <a href="{{ child.get_absolute_url() }}">
+                {{ child.name|truncate(50) }}
+              </a>
+            </h5>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="row">
+      <div class="col-md-12 node-items-block-separator center">
+        <h5 class="text-muted">
+          {{ products.begin_count }} to {{ products.end_count }} of {{ products.count }} results for {{ node.name }}
+        </h5>
+      </div>
+    </div>
+    <div class="row product-list">
+      {% for product in products %}
+        <div class="col-md-3 col-sm-4 col-xs-6 product-list-item">
+        {{ render_product_list(product, node=node, product_list_name="Node List") }}
+        </div>
+      {% endfor %}
+    </div>
+    <div class="row">
+      <div class="col-md-12">
+        {{ render_pagination(products, endpoint='product.tree_node.render', active_id=node.id, slug=node.slug) }}
+      </div>
+    </div>
+
+  </div><!-- END Container -->
+</section>
+{% endblock main%}
+
+
+{% block scripts %}
+{{ super() }}
+<script>
+  $(document).ready(function(){
+    function resize_categories () {
+      var tallest_el_height = 0;
+      $('.subcategory')
+        .height('auto')
+        .each(function() {
+          if ($(this).height() > tallest_el_height){
+            tallest_el_height=$(this).height()
+          }})
+        .height(tallest_el_height);
+    }
+
+    // Resize on load
+    $('#subcategories').imagesLoaded(resize_categories);
+
+    $(window).on('resize', resize_categories);
+
+  });
+</script>
+{% endblock scripts %}
+
+{% block ga_page_view %}
+    // 1. Send product and impression data with pageview.
+    {% for product in products %}
+        {% if product.__name__ == 'product.template' %}
+        {# the product could also template, in which case use the first variant #}
+        {% set product = product.products_displayed_on_eshop[0] %}
+        {% endif %}
+        ga('ec:addImpression', {{ product.ga_product_data(list=node.name, position=loop.index)|tojson|safe }});
+    {% endfor %}
+{% endblock ga_page_view %}
