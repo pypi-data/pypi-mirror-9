@@ -1,0 +1,1 @@
+from parallel_tools import ideally_parallel
