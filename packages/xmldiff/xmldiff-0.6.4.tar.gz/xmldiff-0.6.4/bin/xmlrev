@@ -1,0 +1,82 @@
+#!/bin/sh
+#
+# (c) 2001-2002 Nicolas Chauvat <nico@logilab.fr> - License is GPL
+
+#set -x
+#DIFF="$HOME/bin/xmldiff -x"
+DIFF="xmldiff -x"
+
+function guess_doc_type() {
+    # $1 filepath
+    FT=`file -b $1`
+    case "$FT" in
+	*SGML*)
+	    echo SGML
+	    ;;
+	*XML*)
+	    echo XML
+	    ;;
+	*)
+	    echo $FT
+	    ;;
+    esac
+}
+
+function sgml_to_xml() {
+    # $1 filepath
+    sgmlnorm $1 > /tmp/$$.sgml
+    xmllint --sgml --nowarning /tmp/$$.sgml | grep -v "<!DOCTYPE"
+}
+
+function normalize() {
+    # $1 filepath
+    DT=`guess_doc_type $1`
+    case $DT in
+	SGML)
+	    sgml_to_xml $1 > /tmp/$$.`basename $1`.xml
+	    echo /tmp/$$.`basename $1`.xml
+	    ;;
+	XML)
+	    echo $1
+	    ;;
+    esac
+}
+
+function diff() {
+    DOC_OLD=`normalize $1`
+    DOC_NEW=`normalize $2`
+
+    $DIFF $DOC_OLD $DOC_NEW
+}
+
+function revision() {
+    DOC_OLD=`normalize $1`
+    DOC_NEW=`normalize $2`
+
+    $DIFF $DOC_OLD $DOC_NEW > /tmp/$$.diff
+    xsltproc $ML_DIR/xmlrev.xslt /tmp/$$.diff > /tmp/$$.xslt
+    xsltproc /tmp/$$.xslt $DOC_OLD
+}
+
+ML_DIR=`dirname $0`
+
+case $1 in 
+    --help)
+    echo USAGE: xmlref [OPTIONS] from_file to_file
+    echo
+    echo OPTIONS:
+    echo "    --revision"
+    echo "      show difference between revisions as an HTML file (default)"
+    echo "    --diff"
+    echo "     show difference between revisions as xupdate"
+    ;;
+    --revision)
+	revision $2 $3
+	;;
+    --diff)
+	diff $2 $3
+	;;
+    *)
+	revision $1 $2
+	;;
+esac
