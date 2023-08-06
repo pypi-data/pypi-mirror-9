@@ -1,0 +1,206 @@
+#!/usr/bin/env python
+
+import argparse
+import importlib
+import locale
+import logging
+import os
+import sys
+import traceback
+from file2db import parse_file, sql_print_table_mysql, sql_print_table_sqlite
+
+
+
+def _show_error():
+    """
+    show system errors
+    """
+    et, ev, tb = sys.exc_info()
+
+    print "Error Type: %s" % et
+    print "Error Value: %s" % ev
+    while tb :
+        co = tb.tb_frame.f_code
+        filename = str(co.co_filename)
+        line_no = str(traceback.tb_lineno(tb))
+        print '    %s:%s' % (filename, line_no)
+        tb = tb.tb_next
+
+
+def format_num(num):
+    """Format a number according to given places.
+    Adds commas, etc. Will truncate floats into ints!"""
+
+    try:
+        inum = int(num)
+        return locale.format("%.*f", (0, inum), True)
+
+    except (ValueError, TypeError):
+        return str(num)
+
+
+def get_max_width(table, index):
+    """Get the maximum width of the given column index"""
+    return max([len(format_num(row[index])) for row in table])
+
+
+def pprint_table(out, table):
+    """Prints out a table of data, padded for alignment
+    @param out: Output stream (file-like object)
+    @param table: The table to print. A list of lists.
+    Each row must have the same number of columns. """
+
+    col_paddings = []
+
+    for i in range(len(table[0])):
+        col_paddings.append(get_max_width(table, i))
+
+    for row in table:
+        # left col
+        print >> out, row[0].ljust(col_paddings[0] + 1),
+        # rest of the cols
+        for i in range(1, len(row)):
+            col = format_num(row[i]).ljust(col_paddings[i] + 2)
+            print >> out, col,
+        print >> out
+
+
+def print_table(table):
+    for row in table:
+        print '\t'.join(row)
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='file2db')
+
+    parser.add_argument("-v", "--verbose", required=False,
+                        action="count", default=0,
+                        help="show debugging info")
+
+    parser.add_argument('-d', '--delimiter', required=False,
+                        choices='CT', default='T',
+                        help="column DELIMITER, where DELIMITER=C(omma)|T(ab)")
+
+    parser.add_argument('-l', '--dialect', required=False,
+                        choices='MS', default='M',
+                        help="which SQL dialect should be used, MySQL or SQLite, where M=MySQL and S=SQLite")
+
+    parser.add_argument('-f', '--file', required=True,
+                        help="parse data in FILE")
+
+    parser.add_argument('-o', '--out', required=False,
+                        default=None,
+                        help="output parsed data file for SQL import")
+
+    parser.add_argument('-t', '--table', required=False,
+                        help="generate SQL DML with supplied name as the table")
+
+    parser.add_argument('-s', '--sql', required=False,
+                        action="store_true", default=False,
+                        help="generate SQL")
+
+    args = parser.parse_args()
+
+    gen_sql = args.sql
+
+    logging_level = logging.ERROR
+    if args.verbose == 1:
+        logging_level = logging.WARNING
+    elif args.verbose == 2:
+        logging_level = logging.INFO
+    elif args.verbose > 2:
+        logging_level = logging.DEBUG
+
+    logging.basicConfig(level=logging_level, format='%(message)s', stream=sys.stdout)
+    logging.debug(args)
+
+    input_file = None
+    output_file = None
+    delimiter = '\t'
+    dialect = 'MYSQL'
+    null_value = '\N'
+    table_name = None
+
+    if args.delimiter and len(args.delimiter.strip()) > 0:
+        if args.delimiter == 'C':
+            delimiter = ','
+
+    if args.dialect and len(args.dialect.strip()) > 0:
+        if args.dialect == 'S':
+            dialect = 'SQLITE'
+            null_value = ''
+
+    if args.file:
+        input_file = args.file
+    else:
+        parser.print_help()
+        print "\nError: file needs to be supplied"
+        exit(1)
+
+    if args.out:
+        output_file = args.out
+
+    if gen_sql:
+        if args.table and len(args.table.strip()) > 0:
+            table_name = args.table
+
+        if not table_name:
+            print "\nError: table needs to be supplied if SQL is being generated!"
+            exit(1)
+
+        if not output_file:
+            print "\nError: output file needs to be supplied if SQL is being generated!"
+            exit(1)
+
+    if not os.path.isfile(input_file):
+        print "\nError: " + input_file + " is not a valid file."
+        exit(1)
+
+    locale.setlocale(locale.LC_NUMERIC, "")
+
+
+
+    try:
+        columns = parse_file(input_file, output_file, delimiter, null_value)
+
+
+        column_names = []
+        if columns != None:
+            #print 'File Summary:'
+            table = []
+            table.append(["INDEX", "COLUMN", "MAXVALUE", "MINVALUE", "MAXLEN", "MINLEN", "TYPE", "#VALS", "#EMPTY"])
+            for c in columns:
+                table.append([str(c.index), str(c.name), str(c.max_value), str(c.min_value), str(c.max_length), str(c.min_length), str(c.type), str(c.not_empty), str(c.empty)])
+                column_names.append(c.name)
+
+            if gen_sql:
+                fixname = output_file
+                full_file_path = os.path.abspath(fixname)
+                if dialect == 'MYSQL':
+                    sql_print_table_mysql(columns, table_name)
+                    if delimiter == '\t':
+                        print 'LOAD DATA INFILE \'' + full_file_path + '\' INTO TABLE tmp_' + table_name + ' FIELDS TERMINATED BY \'\\t\';'
+                    else:
+                        print 'LOAD DATA INFILE \'' + full_file_path + '\' INTO TABLE tmp_' + table_name + ' FIELDS TERMINATED BY \',\';'
+
+                    print 'INSERT INTO ' + table_name + ' SELECT NULL, ' + ','.join(column_names) + ' FROM tmp_' + table_name + ';'
+                    print 'DROP TABLE tmp_' + table_name + ';'
+                else:
+                    sql_print_table_sqlite(columns, table_name)
+                    if delimiter == '\t':
+                        print '.separator \\t'
+                    else:
+                        print '.separator ,'
+
+                    print '.import ' + full_file_path + ' tmp_' + table_name
+                    print 'INSERT INTO ' + table_name + ' SELECT NULL, ' + ','.join(column_names) + ' FROM tmp_' + table_name + ';'
+
+            else:
+               pprint_table(sys.stdout, table)
+        else:
+            print 'Error parsing file!'
+    except:
+        logging.error('ouch')
+        _show_error()
+
+
