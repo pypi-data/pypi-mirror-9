@@ -1,0 +1,148 @@
+update-conf.py
+==============
+
+|Travis CI - Build Status| |Coveralls - Coverage Percentage| |Pypi -
+Downloads| |Pypi - Version| |License| |Pypi - Wheel|
+
+Generate config files from ``conf.d`` like directories.
+
+Split your config file into smaller files in a ``conf.d`` like
+directory. The generated config file will be the concatenation of all
+splitted config files (also called snippets). The spplited files will be
+merged in the lexical order of their names.
+
+Files ending with ``.bak``, ``.old`` and other similar terminations will
+be ignored.
+
+This project was based in the `update-conf.d
+project <https://github.com/Atha/update-conf.d>`__.
+
+Install
+-------
+
+This project requires Python 2.6 or Python 2.7.
+
+**PS:** We're working on Python 3.X compatibility.
+
+To install:
+
+.. code:: sh
+
+    pip install update-conf.py
+
+It's possible to clone the project in Github and install it via
+``setuptools``:
+
+.. code:: sh
+
+    git clone git@github.com:rarylson/update-conf.py.git
+    cd update-conf.py
+    python setup.py install
+
+Usage
+-----
+
+To generate a config file, you can run something like this:
+
+.. code:: sh
+
+    update-conf.py -f /etc/snmp/snmpd.conf
+
+The example above will merge the splitted config files in the directory
+``/etc/snmp/snmpd.conf.d`` into the file ``/etc/snmp/snmpd.conf``.
+
+If the directory containing the splitted files uses a diferent name
+pattern, you can pass its name as an argument:
+
+.. code:: sh
+
+    update-conf.py -f /etc/snmp/snmpd.conf -d /etc/snmp/snmpd.d
+
+It's also possible to define frequent used options in a config file. For
+example, in ``/etc/update-conf.py.conf``:
+
+.. code:: ini
+
+    [snmpd]
+    file = /etc/snmp/snmpd.conf
+    dir = /etc/snmp/snmpd.d
+
+Now, you can run:
+
+.. code:: sh
+
+    update-conf.py -n snmpd
+
+To get help:
+
+.. code:: sh
+
+    update-conf.py --help
+
+Config files
+~~~~~~~~~~~~
+
+``update-conf.py`` will use the global config file
+(``/etc/update-conf.py.conf``) or the user-home config file
+(``~/.update-conf.py.conf``) if they exist.
+
+When installing via the source distribution, the global config file
+(``/etc/update-conf.py.conf``) will be automatically created.
+
+However, when installing via the binary wheel distribution, the config
+file installation will be skipped. But you can use the sample config
+file as a start point:
+
+.. code:: sh
+
+    cp {prefix}/share/update-conf.py /etc/update-conf.py.conf
+
+It's also possible to pass a custom config file via command line args:
+
+.. code:: sh
+
+    update-conf.py -c my_custom_config.conf -n snmpd
+
+License
+-------
+
+This software is released under the `Revised BSD
+License <https://github.com/rarylson/update-conf.py/blob/master/LICENSE>`__.
+
+Changelog
+---------
+
+Check the
+`CHANGELOG <https://github.com/rarylson/update-conf.py/blob/master/CHANGELOG.md>`__
+page.
+
+TODO
+----
+
+-  Publish this software in a Ubuntu PPA;
+
+   -  Remove dependencies from argparse e configparser before pubishing
+      in the PPA;
+   -  Ubuntu 12.04 and Ubuntu 14.04;
+
+-  Hide "bugtracker\_url" warning when running ``setup.py`` with
+   setuptools;
+-  https://pypi.python.org/pypi/bumpversion/ in ``Makefile``;
+-  Add a ``CONTRIBUTING.md`` file
+   (https://github.com/blog/1184-contributing-guidelines);
+-  Make project compatible with Python 3.X;
+-  Add a test installing ``update-conf.py`` from PyPI Test
+   (``make publish-test``).
+
+.. |Travis CI - Build Status| image:: https://img.shields.io/travis/rarylson/update-conf.py.svg
+   :target: https://travis-ci.org/rarylson/update-conf.py
+.. |Coveralls - Coverage Percentage| image:: https://img.shields.io/coveralls/rarylson/update-conf.py.svg
+   :target: https://coveralls.io/r/rarylson/update-conf.py
+.. |Pypi - Downloads| image:: https://img.shields.io/pypi/dm/update-conf.py.svg
+   :target: https://pypi.python.org/pypi/update-conf.py/
+.. |Pypi - Version| image:: https://img.shields.io/pypi/v/update-conf.py.svg
+   :target: https://pypi.python.org/pypi/update-conf.py/
+.. |License| image:: https://img.shields.io/pypi/l/update-conf.py.svg
+   :target: https://github.com/rarylson/update-conf.py/blob/master/LICENSE
+.. |Pypi - Wheel| image:: https://pypip.in/wheel/update-conf.py/badge.svg?style=flat
+   :target: https://pypi.python.org/pypi/update-conf.py/
