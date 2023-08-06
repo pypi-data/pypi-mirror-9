@@ -1,0 +1,135 @@
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en"
+      xmlns:tal="http://xml.zope.org/namespaces/tal"
+      xmlns:metal="http://xml.zope.org/namespaces/metal"
+      xmlns:i18n="http://xml.zope.org/namespaces/i18n"
+      lang="en"
+      metal:use-macro="context/main_template/macros/master"
+      i18n:domain="eke.specimens">
+<!--
+Copyright 2013 California Institute of Technology. ALL RIGHTS
+RESERVED. U.S. Government Sponsorship acknowledged.
+-->
+<body>
+<metal:content-core fill-slot="content-core">
+<metal:block define-macro="content-core"
+                    tal:define="kssClassesView context/@@kss_field_decorator_view;
+                                getKssClasses nocall:kssClassesView/getKssClassesInlineEditable;
+                                templateId template/getId">
+<!-- FIXME: This belongs in the style_slot, but I have no idea how to override
+@@facetednavigation_view so I can use my own template where I can inject into the
+style_slot, or how to fill a slot from within a called slot.  Fsck XHTML. >.<
+-->
+<style type='text/css'>
+#left-area {
+    width: 17em;
+}
+.left-area-js {
+    margin-left: 17em;
+}
+</style>
+
+    <div metal:define-macro="text-field-view"
+         id="parent-fieldname-text" class="stx"
+         tal:define="kss_class python:getKssClasses('text',
+                     templateId=templateId, macro='text-field-view');
+                     has_text exists:context/aq_explicit/getText;
+                     text python:has_text and here.getText() or ''"
+         tal:condition="text"
+         tal:attributes="class python:'stx' + kss_class if context.Format() in ('text/structured', 'text/x-rst') else
+                         'plain' + kss_class">
+        <div metal:define-slot="inside" tal:replace="structure text">The body</div>
+    </div>
+    <metal:listingmacro define-macro="listing">
+    <!-- KLUDGE: "listingBar" this text MUST appear in the faceted results.  eea.facetednavigation
+    checks to see of "listingBar" is present and, if not, assumes there are too few results to
+    bother displaying any of the widgets.  But we want the widgets displayed always.  P.O.S.
+    -->
+    <code style='display: none;'>listingBar</code>
+    <tal:foldercontents define='
+        contentFilter       contentFilter|request/contentFilter|nothing;
+        contentFilter       python:contentFilter and dict(contentFilter) or {};
+        limit_display       limit_display|request/limit_display|nothing;
+        limit_display       python:limit_display and int(limit_display) or 100;
+        more_url            more_url|request/more_url|string:folder_contents;
+        folderContents      folderContents|nothing;
+        fc                  folderContents;
+        Batch               python:modules["Products.CMFPlone"].Batch;
+        b_start             python:request.get("b_start", 0);
+        batch               python:fc if isinstance(fc, Batch) else Batch(fc, limit_display, int(b_start), orphan=1);
+        normalizeString     nocall:context/plone_utils/normalizeString;
+        navigation_root_url context/@@plone_portal_state/navigation_root_url;
+        pas_member          context/@@pas_member;
+        nominal_view        nocall:context/@@view;
+    '>
+    <tal:listing condition="batch">
+    <table class='listing'>
+        <thead>
+            <tr>
+                <th i18n:translate='ekeSpecimensFacetedSpecimensViewTableHeadingSetSite'>Set/Site</th>
+                <th i18n:translate='ekeSpecimensFacetedSpecimensViewTableHeadingStorage'>Storage</th>
+                <th style='text-align: right;'
+                    i18n:translate='ekeSpecimensFacetedSpecimensViewTableHeadingPptCount'>#&#x00a0;Participants</th>
+            </tr>
+        </thead>
+        <tbody metal:define-slot='entries'>
+            <tal:entry tal:repeat='item batch' metal:define-macro='entries'>
+                <tal:block tal:define='
+                    item_url            item/getURL|item/absolute_url;
+                    item_id             item/getId|item/id;
+                    item_title_or_id    item/pretty_title_or_id;
+                    item_description    item/Description;
+                    item_type           item/portal_type;
+                    item_type_title     item/Type;
+                    item_icon           python:plone_view.getIcon(item);
+                    item_type_class     python:"contenttype-" + normalizeString(item_type);
+                    item_wf_state       item/review_state|python:context.portal_workflow.getInfoFor(item, "review_state", "");
+                    item_wf_state_class python:"state-" + normalizeString(item_wf_state);
+                    oddrow              repeat/item/odd;
+                    pptCount            python:context.compute_participants(item);
+                    pptCount            python:pptCount if pptCount != 0 else "&#x00a0;";
+                    storageType         item/getStorageType|nothing;
+                    storageTypeLabel    python:nominal_view.getStorageTypeLabel(storageType);
+                '>
+                    <metal:block define-slot='entry'>
+                        <tr class='odd' tal:attributes='class python:"odd" if oddrow else "even";'>
+                            <td>
+                                <a href='#' title='Some set.' class='url' tal:content='item_title_or_id' tal:attributes='
+                                    href    item_url;
+                                    class   string:$item_type_class $item_wf_state_class url;
+                                    title   item_description;
+                                '>
+                                    Anally Probed Set
+                                </a>
+                            </td>
+                            <td tal:content='storageTypeLabel'>
+                                Mucus
+                            </td>
+                            <td style='text-align: right;' tal:content='pptCount'>
+                                432
+                            </td>
+                        </tr>
+                    </metal:block>
+                </tal:block>
+            </tal:entry>
+        </tbody>
+    </table>
+
+    <div metal:use-macro="context/batch_macros/macros/navigation" />
+
+    </tal:listing>
+    <metal:empty metal:define-slot="no_items_in_listing">
+        <p class="discreet"
+           tal:condition="not: folderContents"
+           i18n:translate="description_no_items_in_folder">
+            There are currently no items in this folder.
+        </p>
+    </metal:empty>
+
+    </tal:foldercontents>
+    </metal:listingmacro>
+
+</metal:block>
+</metal:content-core>
+
+</body>
+</html>
