@@ -1,0 +1,519 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>Alligator Tutorial &mdash; Alligator 0.8.0-dev documentation</title>
+    
+    <link rel="stylesheet" href="_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    './',
+        VERSION:     '0.8.0-dev',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="top" title="Alligator 0.8.0-dev documentation" href="index.html" />
+    <link rel="next" title="Best Practices" href="bestpractices.html" />
+    <link rel="prev" title="Installing Alligator" href="installing.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="bestpractices.html" title="Best Practices"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="installing.html" title="Installing Alligator"
+             accesskey="P">previous</a> |</li>
+        <li><a href="index.html">Alligator 0.8.0-dev documentation</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="alligator-tutorial">
+<span id="tutorial"></span><h1>Alligator Tutorial<a class="headerlink" href="#alligator-tutorial" title="Permalink to this headline">¶</a></h1>
+<p>Alligator is a simple offline task queuing system. It enables you to take
+expensive operations &amp; move them offline, either to a different process or
+even a whole different server.</p>
+<p>This is extremely useful in the world of web development, where request-response
+cycles should be kept as quick as possible. Scheduling tasks helps remove
+expensive operations &amp; keeps end-users happy.</p>
+<p>Some example good use-cases for offline tasks include:</p>
+<ul class="simple">
+<li>Sending emails</li>
+<li>Resizing images/creating thumbnails</li>
+<li>Notifying social networks</li>
+<li>Fetching data from other data sources</li>
+</ul>
+<p>You should check out the instructions on <a class="reference internal" href="installing.html#installing"><em>Installing Alligator</em></a> to install Alligator.</p>
+<p>Alligator is written in pure Python &amp; can work with all frameworks. For this
+tutorial, we&#8217;ll assume integration with a <a class="reference external" href="http://djangoproject.com/">Django</a>-based web application, but
+it could just as easily be used with <a class="reference external" href="http://flask.pocoo.org/">Flask</a>, <a class="reference external" href="http://www.pylonsproject.org/">Pyramid</a>, pure WSGI
+applications, etc.</p>
+<div class="section" id="philosophy">
+<h2>Philosophy<a class="headerlink" href="#philosophy" title="Permalink to this headline">¶</a></h2>
+<p>Alligator is a bit different in approach from other offline task systems. Let&#8217;s
+highlight some ways &amp; the why&#8217;s.</p>
+<dl class="docutils">
+<dt><strong>Tasks Are Any Plain Old Function</strong></dt>
+<dd><p class="first">No decorators, no special logic/behavior needed inside, no inheritance.
+<strong>ANY</strong> importable Python function can become a task with no modifications
+required.</p>
+<p class="last">Importantly, it must be importable. So instance methods on a class aren&#8217;t
+processable.</p>
+</dd>
+<dt><strong>Plain Old Python</strong></dt>
+<dd>Nothing specific to any framework or architecture here. Plug it in to
+whatever code you want.</dd>
+<dt><strong>Simplicity</strong></dt>
+<dd>The code for Alligator should be small &amp; fast. No complex gymnastics, no
+premature optimizations or specialized code to suit a specific backend.</dd>
+<dt><strong>You&#8217;re In Control</strong></dt>
+<dd><p class="first">Your code calls the tasks &amp; can setup all the execution options needed.
+There are hook functions for special processing, or you can use your
+own <tt class="docutils literal"><span class="pre">Task</span></tt> or <tt class="docutils literal"><span class="pre">Client</span></tt> classes.</p>
+<p class="last">Additionally, you control the consuming of the queue, so it can be
+processed your way (or fanned out, or prioritized, or whatever).</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="figure-out-what-to-offline">
+<h2>Figure Out What To Offline<a class="headerlink" href="#figure-out-what-to-offline" title="Permalink to this headline">¶</a></h2>
+<p>The very first thing to do is figure out where the pain points in your
+application are. Doing this analysis differs wildly (though things like
+<a class="reference external" href="https://django-debug-toolbar.readthedocs.org/">django-debug-toolbar</a>, <a class="reference external" href="https://docs.python.org/3.3/library/profile.html">profile</a> or <a class="reference external" href="https://jiffyclub.github.io/snakeviz/">snakeviz</a> can be helpful). Broadly
+speaking, you should look for things that:</p>
+<ul class="simple">
+<li>access the network</li>
+<li>do an expensive operation</li>
+<li>may fail &amp; require retrying</li>
+<li>things that aren&#8217;t immediately required for success</li>
+</ul>
+<p>If you have a web application, just navigating around &amp; timing pageloads can
+be a cheap/easy way of finding pain points.</p>
+<p>For the purposes of this tutorial, we&#8217;ll assume a user of our hot new
+Web 3.0 social network made a new post &amp; all their followers need to see it.</p>
+<p>So our existing view code might look like:</p>
+<div class="code python highlight-python"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">django.conf</span> <span class="kn">import</span> <span class="n">settings</span>
+<span class="kn">from</span> <span class="nn">django.http</span> <span class="kn">import</span> <span class="n">Http404</span>
+<span class="kn">from</span> <span class="nn">django.shortcuts</span> <span class="kn">import</span> <span class="n">redirect</span><span class="p">,</span> <span class="n">send_email</span>
+
+<span class="kn">from</span> <span class="nn">sosocial.models</span> <span class="kn">import</span> <span class="n">Post</span>
+
+
+<span class="k">def</span> <span class="nf">new_post</span><span class="p">(</span><span class="n">request</span><span class="p">):</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">request</span><span class="o">.</span><span class="n">method</span> <span class="o">==</span> <span class="s">&#39;POST&#39;</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="n">Http404</span><span class="p">(</span><span class="s">&#39;Gotta use POST.&#39;</span><span class="p">)</span>
+
+    <span class="c"># Don&#39;t write code like this. Sanitize your data, kids.</span>
+    <span class="n">post</span> <span class="o">=</span> <span class="n">Post</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span>
+        <span class="n">message</span><span class="o">=</span><span class="n">request</span><span class="o">.</span><span class="n">POST</span><span class="p">[</span><span class="s">&#39;message&#39;</span><span class="p">]</span>
+    <span class="p">)</span>
+
+    <span class="c"># Ugh. We&#39;re sending an email to everyone who follows the user, which</span>
+    <span class="c"># could mean hundreds or thousands of emails. This could timeout!</span>
+    <span class="n">subject</span> <span class="o">=</span> <span class="s">&quot;A new post by {}&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">user</span><span class="o">.</span><span class="n">username</span><span class="p">)</span>
+    <span class="n">to_emails</span> <span class="o">=</span> <span class="p">[</span><span class="n">follow</span><span class="o">.</span><span class="n">email</span> <span class="k">for</span> <span class="n">follow</span> <span class="ow">in</span> <span class="n">request</span><span class="o">.</span><span class="n">user</span><span class="o">.</span><span class="n">followers</span><span class="o">.</span><span class="n">all</span><span class="p">()]</span>
+    <span class="n">send_email</span><span class="p">(</span>
+        <span class="n">subject</span><span class="p">,</span>
+        <span class="n">post</span><span class="o">.</span><span class="n">message</span><span class="p">,</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">SERVER_EMAIL</span><span class="p">,</span>
+        <span class="n">recipient_list</span><span class="o">=</span><span class="n">to_emails</span>
+    <span class="p">)</span>
+
+    <span class="c"># Redirect like a good webapp should.</span>
+    <span class="k">return</span> <span class="n">redirect</span><span class="p">(</span><span class="s">&#39;activity_feed&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="creating-a-task">
+<h2>Creating a Task<a class="headerlink" href="#creating-a-task" title="Permalink to this headline">¶</a></h2>
+<p>The next step won&#8217;t involve Alligator at all. We&#8217;ll extract that slow code into
+an importable function, then call it from where the code used to be.
+So we can convert our existing code into:</p>
+<div class="code python highlight-python"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">django.contrib.auth.models</span> <span class="kn">import</span> <span class="n">User</span>
+<span class="kn">from</span> <span class="nn">django.conf</span> <span class="kn">import</span> <span class="n">settings</span>
+<span class="kn">from</span> <span class="nn">django.http</span> <span class="kn">import</span> <span class="n">Http404</span>
+<span class="kn">from</span> <span class="nn">django.shortcuts</span> <span class="kn">import</span> <span class="n">redirect</span><span class="p">,</span> <span class="n">send_email</span>
+
+<span class="kn">from</span> <span class="nn">sosocial.models</span> <span class="kn">import</span> <span class="n">Post</span>
+
+
+<span class="k">def</span> <span class="nf">send_post_email</span><span class="p">(</span><span class="n">user_id</span><span class="p">,</span> <span class="n">post_id</span><span class="p">):</span>
+    <span class="n">post</span> <span class="o">=</span> <span class="n">Post</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">pk</span><span class="o">=</span><span class="n">post_id</span><span class="p">)</span>
+    <span class="n">user</span> <span class="o">=</span> <span class="n">User</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">pk</span><span class="o">=</span><span class="n">user_id</span><span class="p">)</span>
+
+    <span class="n">subject</span> <span class="o">=</span> <span class="s">&quot;A new post by {}&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">user</span><span class="o">.</span><span class="n">username</span><span class="p">)</span>
+    <span class="n">to_emails</span> <span class="o">=</span> <span class="p">[</span><span class="n">follow</span><span class="o">.</span><span class="n">email</span> <span class="k">for</span> <span class="n">follow</span> <span class="ow">in</span> <span class="n">user</span><span class="o">.</span><span class="n">followers</span><span class="o">.</span><span class="n">all</span><span class="p">()]</span>
+    <span class="n">send_email</span><span class="p">(</span>
+        <span class="n">subject</span><span class="p">,</span>
+        <span class="n">post</span><span class="o">.</span><span class="n">message</span><span class="p">,</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">SERVER_EMAIL</span><span class="p">,</span>
+        <span class="n">recipient_list</span><span class="o">=</span><span class="n">to_emails</span>
+    <span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">new_post</span><span class="p">(</span><span class="n">request</span><span class="p">):</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">request</span><span class="o">.</span><span class="n">method</span> <span class="o">==</span> <span class="s">&#39;POST&#39;</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="n">Http404</span><span class="p">(</span><span class="s">&#39;Gotta use POST.&#39;</span><span class="p">)</span>
+
+    <span class="c"># Don&#39;t write code like this. Sanitize your data, kids.</span>
+    <span class="n">post</span> <span class="o">=</span> <span class="n">Post</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span>
+        <span class="n">message</span><span class="o">=</span><span class="n">request</span><span class="o">.</span><span class="n">POST</span><span class="p">[</span><span class="s">&#39;message&#39;</span><span class="p">]</span>
+    <span class="p">)</span>
+
+    <span class="c"># The code was here. Now we&#39;ll call the function, just to make sure</span>
+    <span class="c"># things still work.</span>
+    <span class="n">send_post_email</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">user</span><span class="o">.</span><span class="n">pk</span><span class="p">,</span> <span class="n">post</span><span class="o">.</span><span class="n">pk</span><span class="p">)</span>
+
+    <span class="c"># Redirect like a good webapp should.</span>
+    <span class="k">return</span> <span class="n">redirect</span><span class="p">(</span><span class="s">&#39;activity_feed&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Now go run your tests or hand-test things to ensure they still work. This is
+important because it helps guard against regressions in your code.</p>
+<p>You&#8217;ll note we&#8217;re not directly passing the <tt class="docutils literal"><span class="pre">User</span></tt> or <tt class="docutils literal"><span class="pre">Post</span></tt> instances,
+instead passing the primary identifiers, even as it stands it&#8217;s causing two
+extra queries. While this is sub-optimal as things stands, it neatly prepares
+us for offlining the task.</p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p><strong>Why not pass the instances themselves?</strong></p>
+<p>While it&#8217;s possible to create instances that nicely serialize, the problem
+with this approach is stale data &amp; unnecessarily large payloads.</p>
+<p>While the ideal situation is tasks that are processed within seconds of
+being added to the queue, in the real world, queues can get backed up &amp;
+users may further change data. By fetching the data fresh when processing
+the task, you ensure you&#8217;re not working with old data.</p>
+<p class="last">Further, most queues are optimized for small payloads. The more data to
+send over the wire, the slower things go. Given that&#8217;s the opposite reason
+for adding a task queue, it doesn&#8217;t make sense.</p>
+</div>
+</div>
+<div class="section" id="create-a-gator-instance">
+<h2>Create a Gator Instance<a class="headerlink" href="#create-a-gator-instance" title="Permalink to this headline">¶</a></h2>
+<p>While it&#8217;s great we got better encapsulation by pulling out the logic into
+its own function, we&#8217;re still doing the sending of email in-process, which means
+our view is still slow.</p>
+<p>This is where Alligator comes in. We&#8217;ll start off by importing the <tt class="docutils literal"><span class="pre">Gator</span></tt>
+class at the top of the file &amp; making an instance.</p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">Unless you&#8217;re only using Alligator in <strong>one</strong> file, a best practice would
+be to put that import &amp; initialization into it&#8217;s own file, then import that
+configured <tt class="docutils literal"><span class="pre">gator</span></tt> object into your other files. Configuring it in one
+place is better than many instantiations (but also allows for setting
+up a different instance elsewhere).</p>
+</div>
+<p>When creating a <tt class="docutils literal"><span class="pre">Gator</span></tt> instance, you&#8217;ll need to choose a queue backend.
+Alligator ships with support for local-memory, Redis &amp; Beanstalk. See the
+<a class="reference internal" href="installing.html#installing"><em>Installing Alligator</em></a> docs for setup info.</p>
+<div class="section" id="local-memory">
+<h3>Local Memory<a class="headerlink" href="#local-memory" title="Permalink to this headline">¶</a></h3>
+<p>Primarily only for development or in testing, this has no dependencies, but
+keeps everything in-process.</p>
+<div class="code python highlight-python"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">alligator</span> <span class="kn">import</span> <span class="n">Gator</span>
+
+<span class="c"># Connect to a locally-running Redis server &amp; use DB 0.</span>
+<span class="n">gator</span> <span class="o">=</span> <span class="n">Gator</span><span class="p">(</span><span class="s">&#39;redis://localhost:6379/0&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="redis">
+<h3>Redis<a class="headerlink" href="#redis" title="Permalink to this headline">¶</a></h3>
+<p>Redis is a good option for production and small-large installations.</p>
+<div class="code python highlight-python"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">alligator</span> <span class="kn">import</span> <span class="n">Gator</span>
+
+<span class="c"># Connect to a locally-running Redis server &amp; use DB 0.</span>
+<span class="n">gator</span> <span class="o">=</span> <span class="n">Gator</span><span class="p">(</span><span class="s">&#39;redis://localhost:6379/0&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="beanstalk">
+<h3>Beanstalk<a class="headerlink" href="#beanstalk" title="Permalink to this headline">¶</a></h3>
+<p>Beanstalk specializes in queuing &amp; can be used in production at large-very large
+installations.</p>
+<div class="code python highlight-python"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">alligator</span> <span class="kn">import</span> <span class="n">Gator</span>
+
+<span class="c"># Connect to a locally-running Beanstalk server.</span>
+<span class="n">gator</span> <span class="o">=</span> <span class="n">Gator</span><span class="p">(</span><span class="s">&#39;beanstalk://localhost:11300/&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p><strong>For the duration of the tutorial, we&#8217;ll assume you chose Redis.</strong></p>
+</div>
+</div>
+<div class="section" id="put-the-task-on-the-queue">
+<h2>Put the Task on the Queue<a class="headerlink" href="#put-the-task-on-the-queue" title="Permalink to this headline">¶</a></h2>
+<p>After we make a <tt class="docutils literal"><span class="pre">Gator</span></tt> instance, the only other change is to how we call
+<tt class="docutils literal"><span class="pre">send_post_email</span></tt>. Instead of calling it directly, we&#8217;ll need to enqueue
+a task.</p>
+<p>There are two common ways of creating a task in Alligator:</p>
+<dl class="docutils">
+<dt><tt class="docutils literal"><span class="pre">gator.task()</span></tt></dt>
+<dd>A typical function call. You pass in the callable &amp; the
+<tt class="docutils literal"><span class="pre">*args</span></tt>/<tt class="docutils literal"><span class="pre">**kwargs</span></tt> to provide to the callable. It gets put on the
+queue with the default task execution options.</dd>
+<dt><tt class="docutils literal"><span class="pre">gator.options()</span></tt></dt>
+<dd>Creates a context manager that has a <tt class="docutils literal"><span class="pre">.task()</span></tt> method that works
+like the above. This is useful for controlling the task execution options,
+such as retries or if the task should be asynchronous. See the &#8220;Working
+Around Failsome Tasks&#8221; section below.</dd>
+</dl>
+<p>Since we&#8217;re just starting out with Alligator &amp; looking to replicate the
+existing behavior, we&#8217;ll use <tt class="docutils literal"><span class="pre">gator.task(...)</span></tt> to create &amp; enqueue the task.</p>
+<div class="code python highlight-python"><div class="highlight"><pre><span class="c"># Old code</span>
+<span class="n">send_post_email</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">user</span><span class="o">.</span><span class="n">pk</span><span class="p">,</span> <span class="n">post</span><span class="o">.</span><span class="n">pk</span><span class="p">)</span>
+
+<span class="c"># New code</span>
+<span class="n">gator</span><span class="o">.</span><span class="n">task</span><span class="p">(</span><span class="n">send_post_email</span><span class="p">,</span> <span class="n">request</span><span class="o">.</span><span class="n">user</span><span class="o">.</span><span class="n">pk</span><span class="p">,</span> <span class="n">post</span><span class="o">.</span><span class="n">pk</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Hardly changed in code, but a world of difference in execution speed. Rather
+than blasting out hundreds of emails &amp; possibly timing out, a task is placed on
+the queue &amp; execution continues quickly. The complete code looks like:</p>
+<div class="code python highlight-python"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">alligator</span> <span class="kn">import</span> <span class="n">Gator</span>
+
+<span class="kn">from</span> <span class="nn">django.contrib.auth.models</span> <span class="kn">import</span> <span class="n">User</span>
+<span class="kn">from</span> <span class="nn">django.conf</span> <span class="kn">import</span> <span class="n">settings</span>
+<span class="kn">from</span> <span class="nn">django.http</span> <span class="kn">import</span> <span class="n">Http404</span>
+<span class="kn">from</span> <span class="nn">django.shortcuts</span> <span class="kn">import</span> <span class="n">redirect</span><span class="p">,</span> <span class="n">send_email</span>
+
+<span class="kn">from</span> <span class="nn">sosocial.models</span> <span class="kn">import</span> <span class="n">Post</span>
+
+
+<span class="c"># Please configure this once &amp; import it elsewhere.</span>
+<span class="c"># Bonus points if you use a settings (e.g. ``settings.ALLIGATOR_DSN``)</span>
+<span class="c"># instead of a hard-coded string.</span>
+<span class="n">gator</span> <span class="o">=</span> <span class="n">Gator</span><span class="p">(</span><span class="s">&#39;redis://localhost:6379/0&#39;</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">send_post_email</span><span class="p">(</span><span class="n">user_id</span><span class="p">,</span> <span class="n">post_id</span><span class="p">):</span>
+    <span class="n">post</span> <span class="o">=</span> <span class="n">Post</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">pk</span><span class="o">=</span><span class="n">post_id</span><span class="p">)</span>
+    <span class="n">user</span> <span class="o">=</span> <span class="n">User</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">pk</span><span class="o">=</span><span class="n">user_id</span><span class="p">)</span>
+
+    <span class="n">subject</span> <span class="o">=</span> <span class="s">&quot;A new post by {}&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">user</span><span class="o">.</span><span class="n">username</span><span class="p">)</span>
+    <span class="n">to_emails</span> <span class="o">=</span> <span class="p">[</span><span class="n">follow</span><span class="o">.</span><span class="n">email</span> <span class="k">for</span> <span class="n">follow</span> <span class="ow">in</span> <span class="n">user</span><span class="o">.</span><span class="n">followers</span><span class="o">.</span><span class="n">all</span><span class="p">()]</span>
+    <span class="n">send_email</span><span class="p">(</span>
+        <span class="n">subject</span><span class="p">,</span>
+        <span class="n">post</span><span class="o">.</span><span class="n">message</span><span class="p">,</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">SERVER_EMAIL</span><span class="p">,</span>
+        <span class="n">recipient_list</span><span class="o">=</span><span class="n">to_emails</span>
+    <span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">new_post</span><span class="p">(</span><span class="n">request</span><span class="p">):</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">request</span><span class="o">.</span><span class="n">method</span> <span class="o">==</span> <span class="s">&#39;POST&#39;</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="n">Http404</span><span class="p">(</span><span class="s">&#39;Gotta use POST.&#39;</span><span class="p">)</span>
+
+    <span class="c"># Don&#39;t write code like this. Sanitize your data, kids.</span>
+    <span class="n">post</span> <span class="o">=</span> <span class="n">Post</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span>
+        <span class="n">message</span><span class="o">=</span><span class="n">request</span><span class="o">.</span><span class="n">POST</span><span class="p">[</span><span class="s">&#39;message&#39;</span><span class="p">]</span>
+    <span class="p">)</span>
+
+    <span class="c"># The function call was here. Now we&#39;ll create a task then carry on.</span>
+    <span class="n">gator</span><span class="o">.</span><span class="n">task</span><span class="p">(</span><span class="n">send_post_email</span><span class="p">,</span> <span class="n">request</span><span class="o">.</span><span class="n">user</span><span class="o">.</span><span class="n">pk</span><span class="p">,</span> <span class="n">post</span><span class="o">.</span><span class="n">pk</span><span class="p">)</span>
+
+    <span class="c"># Redirect like a good webapp should.</span>
+    <span class="k">return</span> <span class="n">redirect</span><span class="p">(</span><span class="s">&#39;activity_feed&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="running-a-worker">
+<h2>Running a Worker<a class="headerlink" href="#running-a-worker" title="Permalink to this headline">¶</a></h2>
+<p>Time to kick back, relax &amp; enjoy your speedy new site, right?</p>
+<p>Unfortunately, not quite. Now we&#8217;re successfully queuing up tasks for later
+processing &amp; things are completing quickly, but <em>nothing is processing those
+tasks</em>. So we need to run a <tt class="docutils literal"><span class="pre">Worker</span></tt> to consume the queued tasks.</p>
+<p>We have two options here. We can either use the included <tt class="docutils literal"><span class="pre">latergator.py</span></tt>
+script or we can create our own. The following are identical in function:</p>
+<div class="code bash highlight-python"><div class="highlight"><pre>$ latergator.py redis://localhost:6379/0
+</pre></div>
+</div>
+<p>Or...</p>
+<div class="code python highlight-python"><div class="highlight"><pre><span class="c"># Within something like ``run_tasks.py``...</span>
+<span class="kn">from</span> <span class="nn">alligator</span> <span class="kn">import</span> <span class="n">Gator</span><span class="p">,</span> <span class="n">Worker</span>
+
+<span class="c"># Again, bonus points for an import and/or settings usage.</span>
+<span class="n">gator</span> <span class="o">=</span> <span class="n">Gator</span><span class="p">(</span><span class="s">&#39;redis://localhost:6379/0&#39;</span><span class="p">)</span>
+
+<span class="n">worker</span> <span class="o">=</span> <span class="n">Worker</span><span class="p">(</span><span class="n">gator</span><span class="p">)</span>
+<span class="n">worker</span><span class="o">.</span><span class="n">run_forever</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>Both of these will create a long-running process, which will consume tasks off
+the queue as fast as they can.</p>
+<p>While this is fine to start off, if you have a heavily trafficked site, you&#8217;ll
+likely need many workers. Simply start more processes (using a tool like
+<a class="reference external" href="http://supervisord.org/">Supervisor</a> works best).</p>
+<p>You can also make things like management commands, build other custom tooling
+around processing or even launch workers on their own dedicated servers.</p>
+</div>
+<div class="section" id="working-around-failsome-tasks">
+<h2>Working Around Failsome Tasks<a class="headerlink" href="#working-around-failsome-tasks" title="Permalink to this headline">¶</a></h2>
+<p>Sometimes tasks don&#8217;t always succeed on the first try. Maybe the database is
+down, the mail server isn&#8217;t working or a remote resource can&#8217;t be loaded. As it
+stands, our task will try once then fail loudly.</p>
+<p>Alligator also supports retrying tasks, as well as having an <tt class="docutils literal"><span class="pre">on_error</span></tt> hook.
+To specify we want retries, we&#8217;ll have to use the other important bit of
+Alligator, <tt class="docutils literal"><span class="pre">Gator.options</span></tt>.</p>
+<p><tt class="docutils literal"><span class="pre">Gator.options</span></tt> gives you a context manager &amp; allows you to configure task
+execution options that then apply to all tasks within the manager. Using that
+looks like:</p>
+<div class="code python highlight-python"><div class="highlight"><pre><span class="c"># Old code</span>
+<span class="c"># gator.task(send_post_email, request.user.pk, post.pk)</span>
+
+<span class="c"># New code</span>
+<span class="k">with</span> <span class="n">gator</span><span class="o">.</span><span class="n">options</span><span class="p">(</span><span class="n">retries</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span> <span class="k">as</span> <span class="n">opts</span><span class="p">:</span>
+    <span class="c"># Be careful to use ``opts.task``, not ``gator.task`` here!</span>
+    <span class="n">opts</span><span class="o">.</span><span class="n">task</span><span class="p">(</span><span class="n">send_post_email</span><span class="p">,</span> <span class="n">request</span><span class="o">.</span><span class="n">user</span><span class="o">.</span><span class="n">pk</span><span class="p">,</span> <span class="n">post</span><span class="o">.</span><span class="n">pk</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Now that task will get three retries when it&#8217;s processed, making network
+failures much more tolerable.</p>
+</div>
+<div class="section" id="testing-tasks">
+<h2>Testing Tasks<a class="headerlink" href="#testing-tasks" title="Permalink to this headline">¶</a></h2>
+<p>All of this is great, but if you can&#8217;t test the task, you might as well not
+have code.</p>
+<p>Alligator supports an <tt class="docutils literal"><span class="pre">async=False</span></tt> option, which means that
+rather than being put on the queue, your task runs right away (acting like you
+just called the function, but with all the retries &amp; hooks included).</p>
+<div class="code python highlight-python"><div class="highlight"><pre><span class="c"># Bonus points for using ``settings.DEBUG`` (or similar) instead of a</span>
+<span class="c"># hard-coded ``False``.</span>
+<span class="k">with</span> <span class="n">gator</span><span class="o">.</span><span class="n">options</span><span class="p">(</span><span class="n">async</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span> <span class="k">as</span> <span class="n">opts</span><span class="p">:</span>
+    <span class="n">opts</span><span class="o">.</span><span class="n">task</span><span class="p">(</span><span class="n">send_post_email</span><span class="p">,</span> <span class="n">request</span><span class="o">.</span><span class="n">user</span><span class="o">.</span><span class="n">pk</span><span class="p">,</span> <span class="n">post</span><span class="o">.</span><span class="n">pk</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Now your existing integration tests (from before converting to offline tasks)
+should work as expected.</p>
+<div class="admonition warning">
+<p class="first admonition-title">Warning</p>
+<p class="last">Make sure you don&#8217;t accidently commit this &amp; deploy to production. If
+so, why have an offline task system at all?</p>
+</div>
+<p>Additionally, you get naturally improved ability to test, because now your
+tasks are just plain old functions. This means you can typically just import
+the function &amp; write tests against it (rather than the whole view), which
+makes for better unit tests &amp; fewer integration tests to ensure things work
+right.</p>
+</div>
+<div class="section" id="going-beyond">
+<h2>Going Beyond<a class="headerlink" href="#going-beyond" title="Permalink to this headline">¶</a></h2>
+<p>This is 90%+ of the day-to-day usage of Alligator, but there&#8217;s plenty more
+you can do with it.</p>
+<p>You may wish to peruse the <a class="reference internal" href="bestpractices.html#bestpractices"><em>Best Practices</em></a> docs for ideas on how to keep
+your Alligator clean &amp; flexible.</p>
+<p>If you need more custom functionality, the <a class="reference internal" href="extending.html#extending"><em>Extending Alligator</em></a> docs have
+examples on:</p>
+<ul class="simple">
+<li>Customizing task behavior using the <tt class="docutils literal"><span class="pre">on_start/on_success/on_error</span></tt> hook
+functions.</li>
+<li>Custom <tt class="docutils literal"><span class="pre">Task</span></tt> classes.</li>
+<li>Multiple queues &amp; <tt class="docutils literal"><span class="pre">Workers</span></tt> for scalability.</li>
+<li>Custom backends.</li>
+<li><tt class="docutils literal"><span class="pre">Worker</span></tt> subclasses.</li>
+</ul>
+<p>Happy queuing!</p>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h3><a href="index.html">Table Of Contents</a></h3>
+  <ul>
+<li><a class="reference internal" href="#">Alligator Tutorial</a><ul>
+<li><a class="reference internal" href="#philosophy">Philosophy</a></li>
+<li><a class="reference internal" href="#figure-out-what-to-offline">Figure Out What To Offline</a></li>
+<li><a class="reference internal" href="#creating-a-task">Creating a Task</a></li>
+<li><a class="reference internal" href="#create-a-gator-instance">Create a Gator Instance</a><ul>
+<li><a class="reference internal" href="#local-memory">Local Memory</a></li>
+<li><a class="reference internal" href="#redis">Redis</a></li>
+<li><a class="reference internal" href="#beanstalk">Beanstalk</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#put-the-task-on-the-queue">Put the Task on the Queue</a></li>
+<li><a class="reference internal" href="#running-a-worker">Running a Worker</a></li>
+<li><a class="reference internal" href="#working-around-failsome-tasks">Working Around Failsome Tasks</a></li>
+<li><a class="reference internal" href="#testing-tasks">Testing Tasks</a></li>
+<li><a class="reference internal" href="#going-beyond">Going Beyond</a></li>
+</ul>
+</li>
+</ul>
+
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="installing.html"
+                        title="previous chapter">Installing Alligator</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="bestpractices.html"
+                        title="next chapter">Best Practices</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="_sources/tutorial.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="bestpractices.html" title="Best Practices"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="installing.html" title="Installing Alligator"
+             >previous</a> |</li>
+        <li><a href="index.html">Alligator 0.8.0-dev documentation</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2014-2015, Daniel Lindsley.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>
