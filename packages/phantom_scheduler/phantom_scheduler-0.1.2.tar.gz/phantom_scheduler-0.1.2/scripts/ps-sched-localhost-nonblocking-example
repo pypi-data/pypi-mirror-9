@@ -1,0 +1,85 @@
+#!/usr/bin/env python
+
+#
+# This file is part of phantom_scheduler.
+#
+# phantom_scheduler is free software: you can redistribute it and/or modify
+# it under the terms of the LGNU Lesser General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# phantom_scheduler is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# LGNU Lesser General Public License for more details.
+#
+# You should have received a copy of the LGNU Lesser General Public License
+# along with phantom_scheduler.  If not, see <http://www.gnu.org/licenses/>.
+#
+# DTU UQ Library
+# Copyright (C) 2014 The Technical University of Denmark
+# Scientific Computing Section
+# Department of Applied Mathematics and Computer Science
+#
+# Author: Daniele Bigoni
+#
+
+import sys
+import phantom_scheduler as ps
+from mpi4py import MPI
+import getopt
+import time
+import mpi_map
+import inspect
+import os.path
+import subprocess
+
+def main(argv):
+
+    try:
+        opts, args = getopt.getopt(argv,"t:",["test="])
+    except getopt.GetoptError:
+        print 'sched.py -t <testnum>'
+        sys.exit(2)
+    if len(opts) != 2:
+        print 'sched.py -t <testnum>'
+        sys.exit(2)
+    for opt, arg in opts:
+        if opt in ('-t','--test'):
+            testn = int(arg)
+
+    comm = MPI.COMM_WORLD
+    rank = comm.rank
+    size = comm.size
+
+    if comm.rank == 0:
+        print "Running non-blocking test"
+
+    HOST = 'localhost'
+    PORT = 55000
+    N = 50
+    slots = 4
+    job_path = "ps-job-example"
+
+    if comm.rank == 0:
+        # Start the scheduler
+        sched = ps.Scheduler( slots, "", PORT )
+        PORT = sched.get_input_port()
+        sched.run()
+
+
+    # Enqueue jobs
+    for i in xrange(N):
+        time.sleep(1./(size-rank)) # To diversify the submission
+        print "Thread " + str(rank) + ": Submitting job " + str(i)
+        subprocess.check_call("psqsub -n " + HOST + " -p " + str(PORT) + " " + job_path + " -t " + str(testn)  + " -r " + str(rank) + " -j " + str(i), shell=True)
+
+    # Make sure that all the processes have finished submitting
+    mpi_map.barrier(comm)
+        
+    if comm.rank == 0:
+        # Finish
+        subprocess.check_call("psqsub -n %s -p %d EXIT" % (HOST,PORT), shell=True)
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

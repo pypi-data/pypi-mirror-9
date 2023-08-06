@@ -1,0 +1,89 @@
+#!/usr/bin/env python
+
+#
+# This file is part of phantom_scheduler.
+#
+# phantom_scheduler is free software: you can redistribute it and/or modify
+# it under the terms of the LGNU Lesser General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# phantom_scheduler is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# LGNU Lesser General Public License for more details.
+#
+# You should have received a copy of the LGNU Lesser General Public License
+# along with phantom_scheduler.  If not, see <http://www.gnu.org/licenses/>.
+#
+# DTU UQ Library
+# Copyright (C) 2014 The Technical University of Denmark
+# Scientific Computing Section
+# Department of Applied Mathematics and Computer Science
+#
+# Author: Daniele Bigoni
+#
+
+import sys
+import getopt
+import subprocess
+import phantom_scheduler as ps
+
+def usage():
+    print 'Usage: '
+    print ' Start a deamon process:'
+    print '   phantom -s -c <queuing command> -n <slots> [-p <port>] [-d]'
+    print ' Stop a running deamon:'
+    print '   phantom -q -p <port> [-h <hostname>]'
+
+def main(argv):
+    
+    # Get arguments
+    try:
+        opts, args = getopt.getopt(argv,"sdqc:p:n:h:",["start","deamon","quit","command=","port=","nslots=","hostname=","help"])
+    except getopt.GetoptError:
+        usage()
+        sys.exit(2)
+    
+    HOST = 'localhost'
+    PORT = 50000
+    START = False
+    QUIT = False
+    DEAMON = False
+    COMMAND = None
+    SLOTS = None
+    for opt, arg in opts:
+        if opt in ('--help'):
+            usage()
+            sys.exit(0)
+        if opt in ('-s','--start'):
+            START = True
+        if opt in ('-q','--quit'):
+            QUIT = True
+        if opt in ('-d','--deamon'):
+            DEAMON = True
+        if opt in ('-p','--port'):
+            PORT = int(arg)
+        if opt in ('-c','--command'):
+            COMMAND = arg
+        if opt in ('-n','--nslots'):
+            SLOTS = int(arg)
+        if opt in ('-h','--hostname'):
+            HOST = arg
+
+    if START and not QUIT and COMMAND != None and SLOTS != None:
+        if DEAMON:
+            subprocess.Popen("phantom -s --command=\"" + COMMAND + "\" --nslots=" + str(SLOTS), shell=True)
+        else:
+            sched = ps.Scheduler( SLOTS, COMMAND, PORT )
+            PORT = sched.get_input_port()
+            print "Scheduler running on port: " + str(PORT)
+            sched.run()
+    elif QUIT and not START:
+        subprocess.check_call("psqsub -n %s -p %d EXIT" % (HOST,PORT), shell=True)
+    else:
+        usage()
+        sys.exit(-1)
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
