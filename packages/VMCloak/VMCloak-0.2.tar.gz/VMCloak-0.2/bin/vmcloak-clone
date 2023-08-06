@@ -1,0 +1,113 @@
+#!/usr/bin/env python
+# Copyright (C) 2014-2015 Jurriaan Bremer.
+# This file is part of VMCloak - http://www.vmcloak.org/.
+# See the file 'docs/LICENSE.txt' for copying permission.
+
+import logging
+import socket
+import sys
+
+from vmcloak.conf import vboxmanage_path
+from vmcloak.misc import read_bird, shared_parameters, register_cuckoo
+from vmcloak.misc import wait_for_host, resolve_parameters
+from vmcloak.os import WindowsXP, Windows7
+from vmcloak.vm import VirtualBox, initialize_vm
+
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger('vmcloak-clone')
+
+
+def main():
+    parser, defaults, types = shared_parameters()
+    parser.add_argument('--bird', type=str, required=True, help='Name of the bird to clone from.')
+
+    args = parser.parse_args()
+
+    if args.verbose:
+        log.setLevel(logging.DEBUG)
+
+    try:
+        s = resolve_parameters(args, defaults, types)
+    except Exception as e:
+        sys.exit(e.message)
+
+    # Not really sure if this is possible in a cleaner way, but if no
+    # arguments have been given on the command line, then show the usage.
+    if len(sys.argv) == 1:
+        parser.print_help()
+        exit(0)
+
+    if not s.vmname:
+        log.error('A name for the Virtual Machine is required.')
+        exit(1)
+
+    vboxmanage = vboxmanage_path(s)
+
+    bird = read_bird(s.bird)
+    if not bird:
+        log.critical('Specified bird not found! Please verify its name.')
+        exit(1)
+
+    # Only VirtualBox support at the moment.
+    m = VirtualBox(s.vmname, s.vm_dir, s.data_dir,
+                   vboxmanage=vboxmanage, temp_dir=s.temp_dirpath)
+
+    if bird['vmtype'] == 'winxp':
+        h = WindowsXP()
+    elif bird['vmtype'] == 'win7':
+        h = Windows7()
+    else:
+        log.error('Invalid Virtual Machine Type detected: %s', bird['vmtype'])
+        exit(1)
+
+    initialize_vm(m, s, h, clone=True)
+
+    m.attach_hd(bird['hdd_path'])
+
+    log.debug('Starting Virtual Machine, waiting for connect back.')
+    m.start_vm(visible=s.vm_visible)
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.bind((s.host_ip, s.host_port))
+    sock.listen(1)
+
+    # Wait at most five minutes, otherwise something is wrong.
+    sock.settimeout(5.0 * 60)
+
+    try:
+        guest, _ = sock.accept()
+        sock.close()
+    except socket.timeout:
+        log.error('The Virtual Machine hasn\'t replied yet after five '
+                  'minutes.. something is going wrong.')
+        exit(1)
+
+    log.info('Assigning IP address %s (mask %s, gateway %s)',
+             s.hostonly_ip, s.hostonly_mask, s.hostonly_gateway)
+
+    # Send the hostonly IP address, mask, and gateway.
+    guest.send('%s %s %s' % (s.hostonly_ip, s.hostonly_mask,
+                             s.hostonly_gateway))
+
+    # TODO Catch the correct exception.
+    try:
+        guest.close()
+    except:
+        pass
+
+    # Wait for the host to get up and running.
+    wait_for_host(s.hostonly_ip)
+
+    log.debug('Taking a snapshot of the current state.')
+    m.snapshot('vmcloak', 'Snapshot created by VM Cloak.')
+
+    log.debug('Powering off the virtual machine.')
+    m.stopvm()
+
+    if s.register_cuckoo:
+        register_cuckoo(hostonly_ip=s.hostonly_ip, tags=s.tags,
+                        vmname=s.vmname, cuckoo_dirpath=s.cuckoo)
+
+if __name__ == '__main__':
+    main()
