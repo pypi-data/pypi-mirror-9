@@ -1,0 +1,35 @@
+import os
+from setuptools import setup, find_packages
+
+version = "0.2.2"
+url = 'https://github.com/denniskempin/safetynet'
+description = ("Type documentation and checking for python")
+
+setup(name='safetynet',
+      author="Dennis Kempin",
+      author_email="denniskempin@chromium.org",
+      url=url,
+      description=description,
+      long_description="",
+      keywords="type checking, documentation",
+      license="MIT",
+
+      classifiers=[
+        'Development Status :: 3 - Alpha',
+        'Intended Audience :: Developers',
+        'License :: OSI Approved :: MIT License',
+        'Topic :: Software Development :: Documentation',
+        'Topic :: Software Development :: Testing',
+        'Programming Language :: Python :: 2.7',
+      ],
+
+      version=version,
+      download_url='%s/tarball/%s' % (url, version),
+
+      py_modules=['safetynet'],
+      package_data={'': ['README.md']},
+      include_package_data=True,
+      install_requires=[],
+      tests_require=['nose2'],
+      entry_points={},
+)
