@@ -1,0 +1,50 @@
+# -*- mode: makefile; coding: utf-8 -*-
+
+POLINT := $(BINDIR)polint
+PYBABEL := $(BINDIR)pybabel
+POBUGSADDR := i18n@example.com
+POCOPYRIGHT := "John Doe"
+PBEXTRACT = $(PYBABEL) extract --project={{project}} \
+			       --version=$(VERSION) \
+			       --add-comments=TRANSLATORS: \
+			       --msgid-bugs-address=$(POBUGSADDR) \
+			       --copyright-holder=$(POCOPYRIGHT)
+LOCALEDIR := $(SRCDIR)/locale
+PBUPDATE := $(PYBABEL) update --output-dir $(LOCALEDIR) --previous
+PBCOMPILE := $(PYBABEL) compile --directory $(LOCALEDIR) --statistics
+PBINIT := $(PYBABEL) init --output-dir $(LOCALEDIR)
+PBCLIENT_DOMAIN := {{package}}-client
+PBCLIENT_MAP := $(LOCALEDIR)/$(PBCLIENT_DOMAIN).cfg
+PBCLIENT_POT := $(LOCALEDIR)/$(PBCLIENT_DOMAIN).pot
+PBCLIENT_MOs := $(patsubst %.po,%.mo,$(wildcard $(LOCALEDIR)/*/LC_MESSAGES/*-client.po))
+PBSERVER_DOMAIN := {{package}}-server
+PBSERVER_MAP := $(LOCALEDIR)/$(PBSERVER_DOMAIN).cfg
+PBSERVER_POT := $(LOCALEDIR)/$(PBSERVER_DOMAIN).pot
+PBSERVER_MOs := $(patsubst %.po,%.mo,$(wildcard $(LOCALEDIR)/*/LC_MESSAGES/*-server.po))
+
+.PHONY: update-catalogs
+update-catalogs:
+	$(PBEXTRACT) --mapping $(PBCLIENT_MAP) --output $(PBCLIENT_POT) $(SRCDIR)
+	$(PBEXTRACT) --mapping $(PBSERVER_MAP) --output $(PBSERVER_POT) $(SRCDIR)
+	$(PBUPDATE) --domain $(PBCLIENT_DOMAIN) --input-file $(PBCLIENT_POT)
+	$(PBUPDATE) --domain $(PBSERVER_DOMAIN) --input-file $(PBSERVER_POT)
+
+%-client.mo: %-client.po
+	$(PBCOMPILE) --domain $(PBCLIENT_DOMAIN)
+
+%-server.mo: %-server.po
+	$(PBCOMPILE) --domain $(PBSERVER_DOMAIN)
+
+.PHONY: compile-catalogs
+compile-catalogs: $(PBCLIENT_MOs) $(PBSERVER_MOs)
+
+.PHONY: init-catalog-%
+init-catalog-%:
+	$(PBINIT) --locale $(@:init-catalog-%=%) --domain $(PBCLIENT_DOMAIN) \
+		  --input-file $(LOCALEDIR)/$(PBCLIENT_DOMAIN).pot
+	$(PBINIT) --locale $(@:init-catalog-%=%) --domain $(PBSERVER_DOMAIN) \
+		  --input-file $(LOCALEDIR)/$(PBSERVER_DOMAIN).pot
+
+.PHONY: lint
+lint::
+	@$(POLINT) $(LOCALEDIR)/*/LC_MESSAGES/*.po
