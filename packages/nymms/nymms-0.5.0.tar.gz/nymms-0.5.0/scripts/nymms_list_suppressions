@@ -1,0 +1,65 @@
+#!/usr/bin/env python
+
+"""CLI tool to report on reactor suppression filters."""
+
+import csv
+import sys
+from textwrap import TextWrapper
+
+from nymms.utils import cli
+from nymms.suppress.sdb_suppress import SDBSuppressionManager
+from nymms.config import config
+
+import arrow
+
+
+parser = cli.NymmsCommandArgs(__doc__)
+parser.add_argument('-f', '--format', dest='format', default='pretty',
+                    choices=('csv', 'pretty'),
+                    help='Output format. Choices: %(choices)s. Default: '
+                         '%(default)s')
+parser.add_argument('-a', '--all', dest='show_all', action='store_true',
+                    help='Show all matching suppression filters, even '
+                         'inactive ones')
+
+args = parser.parse_args()
+logger = cli.setup_logging(args.verbose)
+
+config.load_config(args.config)
+
+now = arrow.get()
+
+region = config.settings['region']
+cache_timeout = config.settings['suppress']['cache_timeout']
+domain = config.settings['suppress']['domain']
+
+suppress = SDBSuppressionManager(region, cache_timeout, domain)
+
+result, next_token = suppress.get_suppressions(None, args.show_all)
+if args.format == 'csv':
+    print "regex,created,expires,userid,ipaddr,comment,rowkey,active"
+
+for item in result:
+    if item.expires < now and not args.show_all:
+        continue
+
+    if args.format == 'pretty':
+        comment_wrapper = TextWrapper(initial_indent='    comment: ',
+                                      subsequent_indent='             ')
+        print "regex: '%s'" % item.regex
+        print "    rowkey: %s" % item.rowkey
+        print "    created: %s (%d)" % (item.created,
+                                        item.created.timestamp)
+        print "             %s" % (item.created.humanize())
+        print "    expires: %s (%d)" % (item.expires,
+                                        item.expires.timestamp)
+        print "             %s" % (item.expires.humanize())
+        print "    author: %s@%s" % (item.userid, item.ipaddr)
+        print "    state: %s" % item.state
+        print '\n'.join(comment_wrapper.wrap(item.comment))
+        print
+    elif args.format == 'csv':
+        writer = csv.writer(sys.stdout)
+        writer.writerow([item.regex, item.created, item.expires,
+                        item.userid, item.ipaddr, item.comment, item.rowkey,
+                        item.active])
