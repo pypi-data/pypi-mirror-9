@@ -1,0 +1,119 @@
+#!/usr/bin/env python2
+
+import fcntl
+import getopt
+import os
+import sys
+
+try:
+    import ConfigParser as configparser
+except ImportError:
+    import configparser
+
+import fzsl
+
+__default_config_path__ = os.path.join(
+    sys.prefix,
+    'share',
+    'fzsl',
+    'fzsl.conf')
+
+__usage__ = """
+fzsl [ARGUMENTS]
+
+Fuzzy Shell -  Launch a curses window to perform
+fuzzy matching.
+
+ARGUMENTS:
+    -h, --help              This screen
+    -c, --config [FILE]     Configuration file
+    -r, --rule [RULE]       Rule to use for scanning
+
+CONFIGURATION FILE:
+    fzsl will use ~/.config/fzslrc if it exists, otherwise
+    %s will be used.
+""" % (__default_config_path__,)
+
+def read_config(path=None):
+    parser = configparser.RawConfigParser(allow_no_value=True)
+
+    if path is None:
+        path = os.path.expanduser('~/.config/fzslrc')
+        if not os.path.exists(path):
+            path = __default_config_path__
+
+    parser.read(path)
+    return parser
+
+def build_scanners(parser):
+    scanners = []
+    for section in parser.sections():
+        if section == 'fzsl':
+            continue
+        scanners.append(fzsl.scanner_from_configparser(section, parser))
+
+    scanners.sort()
+    scanners.reverse()
+    return scanners
+
+def pick_scanner(scanners):
+    cwd = os.getcwd()
+    avail = [scanner for scanner in scanners if scanner.is_suitable(cwd)]
+    if len(avail) == 0:
+        return fzsl.SimpleScanner('default', 'find -L . || true')
+    else:
+        return avail[0]
+
+
+def main():
+    try:
+        opts, args = getopt.getopt(
+                sys.argv[1:],
+                'c:hr:',
+                ['config=', 'help', 'rule='])
+    except getopt.GetoptError as err:
+        print(err)
+        sys.exit(1)
+
+    config = None
+    rule = None
+
+    for o, a in opts:
+        if o in ('-c', '--config'):
+            config = a
+        elif o in ('-h', '--help'):
+            print(__usage__)
+            sys.exit(0)
+        elif o in ('-r', '--rule'):
+            rule = a
+
+    parser = read_config(config)
+
+    if not sys.stdin.isatty():
+        # Create a scanner that simply has the list of provided paths
+        paths = [p.strip().decode('UTF-8') for p in sys.stdin]
+        scanner = fzsl.StaticScanner(paths)
+
+        # If input is piped in via stdin ncurses will receive bad input and
+        # crash. To avoid that, we reopen the terminal.
+        f = open("/dev/tty")
+        os.dup2(f.fileno(), 0)
+
+    elif rule is None:
+        scanners = build_scanners(parser)
+        scanner = pick_scanner(scanners)
+    else:
+        try:
+            scanner = fzsl.scanner_from_configparser(rule, parser)
+        except configparser.NoSectionError:
+            print('Rule "%s" is not defined' % (rule,))
+            sys.exit(1)
+
+
+    with fzsl.ncurses() as scr:
+        ui = fzsl.SimplePager(scr, scanner)
+        result = ui.run()
+    sys.stdout.write(result.strip())
+
+if __name__ == '__main__':
+    main()
