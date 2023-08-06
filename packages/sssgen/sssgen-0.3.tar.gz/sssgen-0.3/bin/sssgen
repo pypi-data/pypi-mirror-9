@@ -1,0 +1,181 @@
+#!/usr/bin/env python
+
+import argparse
+import mako.lookup
+import mako.template
+import os
+import os.path
+import re
+import SimpleHTTPServer
+import SocketServer
+import shutil
+import tempfile
+import yaml
+
+parser = argparse.ArgumentParser(description='generate a static site')
+parser.add_argument('--debug', action='store_true')
+parser.add_argument('--input', default=os.getcwd())
+parser.add_argument('--output', default=tempfile.mkdtemp())
+parser.add_argument('--serve', action='store_true')
+args = parser.parse_args()
+
+config = {
+    'ignore_regexes': []
+}
+try:
+    config = dict(config.items() + yaml.load(open('_config.yaml').read()).items())
+except IOError:
+    pass
+
+assert not os.listdir(args.output), 'output directory not empty'
+
+templates_dir = tempfile.mkdtemp()
+if args.debug:
+    print 'intermediate templates dir is %s' % templates_dir
+
+def read_and_strip_front_matter(fn):
+    f = open(fn)
+    y = {}
+    if f.readline() == '---\n':
+        s = ''
+        while True:
+            line = f.readline()
+            if line == '---\n':
+                break
+            s += line
+        y = yaml.load(s)
+    # If given the empty string, the yaml library considers that to be None,
+    # which is not useful for us.
+    if y is None:
+        y = {}
+    return y, f.read()
+
+global_tree = {}
+mako_templates_to_render = []
+output_path_to_yaml = {}
+
+# Paths relative to `args.input`, with the cumulative base YAML.
+dirs = [([''], {})]
+
+while dirs:
+    direc_list, inherited_yaml = dirs.pop(0)
+    direc = os.path.join(*direc_list)
+    input_dir = os.path.join(args.input, direc)
+
+    # Find `_inherit.yaml` first and apply it to the base YAML, since it
+    # applies to everything in and under this directory.
+    filenames = os.listdir(input_dir)
+    if '_inherit.yaml' in filenames:
+        more_inherited_yaml = yaml.load(open(os.path.join(input_dir, '_inherit.yaml')).read())
+        inherited_yaml = dict(inherited_yaml.items() + more_inherited_yaml.items())
+
+    for filename in filenames:
+        input_path = os.path.join(input_dir, filename)
+        output_path = os.path.join(args.output, direc, filename)
+
+        # Ignore anything starting with '_'.
+        if filename.startswith('_'):
+            if args.debug:
+                print "ignoring '%s', starts with _" % input_path
+
+        # If configured, ignore things.
+        elif any(re.search(r, filename) for r in config['ignore_regexes']):
+            if args.debug:
+                print "ignoring '%s', is matched by config['ignore_regexes']" % input_path
+
+        # Make a directory.
+        elif os.path.isdir(input_path):
+            if args.debug:
+                print 'mkdir %s' % output_path
+            os.mkdir(output_path)
+            dirs.append((direc_list + [filename], inherited_yaml))
+
+        elif os.path.isfile(input_path):
+
+            # Initially, partial_page_yaml is just the intrinsic yaml.
+            _, ext = os.path.splitext(filename)
+            if ext == '.mako':
+                filename = filename[:-len(ext)]
+            partial_page_yaml = {'url': os.path.join(direc, filename)}
+
+            if ext in ['.mako', '.mako_layout']:
+                # Strip the front matter and maybe insert <%inherit/> tag.
+                front_matter_yaml, source = read_and_strip_front_matter(input_path)
+                partial_page_yaml = dict(inherited_yaml.items() + front_matter_yaml.items() + partial_page_yaml.items())
+                if 'layout' in partial_page_yaml:
+                    source = '<%%inherit file="/%s"/>\n%s' % (partial_page_yaml['layout'], source)
+                    partial_page_yaml['layout'] = os.path.join(args.output, partial_page_yaml['layout'])
+                try:
+                    os.makedirs(os.path.join(templates_dir, direc))
+                except OSError:
+                    pass
+                f = open(os.path.join(templates_dir, direc, filename), 'w')
+                f.write(source)
+                f.close()
+
+                # If a .mako, defer rendering until later.
+                if ext == '.mako':
+                    output_path = output_path[:-len(ext)]
+                    mako_templates_to_render.append((os.path.join(direc, filename), output_path))
+
+                output_path_to_yaml[output_path] = partial_page_yaml
+            else:
+                # If it's any other kind of file, just copy it over.
+                if args.debug:
+                    print 'copying %s to %s' % (input_path, output_path)
+                shutil.copyfile(input_path, output_path)
+
+            # Any concrete file gets added to the 'tree', which is a nested dict.
+            if ext != '.mako_layout':
+                t = global_tree
+                for part in filter(None, os.path.normpath(output_path[len(args.output):]).split(os.sep)):
+                    if part not in t:
+                        t[part] = {}
+                    t = t[part]
+
+                # The leaf (file) gets the yaml,
+                t.clear()
+                for k, v in partial_page_yaml.items():
+                    t[k] = v
+        else:
+            assert False, 'what is this: %s' % input_path
+
+# Template rendering deferred until now so that each template:
+#   . gets the full file `tree` in the render-data,
+#   . has been rewritten with <%inherit/> tags,
+#   . has had its front matter stripped.
+for path, output_path in mako_templates_to_render:
+
+    # The final page yaml is the aggregation of each layout YAML, and then the
+    # {inherited, front matter, and intrinsic} YAML.
+    page_yaml = {}
+    y = output_path_to_yaml[output_path]
+    visited_layouts = [output_path]
+    while True:
+        page_yaml = dict(y.items() + page_yaml.items())
+        if 'layout' in y:
+            if y['layout'] in visited_layouts:
+                raise Exception('detected a loop in layout resolution: %s' % visited_layouts)
+            visited_layouts.append(y['layout'])
+            y = output_path_to_yaml[y['layout']]
+        else:
+            break
+
+    if args.debug:
+        print 'generating %s from %s, page_yaml=%s' % (output_path, os.path.join(templates_dir, path), page_yaml)
+
+    lookup = mako.lookup.TemplateLookup(directories=[templates_dir], input_encoding='utf-8', output_encoding='utf-8')
+    data = {
+        'tree': global_tree,
+        'page': page_yaml
+    }
+    f = open(output_path, 'w')
+    f.write(lookup.get_template(path).render(**data))
+    f.close()
+
+if args.serve:
+    print 'serving at http://localhost:8000'
+    os.chdir(args.output)
+    SocketServer.TCPServer.allow_reuse_address = True
+    httpd = SocketServer.TCPServer(('localhost', 8000), SimpleHTTPServer.SimpleHTTPRequestHandler)
+    httpd.serve_forever()
