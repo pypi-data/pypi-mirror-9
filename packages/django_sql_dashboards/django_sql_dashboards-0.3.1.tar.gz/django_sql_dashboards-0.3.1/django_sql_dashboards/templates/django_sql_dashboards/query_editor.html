@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}
+Query Editor - {{query.title}}
+{% endblock %}
+{% block body %}
+
+<script type="text/javascript" src="{{SQL_DASHBOARDS_PREFIX}}/static/prism.js"></script>
+<link href="{{SQL_DASHBOARDS_PREFIX}}/static/prism.css" rel="stylesheet">
+
+<div class="container">
+  <!-- <h1>Test prism</h1> -->
+  <div class="row">
+    <div class="col-lg-4 span4">
+      {% load crispy_forms_tags %}
+      {% crispy form %}
+      <div class="row">
+        <div id="query_status" class="col-lg-6 span6"></div>
+      </div>
+    </div>
+
+    <div class="col-lg-8 span8">
+      <pre id="id_query_pre"><code class="language-sql"></code></pre>
+      <ul class="nav nav-tabs">
+        <li class="active"><a href="#id_query_{{query.id}}" data-toggle="tab">Chart</a></li>
+        <li><a href="#data" data-toggle="tab">Data</a></li>
+      </ul>
+
+      <div class="tab-content">
+        <div class="tab-pane active" id="id_query_{{query.id}}">
+          {% if query.obj %}
+          {{query.toHighcharts}}
+          {% elif query.error %}
+          <br><p><span class="label label-danger">Impossible to load query : {{query.error}}</span></p>
+          {% else %}
+          <br><p><span class="label label-default">Press run to execute the query</span></p>
+          {% endif %}
+        </div>
+        <!-- <div id="my_chart" class="row"></div> -->
+
+        <div class="tab-pane" id="data">
+          {% include "django_sql_dashboards/table.html" %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script type="text/javascript">
+  var prev_sql_query_1 = undefined;
+  var prev_sql_query_2 = undefined;
+
+  function parse_pre()
+  {
+    sql_query = $("#id_query")[0].value;
+    if ((sql_query == prev_sql_query_1) && (sql_query != prev_sql_query_2) && sql_query.length)
+    {
+      prev_sql_query_2 = sql_query;
+      $("#id_query_pre code").html(sql_query);
+      Prism.highlightAll();
+      $.ajax({
+        url: "{{SQL_DASHBOARDS_PREFIX}}/test_query?db=" + $("#id_db :selected")[0].value + "&query=" + encodeURIComponent(sql_query),
+        statusCode:{
+          200:function(data) {
+            $("button[name='run']").show();
+            $("button[name='save']").show();
+            $("#id_query").parent().removeClass("has-error").addClass("has-success");
+            $("#id_query").parent().find("span").remove();
+          },
+          202:function(data) {
+            $("button[name='run']").hide();
+            $("button[name='save']").hide();
+            $("#id_query").parent().removeClass("has-success").addClass("has-error");
+            $("#id_query").parent().find("span").remove();
+            $("#id_query").parent().append("<span class=\"help-block\">" + data + "</span>");
+          }
+        }
+      });
+    }
+    prev_sql_query_1 = sql_query;
+    setTimeout(parse_pre, 1000);
+  }
+  $(document).ready(function() {
+    parse_pre();
+    $(".collapse").collapse('hide');
+  });
+</script>
+{% endblock %}
