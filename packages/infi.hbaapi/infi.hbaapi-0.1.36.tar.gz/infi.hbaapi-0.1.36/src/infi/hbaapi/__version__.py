@@ -1,0 +1,10 @@
+__version__ = "0.1.36"
+__git_commiter_name__ = "Guy Rozendorn"
+__git_commiter_email__ = "guy@rzn.co.il"
+__git_branch__ = '(detached from v0.1.36)'
+__git_remote_tracking_branch__ = '(No remote tracking)'
+__git_remote_url__ = '(Not remote tracking)'
+__git_head_hash__ = '4022d6d9bbb41b40ce321bc0a9a08ec5cad48d11'
+__git_head_subject__ = 'Finished release v0.1.36.'
+__git_head_message__ = '* release/v0.1.36:\n  add get_ports shortcut\n  remove redundant code\n  HPT-1269 workaround for hbaapi stufff in the cisco fnic driver on Windows'
+__git_dirty_diff__ = ''
