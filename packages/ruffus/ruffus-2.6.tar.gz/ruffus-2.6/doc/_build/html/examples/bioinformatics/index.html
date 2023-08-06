@@ -1,0 +1,488 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>Construction of a simple pipeline to run BLAST jobs &mdash; ruffus 2.6 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/ruffus.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '2.6',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <script type="text/javascript" src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    <link rel="top" title="ruffus 2.6 documentation" href="../../index.html" />
+    <link rel="next" title="Part 2: A slightly more practical pipeline to run blasts jobs" href="part2.html" />
+    <link rel="prev" title="Why Ruffus?" href="../../why_ruffus.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="part2.html" title="Part 2: A slightly more practical pipeline to run blasts jobs"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="../../why_ruffus.html" title="Why Ruffus?"
+             accesskey="P">previous</a> |</li>
+        Ruffus v. 2.6
+            <li><a href="../../index.html">Home</a> | </li>
+            <li><a href="../../contents.html">Contents</a> | </li>
+            <li><a href="../../installation.html">Install</a>  | </li>
+            <li><a href="../../tutorials/new_tutorial/introduction.html">Manual</a>  / </li>
+            <li><a href="../../tutorials/new_tutorial/manual_contents.html">(TOC)</a>  | </li>
+            <li><a href="../../faq.html">FAQ</a>  | </li>
+            <li><a href="../../cheatsheet.html">Cheat sheet</a> | </li>
+            <li><a href="../../tutorials/new_tutorial/command_line.html">Command Line</a> | </li>
+            <li><a href="../../gallery.html">Gallery</a> |  </li>
+            <li><a href="../../new_syntax.html">New syntax in v 2.6</a> | </li>
+            <li><a href="../../history.html">Latest Changes</a> &raquo; </li>
+ 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="construction-of-a-simple-pipeline-to-run-blast-jobs">
+<span id="examples-bioinformatics-part1"></span><h1>Construction of a simple pipeline to run BLAST jobs<a class="headerlink" href="#construction-of-a-simple-pipeline-to-run-blast-jobs" title="Permalink to this headline">¶</a></h1>
+<div class="section" id="overview">
+<h2>Overview<a class="headerlink" href="#overview" title="Permalink to this headline">¶</a></h2>
+<blockquote>
+<div><p>This is a simple example to illustrate the convenience <strong>Ruffus</strong>
+brings to simple tasks in bioinformatics.</p>
+<blockquote>
+<div><ol class="arabic simple">
+<li><strong>Split</strong> a problem into multiple fragments that can be</li>
+<li><strong>Run in parallel</strong> giving partial solutions that can be</li>
+<li><strong>Recombined</strong> into the complete solution.</li>
+</ol>
+</div></blockquote>
+<p>The example code runs a <a class="reference external" href="http://blast.ncbi.nlm.nih.gov/">ncbi</a>
+<a class="reference external" href="http://en.wikipedia.org/wiki/BLAST">blast</a> search for four sequences
+against the human <a class="reference external" href="http://en.wikipedia.org/wiki/RefSeq">refseq</a> protein sequence database.</p>
+<blockquote>
+<div><ol class="arabic simple">
+<li><strong>Split</strong> each of the four sequences into a separate file.</li>
+<li><strong>Run in parallel</strong> Blastall on each sequence file</li>
+<li><strong>Recombine</strong> the BLAST results by simple concatenation.</li>
+</ol>
+</div></blockquote>
+<p>In real life,</p>
+<blockquote>
+<div><ul class="simple">
+<li><a class="reference external" href="http://blast.ncbi.nlm.nih.gov/">BLAST</a> already provides support for multiprocessing</li>
+<li>Sequence files would be split in much larger chunks, with many sequences</li>
+<li>The jobs would be submitted to large computational farms (in our case, using the SunGrid Engine).</li>
+<li>The High Scoring Pairs (HSPs) would be parsed / filtered / stored in your own formats.</li>
+</ul>
+</div></blockquote>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p>This bioinformatics example is intended to showcase <em>some</em> of the features of Ruffus.</p>
+<blockquote class="last">
+<div><ol class="arabic simple">
+<li>See the <a class="reference internal" href="../../tutorials/new_tutorial/introduction.html#new-manual-introduction"><em>manual</em></a> to learn about the various features in Ruffus.</li>
+</ol>
+</div></blockquote>
+</div>
+</div></blockquote>
+</div>
+<div class="section" id="prerequisites">
+<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="ruffus">
+<h3>1. Ruffus<a class="headerlink" href="#ruffus" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>To install Ruffus on most systems with python installed:</p>
+<blockquote>
+<div><div class="highlight-python"><div class="highlight"><pre>easy_install -U ruffus
+</pre></div>
+</div>
+</div></blockquote>
+<p>Otherwise, <a class="reference external" href="http://code.google.com/p/ruffus/downloads/list">download</a> Ruffus and run:</p>
+<blockquote>
+<div><div class="highlight-python"><div class="highlight"><pre>tar -xvzf ruffus-xxx.tar.gz
+cd ruffus-xxx
+./setup install
+</pre></div>
+</div>
+</div></blockquote>
+<p>where xxx is the latest Ruffus version.</p>
+</div></blockquote>
+</div>
+<div class="section" id="blast">
+<h3>2. BLAST<a class="headerlink" href="#blast" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div>This example assumes that the <a class="reference external" href="http://blast.ncbi.nlm.nih.gov/">BLAST</a> <tt class="docutils literal"><span class="pre">blastall</span></tt> and <tt class="docutils literal"><span class="pre">formatdb</span></tt> executables are
+installed and on the search path. Otherwise download from <a class="reference external" href="http://blast.ncbi.nlm.nih.gov/Blast.cgi?CMD=Web&amp;PAGE_TYPE=BlastDocs&amp;DOC_TYPE=Download">here</a>.</div></blockquote>
+</div>
+<div class="section" id="human-refseq-sequence-database">
+<h3>3. human refseq sequence database<a class="headerlink" href="#human-refseq-sequence-database" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>We also need to download the human refseq sequence file and format the ncbi database:</p>
+<blockquote>
+<div><div class="highlight-python"><div class="highlight"><pre>wget ftp://ftp.ncbi.nih.gov/refseq/H_sapiens/mRNA_Prot/human.protein.faa.gz
+gunzip human.protein.faa.gz
+
+formatdb -i human.protein.faa
+</pre></div>
+</div>
+</div></blockquote>
+</div></blockquote>
+</div>
+<div class="section" id="test-sequences">
+<h3>4. test sequences<a class="headerlink" href="#test-sequences" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div>Query sequences in FASTA format can be found in <a class="reference external" href="../../_static/examples/bioinformatics/original.fa">original.fa</a></div></blockquote>
+</div>
+</div>
+<div class="section" id="code">
+<h2>Code<a class="headerlink" href="#code" title="Permalink to this headline">¶</a></h2>
+<blockquote>
+<div>The code for this example can be found <a class="reference internal" href="part1_code.html#examples-bioinformatics-part1-code"><em>here</em></a>  and
+pasted into the python command shell.</div></blockquote>
+</div>
+<div class="section" id="step-1-splitting-up-the-query-sequences">
+<h2>Step 1. Splitting up the query sequences<a class="headerlink" href="#step-1-splitting-up-the-query-sequences" title="Permalink to this headline">¶</a></h2>
+<blockquote>
+<div><p>We want each of our sequences in the query file <a class="reference external" href="../../_static/examples/bioinformatics/original.fa">original.fa</a> to be placed
+in a separate files named <tt class="docutils literal"><span class="pre">XXX.segment</span></tt> where <tt class="docutils literal"><span class="pre">XXX</span></tt> = 1 -&gt; the number of sequences.</p>
+<blockquote>
+<div><div class="highlight-python"><div class="highlight"><pre><span class="n">current_file_index</span> <span class="o">=</span> <span class="mi">0</span>
+<span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="nb">open</span><span class="p">(</span><span class="s">&quot;original.fa&quot;</span><span class="p">):</span>
+    <span class="c"># start a new file for each accession line</span>
+    <span class="k">if</span> <span class="n">line</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="s">&#39;&gt;&#39;</span><span class="p">:</span>
+        <span class="n">current_file_index</span> <span class="o">+=</span> <span class="mi">1</span>
+        <span class="n">current_file</span> <span class="o">=</span> <span class="nb">open</span><span class="p">(</span><span class="s">&quot;</span><span class="si">%d</span><span class="s">.segment&quot;</span> <span class="o">%</span> <span class="n">current_file_index</span><span class="p">,</span> <span class="s">&quot;w&quot;</span><span class="p">)</span>
+    <span class="n">current_file</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>To use this in a pipeline, we only need to wrap this in a function, &#8220;decorated&#8221; with the Ruffus
+keyword <a class="reference internal" href="../../tutorials/new_tutorial/split.html#new-manual-split"><em>&#64;split</em></a>:</p>
+<blockquote>
+<div><img alt="../../_images/examples_bioinformatics_split.jpg" src="../../_images/examples_bioinformatics_split.jpg" />
+</div></blockquote>
+<div class="line-block">
+<div class="line">This indicates that we are splitting up the input file <a class="reference external" href="../../_static/examples/bioinformatics/original.fa">original.fa</a> into however many
+<tt class="docutils literal"><span class="pre">*.segment</span></tt> files as it takes.</div>
+<div class="line">The pipelined function itself takes two arguments, for the input and output.</div>
+</div>
+<p>We shall see later this simple <a class="reference internal" href="../../tutorials/new_tutorial/split.html#new-manual-split"><em>&#64;split</em></a> decorator already gives all the benefits of:</p>
+<blockquote>
+<div><ul class="simple">
+<li>Dependency checking</li>
+<li>Flowchart printing</li>
+</ul>
+</div></blockquote>
+</div></blockquote>
+</div>
+<div class="section" id="step-2-run-blast-jobs-in-parallel">
+<h2>Step 2. Run BLAST jobs in parallel<a class="headerlink" href="#step-2-run-blast-jobs-in-parallel" title="Permalink to this headline">¶</a></h2>
+<blockquote>
+<div><p>Assuming that blast is already installed, sequence matches can be found with this python
+code:</p>
+<blockquote>
+<div><div class="highlight-python"><div class="highlight"><pre><span class="n">os</span><span class="o">.</span><span class="n">system</span><span class="p">(</span><span class="s">&quot;blastall -p blastp -d human.protein.faa -i 1.segment &gt; 1.blastResult&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>To pipeline this, we need to simply wrap in a function, decorated with the <strong>Ruffus</strong>
+keyword <a class="reference internal" href="../../tutorials/new_tutorial/transform.html#new-manual-transform"><em>&#64;transform</em></a>.</p>
+<blockquote>
+<div><img alt="../../_images/examples_bioinformatics_transform.jpg" src="../../_images/examples_bioinformatics_transform.jpg" />
+</div></blockquote>
+<p>This indicates that we are taking all the output files from the previous <tt class="docutils literal"><span class="pre">splitFasta</span></tt>
+operation (<tt class="docutils literal"><span class="pre">*.segment</span></tt>) and <a class="reference internal" href="../../tutorials/new_tutorial/transform.html#new-manual-transform"><em>&#64;transform</em></a>-ing each to a new file with the <tt class="docutils literal"><span class="pre">.blastResult</span></tt>
+suffix. Each of these transformation operations can run in parallel if specified.</p>
+</div></blockquote>
+</div>
+<div class="section" id="step-3-combining-blast-results">
+<h2>Step 3. Combining BLAST results<a class="headerlink" href="#step-3-combining-blast-results" title="Permalink to this headline">¶</a></h2>
+<blockquote>
+<div><dl class="docutils">
+<dt>The following python code will concatenate the results together</dt>
+<dd><div class="first last highlight-python"><div class="highlight"><pre><span class="n">output_file</span> <span class="o">=</span> <span class="nb">open</span><span class="p">(</span><span class="s">&quot;final.blast_results&quot;</span><span class="p">,</span>  <span class="s">&quot;w&quot;</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">glob</span><span class="p">(</span><span class="s">&quot;*.blastResults&quot;</span><span class="p">):</span>
+    <span class="n">output_file</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="nb">open</span><span class="p">(</span><span class="n">i</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">())</span>
+</pre></div>
+</div>
+</dd>
+</dl>
+<p>To pipeline this, we need again to decorate with the <strong>Ruffus</strong> keyword <a class="reference internal" href="../../tutorials/new_tutorial/merge.html#new-manual-merge"><em>&#64;merge</em></a>.</p>
+<blockquote>
+<div><img alt="../../_images/examples_bioinformatics_merge.jpg" src="../../_images/examples_bioinformatics_merge.jpg" />
+</div></blockquote>
+<p>This indicates that we are taking all the output files from the previous <tt class="docutils literal"><span class="pre">runBlast</span></tt>
+operation (<tt class="docutils literal"><span class="pre">*.blastResults</span></tt>) and <a class="reference internal" href="../../tutorials/new_tutorial/merge.html#new-manual-merge"><em>&#64;merge</em></a>-ing them to the new file <tt class="docutils literal"><span class="pre">final.blast_results</span></tt>.</p>
+</div></blockquote>
+</div>
+<div class="section" id="step-4-running-the-pipeline">
+<h2>Step 4. Running the pipeline<a class="headerlink" href="#step-4-running-the-pipeline" title="Permalink to this headline">¶</a></h2>
+<blockquote>
+<div><p>We can run the completed pipeline using a maximum of 4 parallel processes by calling
+<a class="reference internal" href="../../pipeline_functions.html#pipeline-functions-pipeline-run"><em>pipeline_run</em></a> :</p>
+<blockquote>
+<div><div class="highlight-python"><div class="highlight"><pre><span class="n">pipeline_run</span><span class="p">([</span><span class="n">combineBlastResults</span><span class="p">],</span> <span class="n">verbose</span> <span class="o">=</span> <span class="mi">2</span><span class="p">,</span> <span class="n">multiprocess</span> <span class="o">=</span> <span class="mi">4</span><span class="p">)</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>Though we have only asked Ruffus to run <tt class="docutils literal"><span class="pre">combineBlastResults</span></tt>, it traces all the dependencies
+of this task and runs all the necessary parts of the pipeline.</p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">The full code for this example can be found  <a class="reference internal" href="part1_code.html#examples-bioinformatics-part1-code"><em>here</em></a>
+suitable for pasting into the python command shell.</p>
+</div>
+<p>The <tt class="docutils literal"><span class="pre">verbose</span></tt> parameter causes the following output to be printed to stderr as the pipeline
+runs:</p>
+<blockquote>
+<div><div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="n">pipeline_run</span><span class="p">([</span><span class="n">combineBlastResults</span><span class="p">],</span> <span class="n">verbose</span> <span class="o">=</span> <span class="mi">2</span><span class="p">,</span> <span class="n">multiprocess</span> <span class="o">=</span> <span class="mi">4</span><span class="p">)</span>
+<span class="go">    Job = [original.fa -&gt; *.segment] completed</span>
+<span class="go">Completed Task = splitFasta</span>
+<span class="go">    Job = [1.segment -&gt; 1.blastResult] completed</span>
+<span class="go">    Job = [3.segment -&gt; 3.blastResult] completed</span>
+<span class="go">    Job = [2.segment -&gt; 2.blastResult] completed</span>
+<span class="go">    Job = [4.segment -&gt; 4.blastResult] completed</span>
+<span class="go">Completed Task = runBlast</span>
+<span class="go">    Job = [[1.blastResult, 2.blastResult, 3.blastResult, 4.blastResult] -&gt; final.blast_results] completed</span>
+<span class="go">Completed Task = combineBlastResults</span>
+</pre></div>
+</div>
+</div></blockquote>
+</div></blockquote>
+</div>
+<div class="section" id="step-5-testing-dependencies">
+<h2>Step 5. Testing dependencies<a class="headerlink" href="#step-5-testing-dependencies" title="Permalink to this headline">¶</a></h2>
+<blockquote>
+<div><p>If we invoked <a class="reference internal" href="../../pipeline_functions.html#pipeline-functions-pipeline-run"><em>pipeline_run</em></a> again, nothing
+further would happen because the
+pipeline is now up-to-date. But what if the pipeline had not run to completion?</p>
+<p>We can simulate the failure of one of the <tt class="docutils literal"><span class="pre">blastall</span></tt> jobs by deleting its results:</p>
+<blockquote>
+<div><div class="highlight-python"><div class="highlight"><pre><span class="n">os</span><span class="o">.</span><span class="n">unlink</span><span class="p">(</span><span class="s">&quot;4.blastResult&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>Let us use the <a class="reference internal" href="../../pipeline_functions.html#pipeline-functions-pipeline-printout"><em>pipeline_printout</em></a>
+function to print out the dependencies of the pipeline at a high <tt class="docutils literal"><span class="pre">verbose</span></tt> level which
+will show both complete and incomplete jobs:</p>
+<blockquote>
+<div><div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="kn">import</span> <span class="nn">sys</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">pipeline_printout</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="p">[</span><span class="n">combineBlastResults</span><span class="p">],</span> <span class="n">verbose</span> <span class="o">=</span> <span class="mi">4</span><span class="p">)</span>
+
+<span class="go">________________________________________</span>
+<span class="go">Tasks which are up-to-date:</span>
+
+<span class="go">Task = splitFasta</span>
+<span class="go">    &quot;Split sequence file into as many fragments as appropriate depending on the size of</span>
+<span class="go">               original_fasta&quot;</span>
+
+
+<span class="go">________________________________________</span>
+<span class="go">Tasks which will be run:</span>
+
+<span class="go">Task = runBlast</span>
+<span class="go">    &quot;Run blast&quot;</span>
+<span class="go">       Job = [4.segment</span>
+<span class="go">             -&gt;4.blastResult]</span>
+<span class="go">         Job needs update: Missing file 4.blastResult</span>
+
+<span class="go">Task = combineBlastResults</span>
+<span class="go">    &quot;Combine blast results&quot;</span>
+<span class="go">       Job = [[1.blastResult, 2.blastResult, 3.blastResult, 4.blastResult]</span>
+<span class="go">             -&gt;final.blast_results]</span>
+<span class="go">         Job needs update: Missing file 4.blastResult</span>
+
+<span class="go">________________________________________</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>Only the parts of the pipeline which involve the missing BLAST result will be rerun.
+We can confirm this by invoking the pipeline.</p>
+<blockquote>
+<div><div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="n">pipeline_run</span><span class="p">([</span><span class="n">combineBlastResults</span><span class="p">],</span> <span class="n">verbose</span> <span class="o">=</span> <span class="mi">2</span><span class="p">,</span> <span class="n">multiprocess</span> <span class="o">=</span> <span class="mi">4</span><span class="p">)</span>
+
+<span class="go">    Job = [1.segment -&gt; 1.blastResult] unnecessary: already up to date</span>
+<span class="go">    Job = [2.segment -&gt; 2.blastResult] unnecessary: already up to date</span>
+<span class="go">    Job = [3.segment -&gt; 3.blastResult] unnecessary: already up to date</span>
+<span class="go">    Job = [4.segment -&gt; 4.blastResult] completed</span>
+<span class="go">Completed Task = runBlast</span>
+<span class="go">    Job = [[1.blastResult, 2.blastResult, 3.blastResult, 4.blastResult] -&gt; final.blast_results] completed</span>
+<span class="go">Completed Task = combineBlastResults</span>
+</pre></div>
+</div>
+</div></blockquote>
+</div></blockquote>
+</div>
+<div class="section" id="what-is-next">
+<h2>What is next?<a class="headerlink" href="#what-is-next" title="Permalink to this headline">¶</a></h2>
+<blockquote>
+<div>In the <a class="reference internal" href="part2.html#examples-bioinformatics-part2"><em>next (short) part</em></a>,
+we shall add some standard (boilerplate) code to
+turn this BLAST pipeline into a (slightly more) useful python program.</div></blockquote>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h3><a href="../../contents.html">Table Of Contents</a></h3>
+  <ul>
+<li><a class="reference internal" href="#">Construction of a simple pipeline to run BLAST jobs</a><ul>
+<li><a class="reference internal" href="#overview">Overview</a></li>
+<li><a class="reference internal" href="#prerequisites">Prerequisites</a><ul>
+<li><a class="reference internal" href="#ruffus">1. Ruffus</a></li>
+<li><a class="reference internal" href="#blast">2. BLAST</a></li>
+<li><a class="reference internal" href="#human-refseq-sequence-database">3. human refseq sequence database</a></li>
+<li><a class="reference internal" href="#test-sequences">4. test sequences</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#code">Code</a></li>
+<li><a class="reference internal" href="#step-1-splitting-up-the-query-sequences">Step 1. Splitting up the query sequences</a></li>
+<li><a class="reference internal" href="#step-2-run-blast-jobs-in-parallel">Step 2. Run BLAST jobs in parallel</a></li>
+<li><a class="reference internal" href="#step-3-combining-blast-results">Step 3. Combining BLAST results</a></li>
+<li><a class="reference internal" href="#step-4-running-the-pipeline">Step 4. Running the pipeline</a></li>
+<li><a class="reference internal" href="#step-5-testing-dependencies">Step 5. Testing dependencies</a></li>
+<li><a class="reference internal" href="#what-is-next">What is next?</a></li>
+</ul>
+</li>
+</ul>
+
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="../../why_ruffus.html"
+                        title="previous chapter">Why <em>Ruffus</em>?</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="part2.html"
+                        title="next chapter">Part 2: A slightly more practical pipeline to run blasts jobs</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="../../_sources/examples/bioinformatics/index.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+    
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+    <h3> Quick Reference:</h3>
+    <ul>
+        <h4><a href="../../decorators/decorators.html#core">Core:</a></h4>   
+        <ul>
+            <li><a href="../../decorators/originate.html">@originate</a>                           </li>
+            <li><a href="../../decorators/split.html">@split</a>                                   </li>
+            <li><a href="../../decorators/transform.html">@transform</a>                           </li>
+            <li><a href="../../decorators/merge.html">@merge</a>                                   </li>
+        </ul>
+
+        <h4><a href="../../decorators/decorators.html#advanced">Advanced</a></h4>   
+        <ul>
+            <li><a href="../../decorators/subdivide.html">@subdivide</a>                           </li>
+            <li><a href="../../decorators/transform_ex.html">@transform (add_inputs) </a>          </li>
+            <li><a href="../../decorators/collate.html">@collate</a>                               </li>
+            <li><a href="../../decorators/collate_ex.html">@collate (add_inputs)</a>               </li>
+            <li><a href="../../decorators/graphviz.html">@graphviz</a>                             </li>
+            <li><a href="../../decorators/mkdir.html">@mkdir</a>                                   </li>
+            <li><a href="../../decorators/follows.html">@follows / mkdir</a>                       </li>
+            <li><a href="../../decorators/posttask.html">@posttask touch_file</a>                  </li>
+            <li><a href="../../decorators/active_if.html">@active_if</a>                           </li>
+            <li><a href="../../decorators/jobs_limit.html">@jobs_limit</a>                         </li>
+        </ul>
+    
+        <h4><a href="../../decorators/decorators.html#combinatorics">Combinatorial:</a></h4>   
+        <ul>
+            <li><a href="../../decorators/product.html">@product </a>                              </li>
+            <li><a href="../../decorators/permutations.html">@permutations </a>                    </li>
+            <li><a href="../../decorators/combinations.html">@combinations </a>                    </li>
+            <li><a href="../../decorators/combinations_with_replacement.html">@combinations_ _with_replacement </a>                    </li>
+        </ul>
+
+                        
+        <h4><a href="../../decorators/decorators.html#esoteric">Esoteric</a></h4>   
+        <ul>
+            <li><a href="../../decorators/files_ex.html">@files (on the fly)</a>                   </li>
+            <li><a href="../../decorators/parallel.html">@parallel</a>                             </li>
+            <li><a href="../../decorators/check_if_uptodate.html">@check_if_uptodate</a>           </li>
+        </ul>
+
+
+        <h4 ><a href="../../decorators/indicator_objects.html">Indicator objects</a></h4>
+        <h4 >Pipeline functions</h4>
+        <ul>
+            <li><a href="../../pipeline_functions.html#pipeline-functions-pipeline-run">pipeline_run</a>                       </li>
+            <li><a href="../../pipeline_functions.html#pipeline-functions-pipeline-printout">pipeline_printout</a>                      </li>
+            <li><a href="../../pipeline_functions.html#pipeline-functions-pipeline-printout-graph">pipeline_printout_graph</a>          </li>
+            <li><a href="../../pipeline_functions.html#pipeline-functions-pipeline-get-task-names">pipeline_get_task_names</a>          </li>
+            <li><a href="../../drmaa_wrapper_functions.html#drmaa-wrapper-functions-drmaa_wrapper-run_job">drmaa_wrapper.run_job</a>          </li>
+        </ul>
+
+         <a href="../../todo.html">Future plans</a>
+    </ul>
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="part2.html" title="Part 2: A slightly more practical pipeline to run blasts jobs"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="../../why_ruffus.html" title="Why Ruffus?"
+             >previous</a> |</li>
+        Ruffus v. 2.6
+            <li><a href="../../index.html">Home</a> | </li>
+            <li><a href="../../contents.html">Contents</a> | </li>
+            <li><a href="../../installation.html">Install</a>  | </li>
+            <li><a href="../../tutorials/new_tutorial/introduction.html">Manual</a>  / </li>
+            <li><a href="../../tutorials/new_tutorial/manual_contents.html">(TOC)</a>  | </li>
+            <li><a href="../../faq.html">FAQ</a>  | </li>
+            <li><a href="../../cheatsheet.html">Cheat sheet</a> | </li>
+            <li><a href="../../tutorials/new_tutorial/command_line.html">Command Line</a> | </li>
+            <li><a href="../../gallery.html">Gallery</a> |  </li>
+            <li><a href="../../new_syntax.html">New syntax in v 2.6</a> | </li>
+            <li><a href="../../history.html">Latest Changes</a> &raquo; </li>
+ 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2009-2013 Leo Goodstadt.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

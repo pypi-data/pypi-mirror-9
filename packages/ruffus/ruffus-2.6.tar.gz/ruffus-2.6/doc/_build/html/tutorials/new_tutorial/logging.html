@@ -1,0 +1,395 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta content="Ruffus is a Computation Pipeline library for python. It is open-sourced, powerful and user-friendly, and widely used in science and bioinformatics" name="description" />
+<meta content="python, pipeline, computation, cluster, Ruffus, bioinformatics, parallel' name='keywords" name="keywords" />
+<meta content="Leo Goodstadt" name="Author" />
+<meta content="Leo Goodstadt" name="Publisher" />
+<meta content="ruffus&#64;llew.org.uk" name="Email" />
+<meta content="index, follow" name="robots" />
+<meta content="en-uk" name="language" />
+<meta content="United Kingdom" name="country" />
+<meta content="Leo Goodstadt 2009-2014" name="copyright" />
+
+    <title>Chapter 15: Logging progress through a pipeline &mdash; ruffus 2.6 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/ruffus.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '2.6',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <script type="text/javascript" src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    <link rel="top" title="ruffus 2.6 documentation" href="../../index.html" />
+    <link rel="next" title="Chapter 16: @subdivide tasks to run efficiently and regroup with @collate" href="subdivide_collate.html" />
+    <link rel="prev" title="Chapter 14: Multiprocessing, drmaa and Computation Clusters" href="multiprocessing.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="subdivide_collate.html" title="Chapter 16: @subdivide tasks to run efficiently and regroup with @collate"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="multiprocessing.html" title="Chapter 14: Multiprocessing, drmaa and Computation Clusters"
+             accesskey="P">previous</a> |</li>
+        Ruffus v. 2.6
+            <li><a href="../../index.html">Home</a> | </li>
+            <li><a href="../../contents.html">Contents</a> | </li>
+            <li><a href="../../installation.html">Install</a>  | </li>
+            <li><a href="introduction.html">Manual</a>  / </li>
+            <li><a href="manual_contents.html">(TOC)</a>  | </li>
+            <li><a href="../../faq.html">FAQ</a>  | </li>
+            <li><a href="../../cheatsheet.html">Cheat sheet</a> | </li>
+            <li><a href="command_line.html">Command Line</a> | </li>
+            <li><a href="../../gallery.html">Gallery</a> |  </li>
+            <li><a href="../../new_syntax.html">New syntax in v 2.6</a> | </li>
+            <li><a href="../../history.html">Latest Changes</a> &raquo; </li>
+ 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="new-manual-logging-chapter-num-logging-progress-through-a-pipeline">
+<span id="new-manual-logging"></span><span id="index-0"></span><h1><strong>Chapter 15</strong>: Logging progress through a pipeline<a class="headerlink" href="#new-manual-logging-chapter-num-logging-progress-through-a-pipeline" title="Permalink to this headline">¶</a></h1>
+<div class="admonition seealso">
+<p class="first admonition-title">See also</p>
+<ul class="last simple">
+<li><a class="reference internal" href="manual_contents.html#new-manual-table-of-contents"><em>Manual Table of Contents</em></a></li>
+</ul>
+</div>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">Remember to look at the <a class="reference internal" href="logging_code.html#new-manual-logging-code"><em>example code</em></a></p>
+</div>
+<div class="section" id="overview">
+<h2>Overview<a class="headerlink" href="#overview" title="Permalink to this headline">¶</a></h2>
+<blockquote>
+<div><p>There are two parts to logging with <strong>Ruffus</strong>:</p>
+<ul>
+<li><p class="first">Logging progress through the pipeline</p>
+<blockquote>
+<div><p>This produces the sort of output displayed in this manual:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="n">pipeline_run</span><span class="p">([</span><span class="n">parallel_io_task</span><span class="p">])</span>
+<span class="go">Task = parallel_io_task</span>
+<span class="go">    Job = [&quot;a.1&quot; -&gt; &quot;a.2&quot;, &quot;A file&quot;] completed</span>
+<span class="go">    Job = [&quot;b.1&quot; -&gt; &quot;b.2&quot;, &quot;B file&quot;] unnecessary: already up to date</span>
+<span class="go">Completed Task = parallel_io_task</span>
+</pre></div>
+</div>
+</div></blockquote>
+</li>
+<li><p class="first">Logging your own messages from within your pipelined functions.</p>
+<blockquote>
+<div><p>Because <strong>Ruffus</strong> may run each task function in separate process on a separate
+CPU (multiprocessing), some attention has to be paid to how to send and
+synchronise your log messages across process boundaries.</p>
+</div></blockquote>
+</li>
+</ul>
+<p>We shall deal with these in turn.</p>
+</div></blockquote>
+</div>
+<div class="section" id="logging-task-job-completion">
+<span id="new-manual-logging-pipeline"></span><h2>Logging task/job completion<a class="headerlink" href="#logging-task-job-completion" title="Permalink to this headline">¶</a></h2>
+<blockquote>
+<div><p>By default, <em>Ruffus</em> logs each task and each job as it is completed to
+<a class="reference external" href="http://docs.python.org/2/library/sys.html#sys.stderr">sys.stderr</a>.</p>
+<p>By default, Ruffus logs to <tt class="docutils literal"><span class="pre">STDERR</span></tt>: <a class="reference internal" href="../../pipeline_functions.html#pipeline-functions-pipeline-run"><em>pipeline_run(logger = stderr_logger)</em></a>.</p>
+<p>If you want to turn off all tracking messages as the pipeline runs, apart from setting <tt class="docutils literal"><span class="pre">verbose</span> <span class="pre">=</span> <span class="pre">0</span></tt>, you
+can also use the aptly named Ruffus <tt class="docutils literal"><span class="pre">black_hole_logger</span></tt>:</p>
+<blockquote>
+<div><div class="highlight-python"><div class="highlight"><pre><span class="n">pipeline_run</span><span class="p">(</span><span class="n">logger</span> <span class="o">=</span> <span class="n">black_hole_logger</span><span class="p">)</span>
+</pre></div>
+</div>
+</div></blockquote>
+</div></blockquote>
+<div class="section" id="controlling-logging-verbosity">
+<span id="index-1"></span><h3>Controlling logging verbosity<a class="headerlink" href="#controlling-logging-verbosity" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p><a class="reference internal" href="../../pipeline_functions.html#pipeline-functions-pipeline-run"><em>pipeline_run()</em></a> currently has five levels of verbosity, set by the optional <tt class="docutils literal"><span class="pre">verbose</span></tt>
+parameter which defaults to 1:</p>
+<blockquote>
+<div><div class="highlight-python"><div class="highlight"><pre>verbose = 0: nothing
+verbose = 1: logs completed jobs/tasks;
+verbose = 2: logs up to date jobs in incomplete tasks
+verbose = 3: logs reason for running job
+verbose = 4: logs messages useful only for debugging ruffus pipeline code
+</pre></div>
+</div>
+<p><tt class="docutils literal"><span class="pre">verbose</span></tt> &gt; <tt class="docutils literal"><span class="pre">5</span></tt> are intended for debugging <strong>Ruffus</strong> by the developers and the details
+are liable to change from release to release</p>
+</div></blockquote>
+</div></blockquote>
+</div>
+</div>
+<div class="section" id="use-ruffus-cmdline">
+<span id="index-2"></span><h2>Use <a class="reference internal" href="command_line.html#new-manual-cmdline"><em>ruffus.cmdline</em></a><a class="headerlink" href="#use-ruffus-cmdline" title="Permalink to this headline">¶</a></h2>
+<blockquote>
+<div><p>As always, it is easiest to use <a class="reference internal" href="command_line.html#new-manual-cmdline"><em>ruffus.cmdline</em></a>.</p>
+<p>Set your script to</p>
+<blockquote>
+<div><ul class="simple">
+<li>write messages to <tt class="docutils literal"><span class="pre">STDERR</span></tt> with the <tt class="docutils literal"><span class="pre">--verbose</span></tt> option and</li>
+<li>to a log file with the <tt class="docutils literal"><span class="pre">--log_file</span></tt> option.</li>
+</ul>
+<div class="highlight-python"><div class="highlight"><pre> <span class="kn">from</span> <span class="nn">ruffus</span> <span class="kn">import</span> <span class="o">*</span>
+
+<span class="hll"> <span class="c">#  Python logger which can be synchronised across concurrent Ruffus tasks</span>
+</span> <span class="n">logger</span><span class="p">,</span> <span class="n">logger_mutex</span> <span class="o">=</span> <span class="n">cmdline</span><span class="o">.</span><span class="n">setup_logging</span> <span class="p">(</span><span class="n">__name__</span><span class="p">,</span> <span class="n">options</span><span class="o">.</span><span class="n">log_file</span><span class="p">,</span> <span class="n">options</span><span class="o">.</span><span class="n">verbose</span><span class="p">)</span>
+
+ <span class="nd">@transform</span><span class="p">(</span> <span class="p">[</span><span class="s">&quot;job1.input&quot;</span><span class="p">],</span> <span class="n">suffix</span><span class="p">(</span><span class="s">&quot;.input&quot;</span><span class="p">),</span> <span class="s">&quot;.output1&quot;</span><span class="p">),</span>
+ <span class="k">def</span> <span class="nf">first_task</span><span class="p">(</span><span class="n">input_file</span><span class="p">,</span> <span class="n">output_file</span><span class="p">):</span>
+     <span class="k">pass</span>
+
+ <span class="n">pipeline_run</span><span class="p">(</span><span class="n">logger</span><span class="o">=</span><span class="n">logger</span><span class="p">)</span>
+</pre></div>
+</div>
+</div></blockquote>
+</div></blockquote>
+</div>
+<div class="section" id="customising-logging">
+<span id="index-3"></span><h2>Customising logging<a class="headerlink" href="#customising-logging" title="Permalink to this headline">¶</a></h2>
+<blockquote>
+<div><p>You can also specify exactly how logging works by providing a <a class="reference external" href="http://docs.python.org/library/logging.html">logging</a> object
+to <a class="reference internal" href="../../pipeline_functions.html#pipeline-functions-pipeline-run"><em>pipeline_run()</em></a> .
+This log object should have <tt class="docutils literal"><span class="pre">debug()</span></tt> and <tt class="docutils literal"><span class="pre">info()</span></tt> methods.</p>
+<p>Instead of writing your own, it is usually more convenient to use the python
+<a class="reference external" href="http://docs.python.org/library/logging.html">logging</a>
+module which provides logging classes with rich functionality.</p>
+<p>The <a class="reference internal" href="logging_code.html#new-manual-logging-code"><em>example code</em></a> sets up a logger to a rotating set of files</p>
+</div></blockquote>
+</div>
+<div class="section" id="log-your-own-messages">
+<span id="new-manual-logging-per-job"></span><span id="index-4"></span><h2>Log your own messages<a class="headerlink" href="#log-your-own-messages" title="Permalink to this headline">¶</a></h2>
+<blockquote>
+<div><p>You need to take a little care when logging your custom messages <em>within</em> your pipeline.</p>
+<ul class="simple">
+<li>If your Ruffus pipeline may run in parallel, make sure that logging is synchronised.</li>
+<li>If your Ruffus pipeline may run across separate processes, send your logging object across process boundaries.</li>
+</ul>
+<p><a class="reference external" href="http://docs.python.org/library/logging.html">logging</a> objects can not be
+<a class="reference external" href="http://docs.python.org/library/pickle.html">pickled</a> and shared naively across
+processes. Instead, we need to create proxies which forward the logging to a single
+shared log.</p>
+<p>The <a class="reference internal" href="../../proxy_logger.html#proxy-logger"><em>ruffus.proxy_logger</em></a> module provides an easy way to share
+<a class="reference external" href="http://docs.python.org/library/logging.html">logging</a> objects among
+jobs. This requires just two simple steps:</p>
+</div></blockquote>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<ul class="last simple">
+<li>This is a good template for sharing <a class="reference external" href="http://docs.python.org/2/library/pickle.html#what-can-be-pickled-and-unpickled">non-picklable objects</a>
+across processes.</li>
+</ul>
+</div>
+<div class="section" id="set-up-logging">
+<span id="new-manual-sharing-proxy-object"></span><h3>1. Set up logging<a class="headerlink" href="#set-up-logging" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>Things are easiest if you are using <tt class="docutils literal"><span class="pre">ruffus.cmdline</span></tt>:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="c">#  standard python logger which can be synchronised across concurrent Ruffus tasks</span>
+<span class="n">logger</span><span class="p">,</span> <span class="n">logger_mutex</span> <span class="o">=</span> <span class="n">cmdline</span><span class="o">.</span><span class="n">setup_logging</span> <span class="p">(</span><span class="n">__name__</span><span class="p">,</span> <span class="n">options</span><span class="o">.</span><span class="n">log_file</span><span class="p">,</span> <span class="n">options</span><span class="o">.</span><span class="n">verbose</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Otherwise, manually:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">ruffus.proxy_logger</span> <span class="kn">import</span> <span class="o">*</span>
+<span class="p">(</span><span class="n">logger</span><span class="p">,</span>
+ <span class="n">logging_mutex</span><span class="p">)</span> <span class="o">=</span> <span class="n">make_shared_logger_and_proxy</span> <span class="p">(</span><span class="n">setup_std_shared_logger</span><span class="p">,</span>
+                                                <span class="s">&quot;my_logger&quot;</span><span class="p">,</span>
+                                                <span class="p">{</span><span class="s">&quot;file_name&quot;</span> <span class="p">:</span><span class="s">&quot;/my/lg.log&quot;</span><span class="p">})</span>
+</pre></div>
+</div>
+</div></blockquote>
+</div>
+<div class="section" id="share-the-proxy">
+<h3>2. Share the proxy<a class="headerlink" href="#share-the-proxy" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>Now, pass:</p>
+<blockquote>
+<div><ul class="simple">
+<li><tt class="docutils literal"><span class="pre">logger</span></tt> (which forwards logging calls across jobs) and</li>
+<li><tt class="docutils literal"><span class="pre">logging_mutex</span></tt> (which prevents different jobs which are logging simultaneously
+from being jumbled up)</li>
+</ul>
+</div></blockquote>
+<p>to each job:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="nd">@transform</span><span class="p">(</span> <span class="n">initial_file</span><span class="p">,</span>
+            <span class="n">suffix</span><span class="p">(</span><span class="s">&quot;.input&quot;</span><span class="p">),</span>
+            <span class="s">&quot;.output1&quot;</span><span class="p">,</span>
+<span class="hll">            <span class="n">logger</span><span class="p">,</span> <span class="n">logging_mutex</span><span class="p">),</span>         <span class="c"># pass log and synchronisation as parameters</span>
+</span><span class="k">def</span> <span class="nf">first_task</span><span class="p">(</span><span class="n">input_file</span><span class="p">,</span> <span class="n">output_file</span><span class="p">,</span>
+<span class="hll">            <span class="n">logger</span><span class="p">,</span> <span class="n">logging_mutex</span><span class="p">):</span>         <span class="c"># pass log and synchronisation as parameters</span>
+</span>    <span class="k">pass</span>
+
+<span class="hll">    <span class="c"># synchronise logging</span>
+</span>    <span class="k">with</span> <span class="n">logging_mutex</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&quot;Here we go logging...&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div></blockquote>
+</div>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h3><a href="../../contents.html">Table Of Contents</a></h3>
+  <ul>
+<li><a class="reference internal" href="#"><strong>Chapter 15</strong>: Logging progress through a pipeline</a><ul>
+<li><a class="reference internal" href="#overview">Overview</a></li>
+<li><a class="reference internal" href="#logging-task-job-completion">Logging task/job completion</a><ul>
+<li><a class="reference internal" href="#controlling-logging-verbosity">Controlling logging verbosity</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#use-ruffus-cmdline">Use <tt class="docutils literal"><span class="pre">ruffus.cmdline</span></tt></a></li>
+<li><a class="reference internal" href="#customising-logging">Customising logging</a></li>
+<li><a class="reference internal" href="#log-your-own-messages">Log your own messages</a><ul>
+<li><a class="reference internal" href="#set-up-logging">1. Set up logging</a></li>
+<li><a class="reference internal" href="#share-the-proxy">2. Share the proxy</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="multiprocessing.html"
+                        title="previous chapter"><strong>Chapter 14</strong>: Multiprocessing, <tt class="docutils literal"><span class="pre">drmaa</span></tt> and Computation Clusters</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="subdivide_collate.html"
+                        title="next chapter"><strong>Chapter 16</strong>: <tt class="docutils literal"><span class="pre">&#64;subdivide</span></tt> tasks to run efficiently and regroup with <tt class="docutils literal"><span class="pre">&#64;collate</span></tt></a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="../../_sources/tutorials/new_tutorial/logging.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+    
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+    <h3> Quick Reference:</h3>
+    <ul>
+        <h4><a href="../../decorators/decorators.html#core">Core:</a></h4>   
+        <ul>
+            <li><a href="../../decorators/originate.html">@originate</a>                           </li>
+            <li><a href="../../decorators/split.html">@split</a>                                   </li>
+            <li><a href="../../decorators/transform.html">@transform</a>                           </li>
+            <li><a href="../../decorators/merge.html">@merge</a>                                   </li>
+        </ul>
+
+        <h4><a href="../../decorators/decorators.html#advanced">Advanced</a></h4>   
+        <ul>
+            <li><a href="../../decorators/subdivide.html">@subdivide</a>                           </li>
+            <li><a href="../../decorators/transform_ex.html">@transform (add_inputs) </a>          </li>
+            <li><a href="../../decorators/collate.html">@collate</a>                               </li>
+            <li><a href="../../decorators/collate_ex.html">@collate (add_inputs)</a>               </li>
+            <li><a href="../../decorators/graphviz.html">@graphviz</a>                             </li>
+            <li><a href="../../decorators/mkdir.html">@mkdir</a>                                   </li>
+            <li><a href="../../decorators/follows.html">@follows / mkdir</a>                       </li>
+            <li><a href="../../decorators/posttask.html">@posttask touch_file</a>                  </li>
+            <li><a href="../../decorators/active_if.html">@active_if</a>                           </li>
+            <li><a href="../../decorators/jobs_limit.html">@jobs_limit</a>                         </li>
+        </ul>
+    
+        <h4><a href="../../decorators/decorators.html#combinatorics">Combinatorial:</a></h4>   
+        <ul>
+            <li><a href="../../decorators/product.html">@product </a>                              </li>
+            <li><a href="../../decorators/permutations.html">@permutations </a>                    </li>
+            <li><a href="../../decorators/combinations.html">@combinations </a>                    </li>
+            <li><a href="../../decorators/combinations_with_replacement.html">@combinations_ _with_replacement </a>                    </li>
+        </ul>
+
+                        
+        <h4><a href="../../decorators/decorators.html#esoteric">Esoteric</a></h4>   
+        <ul>
+            <li><a href="../../decorators/files_ex.html">@files (on the fly)</a>                   </li>
+            <li><a href="../../decorators/parallel.html">@parallel</a>                             </li>
+            <li><a href="../../decorators/check_if_uptodate.html">@check_if_uptodate</a>           </li>
+        </ul>
+
+
+        <h4 ><a href="../../decorators/indicator_objects.html">Indicator objects</a></h4>
+        <h4 >Pipeline functions</h4>
+        <ul>
+            <li><a href="../../pipeline_functions.html#pipeline-functions-pipeline-run">pipeline_run</a>                       </li>
+            <li><a href="../../pipeline_functions.html#pipeline-functions-pipeline-printout">pipeline_printout</a>                      </li>
+            <li><a href="../../pipeline_functions.html#pipeline-functions-pipeline-printout-graph">pipeline_printout_graph</a>          </li>
+            <li><a href="../../pipeline_functions.html#pipeline-functions-pipeline-get-task-names">pipeline_get_task_names</a>          </li>
+            <li><a href="../../drmaa_wrapper_functions.html#drmaa-wrapper-functions-drmaa_wrapper-run_job">drmaa_wrapper.run_job</a>          </li>
+        </ul>
+
+         <a href="../../todo.html">Future plans</a>
+    </ul>
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="subdivide_collate.html" title="Chapter 16: @subdivide tasks to run efficiently and regroup with @collate"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="multiprocessing.html" title="Chapter 14: Multiprocessing, drmaa and Computation Clusters"
+             >previous</a> |</li>
+        Ruffus v. 2.6
+            <li><a href="../../index.html">Home</a> | </li>
+            <li><a href="../../contents.html">Contents</a> | </li>
+            <li><a href="../../installation.html">Install</a>  | </li>
+            <li><a href="introduction.html">Manual</a>  / </li>
+            <li><a href="manual_contents.html">(TOC)</a>  | </li>
+            <li><a href="../../faq.html">FAQ</a>  | </li>
+            <li><a href="../../cheatsheet.html">Cheat sheet</a> | </li>
+            <li><a href="command_line.html">Command Line</a> | </li>
+            <li><a href="../../gallery.html">Gallery</a> |  </li>
+            <li><a href="../../new_syntax.html">New syntax in v 2.6</a> | </li>
+            <li><a href="../../history.html">Latest Changes</a> &raquo; </li>
+ 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2009-2013 Leo Goodstadt.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>
