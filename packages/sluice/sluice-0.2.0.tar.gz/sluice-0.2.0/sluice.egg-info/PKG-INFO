@@ -1,0 +1,147 @@
+Metadata-Version: 1.1
+Name: sluice
+Version: 0.2.0
+Summary: Tools for managing zfs snapshots
+Home-page: https://bitbucket.org/sjdrake/sluice
+Author: Stephen Drake
+Author-email: steve@synergyconsultingnz.com
+License: Common Development and Distribution License (CDDL)
+Description: Sluice
+        ======
+        Sluice is a set of tools for managing ZFS snapshots inspired by
+        `Time Machine`_.
+        
+        A goal of Sluice is to follow the Unix philosophy of simple, composable
+        tools.  To this end, the core functionality is broken into three
+        independent operations on snapshots: creation, synchronisation and
+        culling.
+        
+        Snapshots essential to synchronisation are locked with zfs holds to prevent
+        their accidental removal.  This allows these operations to run independently
+        but cooperatively, and facilitates interoperation with other tools.
+        
+        Each of the tools is simple enough that it can be fully configured with
+        command-line options - no configuration file is required.  Some options,
+        however, can be looked up from zfs user properties.
+        
+        Complex schemes can be effected by combining multiple cron jobs.
+        
+        Sluice is implemented on top of `Weir`_, which will provide support for
+        remote operation from v0.3.0.
+        
+        .. _Time Machine: https://en.wikipedia.org/wiki/Time_Machine_%28OS_X%29
+        .. _Weir: https://bitbucket.org/sjdrake/weir
+        
+        Installation
+        ------------
+        Requires Python 2.7.
+        
+        To install Sluice, simply::
+        
+        	$ pip install sluice
+        
+        zfs-autosnapshot
+        ----------------
+        Creates snapshots with names generated from a |strftime|_-compatible date
+        format string::
+        
+        	$ zfs-autosnapshot zroot/test@%Y-%m-%d
+        	$ zfs list -t snapshot -d 1 zroot/test | tail -1
+        	zroot/test@2015-02-10                   0       -   136Ki  -
+        
+        If no format string is specified, it will be looked up from the user property
+        ``sluice.autosnapshot:format`` or the default ISO 8601-compatible format
+        ``%Y-%m-%dT%H%M`` will be used::
+        
+        	$ zfs set sluice.autosnapshot:format=auto-%Y-%m-%dT%H%M%S zroot/test
+        	$ zfs-autosnapshot zroot/test
+        	$ zfs list -t snapshot -d 1 zroot/test | tail -1
+        	zroot/test@auto-2015-02-10T114854       0       -   136Ki  -
+        
+        .. |strftime| replace:: ``strftime()``
+        .. _strftime: http://pubs.opengroup.org/onlinepubs/007908799/xsh/strftime.html
+        
+        zfs-copy
+        --------
+        Combines ``zfs send`` and ``zfs receive``::
+        
+        	$ zfs-copy zroot/test@2015-02-10 zroot/test-copy
+        	$ zfs list -t all -r zroot/test-copy
+        	NAME                          USED   AVAIL   REFER  MOUNTPOINT
+        	zroot/test-copy              556Ki  97.0Gi   444Ki  /Volumes/zroot/test-copy
+        	zroot/test-copy@2015-02-10   112Ki       -   136Ki  -
+        
+        zfs-sync
+        --------
+        Performs one-way synchronisation of snapshots between two datasets::
+        
+        	$ zfs-sync zroot/test zroot/test-sync
+        	$ zfs list -t all -r zroot/test-sync
+        	NAME                                      USED   AVAIL   REFER  MOUNTPOINT
+        	zroot/test-sync                          136Ki  97.0Gi   136Ki  /Volumes/zroot/test-sync
+        	zroot/test-sync@auto-2015-02-10T114854       0       -   136Ki  -
+        
+        	$ zfs-autosnapshot zroot/test
+        	$ zfs-sync zroot/test zroot/test-sync
+        	$ zfs list -t all -r zroot/test-sync
+        	NAME                                      USED   AVAIL   REFER  MOUNTPOINT
+        	zroot/test-sync                          144Ki  97.0Gi   136Ki  /Volumes/zroot/test-sync
+        	zroot/test-sync@auto-2015-02-10T114854     8Ki       -   136Ki  -
+        	zroot/test-sync@auto-2015-02-10T121006       0       -   136Ki  -
+        
+        A hold is placed on the source snapshot to prevent inadvertently deleting it
+        and thereby breaking incremental synchronisation::
+        
+        	$ zfs holds zroot/test@auto-2015-02-10T121006
+        	NAME                               TAG                          TIMESTAMP
+        	zroot/test@auto-2015-02-10T121006  sluice.sync:zroot/test-sync  Tue Feb 10 12:10 2015
+        
+        zfs-cull
+        --------
+        Destroys old snapshots.
+        
+        Snapshots can be removed by specifying a maximum age in ISO 8601 duration
+        format.  The most recent snapshot and any held snapshots are preserved::
+        
+        	$ zfs-autosnapshot zroot/test
+        	$ zfs-cull --max-age=t1m zroot/test
+        	$ zfs list -t all -r zroot/test
+        	NAME                                 USED   AVAIL   REFER  MOUNTPOINT
+        	zroot/test                          136Ki  95.6Gi   136Ki  /Volumes/zroot/test
+        	zroot/test@auto-2015-02-10T121006       0       -   136Ki  -
+        	zroot/test@auto-2015-02-10T122648       0       -   136Ki  -
+        
+        Snapshots can also be removed by density, defined as a / ∆a, where a is
+        snapshot age and ∆a is the age difference between adjacent snapshots.
+        Snapshot density is thus defined in log-time rather than in linear-time.
+        The oldest snapshot is also preserved in this mode::
+        
+        	$ zfs-sync zroot/test zroot/test-sync
+        	$ zfs-cull --max-density=1 zroot/test-sync
+        	$ zfs list -t all -r zroot/test-sync
+        	NAME                                      USED   AVAIL   REFER  MOUNTPOINT
+        	zroot/test-sync                          144Ki  95.6Gi   136Ki  /Volumes/zroot/test-sync
+        	zroot/test-sync@auto-2015-02-10T114854     8Ki       -   136Ki  -
+        	zroot/test-sync@auto-2015-02-10T122648       0       -   136Ki  -
+        
+        zfs-import
+        ----------
+        Proposed addition for v1.x - copy files from a non-zfs filesystem and create
+        a snapshot.
+        
+        zfs-export
+        ----------
+        Proposed addition for v1.x - create a clone of a zfs snapshot and copy files
+        to a non-zfs filesystem.
+        
+        License
+        -------
+        Licensed under the Common Development and Distribution License (CDDL).
+        
+Keywords: zfs
+Platform: UNKNOWN
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved
+Classifier: Programming Language :: Python :: 2
+Classifier: Programming Language :: Python :: 2.7
