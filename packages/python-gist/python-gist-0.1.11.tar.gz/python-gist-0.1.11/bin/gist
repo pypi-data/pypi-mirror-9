@@ -1,0 +1,357 @@
+#!/usr/bin/env python
+"""
+Name:
+    gist
+
+Usage:
+    gist list
+    gist edit <id>
+    gist description <id> <desc>
+    gist info <id>
+    gist fork <id>
+    gist files <id>
+    gist delete <id>
+    gist archive <id>
+    gist content <id>
+    gist create <desc> [--public] [FILES ...]
+    gist clone <id> [<name>]
+    gist version
+
+Description:
+    This program provides a command line interface for interacting with github
+    gists.
+
+Commands:
+    create
+        Create a new gist. A gist can be created in several ways. The content
+        of the gist can be piped to the gist,
+
+            $ echo "this is the content" | gist create "gist description"
+
+        The gist can be created from an existing set of files,
+
+            $ gist create "gist description" foo.txt bar.txt
+
+        The gist can be created on the fly,
+
+            $ gist create "gist description"
+
+        which will open the users default editor.
+
+    edit
+        You can edit your gists directly with the 'edit' command. This command
+        will clone the gist to a temporary directory and open up the default
+        editor (defined by the EDITOR environment variable) to edit the files
+        in the gist. When the editor is exited the user is prompted to commit
+        the changes, which are then pushed back to the remote.
+
+    fork
+        Creates a fork of the specified gist.
+
+    description
+        Updates the description of a gist.
+
+    list
+        Returns a list of your gists. The gists are returned as,
+
+            2b1823252e8433ef8682 - mathematical divagations
+            a485ee9ddf6828d697be - notes on defenestration
+            589071c7a02b1823252e + abecedarian pericombobulations
+
+        The first column is the gists unique identifier; The second column
+        indicates whether the gist is public ('+') or private ('-'); The third
+        column is the description in the gist, which may be empty.
+
+    clone
+        Clones a gist to the current directory. This command will clone any
+        gist based on its unique identifier (i.e. not just the users) to the
+        current directory.
+
+    delete
+        Deletes the specified gist.
+
+    files
+        Returns a list of the files in the specified gist.
+
+    archive
+        Downloads the specified gist to a temporary directory and adds it to a
+        tarball, which is then moved to the current directory.
+
+    content
+        Writes the content of each file in the specified gist to the terminal,
+        e.g.
+
+            $ gist content c971fca7997aed65ddc9
+            foo.txt:
+            this is foo
+
+
+            bar.txt:
+            this is bar
+
+
+        For each file in the gist the first line is the name of the file
+        followed by a colon, and then the content of that file is written to
+        the terminal.
+
+    info
+        This command provides a complete dump of the information about the gist
+        as a JSON object. It is mostly useful for debugging.
+
+    version
+        Returns the current version of gist.
+
+"""
+
+import fcntl
+import logging
+import os
+import struct
+import sys
+import tempfile
+import termios
+
+import docopt
+import simplejson as json
+import six
+
+import gist
+
+try:
+    import configparser
+except ImportError:
+    import ConfigParser as configparser
+
+
+logger = logging.getLogger('gist')
+
+
+def terminal_width():
+    """Returns the terminal width
+
+    Tries to determine the width of the terminal. If there is no terminal, then
+    None is returned instead.
+
+    """
+    try:
+        exitcode = fcntl.ioctl(
+                0,
+                termios.TIOCGWINSZ,
+                struct.pack('HHHH', 0, 0, 0, 0))
+        h, w, hp, wp = struct.unpack('HHHH', exitcode)
+        return w
+    except Exception:
+        pass
+
+
+def elide(txt, width=terminal_width()):
+    """Elide the provided string
+
+    The string is elided to the specified width, which defaults to the width of
+    the terminal.
+
+    Arguments:
+        txt: the string to potentially elide
+        width: the maximum permitted length of the string
+
+    Returns:
+        A string that is no longer than the specified width.
+
+    """
+    try:
+        if len(txt) > width:
+            return txt[:width - 3] + '...'
+    except Exception:
+        pass
+    return txt
+
+
+def alternative_editor(default):
+    """Return the path to the 'alternatives' editor
+
+    Argument:
+        default: the default to use if the alternatives editor cannot be found.
+
+    """
+    if os.path.exists('/usr/bin/editor'):
+        return '/usr/bin/editor'
+
+    return default
+
+
+def environment_editor(default):
+    """Return the user specified environment default
+
+    Argument:
+        default: the default to use if the environment variable contains
+                nothing useful.
+
+    """
+    editor = os.environ.get('EDITOR', '').strip()
+    if editor != '':
+        return editor
+
+    return default
+
+
+def configuration_editor(config, default):
+    """Return the editor in the config file
+
+    Argument:
+        default: the default to use if there is no editor in the config
+
+    """
+    try:
+        return config.get('gist', 'editor')
+    except configparser.NoOptionError:
+        return default
+
+
+def alternative_config(default):
+    """Return the path to the config file in .config directory
+
+    Argument:
+        default: the default to use if ~/.config/gist does not exist.
+
+    """
+    config_path = os.path.expanduser('~/.config/gist')
+    if os.path.isfile(config_path):
+        return config_path
+    else:
+        return default
+
+
+def xdg_data_config(default):
+    """Return the path to the config file in XDG user config directory
+
+    Argument:
+        default: the default to use if either the XDG_DATA_HOME environment is
+            not set, or the XDG_DATA_HOME directory does not contain a 'gist'
+            file.
+
+    """
+    config = os.environ.get('XDG_DATA_HOME', '').strip()
+    if config != '':
+        config_path = os.path.join(config, 'gist')
+        if os.path.isfile(config_path):
+            return config_path
+
+    return default
+
+
+def main(argv=sys.argv[1:]):
+    args = docopt.docopt(__doc__, argv=argv, version='gist-v0.1.10')
+
+    # Read in the configuration file
+    config = configparser.ConfigParser()
+    config_path = os.path.expanduser('~/.gist')
+    config_path = alternative_config(config_path)
+    config_path = xdg_data_config(config_path)
+    with open(config_path) as fp:
+        config.readfp(fp)
+
+    # Setup logging
+    try:
+        logging.basicConfig(format="%(created).3f %(levelname)s %(message)s")
+        log_level = config.get('gist', 'log-level').upper()
+        logging.getLogger().setLevel(log_level)
+    except Exception:
+        logging.getLogger().setLevel(logging.ERROR)
+
+    # Determine the editor to use
+    editor = None
+    editor = alternative_editor(editor)
+    editor = environment_editor(editor)
+    editor = configuration_editor(config, editor)
+
+    if editor is None:
+        raise ValueError('Unable to find an editor.')
+
+    token = config.get('gist', 'token')
+    gapi = gist.GistAPI(token=token, editor=editor)
+
+    if args['list']:
+        gists = gapi.list()
+        for info in gists:
+            public = '+' if info.public else '-'
+            desc = '' if info.desc is None else info.desc.encode('utf8')
+            line = '{} {} {}'.format(info.id, public, desc)
+            print(elide(line))
+        return
+
+    if args['info']:
+        info = gapi.info(args['<id>'])
+        print(json.dumps(info, indent=2))
+        return
+
+    if args['edit']:
+        gapi.edit(args['<id>'])
+        return
+
+    if args['description']:
+        gist_id = args['<id>']
+        description = args['<desc>']
+        gapi.description(gist_id, description)
+
+    if args['fork']:
+        info = gapi.fork(args['<id>'])
+        return
+
+    if args['clone']:
+        gapi.clone(args['<id>'], args['<name>'])
+        return
+
+    if args['content']:
+        content = gapi.content(args['<id>'])
+        for name, lines in content.items():
+            print(six.u('{}:\n{}\n').format(name, lines))
+        return
+
+    if args['files']:
+        for f in gapi.files(args['<id>']):
+            print(f)
+        return
+
+    if args['archive']:
+        gapi.archive(args['<id>'])
+        return
+
+    if args['delete']:
+        gapi.delete(args['<id>'])
+        return
+
+    if args['version']:
+        print('v{}'.format(gist.__version__))
+        return
+
+    if args['create']:
+        if sys.stdin.isatty():
+            if args['FILES']:
+                files = {}
+                for path in args['FILES']:
+                    name = os.path.basename(path)
+                    content = open(path).read()
+                    files[name] = content
+            else:
+                with tempfile.NamedTemporaryFile('w+') as fp:
+                    os.system('{} {}'.format(editor, fp.name))
+                    fp.flush()
+                    fp.seek(0)
+                    files = {'file1.txt': fp.read()}
+
+        else:
+            files = {'file1.txt': sys.stdin.read()}
+
+        description = args['<desc>']
+        public = args['--public']
+        data = {k: {'content': v} for k, v in files.items()}
+
+        print(gapi.create(description, data, public))
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        logger.error(str(e))
+        sys.exit(1)
