@@ -1,0 +1,148 @@
+{% extends 'base.jinja2' %}
+
+{% block html_title %}Detail{% endblock %}
+
+{% from "macros.jinja2" import
+    render_relaties_lijst,
+    render_labels,
+	render_matches,
+	get_conceptscheme_label
+%}
+
+{% block content %}
+    <div class="row">
+		<div class="large-4 medium-3 columns">
+			<ul class="panel side-nav text-center">
+				<li><a href="{{request.route_path('atramhasis.rdf_individual_export_ext', scheme_id=scheme_id, c_id=concept.concept_id)}}">Download RDF/XML</a></li>
+				<li><a href="{{request.route_path('atramhasis.rdf_individual_export_turtle_ext', scheme_id=scheme_id, c_id=concept.concept_id)}}">Download N3/Turtle</a></li>
+			</ul>
+            <div class="panel treecontainer">
+                <div id="tree1" data-url="{{ request.route_path('scheme_tree', scheme_id= scheme_id) }}"></div>
+            </div>
+        </div>
+		<div class="large-8 medium-9 columns">
+    {% if concept %}
+            <h1 class="concept">{{ concept.label(request.locale_name).label|title }}</h1>
+            <ul>
+                <li>id: {{ concept.concept_id }}</li>
+                {% if conceptType == 'Concept' %}
+                <li>type: {% trans %}concept{% endtrans %}</li>
+                {% elif conceptType == 'Collection' %}
+                <li>type: {% trans %}collection{% endtrans %}</li>
+                {% endif %}
+                {% if concept.uri %}
+                <li>uri: <a href="{{ concept.uri }}">{{ concept.uri }}</a></li>
+				{% endif %}
+                <li>conceptscheme: <a href="{{ request.route_path('conceptscheme', scheme_id=scheme_id) }}">{{ get_conceptscheme_label(concept.conceptscheme, request.locale_name) }}</a></li>
+            </ul>
+
+            {% if concept.labels %}
+            <h2 class="concept">{% trans %}labels{% endtrans %}</h2>
+            {{ render_labels(concept.labels, 'prefLabel') }}
+            {{ render_labels(concept.labels, 'altLabel') }}
+            {{ render_labels(concept.labels, 'hiddenLabel') }}
+            {% endif %}
+
+        {% if conceptType == 'Concept' %}
+            {% if concept.notes|length > 0 %}
+            <h2 class="concept">{% trans %}notes{% endtrans %}</h2>
+            <ul>
+                {%- for note in concept.notes %}
+                <li lang="{{ note.language }}">
+                    {{ note.notetype_id }} <em class="language">({{ note.language }})</em>: {{ note.note}}
+                </li>
+                {%- endfor %}
+            </ul>
+            {% endif %}
+        {% endif %}
+
+        <h2 class="concept">{% trans %}relations{% endtrans %}</h2>
+
+        {% if conceptType == 'Concept' %}
+            {% if concept.broader_concepts|length > 0 %}
+            <h4 class="subheader">{% trans %}broader{% endtrans %}:</h4>
+            {{ render_relaties_lijst(request, concept.broader_concepts, scheme_id) }}
+            {% endif %}
+
+            {% if concept.narrower_concepts|length > 0 %}
+            <h4 class="subheader">{% trans %}narrower{% endtrans %}:</h4>
+            {{ render_relaties_lijst(request, concept.narrower_concepts, scheme_id) }}
+            {% endif %}
+
+            {% if concept.related_concepts|length > 0 %}
+            <h4 class="subheader">{% trans %}related{% endtrans %}:</h4>
+            {{ render_relaties_lijst(request, concept.related_concepts, scheme_id) }}
+            {% endif %}
+
+            {% if concept.narrower_collections|length > 0 %}
+            <h4 class="subheader">{% trans %}subordinate_arrays{% endtrans %}:</h4>
+            {{ render_relaties_lijst(request, concept.narrower_collections, scheme_id) }}
+            {% endif %}
+        {% endif %}
+
+        {% if conceptType == 'Collection' %}
+            {% if concept.members|length > 0 %}
+            <h4 class="subheader">{% trans %}members{% endtrans %}:</h4>
+            {{ render_relaties_lijst(request, concept.members, scheme_id) }}
+            {% endif %}
+
+            {% if concept.broader_concepts|length > 0 %}
+            <h4 class="subheader">{% trans %}superordinates{% endtrans %}:</h4>
+            {{ render_relaties_lijst(request, concept.broader_concepts, scheme_id) }}
+            {% endif %}
+        {% endif %}
+
+        {% if concept.member_of|length > 0 %}
+        <h4 class="subheader">{% trans %}member_of{% endtrans %}:</h4>
+        {{ render_relaties_lijst(request, concept.member_of, scheme_id) }}
+        {% endif %}
+
+        {% if concept.matches|length > 0 %}
+        <h2 class="concept">{% trans %}matches{% endtrans %}</h2>
+        {{ render_matches(concept.matches) }}
+        {% endif %}
+
+    {% endif %}
+		</div>
+    </div>
+
+{% endblock %}
+
+{% block js_footer %}
+		<script>
+            var $tree = $('#tree1');
+            $tree.tree({
+                onCreateLi: function(node, $li) {
+                    $li.find('.jqtree-title').wrap(function() {
+                        return "<a href='{{ request.route_path('concept', scheme_id= scheme_id, c_id = '') }}" + node.concept_id + "?treeid=" + node.id + "'><div></div></a>";
+                    });
+                }
+            });
+			
+			{% if concept %}
+            $tree.bind(
+                'tree.init',
+                function() {
+					var treeid = getUrlVar("treeid");
+					if(treeid != '') {
+						var node = $tree.tree('getNodeById', treeid);
+						$tree.tree('selectNode', node, true);
+						$tree.tree('openNode', node);	
+					}
+					else {	
+						var nodes = $tree.tree('getNodesByProperty', 'concept_id', {{ concept.concept_id }} );
+						$.each(nodes, function( index, node ) {
+							$tree.tree('addToSelection', node);
+							if ( node.children.length > 0){
+								$tree.tree('openNode', node);
+							} else {
+								$tree.tree('openNode', node.parent);
+							}
+							
+						});					
+					}
+                }			
+            );
+			{% endif %}
+        </script>
+{% endblock %}
