@@ -1,0 +1,229 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>pyqode.core.backend &mdash; pyqode.core 2.5.0.dev0 documentation</title>
+    
+    <link rel="stylesheet" href="../../../_static/pyramid.css" type="text/css" />
+    <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../../',
+        VERSION:     '2.5.0.dev0',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../../_static/doctools.js"></script>
+    <link rel="top" title="pyqode.core 2.5.0.dev0 documentation" href="../../../index.html" />
+    <link rel="up" title="Module code" href="../../index.html" />
+<link rel="stylesheet" href="http://fonts.googleapis.com/css?family=Neuton&amp;subset=latin" type="text/css" media="screen" charset="utf-8" />
+<link rel="stylesheet" href="http://fonts.googleapis.com/css?family=Nobile:regular,italic,bold,bolditalic&amp;subset=latin" type="text/css" media="screen" charset="utf-8" />
+<!--[if lte IE 6]>
+<link rel="stylesheet" href="../../../_static/ie6.css" type="text/css" media="screen" charset="utf-8" />
+<![endif]-->
+
+  </head>
+  <body>
+
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../../index.html">pyqode.core 2.5.0.dev0 documentation</a> &raquo;</li>
+          <li><a href="../../index.html" accesskey="U">Module code</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <h1>Source code for pyqode.core.backend</h1><div class="highlight"><pre>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">The backend package contains the API to use on the server side:</span>
+<span class="sd">    - server + methods for running it</span>
+<span class="sd">    - workers definitions</span>
+
+<span class="sd">pyQode uses a client-server architecture for running heavy tasks such as code</span>
+<span class="sd">analysis (lint), code completion,...</span>
+
+<span class="sd">Protocol</span>
+<span class="sd">--------</span>
+
+<span class="sd">We use a worker based json messaging server using the TCP/IP transport.</span>
+
+<span class="sd">We build our own, very simple protocol where each message is made up of two</span>
+<span class="sd">parts:</span>
+
+<span class="sd">  - a header: simply contains the length of the payload</span>
+<span class="sd">  - a payload: a json formatted string, the content of the message.</span>
+
+<span class="sd">There are two type of json object: a request and a response.</span>
+
+<span class="sd">Request</span>
+<span class="sd">+++++++</span>
+<span class="sd">For a request, the object will contains the following fields:</span>
+
+<span class="sd">  - &#39;request_id&#39;: uuid generated client side</span>
+<span class="sd">  - &#39;worker&#39;: fully qualified name to the worker callable (class or function),</span>
+<span class="sd">    e.g. &#39;pyqode.core.backend.workers.echo_worker&#39;</span>
+<span class="sd">  - &#39;data&#39;: data specific to the chose worker.</span>
+
+<span class="sd">E.g::</span>
+
+<span class="sd">    {</span>
+<span class="sd">        &#39;request_id&#39;: &#39;a97285af-cc88-48a4-ac69-7459b9c7fa66&#39;,</span>
+<span class="sd">        &#39;worker&#39;: &#39;pyqode.core.backend.workers.echo_worker&#39;,</span>
+<span class="sd">        &#39;data&#39;: [&#39;some code&#39;, 0]</span>
+<span class="sd">    }</span>
+
+<span class="sd">Response</span>
+<span class="sd">++++++++</span>
+
+<span class="sd">For a response, the object will contains the following fields:</span>
+<span class="sd">    - &#39;request_id&#39;: uuid generated client side that is simply echoed back</span>
+<span class="sd">    - &#39;results&#39;: worker results (list, tuple, string,...)</span>
+
+<span class="sd">E.g::</span>
+
+<span class="sd">    {</span>
+<span class="sd">        &#39;request_id&#39;: &#39;a97285af-cc88-48a4-ac69-7459b9c7fa66&#39;,</span>
+<span class="sd">        &#39;results&#39;: [&#39;some code&#39;, 0]</span>
+<span class="sd">    }</span>
+
+<span class="sd">Server script</span>
+<span class="sd">-------------</span>
+
+<span class="sd">The server script must be written by the user. Don&#39;t worry, it&#39;s very simple.</span>
+<span class="sd">All you have to do is to create and run a JsonTcpServer instance.</span>
+
+<span class="sd">We choose to let you write the main script to let you easily configure it.</span>
+
+<span class="sd">Some workers will requires some tweaking (for the completion worker,</span>
+<span class="sd">you will want to add custom completion providers, you might also want to</span>
+<span class="sd">modify sys.path,...). It also makes the packaging process more consistent,</span>
+<span class="sd">your script will be packaged on linux using setup.py and will be frozen on</span>
+<span class="sd">windows using cx_Freeze.</span>
+
+<span class="sd">Here is the most simple and basic example of a server script:</span>
+
+<span class="sd">.. code-block: python</span>
+<span class="sd">    from pyqode.core import backend</span>
+
+<span class="sd">    if __name__ == &#39;__main__&#39;:</span>
+<span class="sd">        backend.serve_forever()</span>
+
+<span class="sd">.. warning:: The user can choose the python interpreter that will run the</span>
+<span class="sd">    server. That means that classes and functions that run on the server side (</span>
+<span class="sd">    workers) **should fully support python2 syntax** and that pyqode.core</span>
+<span class="sd">    should be installed on the target interpreter sys path!!! (even for a</span>
+<span class="sd">    virtual env). An alternative is to keep pyqode.core package (and all</span>
+<span class="sd">    dependencies in a zip archive that you mount on the sys path in your</span>
+<span class="sd">    server script.</span>
+
+<span class="sd">.. note:: print statements on the server side will be logged as debug messages</span>
+<span class="sd">    on the client side. To have your messages logged as error message just</span>
+<span class="sd">    print to sys.stderr.</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">from</span> <span class="nn">.server</span> <span class="kn">import</span> <span class="n">JsonServer</span>
+<span class="kn">from</span> <span class="nn">.server</span> <span class="kn">import</span> <span class="n">default_parser</span>
+<span class="kn">from</span> <span class="nn">.server</span> <span class="kn">import</span> <span class="n">serve_forever</span>
+<span class="kn">from</span> <span class="nn">.workers</span> <span class="kn">import</span> <span class="n">CodeCompletionWorker</span>
+<span class="kn">from</span> <span class="nn">.workers</span> <span class="kn">import</span> <span class="n">DocumentWordsProvider</span>
+<span class="kn">from</span> <span class="nn">.workers</span> <span class="kn">import</span> <span class="n">echo_worker</span>
+
+
+<div class="viewcode-block" id="NotConnected"><a class="viewcode-back" href="../../../pyqode.core.backend.html#pyqode.core.backend.NotConnected">[docs]</a><span class="k">class</span> <span class="nc">NotConnected</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Raised if the client is not connected to the server when an operation</span>
+<span class="sd">    is requested.</span>
+
+<span class="sd">    .. deprecated:: Since v2.3, you should instead use ``NotRunning``.</span>
+<span class="sd">        This will be removed in v2.5</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">NotConnected</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span>
+            <span class="s">&#39;Client socket not connected or server not started&#39;</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="NotRunning"><a class="viewcode-back" href="../../../pyqode.core.backend.html#pyqode.core.backend.NotRunning">[docs]</a><span class="k">class</span> <span class="nc">NotRunning</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Raise if the backend process is not running and a backend operation</span>
+<span class="sd">    is requested.</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">NotRunning</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span>
+            <span class="s">&#39;Backend process not running&#39;</span><span class="p">)</span>
+
+</div>
+<span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s">&#39;JsonServer&#39;</span><span class="p">,</span>
+    <span class="s">&#39;default_parser&#39;</span><span class="p">,</span>
+    <span class="s">&#39;serve_forever&#39;</span><span class="p">,</span>
+    <span class="s">&#39;CodeCompletionWorker&#39;</span><span class="p">,</span>
+    <span class="s">&#39;DocumentWordsProvider&#39;</span><span class="p">,</span>
+    <span class="s">&#39;echo_worker&#39;</span><span class="p">,</span>
+    <span class="s">&#39;NotConnected&#39;</span><span class="p">,</span>
+    <span class="s">&#39;NotRunning&#39;</span>
+<span class="p">]</span>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../../index.html">pyqode.core 2.5.0.dev0 documentation</a> &raquo;</li>
+          <li><a href="../../index.html" >Module code</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2013-2015, Colin Duquesnoy.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>
