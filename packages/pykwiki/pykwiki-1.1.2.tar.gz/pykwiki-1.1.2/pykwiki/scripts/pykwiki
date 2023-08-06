@@ -1,0 +1,280 @@
+#!/usr/bin/env python
+import os, glob
+import sys
+import argparse
+import logging
+import time
+import zipfile
+
+pyk_dir = os.path.dirname(os.path.realpath(__file__))
+pyk_dir = os.path.join(pyk_dir, '../../')
+sys.path.insert(0,pyk_dir)
+import pykwiki.core
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+logger.addHandler(logging.StreamHandler())
+
+conf = pykwiki.core.conf
+ctrl = pykwiki.core.ctrl
+
+def install_theme(name):
+    """ Install a theme from data/theme-NAME.zip 
+
+    @param name [str] - The name of the theme
+    @returns [bool] - True if theme was installed, exception otherwise
+    """
+
+    target_path = os.path.join(conf.base_path, conf.theme_dir)
+
+    name = name.lower()
+
+    # Add theme- to the theme name if not present
+    if not name.startswith('theme-'):
+        name = 'theme-%s'%(name)
+
+    # Add .zip to the theme name if not present
+    if not name.endswith('.zip'):
+        name = '%s.zip'%(name)
+
+    zip_path = os.path.join(os.path.split(pykwiki.core.__file__)[0], 
+        'data', name)
+
+    if not os.path.exists(zip_path):
+        raise Exception('Cannot find theme file! [%s]'%(zip_path))
+
+    logger.info('Installing theme %s to %s/'%(name, target_path))
+    zf = zipfile.ZipFile(zip_path, 'r')
+    zf.extractall(target_path)
+
+    return True
+    
+def theme_zip_files():
+    """ Return a list of all theme zip files """
+    data_dir = os.path.join(os.path.split(pykwiki.core.__file__)[0], 'data')
+    pattern = os.path.join(data_dir, 'theme-*.zip')
+    theme_files = glob.glob(pattern)
+    return theme_files
+
+def command_theme(args):
+    """ Handle the command line options for themes """
+    theme_zips = theme_zip_files()
+    logger.info('='*40)
+
+    if args.theme_command == 'install':
+        if args.theme_name.lower() == 'all':
+            logger.info('Installing all themes...')
+            for tz in theme_zips:
+                name = os.path.basename(tz).replace('theme-','').replace('.zip','')
+                install_theme(name)
+        else:
+            install_theme(args.theme_name)
+        return
+
+    if args.theme_command == 'info':
+        logger.info('Available themes...')
+        for tz in theme_zips:
+            name = os.path.basename(tz).replace('theme-','').replace('.zip','')
+            logger.info('Theme: %s, location: %s'%(name, tz))
+            
+
+def command_new(args):
+    """ Create a new project in args.base_path """
+
+    logger.info('='*40)
+    path = args.base_path
+    new_path = os.path.join(path, args.project_name)
+    
+    # Ensure that the project doesn't already exist
+    if os.path.exists(new_path):
+        raise Exception('Project path: %s already exists!'%(new_path))
+
+    logger.info('Creating new project in %s'%(new_path))
+    os.makedirs(new_path)
+    conf.base_path = new_path
+    conf.save()
+    
+    # Unpack project zipfile
+    zip_path = os.path.join(os.path.split(pykwiki.core.__file__)[0], 
+        'data', 'base.zip')
+    if not os.path.exists(zip_path):
+        raise Exception('Cannot locate base zip! [%s]'%(zip_path))
+
+    logger.info('Installing default files to %s/'%(new_path))
+    zf = zipfile.ZipFile(zip_path, 'r')
+    zf.extractall(new_path)
+    
+    # Install default theme
+    install_theme('default')
+
+    return True
+
+def command_cache(args):
+    """ Handle the command line options for cache """
+
+    logger.info('='*40)
+    plist = None
+    if args.posts:
+        plist = args.posts
+
+    force = False
+    if args.force:
+        force = True
+
+    # Skip intensive processing if -q is specified
+    if args.quick:
+        logger.info('Doing quick caching (skipping theme and index)')
+        ctrl.cache_posts(plist, force=force)
+        return True
+
+    # Force re-cache if links.yaml is updated
+    if not os.path.exists(conf.link_json_path) \
+            or (os.path.getmtime(conf.link_path) \
+            > os.path.getmtime(conf.link_json_path)):
+        force = True
+    logger.info('Caching source posts...')
+    num_cached = ctrl.cache_posts(plist, force=force)
+    logger.info('='*40)
+    if num_cached > 0:
+        ctrl.cache_theme() 
+    else: 
+        logger.info('No posts modified, not caching theme')
+
+    logger.info('='*40)
+    ctrl.cache_uploads() 
+    logger.info('='*40)
+    ctrl.cache_rss_feed()
+    command_index(args) 
+    return True
+
+def command_index(args):
+    """ Rebuild the search index """
+
+    logger.info('='*40)
+    ctrl.index_posts()
+    return True
+
+def load_config(args):
+    """ Attempt to read config.yaml if present in args.base_path """
+
+    if args.config_file:
+        conf.load(args.config_file)
+    else:
+        conf.base_path = args.base_path
+        try:
+            conf.load(os.path.join(args.base_path, 'config.yaml'))
+        except:
+            logger.warning('Could not load %s/config.yaml, '\
+                'using default settings'%(args.base_path))
+            return False
+    return True
+
+if __name__ == "__main__":
+    stime = time.time()
+
+    # --------------------------------------------------------------------------
+    # Setup the argument parser
+    # --------------------------------------------------------------------------
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-b', '--base-path',
+        help='the base directory to operate on, defaults to current directory',
+        default=os.getcwd())
+    parser.add_argument('-c', '--config-file',
+        help='full path to configuration YAML file to load') 
+
+    subparsers = parser.add_subparsers(dest='command')
+
+    # --------------------------------------------------------------------------
+    # New subgroup
+    # --------------------------------------------------------------------------
+    parser_new = subparsers.add_parser('new',
+        help='create a new project')
+    parser_new.add_argument('project_name', 
+        help='the name of the project')
+    
+    # --------------------------------------------------------------------------
+    # Search index subgroup
+    # --------------------------------------------------------------------------
+    parser_index = subparsers.add_parser('index', 
+        help='build the search index')
+
+    # --------------------------------------------------------------------------
+    # Cache subgroup
+    # --------------------------------------------------------------------------
+    parser_cache = subparsers.add_parser('cache',
+        help='cache and index posts')
+    parser_cache.add_argument('-p', '--posts', nargs='+', type=str,
+        help='a list of source posts to cache, like post1.md post2.md ...')
+    parser_cache.add_argument('-f', '--force', action='store_true',
+        help='force cache even if file has not been modified')
+    parser_cache.add_argument('-q', '--quick', action='store_true',
+        help='Skip theme files, pagelist, and search index')
+
+    
+    # --------------------------------------------------------------------------
+    # Info subgroup
+    # --------------------------------------------------------------------------
+    parser_info = subparsers.add_parser('info', 
+        help='display PyKwiki information')
+    parser_info.add_argument('-v', '--version', action='store_true',
+        help='display PyKwiki version and exit')
+    parser_info.add_argument('-l', '--license', action='store_true',
+        help='display license information')
+
+   
+    # --------------------------------------------------------------------------
+    # Theme subgroup 
+    # --------------------------------------------------------------------------
+    parser_theme = subparsers.add_parser('theme',
+        help='control built-in themes')
+    parser_theme.add_argument('theme_command', choices=['install', 'info'])
+    parser_theme.add_argument('theme_name', 
+        help='the name of the theme to operate on, or "all"')
+ 
+    args = parser.parse_args()
+
+    # --------------------------------------------------------------------------
+    # Create new project
+    # --------------------------------------------------------------------------
+    if args.command == 'new':
+        command_new(args)
+
+    # --------------------------------------------------------------------------
+    # Index posts
+    # --------------------------------------------------------------------------
+    elif args.command == 'index':
+        load_config(args)
+        command_index(args)
+
+    # --------------------------------------------------------------------------
+    # Cache posts        
+    # --------------------------------------------------------------------------
+    elif args.command == 'cache':
+        load_config(args)
+        command_cache(args)
+
+
+    # --------------------------------------------------------------------------
+    # Display info and exit
+    # --------------------------------------------------------------------------
+    elif args.command == 'info':
+        import pykwiki
+        if args.version:
+            print('PyKwiki version: %s'%(pykwiki.__version__))
+            sys.exit(0)
+        print('Installed in %s'%(pykwiki.__file__))
+        print('Version: %s'%(pykwiki.__version__))
+        if args.license:
+            print('License: %s'%(pykwiki.__license__))
+        sys.exit(0)
+
+    # --------------------------------------------------------------------------
+    # Do stuff with themes
+    # --------------------------------------------------------------------------
+    elif args.command == 'theme':
+        load_config(args)
+        command_theme(args)
+
+    taken = time.time() - stime
+    logger.info('='*40)
+    logger.info('Operations completed in %ss'%(taken)) 
