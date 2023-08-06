@@ -1,0 +1,307 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>Plugins &mdash; django cms 3.1.0.b1 documentation</title>
+    
+    <link rel="stylesheet" href="../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../',
+        VERSION:     '3.1.0.b1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../_static/jquery.js"></script>
+    <script type="text/javascript" src="../_static/underscore.js"></script>
+    <script type="text/javascript" src="../_static/doctools.js"></script>
+    <link rel="top" title="django cms 3.1.0.b1 documentation" href="../index.html" />
+    <link rel="up" title="Tutorials" href="index.html" />
+    <link rel="next" title="Apphooks" href="apphooks.html" />
+    <link rel="prev" title="Templates &amp; Placeholders" href="templates_placeholders.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="apphooks.html" title="Apphooks"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="templates_placeholders.html" title="Templates &amp; Placeholders"
+             accesskey="P">previous</a> |</li>
+        <li><a href="../index.html">django cms 3.1.0.b1 documentation</a> &raquo;</li>
+          <li><a href="index.html" accesskey="U">Tutorials</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="plugins">
+<h1>Plugins<a class="headerlink" href="#plugins" title="Permalink to this headline">¶</a></h1>
+<p>In this tutorial we&#8217;re going to take a Django poll app and integrate it into the CMS.</p>
+<div class="section" id="install-the-polls-app">
+<h2>Install the polls app<a class="headerlink" href="#install-the-polls-app" title="Permalink to this headline">¶</a></h2>
+<p>Install the application from its GitHub repository using <tt class="docutils literal"><span class="pre">pip</span> <span class="pre">-e</span></tt> - this also places it in your virtualenv&#8217;s <tt class="docutils literal"><span class="pre">src</span></tt> directory as a cloned Git repository:</p>
+<div class="highlight-python"><div class="highlight"><pre>pip install -e git+http://git@github.com/divio/django-polls.git#egg=django-polls
+</pre></div>
+</div>
+<p>You should end up with a folder structure similar to this:</p>
+<div class="highlight-python"><div class="highlight"><pre>env/
+    src/
+        django-polls/
+            polls/
+                __init__.py
+                admin.py
+                models.py
+                templates/
+                tests.py
+                urls.py
+                views.py
+</pre></div>
+</div>
+<p>Let&#8217;s add it this application to our project. Add <tt class="docutils literal"><span class="pre">'polls'</span></tt> to the end
+of <cite>INSTALLED_APPS</cite> in your project&#8217;s <cite>settings.py</cite>.</p>
+<p>Add the following line to <tt class="docutils literal"><span class="pre">urlpatterns</span></tt> in the project&#8217;s <tt class="docutils literal"><span class="pre">urls.py</span></tt>:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="n">url</span><span class="p">(</span><span class="s">r&#39;^polls/&#39;</span><span class="p">,</span> <span class="n">include</span><span class="p">(</span><span class="s">&#39;polls.urls&#39;</span><span class="p">,</span> <span class="n">namespace</span><span class="o">=</span><span class="s">&#39;polls&#39;</span><span class="p">)),</span>
+</pre></div>
+</div>
+<p>Make sure this line is included <strong>before</strong> the line for the django-cms urls:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="n">url</span><span class="p">(</span><span class="s">r&#39;^&#39;</span><span class="p">,</span> <span class="n">include</span><span class="p">(</span><span class="s">&#39;cms.urls&#39;</span><span class="p">)),</span>
+</pre></div>
+</div>
+<p>django CMS&#8217;s URL pattern needs to be last, because it &#8220;swallows up&#8221; anything
+that hasn&#8217;t already been matched by a previous pattern.</p>
+<p>Now run the application&#8217;s migrations using <tt class="docutils literal"><span class="pre">south</span></tt>:</p>
+<div class="highlight-python"><div class="highlight"><pre>python manage.py migrate polls
+</pre></div>
+</div>
+<p>At this point you should be able to create polls and choices in the Django
+admin - localhost:8000/admin/ - and fill them in at <tt class="docutils literal"><span class="pre">/polls/</span></tt>.</p>
+<p>However, in pages of the polls application we only have minimal templates, and
+no navigation or styling. Let&#8217;s improve this by overriding the polls
+application&#8217;s base template.</p>
+<p>add <tt class="docutils literal"><span class="pre">my_site/templates/polls/base.html</span></tt>:</p>
+<div class="highlight-python"><div class="highlight"><pre>{% extends &#39;base.html&#39; %}
+
+{% block content %}
+    {% block polls_content %}
+    {% endblock %}
+{% endblock %}
+</pre></div>
+</div>
+<p>Open the <tt class="docutils literal"><span class="pre">/polls/</span></tt> again. The navigation should be visible now.</p>
+<p>So now we have integrated the standard polls app in our project. But we&#8217;ve not
+done anything django CMS specific yet.</p>
+</div>
+<div class="section" id="creating-a-plugin">
+<h2>Creating a plugin<a class="headerlink" href="#creating-a-plugin" title="Permalink to this headline">¶</a></h2>
+<p>If you&#8217;ve played around with the CMS for a little, you&#8217;ve probably already
+encountered CMS Plugins. They are the objects you can place into placeholders on
+your pages through the frontend: &#8220;Text&#8221;, &#8220;Image&#8221; and so forth.</p>
+<p>We&#8217;re now going to extend the django poll app so we can embed a poll easily
+into any CMS page. We&#8217;ll put this integration code in a separate package in our
+project.</p>
+<p>This allows integrating 3rd party apps without having to fork them. It would
+also be possible to add this code directly into the django-polls app to make it
+integrate out of the box.</p>
+<p>Create a new package at the project root called <tt class="docutils literal"><span class="pre">polls_plugin</span></tt>:</p>
+<blockquote>
+<div>python manage.py startapp polls_plugin</div></blockquote>
+<p>So our workspace looks like this:</p>
+<div class="highlight-python"><div class="highlight"><pre>env/
+    src/  # the django polls application is in here
+polls_plugin/  # the newly-created application
+    __init__.py
+    admin.py
+    models.py
+    tests.py
+    views.py
+my_site/
+static/
+project.db
+requirements.txt
+</pre></div>
+</div>
+<div class="section" id="the-plugin-model">
+<h3>The Plugin Model<a class="headerlink" href="#the-plugin-model" title="Permalink to this headline">¶</a></h3>
+<p>In your poll application’s <tt class="docutils literal"><span class="pre">models.py</span></tt> add the following:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">django.db</span> <span class="kn">import</span> <span class="n">models</span>
+<span class="kn">from</span> <span class="nn">cms.models</span> <span class="kn">import</span> <span class="n">CMSPlugin</span>
+<span class="kn">from</span> <span class="nn">polls.models</span> <span class="kn">import</span> <span class="n">Poll</span>
+
+
+<span class="k">class</span> <span class="nc">PollPlugin</span><span class="p">(</span><span class="n">CMSPlugin</span><span class="p">):</span>
+    <span class="n">poll</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">ForeignKey</span><span class="p">(</span><span class="n">Poll</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__unicode__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">poll</span><span class="o">.</span><span class="n">question</span>
+</pre></div>
+</div>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">django CMS plugins inherit from <tt class="xref py py-class docutils literal"><span class="pre">cms.models.CMSPlugin</span></tt> (or a
+subclass thereof) and not <a class="reference external" href="http://readthedocs.org/docs/django/en/latest/ref/models/instances.html#django.db.models.Model" title="(in Django v1.9)"><tt class="xref py py-class docutils literal"><span class="pre">models.Model</span></tt></a>.</p>
+</div>
+</div>
+<div class="section" id="the-plugin-class">
+<h3>The Plugin Class<a class="headerlink" href="#the-plugin-class" title="Permalink to this headline">¶</a></h3>
+<p>Now create a file <tt class="docutils literal"><span class="pre">cms_plugins.py</span></tt> in the same folder your models.py is in.
+The plugin class is responsible for providing django CMS with the necessary
+information to render your plugin.</p>
+<p>For our poll plugin, we&#8217;re going to write the following plugin class:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">cms.plugin_base</span> <span class="kn">import</span> <span class="n">CMSPluginBase</span>
+<span class="kn">from</span> <span class="nn">cms.plugin_pool</span> <span class="kn">import</span> <span class="n">plugin_pool</span>
+<span class="kn">from</span> <span class="nn">polls_plugin.models</span> <span class="kn">import</span> <span class="n">PollPlugin</span>
+<span class="kn">from</span> <span class="nn">django.utils.translation</span> <span class="kn">import</span> <span class="n">ugettext</span> <span class="k">as</span> <span class="n">_</span>
+
+
+<span class="k">class</span> <span class="nc">CMSPollPlugin</span><span class="p">(</span><span class="n">CMSPluginBase</span><span class="p">):</span>
+    <span class="n">model</span> <span class="o">=</span> <span class="n">PollPlugin</span>  <span class="c"># model where plugin data are saved</span>
+    <span class="n">module</span> <span class="o">=</span> <span class="n">_</span><span class="p">(</span><span class="s">&quot;Polls&quot;</span><span class="p">)</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="n">_</span><span class="p">(</span><span class="s">&quot;Poll Plugin&quot;</span><span class="p">)</span>  <span class="c"># name of the plugin in the interface</span>
+    <span class="n">render_template</span> <span class="o">=</span> <span class="s">&quot;djangocms_polls/poll_plugin.html&quot;</span>
+
+    <span class="k">def</span> <span class="nf">render</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">context</span><span class="p">,</span> <span class="n">instance</span><span class="p">,</span> <span class="n">placeholder</span><span class="p">):</span>
+        <span class="n">context</span><span class="o">.</span><span class="n">update</span><span class="p">({</span><span class="s">&#39;instance&#39;</span><span class="p">:</span> <span class="n">instance</span><span class="p">})</span>
+        <span class="k">return</span> <span class="n">context</span>
+
+<span class="n">plugin_pool</span><span class="o">.</span><span class="n">register_plugin</span><span class="p">(</span><span class="n">CMSPollPlugin</span><span class="p">)</span>  <span class="c"># register the plugin</span>
+</pre></div>
+</div>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">All plugin classes must inherit from <a class="reference internal" href="../reference/api_references.html#cms.plugin_base.CMSPluginBase" title="cms.plugin_base.CMSPluginBase"><tt class="xref py py-class docutils literal"><span class="pre">cms.plugin_base.CMSPluginBase</span></tt></a>
+and must register themselves with the <tt class="xref py py-data docutils literal"><span class="pre">cms.plugin_pool.plugin_pool</span></tt>.</p>
+</div>
+<p>The convention for plugin naming is as follows:</p>
+<ul class="simple">
+<li>SomePlugin: the <em>model</em> class</li>
+<li>CMSSomePlugin: the <em>plugin</em> class</li>
+</ul>
+<p>You don&#8217;t need to follow this, but it&#8217;s a sensible thing to do.</p>
+</div>
+<div class="section" id="the-template">
+<h3>The template<a class="headerlink" href="#the-template" title="Permalink to this headline">¶</a></h3>
+<p>The <tt class="docutils literal"><span class="pre">render_template</span></tt> attribute in the plugin class is required, and tells
+the plugin which <a class="reference internal" href="../reference/api_references.html#cms.plugin_base.CMSPluginBase.render_template" title="cms.plugin_base.CMSPluginBase.render_template"><tt class="xref py py-attr docutils literal"><span class="pre">render_template</span></tt></a> to use when rendering.</p>
+<p>In this case the template needs to be at
+<tt class="docutils literal"><span class="pre">polls_plugin/templates/djangocms_polls/poll_plugin.html</span></tt> and should look
+something like this:</p>
+<div class="highlight-python"><div class="highlight"><pre>&lt;h1&gt;{{ instance.poll.question }}&lt;/h1&gt;
+
+&lt;form action=&quot;{% url &#39;polls:vote&#39; instance.poll.id %}&quot; method=&quot;post&quot;&gt;
+    {% csrf_token %}
+    {% for choice in instance.poll.choice_set.all %}
+        &lt;input type=&quot;radio&quot; name=&quot;choice&quot; id=&quot;choice{{ forloop.counter }}&quot; value=&quot;{{ choice.id }}&quot; /&gt;
+        &lt;label for=&quot;choice{{ forloop.counter }}&quot;&gt;{{ choice.choice_text }}&lt;/label&gt;&lt;br /&gt;
+    {% endfor %}
+    &lt;input type=&quot;submit&quot; value=&quot;Vote&quot; /&gt;
+&lt;/form&gt;
+</pre></div>
+</div>
+<p>Now add <tt class="docutils literal"><span class="pre">polls_plugin</span></tt> to <tt class="docutils literal"><span class="pre">INSTALLED_APPS</span></tt> and create a database migration
+to add the plugin table (using South):</p>
+<div class="highlight-python"><div class="highlight"><pre>python manage.py schemamigration polls_plugin --init
+python manage.py migrate polls_plugin
+</pre></div>
+</div>
+<p>Finally, start the runserver and visit <a class="reference external" href="http://localhost:8000/">http://localhost:8000/</a>.</p>
+<p>You can now drop the <tt class="docutils literal"><span class="pre">Poll</span> <span class="pre">Plugin</span></tt> into any placeholder on any page, just as
+you would any other plugin.</p>
+<p>Next we&#8217;ll integrate the Polls application more fully into our django CMS
+project.</p>
+</div>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h3><a href="../index.html">Table Of Contents</a></h3>
+  <ul>
+<li><a class="reference internal" href="#">Plugins</a><ul>
+<li><a class="reference internal" href="#install-the-polls-app">Install the polls app</a></li>
+<li><a class="reference internal" href="#creating-a-plugin">Creating a plugin</a><ul>
+<li><a class="reference internal" href="#the-plugin-model">The Plugin Model</a></li>
+<li><a class="reference internal" href="#the-plugin-class">The Plugin Class</a></li>
+<li><a class="reference internal" href="#the-template">The template</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="templates_placeholders.html"
+                        title="previous chapter">Templates &amp; Placeholders</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="apphooks.html"
+                        title="next chapter">Apphooks</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="../_sources/introduction/plugins.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="apphooks.html" title="Apphooks"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="templates_placeholders.html" title="Templates &amp; Placeholders"
+             >previous</a> |</li>
+        <li><a href="../index.html">django cms 3.1.0.b1 documentation</a> &raquo;</li>
+          <li><a href="index.html" >Tutorials</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2009, Patrick Lauber.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>
