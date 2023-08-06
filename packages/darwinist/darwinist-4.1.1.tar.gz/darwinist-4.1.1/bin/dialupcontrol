@@ -1,0 +1,150 @@
+#!/usr/bin/env python
+
+USAGE = """Connect, disconnect or show status of a Dialup connection in OS/X.
+
+Can be used for OS/X integrated Dialup connections only. Dialup will still
+ask password in a graphical window, if not permanently configured, so you
+can't run this headless remotely.
+
+If you can figure out how to enter the Dialup passphrase, please send the info
+to hile@iki.fi and I'll update the module and this script to allow entering
+the passwords as well.
+"""
+
+import os
+import time
+
+from systematic.shell import Script, ScriptCommand
+from darwinist.networkprofile import NetworkProfileList
+
+CONFIG_PATH = os.path.join(os.getenv('HOME'), '.networks.conf')
+
+
+class DialupControlCommand(ScriptCommand):
+    def __init__(self, *args, **kwargs):
+        ScriptCommand.__init__(self, *args, **kwargs)
+        self.linktype = 'dialup'
+
+    def parse_args(self, args):
+
+        self.profile = NetworkProfileList(config=CONFIG_PATH)
+        self.links = self.profile.filter(self.linktype)
+
+        self.link = None
+        if 'name' in args and args.name:
+            try:
+                self.link = self.profile[args.name]
+                if self.link not in self.links:
+                    self.exit(255, 'Not a %s link: %s' % (self.linktype, args.name))
+            except KeyError:
+                self.exit(255, 'No such %s link: %s' % (self.linktype, args.name))
+
+        else:
+            if self.profile.config.has_key(self.linktype):
+                default = self.profile.config[self.linktype]['default']
+                try:
+                    self.link = self.profile[default]
+                except KeyError:
+                    self.exit(1, 'Default %s link %s not found' % (self.linktype, default))
+
+        return args
+
+
+class ListCommand(DialupControlCommand):
+    def run(self, args):
+        args = self.parse_args(args)
+
+        for link in self.links:
+            self.script.message(link.name)
+
+
+class ConnectCommand(DialupControlCommand):
+    def run(self, args):
+        args = self.parse_args(args)
+
+        if self.link is None:
+            self.exit(1, 'Dialup configuration not found')
+
+        if self.link.connected:
+            self.exit(0, 'Dialup already connected')
+
+        self.link.connect()
+        if args.wait:
+            self.log.info('Waiting for %s to connect...' % self.name)
+
+            while True:
+                if self.link.connected:
+                    self.exit(0)
+                time.sleep(1)
+
+            self.exit(1)
+
+class DisconnectCommand(DialupControlCommand):
+    def run(self, args):
+        args = self.parse_args(args)
+
+        if self.link is None:
+            self.exit(1, 'Dialup configuration not found')
+
+        if not self.link.connected:
+            self.exit(0, 'Dialup not connected.')
+
+        self.link.disconnect()
+        if args.wait:
+            script.log.info('Waiting for %s to disconnect...' % self.name)
+            while True:
+                if not self.link.connected:
+                    self.exit(0)
+                time.sleep(1)
+
+            self.exit(1)
+
+class StatusCommand(DialupControlCommand):
+    def run(self, args):
+        args = self.parse_args(args)
+
+        if self.link is None:
+            self.exit(1, 'Dialup configuration not found')
+
+        status = self.link.connected
+        self.script.message('%s %s %s' % (
+            self.link.name,
+            self.linktype,
+            status and 'is connected' or 'is not connected'
+        ))
+        self.exit(status==False and 1 or 0)
+
+class WaitCommand(DialupControlCommand):
+    def run(self, args):
+        args = self.parse_args(args)
+
+        if self.link is None:
+            self.exit(1, 'Dialup configuration not found')
+
+        while True:
+            if self.link.connected:
+                self.exit(0)
+            time.sleep(1)
+
+        self.exit(1)
+
+script = Script(description=USAGE)
+c = script.add_subcommand(ListCommand('list', 'List connections'))
+
+c = script.add_subcommand(DisconnectCommand('disconnect', 'Disconnect Dialup'))
+c.add_argument('-w', '--wait', action='store_true', help='Wait for connect/disconnect')
+c.add_argument('name', nargs='?', help='Connection name')
+
+c = script.add_subcommand(ConnectCommand('connect', 'Connect Dialup'))
+c.add_argument('-w', '--wait', action='store_true', help='Wait for connect/disconnect')
+c.add_argument('name', nargs='?', help='Connection name')
+
+c = script.add_subcommand(StatusCommand('status', 'Status of Dialup connection'))
+c.add_argument('name', nargs='?', help='Connection name')
+
+c = script.add_subcommand(WaitCommand('wait', 'Wait for Dialup connection'))
+c.add_argument('name', nargs='?', help='Connection name')
+
+args = script.parse_args()
+
+script.exit(0)

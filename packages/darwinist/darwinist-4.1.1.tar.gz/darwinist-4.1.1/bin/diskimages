@@ -1,0 +1,133 @@
+#!/usr/bin/env python
+"""
+Attach and detach user configured disk images based on settings, to
+predefined folders with custom parameters.
+"""
+
+import os
+from systematic.shell import Script, ScriptCommand
+from darwinist.diskimage import DiskImagesConfig, DiskImage, DiskImageError
+from darwinist.diskutil  import INFO_FIELD_MAP,  INFO_FIELD_ORDER
+
+DEFAULT_RETRIES = 3
+
+
+class DMGCommand(ScriptCommand):
+    def run(self, args):
+        self.dmgconfig = DiskImagesConfig()
+        if 'images' in args and args.images:
+            self.match_images(args)
+        else:
+            self.images = self.dmgconfig.values()
+
+        if 'retries' in args and args.retries < 1:
+            self.script.exit(1, 'Invalid retry count %d' % args.retries)
+
+    def match_images(self, args):
+        self.images = []
+        for value in args.images:
+            dmg = self.dmgconfig.match(value)
+            if dmg:
+                self.images.append(dmg)
+
+    def __iter__(self):
+        return iter(self.images)
+
+
+class StatusCommand(DMGCommand):
+    def run(self, args):
+        DMGCommand.run(self, args)
+        for dmg in self:
+            self.script.message('%s: %s on %s: %s' % (
+                dmg.name, dmg.image, dmg.mountpoint,
+                dmg.connected and 'attached' or 'not attached'
+            ))
+
+
+class NamesCommand(DMGCommand):
+    def run(self, args):
+        DMGCommand.run(self, args)
+        for dmg in self:
+            self.script.message(dmg.name)
+
+
+class InfoCommand(DMGCommand):
+    def run(self, args):
+        DMGCommand.run(self, args)
+        for dmg in self:
+            info = dmg.info
+            self.script.message(dmg.name)
+            if dmg.description:
+                self.script.message('%14s %s' % ('Description', dmg.description))
+
+            self.script.message('%14s %s' % ('Image', dmg.image))
+
+            if info is None:
+                self.script.message('Image is not mounted')
+
+            for k in INFO_FIELD_ORDER:
+                if k not in info.keys():
+                    continue
+                self.script.message('%14s %s' % (
+                    INFO_FIELD_MAP[k]['name'],
+                    INFO_FIELD_MAP[k]['value'](info[k]),
+                ))
+
+
+class AttachCommand(DMGCommand):
+    def run(self, args):
+        DMGCommand.run(self, args)
+
+        for dmg in self:
+            if not os.path.isfile(dmg.image):
+                self.script.message('No such file: %s' % dmg.image)
+                continue
+
+            if dmg.connected:
+                self.script.log.debug('Already attached: %s' % dmg.image)
+                continue
+
+            retry = 0
+            while retry < args.retries:
+                self.script.message('Attaching: %s' % dmg.image)
+                try:
+                    dmg.attach()
+                    break
+                except DiskImageError, emsg:
+                    if retry >= args.retries:
+                        self.script.error(emsg)
+                    retry += 1
+
+
+class DetachCommand(DMGCommand):
+    def run(self, args):
+        DMGCommand.run(self, args)
+        for dmg in self:
+            if not dmg.connected:
+                self.script.log.debug('Not connected: %s' % dmg.image)
+                continue
+
+            try:
+                dmg.detach()
+            except DiskImageError, emsg:
+                print emsg
+
+script = Script()
+c = script.add_subcommand(NamesCommand('names', 'List image names'))
+
+c = script.add_subcommand(InfoCommand('info', 'Show image configuration'))
+c.add_argument('images', nargs='*', help='Image to show')
+
+c = script.add_subcommand(StatusCommand('status', 'Show image status'))
+c.add_argument('images', nargs='*', help='Image to show')
+
+c = script.add_subcommand(AttachCommand('attach', 'Attach images'))
+c.add_argument('--retries', type=int, default=DEFAULT_RETRIES, help='Retry count')
+c.add_argument('images', nargs='*', help='Image names to attach')
+
+c = script.add_subcommand(DetachCommand('detach', 'Detach images'))
+c.add_argument('images', nargs='*', help='Images names to detach')
+
+args = script.parse_args()
+
+
