@@ -1,0 +1,121 @@
+{% extends "rpt_base.html" %}{% load static %}
+{% block content %}
+<form id="builder" name="form" method="post" action="" ng-app="builder" ng-controller="MainCtrl" novalidate>
+	<h2><span class="number-badge">1</span> Dataset name/description</h2>
+	<div class="form-group">
+	    <label>Name (required)</label>
+	    <input type="text" class="form-control" name="name" ng-model="dsName" placeholder="What do you want to call your dataset?" required>
+  	</div>
+  	<div class="form-group">
+	    <label>Description (optional)</label>
+	    <textarea class="form-control" name="description" ng-model="dsDescription" placeholder="A quick summary describing this dataset's purpose"></textarea>
+  	</div>
+	<h2><span class="number-badge">2</span> Filtering criteria</h2>
+	<p class="text-info">Create filters using the fields, operators, and values options below. Add one or more conditions to each row; all records that satisfy at least one condition in each row you define will be returned.</p>
+        {% with lu_all=universe.lookups.all %}
+            {% if lu_all|length > 0 %}
+                {% spaceless %}<p class="text-info">You can filter on Lookup Table fields in order to filter on one-to-many relationships. For example, using the 'DX' field in a diagnoses lookup table will search through DX1, DX2, DX3, etc. The available lookup categories are
+                    {% for lu in lu_all %}
+                        {% with def=lu.via.definition %}
+                            {% if forloop.counter == lu_all|length %}
+                                and {{ def.category }}.
+                            {% else %}
+                                {{ def.category }},
+                            {% endif %}
+                        {% endwith %}
+                    {% endfor %}
+                </p>{% endspaceless %}
+            {% endif %}
+        {% endwith %}
+
+    <div ng-repeat="r in filters track by $index">
+	    <div class="row" >
+	    	<div class="col-md-9">
+			    <div class="well">
+			    	<div class="btn-group" ng-repeat="c in r track by $index">
+			    		<button type="button" class="btn btn-xs btn-danger" ng-click="deleteColumn(r, $index)">
+			    			<span class="glyphicon glyphicon-remove" aria-hidden="true"></span>
+		    			</button>
+				    	<button type="button" class="btn btn-default" ng-click="editCondition(r, $index)">
+				    		{% verbatim %}<small>{{ c.field.group }}</small><br>{{ c.field.display }} <b>{{ c.operator.value }}</b> {{ c.value }}{% endverbatim %}
+			    		</button>
+		    		</div>
+		    		<button type="button" class="btn btn-success" ng-click="addColumn(r)">
+						<span class="glyphicon glyphicon-plus" aria-hidden="true"></span> Add condition
+					</button>
+			    </div>
+			</div>
+			<div class="col-md-3">
+				<span class="text-muted bold">All of the following</span>
+				<button type="button" class="btn btn-danger" ng-click="deleteRow($index)" ng-show="$index != 0">
+					<span class="glyphicon glyphicon-remove" aria-hidden="true"></span>
+					Delete this row
+				</button>
+			</div>
+		</div>
+		<p class="lead bold" ng-show="$index != filters.length - 1">OR</p>
+	</div>
+
+	<button type="button" class="btn btn-success" ng-click="addRow()">
+		<span class="glyphicon glyphicon-plus" aria-hidden="true"></span> Add row
+	</button>
+
+	<input type="hidden" name="filter_json" ng-value="filter_json">
+
+    <h2><span class="number-badge">3</span> Output fields</h2>
+    <p class="text-info">Specify the categories/fields you would like in your DataSet below.
+    A default set of categories has been pre-selected for you. Click on a category name to view its included fields.</p>
+    {% regroup available_columns by get_category_display as column_lst %}
+    <div id="accordion" class="panel-group">
+    	{% for get_category_display in column_lst %}
+    	<div class="panel panel-default">
+    		<div class="panel-heading" id="headingOne">
+    			<h4 class="panel-title">
+    				<input id="check-all-{{ forloop.counter }}" type="checkbox" check-all>
+    				<a data-toggle="collapse" data-parent="#accordion" href="#collapse-group-{{ forloop.counter }}">{{ get_category_display.grouper }}
+    					- {{ get_category_display.list | length }} fields <i class="fa fa-angle-double-down"></i></a>
+    			</h4>
+			</div>
+			<div id="collapse-group-{{ forloop.counter }}" class="panel-collapse collapse">
+				<ul class="list-group list-group-indent">
+					{% for c in get_category_display.list %}
+					<li class="list-group-item"><input id="column-{{ c.pk }}" type="checkbox" name="columns[]" value="{{ c.pk }}" 
+						{% if c.extract_by_default %} checked {% endif %}> <label for="column-{{ c.pk }}">{{ c.filter_display }}</label>
+						<a href="{{ c.help_url }}" target="_blank">View HCUP reference
+						<i class="fa fa-external-link"></i></a>
+					</li>
+					{% endfor %}
+				</ul>
+			</div>
+		</div>
+		{% endfor %}
+	</div>
+
+    <h2><span class="number-badge">4</span> Linked visits</h2>
+    <p class="text-info">Check either the pre-visit or post-visit boxes below to bundle corresponding linked visit files with your DataSet. These will be separate CSV files with the same columns as your primary DataSet.</p>
+    <p class="text-info">If you wish to do comparisons between and among linked visits, it is strongly recommended that you include both the VisitLink and DaysToEvent fields in your output.</p>
+    <div class="checkbox">
+	    <label>
+	      <input type="checkbox" name="bundle_previsit_file" value="1"> Pre-visits
+	    </label>
+  	</div>
+  	<div class="checkbox">
+	    <label>
+	      <input type="checkbox" name="bundle_postvisit_file" value="1"> Post-visits
+	    </label>
+  	</div>
+    <h2><span class="number-badge">5</span> Submit</h2>
+    <p class="text-info">Once your dataset is submitted, it will be placed in the processing queue. You will receive an email once the dataset has been fully generated and is ready for download.</p>
+    {% csrf_token %}
+    <button class="btn btn-primary" type="submit" ng-disabled="!form.$valid">Submit</button>
+</form>
+{% endblock %}
+{% block body_js %}
+<script>
+	arrFields = {{ json_filter_fields|safe }}
+	arrOperators = {{ json_filter_operators|safe }}
+</script>
+
+<script src="{% static 'js/ds-builder.js' %}"></script>
+<script src="{% static 'js/ui-bootstrap-tpls-0.12.0.min.js' %}"></script>
+{% endblock %}
