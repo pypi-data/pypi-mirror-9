@@ -1,0 +1,241 @@
+#!/usr/bin/env python
+# Copyright (c) 2008 Chris Moyer http://coredumped.org
+#
+# Permission is hereby granted, free of charge, to any person obtaining a
+# copy of this software and associated documentation files (the
+# "Software"), to deal in the Software without restriction, including
+# without limitation the rights to use, copy, modify, merge, publish, dis-
+# tribute, sublicense, and/or sell copies of the Software, and to permit
+# persons to whom the Software is furnished to do so, subject to the fol-
+# lowing conditions:
+#
+# The above copyright notice and this permission notice shall be included
+# in all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+# OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABIL-
+# ITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+# SHALL THE AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, 
+# WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+# IN THE SOFTWARE.
+
+# Gevent must monkey-patch the STDLIB before anything
+# else is imported, but only if it's available
+#try:
+#	from gevent.monkey import patch_all;patch_all()
+#except ImportError:
+#	pass
+
+def get_function(session, f_name):
+	"""
+	Get function f_name (starting point of session)
+	"""
+	cmd_list = f_name.split(".")
+	func = session[cmd_list.pop(0)]
+	for cmd in cmd_list:
+		func = getattr(func, cmd)
+	return func
+
+if __name__ == "__main__":
+	import sys
+	sys.path.append(".")
+	from optparse import OptionParser
+	import botoweb
+	import logging
+	import signal
+	log = logging.getLogger("botoweb")
+
+	parser = OptionParser(usage="usage: %prog [options] application")
+	parser.add_option("-e", "--environment", dest="env", default=None, help="Environment file to use")
+	parser.add_option("-p", "--port", dest="port", default="8080", help="Port to run on (default 8080)")
+	parser.add_option("--host", dest="hostname", default="localhost", help="Hostname to run on (default localhost)")
+	parser.add_option("--init", dest="init", action="store_true", default=False, help="Initialize the Databases (Currently only works with SDB)")
+	parser.add_option("--add-user", dest="add_user", action="store_true", default=False, help="Add a user")
+	parser.add_option("--shell", dest="shell", action="store_true", default=False, help="Run the interactive command-line shell")
+	parser.add_option("--core", dest="core", action="store_true", default=False, help="Run only the core (URL Maper), no auth, filter, or cache layers")
+	parser.add_option("--cache", dest="cache", action="store_true", default=False, help="Enable the cache layer. Useful if you are not using user-based responses")
+	parser.add_option("--max-threads", dest="max_threads", default=20, help="Maximum number of threads to run (default 20)")
+	parser.add_option("--socketio", help='Use gevent-socketio', action='store_true')
+	parser.add_option("-v", action="count", dest="verbose", default=0)
+	(options, args) = parser.parse_args()
+
+	e = botoweb.set_env(args[0], options.env)
+	import boto
+	boto.config = e.config
+
+	if options.verbose:
+		import logging
+		if options.verbose > 2:
+			level = logging.DEBUG
+		else:
+			level = logging.INFO
+		boto.set_stream_logger("", level=logging.INFO)
+		boto.set_stream_logger("root", level=logging.INFO)
+		boto.set_stream_logger("botoweb", level=logging.INFO)
+		boto.set_stream_logger("botoweb.wsgi_layer", level=logging.INFO)
+
+	if (options.init == True):
+		log.info("Initializing Databases")
+		sdb = boto.connect_sdb(
+			e.config['DB']['db_user'], 
+			e.config['DB']['db_passwd'], 
+			port=e.config['DB'].get("db_port", None), 
+			host=e.config['DB'].get("db_host", "sdb.amazonaws.com"),
+			is_secure=e.config['DB'].get("enable_ssl", True)
+			)
+		log.info("Creating domain: %s" % e.config['DB']['db_name'])
+		sdb.create_domain(e.config['DB'].get("db_name"))
+		for db in e.config['DB'].values():
+			if isinstance(db, dict) and db.get("db_name", None) != None:
+				log.info("Creating domain: %s" % db.get("db_name"))
+				sdb.create_domain(db['db_name'])
+		log.info("Done")
+		exit(0)
+
+	if (options.add_user == True):
+		from botoweb.resources.user import User
+		u = User()
+		u.username = raw_input("Username: ")
+		u.password = raw_input("Password: ")
+		u.put()
+		log.info("Done")
+		exit(0)
+
+	if (options.shell == True):
+		import code
+		import readline
+		from botoweb.resources.user import User
+		code.interact(local={
+			"env": e,
+			"boto": boto,
+			"User": User
+		})
+		exit(0)
+
+	from botoweb.appserver.url_mapper import URLMapper
+	from botoweb.appserver.filter_mapper import FilterMapper
+	from botoweb.appserver.cache_layer import CacheLayer
+	from botoweb.appserver.auth_layer import AuthLayer
+	mapper = URLMapper(e)
+	if not options.core:
+		if options.cache:
+			mapper = CacheLayer(app=mapper, env=e)
+			log.info('Enabling Cache Layer')
+		mapper = AuthLayer(
+						app=FilterMapper(
+							app=mapper,
+							env=e),
+						env=e)
+
+	# NewRelic Agent support
+	# Setting up Newrelic support is as simple
+	# as adding a "newrelic.cfg" file to the "conf"
+	# directory
+	if e.dist.has_resource('conf/newrelic.cfg'):
+		import newrelic.agent
+		newrelic.agent.initialize(e.dist.get_resource_filename(e.mgr, 'conf/newrelic.cfg'), e.env)
+		# This maps the reload script to the newrelic
+		# WSGI wrapper
+		reload = mapper.reload
+		# We also need to grab the handle function
+		handle = mapper.handle
+		mapper = newrelic.agent.wsgi_application()(mapper)
+		mapper.reload = reload
+		mapper.handle = handle
+
+
+
+	# Add in a reload handler for SIGHUP
+	signal.signal(signal.SIGHUP, mapper.reload)
+
+	# If we're configured,use the socketIO server first
+	if options.socketio:
+		from socketio.server import SocketIOServer
+		# Plop in a top-layer SocketIO Wrapper
+		from botoweb.appserver.socket import SocketIOLayer
+		SocketIOServer((options.hostname, int(options.port)), SocketIOLayer(app=mapper, env=e),
+			resource='socket.io', policy_server=False).serve_forever()
+	else:
+
+		# Figure out which HTTP server to use,
+		# we based this off of:
+		# http://nichol.as/benchmark-of-python-web-servers
+		try:
+			# First up, Twisted
+			import twisted
+			from twisted.web.server import Site
+			from twisted.web.wsgi import WSGIResource
+			from twisted.python.threadpool import ThreadPool
+			from twisted.internet import reactor
+
+			log.info("Max Threads: %s" % options.max_threads)
+			wsgiThreadPool = ThreadPool(maxthreads=options.max_threads, minthreads=min(options.max_threads, 5))
+			wsgiThreadPool.start()
+
+
+
+			def getInfo(signum, stack):
+				log.info("================ INFO ===================")
+				log.info("queue: %s"   % len(wsgiThreadPool.q.queue))
+				log.info("waiters: %s" % len(wsgiThreadPool.waiters))
+				log.info("working: %s" % len(wsgiThreadPool.working))
+				log.info("threads: %s" % len(wsgiThreadPool.threads))
+				log.info("=========================================")
+
+			def stop(signum, stack):
+				log.info("Gracefully Stopping botoweb server")
+				reactor.stop()
+
+			try:
+				# Bind SIGKILL
+				signal.signal(signal.SIGINT, stop)
+				# Bind SIGINFO
+				signal.signal(29, getInfo)
+			except:
+				pass
+
+			# ensuring that it will be stopped when the reactor shuts down
+			reactor.addSystemEventTrigger('after', 'shutdown', wsgiThreadPool.stop)
+
+			log.info("Using Twisted version: %s" % twisted.__version__)
+			log.info("running on http://localhost:%s" % (options.port))
+			mapper.threadpool = wsgiThreadPool
+			mapper.maxthreads = int(options.max_threads)
+			resource = WSGIResource(reactor, wsgiThreadPool, mapper)
+			reactor.listenTCP(int(options.port),Site(resource))
+			reactor.run()
+
+		except ImportError:
+			try:
+				# Next, try CherryPy
+				from cherrypy import wsgiserver
+				log.info("Using CherryPyWSGIServer")
+				log.info("running on http://%s:%s" % (options.hostname, options.port))
+				s = wsgiserver.CherryPyWSGIServer((options.hostname, int(options.port)),mapper)
+				try:
+					s.start()
+				finally:
+					s.stop()
+			except ImportError:
+				try:
+					# Next, try Paste
+					from paste import httpserver
+					log.info("Using python paste server")
+					log.info("running on http://%s:%s" % (options.hostname, options.port))
+					httpserver.serve(mapper,
+						host=options.hostname,
+						port=int(options.port),
+						daemon_threads=True,
+						socket_timeout=60,
+						protocol_version="HTTP/1.1",
+					)
+				except ImportError:
+					# As a last resort, fall back to WsgiRef which has been included since Python2.5
+					from wsgiref import simple_server
+					log.info("No other servers available, using wsgiref instead")
+					log.info("running on http://%s:%s" % (options.hostname, options.port))
+					httpd = simple_server.WSGIServer((options.hostname,int(options.port)),
+											simple_server.WSGIRequestHandler)
+					httpd.set_app(mapper)
+					httpd.serve_forever()
