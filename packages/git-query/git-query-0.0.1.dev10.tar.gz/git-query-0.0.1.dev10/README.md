@@ -1,0 +1,40 @@
+# git-query
+A Git plugin to look up stuff like pending reviews, review URLs, etc from Gerrit
+
+### Setup
+```sudo pip install git+https://github.com/sudocode/git-query.git```
+
+### Configuration
+Add the following lines to your .bash_profile:
+
+```
+export GERRIT_HOST='http://gerrit.example.com'
+export GERRIT_USERNAME='your_username'
+export GERRIT_TOKEN='your_api_token'  # explained below
+```
+
+Don't forget to source (or reset your terminal session)!
+
+### Generating a Gerrit API Token
+1. Go to your Settings in Gerrit (in the menu when you click on your name in the top-right)
+2. Click __HTTP Password__
+3. Click __Generate Password__
+
+### Usage
+You can either use ```git query``` or ```git ?```. You will need to be in a repo that exists in Gerrit.
+
+```
+# get info from Gerrit about the current commit
+git query
+git ?
+
+# list all Gerrit IDs for the current repo
+git query -a
+git query --all
+git ? -a
+git ? --all
+
+# get info from Gerrit about a specific ID
+git query 1234
+git ? 1234
+```
