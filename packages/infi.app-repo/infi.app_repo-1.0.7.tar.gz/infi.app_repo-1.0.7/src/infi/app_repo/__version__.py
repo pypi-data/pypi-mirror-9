@@ -1,0 +1,10 @@
+__version__ = "1.0.7"
+__git_commiter_name__ = "Guy Rozendorn"
+__git_commiter_email__ = "guy@rzn.co.il"
+__git_branch__ = '(detached from v1.0.7)'
+__git_remote_tracking_branch__ = '(No remote tracking)'
+__git_remote_url__ = '(Not remote tracking)'
+__git_head_hash__ = '663ecb7aaedd287d83190c18a848f1769c0c1c43'
+__git_head_subject__ = 'Finished release v1.0.7.'
+__git_head_message__ = '* release/v1.0.7:\n  APR-17 link to curl in new tab\n  APR-12 index operations in the cli call rpc call to reload config from disk\n  AIX instructions to install curl" g\n  APR-17 aix before solaris\n  APR-17 aix rpms\n  TRIVIAL fixing something in PrettyIndex.rebuild_index\n  TRIVIAL fixing previous commit\n  TRIVIAL user guide\n  APR-15\n  CS-1061\n  APR-14 solaris is gray\n  APR-14 solaris scripts\n  TRIVIAL solaris/sparc filename parser\n  Unfreezing dependencies'
+__git_dirty_diff__ = ''
