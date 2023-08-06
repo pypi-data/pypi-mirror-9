@@ -1,0 +1,386 @@
+=============================
+dj-stripe
+=============================
+
+Badges
+------
+
+.. image:: https://badge.fury.io/py/dj-stripe.png
+    :target: http://badge.fury.io/py/dj-stripe
+
+.. image:: https://travis-ci.org/pydanny/dj-stripe.png?branch=master
+        :target: https://travis-ci.org/pydanny/dj-stripe
+
+.. image:: https://pypip.in/d/dj-stripe/badge.png
+        :target: https://pypi.python.org/pypi/dj-stripe/
+
+
+Django + Stripe Made Easy
+
+Documentation
+-------------
+
+The full documentation is at http://dj-stripe.rtfd.org.
+
+Features
+--------
+
+* Subscription management
+* Designed for easy implementation of post-registration subscription forms
+* Single-unit purchases (forthcoming)
+* Works with Django 1.6, 1.5, 1.4
+* Works with Python 3.3, 2.7, 2.6
+* Works with Bootstrap 3
+* Built-in South migrations
+* Dead-Easy installation
+* Leverages in the best of the 3rd party Django package ecosystem
+* `djstripe` namespace so you can have more than one payments related app
+* Documented (Making good progress)
+* Tested (Making good progress)
+
+Constraints
+------------
+
+1. For stripe.com only
+2. Only use or support well-maintained third-party libraries
+3. For modern Python and Django
+
+
+Quickstart
+----------
+
+Install dj-stripe:
+
+.. code-block:: bash
+
+    pip install dj-stripe
+
+Add ``djstripe`` to your ``INSTALLED_APPS``:
+
+.. code-block:: python
+
+    INSTALLED_APPS +=(
+        "djstripe",
+    )
+
+Add the context processor to your ``TEMPLATE_CONTEXT_PROCESSORS``:
+
+.. code-block:: python
+
+    TEMPLATE_CONTEXT_PROCESSORS +=(
+        'djstripe.context_processors.djstripe_settings',
+    )
+
+Add your stripe keys:
+
+.. code-block:: python
+
+    STRIPE_PUBLIC_KEY = os.environ.get("STRIPE_PUBLIC_KEY", "<your publishable test key>")
+    STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "<your secret test key>")
+
+Add some payment plans:
+
+.. code-block:: python
+
+    DJSTRIPE_PLANS = {
+        "monthly": {
+            "stripe_plan_id": "pro-monthly",
+            "name": "Web App Pro ($24.99/month)",
+            "description": "The monthly subscription plan to WebApp",
+            "price": 2499,  # $24.99
+            "currency": "usd",
+            "interval": "month"
+        },
+        "yearly": {
+            "stripe_plan_id": "pro-yearly",
+            "name": "Web App Pro ($199/year)",
+            "description": "The annual subscription plan to WebApp",
+            "price": 19900,  # $199.00
+            "currency": "usd",
+            "interval": "year"
+        }
+    }
+
+Add to the urls.py:
+
+.. code-block:: python
+
+    url(r'^payments/', include('djstripe.urls', namespace="djstripe")),
+
+Run the commands::
+
+    python manage.py syncdb
+
+    python manage.py migrate  # if you are using South
+
+    python manage.py djstripe_init_customers
+
+    python manage.py djstripe_init_plans
+
+If you haven't already, add JQuery and the Bootstrap 3.0.0 JS and CSS to your base template:
+
+.. code-block:: html
+
+    <!-- Latest compiled and minified CSS -->
+    <link rel="stylesheet" href="//netdna.bootstrapcdn.com/bootstrap/3.0.0/css/bootstrap.min.css">
+
+    <!-- Optional theme -->
+    <link rel="stylesheet" href="//netdna.bootstrapcdn.com/bootstrap/3.0.0/css/bootstrap-theme.min.css">
+
+    <!-- Latest JQuery -->
+    <script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.1/jquery.min.js"></script>
+
+    <!-- Latest compiled and minified JavaScript -->
+    <script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
+
+Also, if you don't have it already, add a javascript block to your base.html file:
+
+.. code-block:: html
+
+    {% block javascript %}{% endblock %} 
+
+Start up the webserver:
+
+    * http://127.0.0.1:8000/payments/
+
+Running the Tests
+------------------
+
+Assuming the tests are run against PostgreSQL::
+
+    createdb djstripe
+    pip install -r requirements_test.txt
+    coverage run --source djstripe runtests.py
+    coverage report -m
+
+Follows Best Practices
+======================
+
+.. image:: http://twoscoops.smugmug.com/Two-Scoops-Press-Media-Kit/i-C8s5jkn/0/O/favicon-152.png
+   :name: Two Scoops Logo
+   :align: center
+   :alt: Two Scoops of Django
+   :target: http://twoscoopspress.org/products/two-scoops-of-django-1-6
+
+This project follows best practices as espoused in `Two Scoops of Django: Best Practices for Django 1.6`_.
+
+.. _`Two Scoops of Django: Best Practices for Django 1.6`: http://twoscoopspress.org/products/two-scoops-of-django-1-6
+
+Similar Projects
+----------------
+
+* https://github.com/eldarion/django-stripe-payments - The project that dj-stripe forked. It's an awesome project and worth checking out.
+* https://github.com/agiliq/merchant - A single charge payment processing system that also includes many other Gateways. Really nice but doesn't out-of-the-box handle the use case of subscription payments. 
+* https://github.com/GoodCloud/django-zebra - One of the first stripe payment systems for Django. 
+
+
+
+
+
+History
+=======
+
+0.4.0 (2015-04-05)
+----------------------
+* Formal Python 3.3+/Django 1.7 Support (including migrations)
+* Removed Python 2.6 from Travis CI build. (Thanks @audreyr)
+* Dropped Django 1.4 support. (Thanks @audreyr)
+* Deprecated the ``djstripe.forms.StripeSubscriptionSignupForm``. Making this form work easily with both `dj-stripe` and `django-allauth` required too much abstraction. It will be removed in the 0.5 release.
+* Add the ability to add invoice items for a customer (Thanks @kavdev)
+* Add the ability to use a custom customer model (Thanks @kavdev)
+* Added setting to disable Invoice receipt emails (Thanks Chris Halpert)
+* Enable proration when customer upgrades plan, and pass proration policy and cancellation at period end for upgrades in settings. (Thanks Yasmine Charif)
+* Removed the redundant context processor. (Thanks @kavdev)
+* Fixed create a token call in change_card.html (Thanks @dollydagr)
+* Fix ``charge.dispute.closed`` typo. (Thanks @ipmb)
+* Fix contributing docs formatting. (Thanks @audreyr)
+* Remove "account" bug in Middleware (Thanks @sromero84)
+* Fix correct plan selection on subscription in subscribe_form template. (Thanks Yasmine Charif)
+* Fix subscription status in account, _subscription_status, and cancel_subscription templates. (Thanks Yasmine Charif)
+* Now using ``user.get_username()`` instead of ``user.username``, to support custom User models. (Thanks @shvechikov)
+* Update remaining DOM Ids for Bootstrap 3. (Thanks Yasmine Charif)
+* Update publish command in setup.py. (Thanks @pydanny)
+* Explicitly specify tox's virtual environment names. (Thanks @audreyr)
+* Manually call django.setup() to populate apps registry. (Thanks @audreyr)
+
+0.3.5 (2014-05-01)
+----------------------
+
+* Fixed ``djstripe_init_customers`` management command so it works with custom user models.
+
+0.3.4 (2014-05-01)
+----------------------
+
+* Clarify documentation for redirects on app_name.
+* If settings.DEBUG is True, then django-debug-toolbar is exempt from redirect to subscription form.
+* Use collections.OrderedDict to ensure that plans are listed in order of price.
+* Add ``ordereddict`` library to support Python 2.6 users. 
+* Switch from ``__unicode__`` to ``__str__`` methods on models to better support Python 3.
+* Add ``python_2_unicode_compatible`` decorator to Models.
+* Check for PY3 so the ``unicode(self.user)`` in models.Customer doesn't blow up in Python 3.
+
+0.3.3 (2014-04-24)
+----------------------
+
+* Increased the extendability of the views by removing as many hard-coded URLs as possible and replacing them with ``success_url`` and other attributes/methods.
+* Added single unit purchasing to the cookbook
+
+0.3.2 (2014-01-16)
+----------------------
+
+* Made Yasmine Charif a core committer
+* Take into account trial days in a subscription plan (Thanks Yasmine Charif)
+* Correct invoice period end value (Thanks Yasmine Charif)
+* Make plan cancellation and plan change consistently not prorating (Thanks Yasmine Charif)
+* Fix circular import when ACCOUNT_SIGNUP_FORM_CLASS is defined (Thanks Dustin Farris)
+* Add send e-mail receipt action in charges admin panel (Thanks Buddy Lindsay)
+* Add `created` field to all ModelAdmins to help with internal auditing (Thanks Kulbir Singh)
+
+0.3.1 (2013-11-14)
+----------------------
+
+* Cancellation fix (Thanks Yasmine Charif)
+* Add setup.cfg for wheel generation (Thanks Charlie Denton)
+
+0.3.0 (2013-11-12)
+----------------------
+
+* Fully tested against Django 1.6, 1.5, and 1.4
+* Fix boolean default issue in models (from now on they are all default to `False`).
+* Replace duplicated code with `djstripe.utils.user_has_active_subscription`.
+
+0.2.9 (2013-09-06)
+----------------------
+
+* Cancellation added to views.
+* Support for kwargs on charge and invoice fetching.
+* def charge() now supports send_receipt flag, default to True.
+* Fixed templates to work with Bootstrap 3.0.0 column design.
+
+0.2.8 (2013-09-02)
+----------------------
+
+* Improved usage documentation.
+* Corrected order of fields in StripeSubscriptionSignupForm.
+* Corrected transaction history template layout.
+* Updated models to take into account when settings.USE_TZ is disabled.
+
+0.2.7 (2013-08-24)
+----------------------
+
+* Add handy rest_framework permission class.
+* Fixing attribution for django-stripe-payments.
+* Add new status to Invoice model.
+
+0.2.6 (2013-08-20)
+----------------------
+
+* Changed name of division tag to djdiv. 
+* Added ``safe_setting.py`` module to handle edge cases when working with custom user models.
+* Added cookbook page in the documentation.
+
+0.2.5 (2013-08-18)
+----------------------
+
+* Fixed bug in initial checkout
+* You can't purchase the same plan that you currently have.
+
+0.2.4 (2013-08-18)
+----------------------
+
+* Recursive package finding.
+
+0.2.3 (2013-08-16)
+----------------------
+
+* Fix packaging so all submodules are loaded
+
+0.2.2 (2013-08-15)
+----------------------
+
+* Added Registration + Subscription form
+
+0.2.1 (2013-08-12)
+----------------------
+
+* Fixed a bug on CurrentSubscription tests
+* Improved usage documentation
+* Added to migration from other tools documentation
+
+0.2.0 (2013-08-12)
+----------------------
+
+* Cancellation of plans now works.
+* Upgrades and downgrades of plans now work.
+* Changing of cards now works.
+* Added breadcrumbs to improve navigation.
+* Improved installation instructions.
+* Consolidation of test instructions.
+* Minor improvement to django-stripe-payments documentation
+* Added coverage.py to test process.
+* Added south migrations.
+* Fixed the subscription_payment_required function-based view decorator.
+* Removed unnecessary django-crispy-forms
+
+0.1.7 (2013-08-08)
+----------------------
+
+* Middleware excepts all of the djstripe namespaced URLs. This way people can pay.
+
+0.1.6 (2013-08-08)
+----------------------
+
+* Fixed a couple template paths
+* Fixed the manifest so we include html, images.
+
+0.1.5 (2013-08-08)
+----------------------
+
+* Fixed the manifest so we include html, css, js, images.
+
+0.1.4 (2013-08-08)
+----------------------
+
+* Change PaymentRequiredMixin to SubscriptionPaymentRequiredMixin
+* Add subscription_payment_required function-based view decorator
+* Added SubscriptionPaymentRedirectMiddleware
+* Much nicer accounts view display
+* Much improved subscription form display
+* Payment plans can have decimals
+* Payment plans can have custom images
+
+0.1.3 (2013-08-7)
+----------------------
+
+* Added account view
+* Added Customer.get_or_create method
+* Added djstripe_sync_customers management command
+* sync file for all code that keeps things in sync with stripe
+* Use client-side JavaScript to get history data asynchronously
+* More user friendly action views
+
+0.1.2 (2013-08-6)
+----------------------
+
+* Admin working
+* Better publish statement
+* Fix dependencies
+
+0.1.1 (2013-08-6)
+----------------------
+
+* Ported internals from django-stripe-payments
+* Began writing the views
+* Travis-CI
+* All tests passing on Python 2.7 and 3.3
+* All tests passing on Django 1.4 and 1.5
+* Began model cleanup
+* Better form
+* Provide better response from management commands
+
+0.1.0 (2013-08-5)
+----------------------
+
+* First release on PyPI.
+
+
