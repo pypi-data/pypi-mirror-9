@@ -1,0 +1,1809 @@
+Metadata-Version: 1.0
+Name: lovely.testlayers
+Version: 0.6.1
+Summary: mysql, postgres nginx, memcached cassandra test layers for use with zope.testrunner
+Home-page: https://github.com/lovelysystems/lovely.testlayers
+Author: Lovely Systems
+Author-email: office@lovelysystems.com
+License: Apache License 2.0
+Description: Lovely Testing Layers for use with zope.testrunner
+        **************************************************
+        
+        This package includes various server test layers for mysql, postgres,
+        nginx, memcached and cassandra. A generic server layer is also
+        available for use with any network based server implementation.
+        
+        Development Setup (MAC)
+        =======================
+        
+        Macports need to be installed (http://www.macports.org/install.php)
+        
+        Make sure your port tree is added to the include paths by adding the
+        following lines to your ``~/.profile``::
+        
+            export C_INCLUDE_PATH=/opt/local/include
+            export LIBRARY_PATH=/opt/local/lib
+        
+        Load your new ``~/.profile``::
+        
+            . ~/.profile
+        
+        Install required ports::
+        
+            sudo port install python27 coreutils mysql
+        
+        ====================================
+        Test layers with working directories
+        ====================================
+        
+        There is a mixin class that provides usefull methods to generate a
+        working directory and make snapshots thereof.
+        
+            >>> from lovely.testlayers.layer import WorkDirectoryLayer
+        
+        Let us create a sample layer.
+        
+            >>> class MyLayer(WorkDirectoryLayer):
+            ...     def __init__(self, name):
+            ...         self.__name__ = name
+        
+            >>> myLayer = MyLayer('mylayer')
+        
+        To initialize the directories we need to create the directory structure.
+        
+            >>> myLayer.setUpWD()
+        
+        We can get relative paths by using the os.path join syntax.
+        
+            >>> myLayer.wdPath('a', 'b')
+            '.../__builtin__.MyLayer.mylayer/work/a/b'
+        
+        Let us create a directory.
+        
+            >>> import os
+            >>> os.mkdir(myLayer.wdPath('firstDirectory'))
+        
+        And make a snapshot.
+        
+            >>> myLayer.makeSnapshot('first')
+        
+        We can check if we have a snapshot.
+        
+            >>> myLayer.hasSnapshot('first')
+            True
+        
+        And get the info for the snapshot.
+        
+            >>> exists, path = myLayer.snapshotInfo('first')
+            >>> exists
+            True
+            >>> path
+            '...ss_first.tar.gz'
+        
+        And now we make a second directory and another snapshot.
+        
+            >>> os.mkdir(myLayer.wdPath('secondDirectory'))
+            >>> myLayer.makeSnapshot('second')
+        
+        We now have 2 directories.
+        
+            >>> sorted(os.listdir(myLayer.wdPath()))
+            ['firstDirectory', 'secondDirectory']
+        
+        We now restore the "first" snapshot
+        
+            >>> myLayer.restoreSnapshot('first')
+            >>> sorted(os.listdir(myLayer.wdPath()))
+            ['firstDirectory']
+        
+        We can also restore the "second" snapshot.
+        
+            >>> myLayer.restoreSnapshot('second')
+            >>> sorted(os.listdir(myLayer.wdPath()))
+            ['firstDirectory', 'secondDirectory']
+        
+        We can also override snapshots.
+        
+            >>> os.mkdir(myLayer.wdPath('thirdDirectory'))
+            >>> myLayer.makeSnapshot('first')
+            >>> myLayer.restoreSnapshot('first')
+            >>> sorted(os.listdir(myLayer.wdPath()))
+            ['firstDirectory', 'secondDirectory', 'thirdDirectory']
+        
+        The snapshot directory can be specified, this is usefull if snapshots
+        need to be persistet to the project directory for example.
+        
+            >>> myLayer2 = MyLayer('mylayer2')
+            >>> import tempfile
+            >>> myLayer2.setUpWD()
+        
+            >>> myLayer2.snapDir = tempfile.mkdtemp()
+            >>> os.mkdir(myLayer2.wdPath('adir'))
+        
+            >>> myLayer2.makeSnapshot('first')
+            >>> os.listdir(myLayer2.snapDir)
+            ['ss_first.tar.gz']
+        
+            >>> os.mkdir(myLayer2.wdPath('bdir'))
+            >>> sorted(os.listdir(myLayer2.wdPath()))
+            ['adir', 'bdir']
+        
+            >>> myLayer2.restoreSnapshot('first')
+        
+            >>> sorted(os.listdir(myLayer2.wdPath()))
+            ['adir']
+        
+        
+        ===================
+        Basic Servier Layer
+        ===================
+        
+        The server layer allows to start servers which are listening to a
+        specific port, by providing the startup command.
+        
+            >>> from lovely.testlayers import server
+            >>> sl = server.ServerLayer('sl1', servers=['localhost:33333'],
+            ...                         start_cmd='nc -k -l 33333')
+        
+        Setting up the layer starts the server.
+        
+            >>> sl.setUp()
+        
+        Now we can acces the server port.
+        
+            >>> from lovely.testlayers import util
+            >>> util.isUp('localhost', 33333)
+            True
+        
+        No more after teardown.
+        
+            >>> sl.tearDown()
+            >>> util.isUp('localhost', 33333)
+            False
+        
+        If the command startup fails an error gets raised.
+        
+            >>> sl = server.ServerLayer('sl1', servers=['localhost:33333'],
+            ...                         start_cmd='false')
+            >>> sl.setUp()
+            Traceback (most recent call last):
+            ...
+            SystemError: Failed to start server rc=1 cmd=false
+        
+        Logging
+        -------
+        
+        It's possible to specify a logfile for stdout and stderr::
+        
+            >>> import os
+            >>> logPath = project_path('var', 'log', 'stdout.log')
+            >>> sl = server.ServerLayer('sl2', servers=['localhost:33333'],
+            ...                                start_cmd='nc -k -l 33333',
+            ...                                stdout=logPath)
+        
+        Setup the layer starts the server::
+        
+            >>> sl.setUp()
+        
+        Get the current position of stdout::
+        
+            >>> pos = sl.stdout.tell()
+        
+        Send a message to the server::
+        
+            >>> _ = run('echo "GET / HTTP/1.0" | nc localhost 33333')
+        
+        The message gets logged to stdout::
+        
+            >>> _ = sl.stdout.seek(pos)
+            >>> print(sl.stdout.read())
+            GET / HTTP/1.0
+        
+        After teardown the file gets closed::
+        
+            >>> sl.tearDown()
+            >>> sl.stdout.closed
+            True
+        
+        After calling setUp again, the file gets repoened::
+        
+            >>> sl.setUp()
+            >>> pos = sl.stdout.tell()
+            >>> _ = run('echo "Hi" | nc localhost 33333')
+            >>> _ = sl.stdout.seek(pos)
+            >>> print(sl.stdout.read())
+            Hi
+            >>> sl.tearDown()
+        
+        It's also possible to initialize a ServerLayer with a file object::
+        
+            >>> path = project_path('var', 'log', 'stdout_2.log')
+            >>> f = open(path, 'w+')
+            >>> sl = server.ServerLayer('sl2', servers=['localhost:33333'],
+            ...                                start_cmd='nc -k -l 33333',
+            ...                                stdout=f)
+            >>> sl.setUp()
+        
+            >>> pos = sl.stdout.tell()
+            >>> _ = run('echo "Test" | nc localhost 33333')
+            >>> _ = sl.stdout.seek(pos)
+            >>> print(sl.stdout.read())
+            Test
+        
+            >>> sl.tearDown()
+        
+        After teardown the file gets closed::
+        
+            >>> sl.stdout.closed
+            True
+        
+        The file gets reopened after setUp::
+        
+            >>> sl.setUp()
+            >>> pos = sl.stdout.tell()
+            >>> _ = run('echo "File gets reopened" | nc localhost 33333')
+            >>> _ = sl.stdout.seek(pos)
+            >>> print(sl.stdout.read())
+            File gets reopened
+            >>> sl.tearDown()
+        
+        If a directory gets specified, a logfile within the directory gets created::
+        
+            >>> path = project_path('var', 'log')
+            >>> sl = server.ServerLayer('myLayer', servers=['localhost:33333'],
+            ...                                start_cmd='nc -k -l 33333',
+            ...                                stdout=path,
+            ...                                stderr=path)
+            >>> sl.setUp()
+            >>> sl.stdout.name
+            '...var/log/myLayer_stdout.log'
+        
+            >>> sl.stderr.name
+            '...var/log/myLayer_stderr.log'
+        
+            >>> sl.tearDown()
+        
+        ====================
+        memcached test layer
+        ====================
+        
+        This layer starts and stops a memcached daemon on given port (default
+        is 11222)
+        
+        
+            >>> import os
+            >>> here = os.path.dirname(__file__)
+            >>> project_root = os.path.dirname(os.path.dirname(os.path.dirname(here)))
+            >>> path = os.path.join(project_root, 'parts', 'memcached', 'bin', 'memcached')
+            >>> from lovely.testlayers import memcached
+            >>> ml = memcached.MemcachedLayer('ml', path=path)
+        
+        So let us setup the server.
+        
+            >>> ml.setUp()
+        
+        Now we can acces memcached on port 11222.
+        
+            >>> import telnetlib
+            >>> tn =  telnetlib.Telnet('localhost', 11222)
+            >>> tn.close()
+        
+        No more after teardown.
+        
+            >>> ml.tearDown()
+            >>> tn =  telnetlib.Telnet('localhost', 11222)
+            Traceback (most recent call last):
+            ...
+            error:...Connection refused...
+        
+        
+        ================
+        Nginx test layer
+        ================
+        
+        This test layer starts and stops an nginx server.
+        
+        The layer is constructed with the optional path to the nginx command
+        and a prefix directory for nginx to run. To demonstrate this, we
+        create a temporary nginx home, where nginx should run.
+        
+            >>> import tempfile, shutil, os
+            >>> tmp = tempfile.mkdtemp()
+            >>> nginx_prefix = os.path.join(tmp, 'nginx_home')
+            >>> os.mkdir(nginx_prefix)
+        
+        We have to add a config file at the default location. Let us define a
+        minimal configuration file.
+        
+            >>> os.mkdir(os.path.join(nginx_prefix, 'conf'))
+            >>> cfg = file(os.path.join(nginx_prefix, 'conf', 'nginx.conf'), 'w')
+            >>> cfg.write("""
+            ... events {
+            ...     worker_connections  10;
+            ... }
+            ... http {
+            ...     server {
+            ...       listen 127.0.0.1:12345;
+            ...     }
+            ... }""")
+            >>> cfg.close()
+        
+        And the log directory.
+        
+            >>> os.mkdir(os.path.join(nginx_prefix, 'logs'))
+        
+        Let us also define the nginx executable. There is already one
+        installed via buildout in the root directory of this package, so we
+        get the path to this executable. Using a special nginx that is built
+        via buildout is the common way to use this layer. This way the same
+        nginx might be used for local development with the configuration
+        defined by the buildout.
+        
+            >>> nginx_cmd = os.path.join(os.path.dirname(os.path.dirname(
+            ...     os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+            ...                          'parts', 'openresty', 'nginx', 'sbin', 'nginx')
+        
+        
+        Now we can instantiate the layer.
+        
+            >>> from lovely.testlayers import nginx
+            >>> nl = nginx.NginxLayer('nl', nginx_prefix, nginx_cmd=nginx_cmd)
+        
+        Upon layer setup the server gets started.
+        
+            >>> nl.setUp()
+        
+        We can now issue requests, we will get a 404 because we didn't setup
+        any urls, but for testing this is ok.
+        
+            >>> import urllib2
+            >>> urllib2.urlopen('http://localhost:12345/', None, 1)
+            Traceback (most recent call last):
+            ...
+            HTTPError: HTTP Error 404: Not Found
+        
+        Upon layer tearDown the server gets stopped.
+        
+            >>> nl.tearDown()
+        
+        We cannot connect to the server anymore now.
+        
+            >>> urllib2.urlopen('http://localhost:12345/', None, 1)
+            Traceback (most recent call last):
+            ...
+            URLError: <urlopen error [Errno 61] Connection refused>
+        
+        The configuration can be located at a different location than nginx' default
+        location (<prefix>/conf/nginx.conf):
+        
+            >>> shutil.copytree(nginx_prefix, nginx_prefix + "2")
+        
+            >>> cfg_file = tempfile.mktemp()
+            >>> cfg = file(cfg_file, 'w')
+            >>> cfg.write("""
+            ... events {
+            ...     worker_connections  10;
+            ... }
+            ... http {
+            ...     server {
+            ...       listen 127.0.0.1:23456;
+            ...     }
+            ... }""")
+            >>> cfg.close()
+        
+            >>> nginx.NginxLayer('nl', nginx_prefix+"2", nginx_cmd, cfg_file)
+            <lovely.testlayers.nginx.NginxLayer object at 0x...>
+        
+        Failures
+        ========
+        
+        Startup and shutdown failures are also catched. For example if we try
+        to tear down the layer twice.
+        
+            >>> nl.tearDown()
+            Traceback (most recent call last):
+            ...
+            RuntimeError: Nginx stop failed ...nginx.pid" failed
+             (2: No such file or directory)
+        
+        Or if we try to start the server twice.
+        
+            >>> nl.setUp()
+            >>> nl.setUp()
+            Traceback (most recent call last):
+            ...
+            RuntimeError: Nginx start failed nginx: [emerg] bind() ...
+            nginx: [emerg] bind() to 127.0.0.1:12345 failed (48: Address already in use)
+            ...
+            nginx: [emerg] still could not bind()
+        
+            >>> nl.tearDown()
+        
+        Cleanup the temporary directory, we don't need it for testing from
+        this point.
+        
+            >>> shutil.rmtree(tmp)
+        
+        Nearly all failures should be catched upon initialization, because the
+        layer does a config check then.
+        
+        Let us provide a non existing prefix path.
+        
+            >>> nginx.NginxLayer('nl', 'something')
+            Traceback (most recent call last):
+            ...
+            AssertionError: prefix not a directory '.../something/'
+        
+        Or a not existing nginx_cmd.
+        
+            >>> nginx.NginxLayer('nl', '.', 'not-an-nginx')
+            Traceback (most recent call last):
+            ...
+            RuntimeError: Nginx check failed /bin/sh: not-an-nginx: command not found
+        
+        Or some missing aka broken configuration. We just provide our working
+        directory as the prefix, which actually does not contain any configs.
+        
+            >>> nginx.NginxLayer('nl', '.', nginx_cmd)
+            Traceback (most recent call last):
+            RuntimeError: Nginx check failed nginx version: ngx_openresty/...
+            nginx: [alert] could not open error log file...
+            ... [emerg] ...
+            nginx: configuration file .../conf/nginx.conf test failed
+        
+        
+        =====================
+        Email/SMTP Test Layer
+        =====================
+        
+        This layer starts and stops a smtp daemon on given port (default 1025)::
+        
+            >>> from lovely.testlayers import mail
+            >>> layer = mail.SMTPServerLayer(port=1025)
+        
+        To setup the layer call ``setUp()``::
+        
+            >>> layer.setUp()
+        
+        Now the Server can receive emails::
+        
+            >>> from email.mime.text import MIMEText
+            >>> from email.utils import formatdate
+            >>> from smtplib import SMTP
+            >>> msg = MIMEText('testmessage', _charset='utf-8')
+            >>> msg['Subject'] = 'first email'
+            >>> msg['From'] = 'from@example.org'
+            >>> msg['To'] = 'recipient@example.org'
+            >>> msg['Date'] = formatdate(localtime=True)
+        
+            >>> s = SMTP()
+            >>> _ = s.connect('localhost:1025')
+            >>> _ = s.sendmail('from@example.org', 'recipient@example.com', msg.as_string())
+            >>> msg['Subject'] = 'second email'
+            >>> _ = s.sendmail('from@example.org', 'recipient@example.com', msg.as_string())
+        
+            >>> s.quit()
+            (221, 'Bye')
+        
+        The testlayer exposes a ``server`` property which can be used to access the
+        received emails.
+        
+        Use the ``mbox(recipient)`` method to get the correct Mailbox::
+        
+            >>> mailbox = layer.server.mbox('recipient@example.com')
+        
+        Use ``is_empty()`` to verify that the mailbox isn't empty::
+        
+            >>> mailbox.is_empty()
+            False
+        
+        If the recipient didn't receive an email, an empty Mailbox is returned::
+        
+            >>> emptybox = layer.server.mbox('invalid@example.com')
+            >>> emptybox.is_empty()
+            True
+        
+        And ``popleft()`` to get the email that was received at first::
+        
+            >>> print(mailbox.popleft())
+            Content-Type: text/plain; charset="utf-8"
+            MIME-Version: 1.0
+            Content-Transfer-Encoding: base64
+            Subject: first email
+            From: from@example.org
+            To: recipient@example.org
+            ...
+            <BLANKLINE>
+            ...
+        
+        The layer can be shutdown using the tearDown method::
+        
+            >>> layer.tearDown()
+        
+        After tearDown() the server can't receive any more emails::
+        
+            >>> s = SMTP()
+            >>> _ = s.connect('localhost:1025')
+            Traceback (most recent call last):
+            ...
+            error: [Errno ...] Connection refused
+        
+        Verification that setUp() and tearDown() work for subsequent calls::
+        
+            >>> layer.setUp()
+        
+            >>> _ = s.connect('localhost:1025')
+            >>> _ = s.sendmail('from@example.org', 'recipient@example.com', msg.as_string())
+            >>> print(mailbox.popleft())
+            Content-Type: text/plain; charset="utf-8"
+            MIME-Version: 1.0
+            Content-Transfer-Encoding: base64
+            Subject: first email
+            From: from@example.org
+            To: recipient@example.org
+            ...
+            <BLANKLINE>
+            ...
+        
+            >>> _ = s.quit()
+            >>> layer.tearDown()
+            >>> _ = s.connect('localhost:1025')
+            Traceback (most recent call last):
+            ...
+            error: [Errno ...] Connection refused
+        
+        Before setUp() is called the ``server`` property is None::
+        
+            >>> layer = mail.SMTPServerLayer(port=1025)
+            >>> layer.server is None
+            True
+        
+        ====================
+        Cassandra test layer
+        ====================
+        
+        This layer starts and stops a cassandra instance with a given storage
+        configuration template. For information about cassandra see:
+        http://en.wikipedia.org/wiki/Cassandra_(database)
+        
+            >>> from lovely.testlayers import cass
+        
+        An example template exists in this directory which we now use for this
+        example.
+        
+            >>> import os
+            >>> storage_conf_tmpl = os.path.join(os.path.dirname(__file__),
+            ...                                  'storage-conf.xml.in')
+        
+        The following keys are provided when the template gets evaluated. Let
+        us look them up in the example file.
+        
+            >>> import re
+            >>> tmpl_pat = re.compile(r'.*\%\(([^ \)]+)\)s.*')
+            >>> conf_keys = set()
+            >>> for l in file(storage_conf_tmpl).readlines():
+            ...     m = tmpl_pat.match(l)
+            ...     if m:
+            ...         conf_keys.add(m.group(1))
+        
+        
+            >>> sorted(conf_keys)
+            ['control_port', 'storage_port', 'thrift_port', 'var']
+        
+        With the storage configuration path we can instantiate a new cassandra
+        layer. The thrift_port, storage_port, and control_port are optional
+        keyword arguments for the constructor and default to the standard port
+        +10000.
+        
+            >>> l = cass.CassandraLayer('l', storage_conf=storage_conf_tmpl)
+            >>> l.thrift_port
+            19160
+        
+        So let us setup the server.
+        
+            >>> l.setUp()
+        
+        Now the cassandra server is up and running. We test this by connecting
+        to the thrift port via telnet.
+        
+            >>> import telnetlib
+            >>> tn = telnetlib.Telnet('localhost', l.thrift_port)
+            >>> tn.close()
+        
+        The connection is refused after teardown.
+        
+            >>> l.tearDown()
+        
+            >>> telnetlib.Telnet('localhost', l.thrift_port)
+            Traceback (most recent call last):
+            ...
+            error:...Connection refused
+        
+        
+        
+        
+        ================
+        myserver control
+        ================
+        
+            >>> from lovely.testlayers import mysql
+            >>> import tempfile, os
+            >>> tmp = tempfile.mkdtemp()
+            >>> dbDir = os.path.join(tmp, 'db')
+            >>> dbDirFake = os.path.join(tmp, 'dbfake')
+        
+            >>> dbName = 'testing'
+        
+        Let us create a mysql server.
+        
+            >>> srv = mysql.Server(dbDir, port=17777)
+        
+        And init the db.
+        
+            >>> srv.initDB()
+            >>> srv.start()
+        
+            >>> import time
+            >>> time.sleep(3)
+        
+            >>> srv.createDB(dbName)
+        
+        Now we can get a list of databases.
+        
+            >>> sorted(srv.listDatabases())
+            ['mysql', 'test', 'testing']
+        
+        
+        If no mysql server is installed on the system we will get an exception::
+        
+            >>> srv.orig_method = srv.mysqld_path
+            >>> srv.mysqld_path = lambda: None
+        
+            >>> srv.start()
+            Traceback (most recent call last):
+            IOError: mysqld was not found. Is a MySQL server installed?
+        
+            >>> srv.mysqld_path = srv.orig_method
+        
+        Run SQL scripts
+        ================
+        
+        We can run scripts from the filesystem.
+        
+            >>> script = os.path.join(tmp, 'ascript.sql')
+            >>> f = file(script, 'w')
+            >>> f.write("""drop table if exists a; create table a (title varchar(64));""")
+            >>> f.close()
+            >>> srv.runScripts(dbName, [script])
+        
+        
+        Dump and Restore
+        ================
+        
+        Let us make a dump of our database
+        
+            >>> dumpA = os.path.join(tmp, 'a.sql')
+            >>> srv.dump(dbName, dumpA)
+        
+        And now some changes
+        
+            >>> import _mysql
+            >>> conn = _mysql.connect(host='127.0.0.1', port=17777, user='root', db=dbName)
+        
+            >>> for i in range(5):
+            ...     conn.query('insert into a values(%i)' % i)
+            >>> conn.commit()
+        
+            >>> conn.close()
+        
+        Another dump.
+        
+            >>> dumpB = os.path.join(tmp, 'b.sql')
+            >>> srv.dump(dbName, dumpB)
+        
+        We restore dumpA and the table is emtpy.
+        
+            >>> srv.restore(dbName, dumpA)
+        
+            >>> conn = _mysql.connect(host='127.0.0.1', port=17777, user='root', db=dbName)
+            >>> conn.query('select count(*) from a')
+            >>> conn.store_result().fetch_row()
+            (('0',),)
+        
+            >>> conn.close()
+        
+        Now restore dumpB and we have our 5 rows back.
+        
+            >>> srv.restore(dbName, dumpB)
+        
+            >>> conn = _mysql.connect(host='127.0.0.1', port=17777, user='root', db=dbName)
+            >>> conn.query('select count(*) from a')
+            >>> conn.store_result().fetch_row()
+            (('5',),)
+        
+            >>> conn.close()
+        
+        If we try to restore a none existing file we gat a ValueError.
+        
+            >>> srv.restore(dbName, 'asdf')
+            Traceback (most recent call last):
+            ...
+            ValueError: No such file '.../asdf'
+        
+            >>> srv.stop()
+        
+        
+        MySQLDB Scripts
+        ===============
+        
+        We can generate a control script for use as commandline script.
+        
+        The simplest script is just to define a server.
+        
+            >>> dbDir2 = os.path.join(tmp, 'db2')
+            >>> main = mysql.MySQLDBScript(dbDir2, port=17777)
+            >>> main.start()
+            >>> sorted(main.srv.listDatabases())
+            ['mysql', 'test']
+            >>> main.stop()
+        
+        
+        We can also define a database to be created upon startup.
+        
+            >>> main = mysql.MySQLDBScript(dbDir2, dbName='hoschi', port=17777)
+            >>> main.start()
+            >>> sorted(main.srv.listDatabases())
+            ['hoschi', 'mysql', 'test']
+            >>> main.stop()
+        
+        The database is created only one time.
+        
+            >>> main.start()
+            >>> main.stop()
+        
+        And also scripts to be executed.
+        
+            >>> main = mysql.MySQLDBScript(dbDir2, dbName='hoschi2',
+            ...                          scripts=[script], port=17777)
+            >>> main.start()
+        
+        Note that we used the same directory here so the other db is still there.
+        
+            >>> sorted(main.srv.listDatabases())
+            ['hoschi', 'hoschi2', 'mysql', 'test']
+        
+        We can run the scripts again. Note that scripts should always be
+        none-destructive. So if a schema update is due one just needs
+        to run all scripts again.
+        
+            >>> main.runscripts()
+            >>> main.stop()
+        
+        
+        MySQLDatabaseLayer
+        ==================
+        
+        Let's create a layer::
+        
+            >>> layer = mysql.MySQLDatabaseLayer('testing')
+        
+        We can get the store uri.
+        
+            >>> layer.storeURI()
+            'mysql://localhost:16543/testing'
+        
+            >>> layer.setUp()
+            >>> layer.tearDown()
+        
+        The second time the server ist started it takes the snapshot.
+        
+            >>> layer.setUp()
+            >>> layer.tearDown()
+        
+        If we try to run setup twice or the port is occupied, we get an error.
+        
+            >>> layer.setUp()
+            >>> layer.setUp()
+            Traceback (most recent call last):
+            RuntimeError: Port already listening: 16543
+        
+            >>> layer.tearDown()
+        
+        We can have appsetup definitions and sql scripts.  There is also a
+        convinience class that let's us execute sql statements as setup.
+        
+            >>> setup = mysql.ExecuteSQL('create table testing (title varchar(32))')
+            >>> layer = mysql.MySQLDatabaseLayer('testing', setup=setup)
+            >>> layer.setUp()
+            >>> layer.tearDown()
+            >>> layer = mysql.MySQLDatabaseLayer('testing', setup=setup)
+            >>> layer.setUp()
+            >>> layer.tearDown()
+        
+        Also if the database name is different, the same snapshots can be used.
+        
+            >>> layer2 = mysql.MySQLDatabaseLayer('testing2', setup=setup)
+            >>> layer2.setUp()
+            >>> layer2.tearDown()
+        
+        If we do not provide the snapsotIdent the ident is built by using the
+        dotted name of the setup callable and the hash of the arguments.
+        
+            >>> layer.snapshotIdent
+            u'lovely.testlayers.mysql.ExecuteSQLe449d7734c67c100e0662d3319fe3f410e78ebcf'
+        
+        Let us provide an ident and scripts.
+        
+            >>> layer = mysql.MySQLDatabaseLayer('testing3', setup=setup,
+            ...                                  snapshotIdent='blah',
+            ...                                  scripts=[script])
+            >>> layer.snapshotIdent
+            'blah'
+            >>> layer.scripts
+            ['/.../ascript.sql']
+        
+        
+        On setup the snapshot with the setup is created, therefore setup is
+        called with the server as argument.
+        
+            >>> layer.setUp()
+        
+        Upon testSetUp this snapshot is now restored.
+        
+            >>> layer.testSetUp()
+        
+        So now we should have the table there.
+        
+            >>> conn = _mysql.connect(host='127.0.0.1', port=16543, user='root', db=dbName)
+            >>> conn.query('select * from testing')
+            >>> conn.store_result().fetch_row()
+            ()
+        
+            >>> conn.close()
+        
+        Let us add some data (we are now in a test):
+        
+            >>> conn = _mysql.connect(host='127.0.0.1', port=16543, user='root', db=dbName)
+        
+            >>> conn.query("insert into testing values('hoschi')")
+            >>> conn.commit()
+        
+            >>> conn.query('select * from testing')
+            >>> conn.store_result().fetch_row()
+            (('hoschi',),)
+        
+            >>> conn.close()
+        
+            >>> layer.testTearDown()
+            >>> layer.tearDown()
+        
+        Finally do some cleanup::
+        
+            >>> import shutil
+            >>> shutil.rmtree(tmp)
+        
+        ================
+        pgserver control
+        ================
+        
+            >>> from lovely.testlayers import pgsql
+            >>> import tempfile, os
+            >>> tmp = tempfile.mkdtemp()
+            >>> dbDir = os.path.join(tmp, 'db')
+            >>> dbDirFake = os.path.join(tmp, 'dbfake')
+        
+            >>> dbName = 'testing'
+        
+        Let us create a postgres server. Note that we give the absolute path
+        to the pg_config executable in order to use the postgresql
+        installation from this project.
+        
+            >>> pgConfig = project_path('parts', 'postgres', 'bin', 'pg_config')
+            >>> srv = pgsql.Server(dbDir, port=16666, pgConfig=pgConfig, verbose=True)
+        
+        Optional we could also define a path to a special postgresql.conf file
+        to use, otherwise defaults are used.
+        
+            >>> srv.postgresqlConf
+            '/.../lovely/testlayers/postgresql8....conf'
+        
+            >>> srvFake = pgsql.Server(dbDirFake, postgresqlConf=srv.postgresqlConf)
+            >>> srvFake.postgresqlConf == srv.postgresqlConf
+            True
+        
+        The path needs to exist.
+        
+            >>> pgsql.Server(dbDirFake, postgresqlConf='/not/existing/path')
+            Traceback (most recent call last):
+            ...
+            ValueError: postgresqlConf not found '/not/existing/path'
+        
+        We can also specify the pg_config executable which defaults to
+        'pg_config' and therefore needs to be in the path.
+        
+            >>> srv.pgConfig
+            '/.../pg_config'
+        
+            >>> pgsql.Server(dbDirFake, pgConfig='notexistingcommand')
+            Traceback (most recent call last):
+            ...
+            ValueError: pgConfig not found 'notexistingcommand'
+        
+        The server is aware of its version, which is represented as a tuple of ints.
+        
+            >>> srv.pgVersion
+            (8, ..., ...)
+        
+        And init the db.
+        
+            >>> srv.initDB()
+            >>> srv.start()
+        
+            >>> srv.createDB(dbName)
+        
+        Now we can get a list of databases.
+        
+            >>> sorted(srv.listDatabases())
+            ['postgres', 'template0', 'template1', 'testing']
+        
+        
+        Run SQL scripts
+        ================
+        
+        We can run scripts from the filesystem.
+        
+            >>> script = os.path.join(tmp, 'ascript.sql')
+            >>> f = file(script, 'w')
+            >>> f.write("""create table a (title varchar);""")
+            >>> f.close()
+            >>> srv.runScripts(dbName, [script])
+        
+        Or from the shared directories by prefixing it with pg_config. So let
+        us install tsearch2.
+        
+            >>> script = 'pg_config:share:system_views.sql'
+            >>> srv.runScripts(dbName, [script])
+        
+        
+        Dump and Restore
+        ================
+        
+        Let us make a dump of our database
+        
+            >>> dumpA = os.path.join(tmp, 'a.sql')
+            >>> srv.dump(dbName, dumpA)
+        
+        And now some changes
+        
+            >>> import psycopg2
+            >>> cs = "dbname='%s' host='127.0.0.1' port='16666'" % dbName
+            >>> conn = psycopg2.connect(cs)
+            >>> cur = conn.cursor()
+        
+            >>> for i in range(5):
+            ...     cur.execute('insert into a values(%i)' % i)
+            >>> conn.commit()
+        
+            >>> cur.close()
+            >>> conn.close()
+        
+        Another dump.
+        
+            >>> dumpB = os.path.join(tmp, 'b.sql')
+            >>> srv.dump(dbName, dumpB)
+        
+        We restore dumpA and the table is emtpy.
+        
+            >>> srv.restore(dbName, dumpA)
+        
+            >>> conn = psycopg2.connect(cs)
+            >>> cur = conn.cursor()
+        
+            >>> cur.execute('select count(*) from a')
+            >>> cur.fetchone()
+            (0L,)
+        
+            >>> cur.close()
+            >>> conn.close()
+        
+        Now restore dumpB and we have our 5 rows back.
+        
+            >>> srv.restore(dbName, dumpB)
+        
+            >>> conn = psycopg2.connect(cs)
+            >>> cur = conn.cursor()
+        
+            >>> cur.execute('select count(*) from a')
+            >>> cur.fetchone()
+            (5L,)
+        
+            >>> cur.close()
+            >>> conn.close()
+        
+        If we try to restore a none existing file we gat a ValueError.
+        
+            >>> srv.restore(dbName, 'asdf')
+            Traceback (most recent call last):
+            ...
+            ValueError: No such file '.../asdf'
+        
+            >>> srv.stop()
+        
+        
+        PGDB Scripts
+        ============
+        
+        We can generate a control script for use as commandline script.
+        
+        The simplest script is just to define a server.
+        
+            >>> dbDir2 = os.path.join(tmp, 'db2')
+            >>> main = pgsql.PGDBScript(dbDir2, port=16666, pgConfig=pgConfig)
+            >>> main.start()
+            >>> sorted(main.srv.listDatabases())
+            ['postgres', 'template0', 'template1']
+            >>> main.stop()
+        
+        
+        We can also define a database to be created upon startup.
+        
+            >>> main = pgsql.PGDBScript(dbDir2,
+            ...                         pgConfig=pgConfig,
+            ...                         dbName='hoschi', port=16666)
+            >>> main.start()
+            >>> sorted(main.srv.listDatabases())
+            ['hoschi', 'postgres', 'template0', 'template1']
+            >>> main.stop()
+        
+        The database is created only one time.
+        
+            >>> main.start()
+            >>> main.stop()
+        
+        And also scripts to be executed.
+        
+            >>> main = pgsql.PGDBScript(dbDir2, dbName='hoschi2',
+            ...                         pgConfig=pgConfig,
+            ...                         scripts=[script], port=16666)
+            >>> main.start()
+        
+        Note that we used the same directory here so the other db is still there.
+        
+            >>> sorted(main.srv.listDatabases())
+            ['hoschi', 'hoschi2', 'postgres', 'template0', 'template1']
+        
+        We can run the scripts again. Note that scripts should always be
+        none-destructive. So if a schema update is due one just needs
+        to run all scripts again.
+        
+            >>> main.runscripts()
+        
+            >>> main.stop()
+        
+        
+        Finally do some cleanup::
+        
+            >>> import shutil
+            >>> shutil.rmtree(tmp)
+        
+        PGDatabaseLayer
+        ===============
+        
+        Let's create a layer::
+        
+            >>> layer = pgsql.PGDatabaseLayer('testing', pgConfig=pgConfig)
+        
+        We can get the store uri.
+        
+            >>> layer.storeURI()
+            'postgres://localhost:15432/testing'
+        
+            >>> layer.setUp()
+            >>> layer.tearDown()
+        
+        The second time the server ist started it takes the snapshot.
+        
+            >>> layer.setUp()
+            >>> layer.tearDown()
+        
+        If we try to run setup twice or the port is occupied, we get an error.
+        
+            >>> layer.setUp()
+            >>> layer.setUp()
+            Traceback (most recent call last):
+            ...
+            RuntimeError: Port already listening: 15432
+            >>> layer.tearDown()
+        
+        
+        We can have appsetup definitions and sql scripts.  There is also a
+        convinience class that let's us execute sql statements as setup.
+        
+            >>> setup = pgsql.ExecuteSQL('create table testing (title varchar)')
+            >>> layer = pgsql.PGDatabaseLayer('testing', setup=setup, pgConfig=pgConfig)
+            >>> layer.setUp()
+            >>> layer.tearDown()
+            >>> layer = pgsql.PGDatabaseLayer('testing', setup=setup, pgConfig=pgConfig)
+            >>> layer.setUp()
+            >>> layer.tearDown()
+        
+        Also if the database name is different, the same snapshots can be used.
+        
+            >>> layer2 = pgsql.PGDatabaseLayer('testing2', setup=setup, pgConfig=pgConfig)
+            >>> layer2.setUp()
+            >>> layer2.tearDown()
+        
+        If we do not provide the snapsotIdent the ident is built by using the
+        dotted name of the setup callable and the hash of the arguments.
+        
+            >>> layer.snapshotIdent
+            u'lovely.testlayers.pgsql.ExecuteSQLf9bb47b1baeff8d57f8f0dadfc91b99a3ee56991'
+        
+        Let us provide an ident and scripts.
+        
+            >>> layer = pgsql.PGDatabaseLayer('testing3', setup=setup,
+            ...                               pgConfig=pgConfig,
+            ...                               snapshotIdent='blah',
+            ...                               scripts=['pg_config:share:system_views.sql'])
+            >>> layer.snapshotIdent
+            'blah'
+            >>> layer.scripts
+            ['pg_config:share:system_views.sql']
+        
+        
+        On setup the snapshot with the setup is created, therefore setup is
+        called with the server as argument.
+        
+            >>> layer.setUp()
+        
+        Upon testSetUp this snapshot is now restored.
+        
+            >>> layer.testSetUp()
+        
+        So now we should have the table there.
+        
+            >>> cs = "dbname='testing3' host='127.0.0.1' port='15432'"
+            >>> conn = psycopg2.connect(cs)
+            >>> cur = conn.cursor()
+        
+            >>> cur.execute('select * from testing')
+            >>> cur.fetchall()
+            []
+        
+            >>> cur.close()
+            >>> conn.close()
+        
+        Let us add some data (we are now in a test):
+        
+            >>> conn = psycopg2.connect(cs)
+            >>> cur = conn.cursor()
+        
+            >>> cur.execute("insert into testing values('hoschi')")
+            >>> conn.commit()
+        
+            >>> cur.execute('select * from testing')
+            >>> cur.fetchall()
+            [('hoschi',)]
+        
+            >>> cur.close()
+            >>> conn.close()
+        
+            >>> layer.testTearDown()
+        
+        Now the next test comes.
+        
+            >>> layer.testSetUp()
+        
+        Make sure we can abort a transaction. The storm synch needs to be
+        removed at this time.
+        
+            >>> import transaction
+            >>> transaction.abort()
+        
+        And the data is gone but the table is still there.
+        
+            >>> conn = psycopg2.connect(cs)
+            >>> cur = conn.cursor()
+        
+            >>> cur.execute('select * from testing')
+            >>> cur.fetchall()
+            []
+        
+            >>> cur.close()
+            >>> conn.close()
+        
+            >>> layer.tearDown()
+        
+        
+        
+        ========================================
+        MongoDB test layer » single server setup
+        ========================================
+        
+        .. note::
+            To run this test::
+        
+                bin/buildout install mongodb mongodb-test
+                bin/test-mongodb --test=mongodb_single
+        
+        
+        Introduction
+        ============
+        
+        | For information about MongoDB see:
+        | http://en.wikipedia.org/wiki/Mongodb
+        
+        The ``MongoLayer`` starts and stops a single MongoDB instance.
+        
+        
+        
+        Single server
+        =============
+        
+        Warming up
+        ----------
+        We create a new MongoDB layer::
+        
+            >>> from lovely.testlayers import mongodb
+            >>> mongo = mongodb.MongoLayer('mongodb.single', mongod_bin = project_path('bin', 'mongod'))
+            >>> mongo.storage_port
+            37017
+        
+        So let's bootstrap the server::
+        
+            >>> mongo.setUp()
+        
+        
+        Pre flight checks
+        -----------------
+        Now the MongoDB server is up and running. We test this by connecting
+        to the storage port via telnet::
+        
+            >>> import telnetlib
+            >>> tn = telnetlib.Telnet('localhost', mongo.storage_port)
+            >>> tn.close()
+        
+        
+        Getting real
+        ------------
+        
+        Connect to it using a real MongoDB client::
+        
+            >>> from pymongo import Connection
+            >>> mongo_conn = Connection('localhost:37017', safe=True)
+            >>> mongo_db = mongo_conn['foo-db']
+        
+        Insert some data::
+        
+            >>> document_id = mongo_db.foobar.insert({'hello': 'world'})
+            >>> document_id
+            ObjectId('...')
+        
+        And query it::
+        
+            >>> document = mongo_db.foobar.find_one(document_id)
+            >>> document
+            {u'_id': ObjectId('...'), u'hello': u'world'}
+        
+        Another query::
+        
+            >>> mongo_db.foobar.find({'hello': 'world'})[0] == document
+            True
+        
+        
+        Clean up
+        --------
+        
+        Database
+        ________
+        
+            >>> mongo_conn.drop_database('foo-db')
+            >>> mongo_conn.disconnect()
+            >>> del mongo_conn
+            >>> del mongo_db
+        
+        
+        Layers
+        ______
+        
+        The connection is refused after teardown::
+        
+            >>> mongo.tearDown()
+        
+            >>> telnetlib.Telnet('localhost', mongo.storage_port)
+            Traceback (most recent call last):
+            ...
+            error:...Connection refused
+        
+        =======================================
+        MongoDB test layer » master/slave setup
+        =======================================
+        
+        .. note::
+            To run this test::
+        
+                bin/buildout install mongodb mongodb-test
+                bin/test-mongodb --test=mongodb_masterslave
+        
+        
+        Introduction
+        ============
+        
+        | For information about MongoDB see:
+        | http://en.wikipedia.org/wiki/Mongodb
+        
+        The ``MongoMasterSlaveLayer`` starts and stops multiple MongoDB
+        instances and configures a master-slave connection between them.
+        
+        
+        Master/Slave
+        ============
+        
+        Warming up
+        ----------
+        
+        We create a new MongoDB layer::
+        
+            >>> from lovely.testlayers import mongodb
+            >>> masterslave = mongodb.MongoMasterSlaveLayer('mongodb.masterslave', mongod_bin = project_path('bin', 'mongod'))
+            >>> masterslave.storage_ports
+            [37020, 37021, 37022]
+        
+        So let's bootstrap the servers::
+        
+            >>> from zope.testrunner.runner import gather_layers
+            >>> layers = []
+            >>> gather_layers(masterslave, layers)
+            >>> for layer in layers:
+            ...     layer.setUp()
+        
+        
+        Getting real
+        ------------
+        
+        Connect to it using a real MongoDB client::
+        
+            >>> from pymongo import Connection, ReadPreference
+            >>> from pymongo.master_slave_connection import MasterSlaveConnection
+            >>> mongo_conn = MasterSlaveConnection(
+            ...     Connection('localhost:37020', safe=True, w=3),
+            ...     [
+            ...         Connection('localhost:37021', read_preference = ReadPreference.SECONDARY),
+            ...         Connection('localhost:37022', read_preference = ReadPreference.SECONDARY),
+            ...     ]
+            ... )
+            >>> mongo_db = mongo_conn['bar-db']
+        
+        Query operation counters upfront to compare them later::
+        
+            >>> opcounters_before = masterslave.get_opcounters()['custom']
+        
+        Insert some data::
+        
+            >>> document_id = mongo_db.foobar.insert({'hello': 'world'})
+            >>> document_id
+            ObjectId('...')
+        
+        And query it::
+        
+            >>> document = mongo_db.foobar.find_one(document_id)
+            >>> document
+            {u'_id': ObjectId('...'), u'hello': u'world'}
+        
+        Prove that the ``write`` operation was dispatched to the ``PRIMARY``,
+        while the ``read`` operation was dispatched to any ``SECONDARY``::
+        
+            >>> opcounters_after = masterslave.get_opcounters()['custom']
+        
+            >>> opcounters_after['primary.insert'] == opcounters_before['primary.insert'] + 1
+            True
+        
+            >>> assert \
+            ...     opcounters_after['secondary.query'] == opcounters_before['secondary.query'] + 1, \
+            ...     "ERROR: expected 'after == before + 1', but got 'after=%s, before=%s'" % \
+            ...         (opcounters_after['secondary.query'], opcounters_before['secondary.query'])
+        
+        
+        
+        Clean up
+        --------
+        
+        Database
+        ________
+        
+            >>> mongo_conn.drop_database('bar-db')
+            >>> mongo_conn.disconnect()
+            >>> del mongo_conn
+            >>> del mongo_db
+        
+        
+        Layers
+        ______
+        
+        Connections are refused after teardown::
+        
+            >>> for layer in layers:
+            ...     layer.tearDown()
+        
+            >>> def check_down(*ports):
+            ...     for port in ports:
+            ...         try:
+            ...             tn = telnetlib.Telnet('localhost', port)
+            ...             tn.close()
+            ...         except:
+            ...             yield True
+        
+            >>> all(check_down(masterslave.storage_ports))
+            True
+        
+        ======================================
+        MongoDB test layer » replica set setup
+        ======================================
+        
+        .. note::
+            To run this test::
+        
+                bin/buildout install mongodb mongodb-test
+                bin/test-mongodb --test=mongodb_replicaset
+        
+        
+        Introduction
+        ============
+        
+        | For information about MongoDB see:
+        | http://en.wikipedia.org/wiki/Mongodb
+        
+        The ``MongoReplicaSetLayer`` starts and stops multiple
+        MongoDB instances and configures a replica set on top of them.
+        
+        
+        Replica Set
+        ===========
+        
+        .. ifconfig:: False
+            >>> from time import sleep
+        
+        Warming up
+        ----------
+        
+        We create a new MongoDB layer::
+        
+            >>> from lovely.testlayers import mongodb
+            >>> replicaset = mongodb.MongoReplicaSetLayer('mongodb.replicaset', mongod_bin = project_path('bin', 'mongod'))
+            >>> #replicaset = mongodb.MongoReplicaSetLayer('mongodb.replicaset', mongod_bin = project_path('bin', 'mongod'), cleanup = False)
+            >>> replicaset.storage_ports
+            [37030, 37031, 37032]
+        
+        
+        So let's bootstrap the servers::
+        
+            >>> from zope.testrunner.runner import gather_layers
+            >>> layers = []
+            >>> gather_layers(replicaset, layers)
+            >>> for layer in layers:
+            ...     layer.setUp()
+        
+        
+        And check if the replica set got initiated properly::
+        
+            >>> from pymongo import Connection
+            >>> mongo_conn = Connection('localhost:37030', safe=True)
+        
+            >>> mongo_conn.admin.command('replSetGetStatus').get('set')
+            u'mongodb.replicaset'
+        
+        
+        Ready::
+        
+            >>> mongo_conn.disconnect()
+            >>> del mongo_conn
+        
+        
+        Getting real
+        ------------
+        
+        Connect to it using a real MongoDB client::
+        
+            >>> from pymongo import ReplicaSetConnection, ReadPreference
+            >>> mongo_uri = 'mongodb://localhost:37030,localhost:37031,localhost:37032/?replicaSet=mongodb.replicaset'
+            >>> mongo_conn = ReplicaSetConnection(mongo_uri, read_preference=ReadPreference.SECONDARY, safe=True, w="majority")
+            >>> mongo_db = mongo_conn['foobar-db']
+        
+        Query operation counters upfront to compare them later::
+        
+            >>> sleep(1)
+            >>> opcounters_before = replicaset.get_opcounters()['custom']
+        
+        Insert some data::
+        
+            >>> document_id = mongo_db.foobar.insert({'hello': 'world'})
+            >>> document_id
+            ObjectId('...')
+        
+        And query it::
+        
+            >>> document = mongo_db.foobar.find_one(document_id)
+            >>> document
+            {u'_id': ObjectId('...'), u'hello': u'world'}
+        
+        Prove that the ``write`` operation was dispatched to the ``PRIMARY``,
+        while the ``read`` operation was dispatched to any ``SECONDARY``::
+        
+            >>> sleep(1)
+            >>> opcounters_after = replicaset.get_opcounters()['custom']
+        
+            >>> opcounters_after['primary.insert'] == opcounters_before['primary.insert'] + 1
+            True
+        
+            >>> assert \
+            ...     opcounters_after['secondary.query'] == opcounters_before['secondary.query'] + 1, \
+            ...     "ERROR: expected 'after == before + 1', but got 'after=%s, before=%s'" % \
+            ...         (opcounters_after['secondary.query'], opcounters_before['secondary.query'])
+        
+        
+        
+        Clean up
+        --------
+        
+        Database
+        ________
+        
+            >>> mongo_conn.drop_database('foobar-db')
+            >>> mongo_conn.disconnect()
+            >>> del mongo_conn
+            >>> del mongo_db
+        
+        
+        Layers
+        ______
+        
+        Connections are refused after teardown::
+        
+            >>> for layer in layers:
+            ...     layer.tearDown()
+        
+            >>> def check_down(*ports):
+            ...     for port in ports:
+            ...         try:
+            ...             tn = telnetlib.Telnet('localhost', port)
+            ...             tn.close()
+            ...         except:
+            ...             yield True
+        
+            >>> all(check_down(replicaset.storage_ports))
+            True
+        
+        ==============
+        Change History
+        ==============
+        
+        Unreleased
+        ==========
+        
+        2015/03/12 0.6.1
+        ================
+        
+         - added SIGINT handling to nginx layer (KeyboardInterrupt)
+        
+        2013/09/06 0.6.0
+        ================
+        
+         - ServerLayer: is now compatible with python 3.3
+        
+        2013/07/01 0.5.3
+        ================
+        
+         - ServerLayer: reopen logfile in start instead of setUp
+        
+        2013/07/01 0.5.2
+        ================
+        
+         - ServerLayer: generate logfiles with correct file extension
+        
+        2013/07/01 0.5.1
+        ================
+        
+         - It's possible to specify logging of the ServerLayer
+        
+         - included memcached in buildout
+        
+         - use openresty instead of nginx
+        
+         - nailed versions of dependencies
+        
+        2013/06/19 0.5.0
+        ================
+        
+         - Add MongoLayer
+        
+        2013/04/03 0.4.3
+        ================
+        
+         - SMTPServerLayer's is now None before calling setUp()
+        
+         - add additional tests for SMTPServerLayer
+        
+        2013/04/03 0.4.2
+        ================
+        
+         - add missing __name__ to SMTPServerLayer
+        
+        2013/04/03 0.4.1
+        ================
+        
+         - add missing __bases__ to SMTPServerLayer
+        
+        2013/04/03 0.4.0
+        ================
+        
+         - added SMTPServerLayer
+        
+         - updated bootstrap.py and nginx/psql download location
+        
+        2012/11/23 0.3.5
+        ================
+        
+         - ServerLayer: add args for subprocess open
+        
+        2012/11/12 0.3.4
+        ================
+        
+         - set to zip_safe = False
+        
+        2012/11/12 0.3.3
+        ================
+        
+         - release without changes due to wrong distribution of previous version
+        
+        2011/12/06 0.3.2
+        ================
+        
+         - fixed #1 an endless loop in server layer
+        
+        2011/11/29 0.3.1
+        ================
+        
+         - added missing README to distro
+        
+        2011/11/29 0.3.0
+        ================
+        
+         - allow to set a snapshot directory in workdirectory-layer - this
+           allows for generating non-temporary snapshots.
+        
+         - moved wait implementation for server start in server-layer into
+           start, this is usefull when calling start and stop in tests, but
+           might introduce incompatibilities when subclassed.
+        
+         - moved to github
+        
+         - postgresql 8.4 compat
+        
+        2011/05/18 0.2.3
+        ================
+        
+         - also dump routines for mysql
+        
+        2011/05/11 0.2.2
+        ================
+        
+         - try to run commands from the scripts dir (mysql 5.5)
+        
+        2011/05/10 0.2.1
+        ================
+        
+         - fixed the mysqld_path to work with newer mysql version
+        
+        2011/01/07 0.2.0
+        ================
+        
+         - fixed an UnboundLocalError in server layer
+        
+         - do not use shell option in server layer command and sanitize the
+           command options.
+        
+         - reduced start/stop wait times in mysql layer
+        
+         - use modification times in layer sql script change checking
+           additionally to the paths. this way the test dump is only used if
+           the sql scripts have not been modified since the last test run.
+        
+         - stop sql servers when runscripts fails in layer setup because
+           otherwise the server still runs after the testrunner exited.
+        
+         - allow to define a defaults file in mysql layer
+        
+         - fixed cassandra layer download url
+        
+         - removed dependency to ``zc.buildout`` which is now in an extra
+           called ``cassandra`` because it is only needed for downloading
+           cassandra.
+        
+         - removed dependency to ``zope.testing``
+        
+         - removed dependency to ``transaction``
+        
+         - do not pipe stderr in base server layer to prevent overflow because
+           it never gets read
+        
+        2010/10/22 0.1.2
+        ================
+        
+         - look form mysqld in relative libexec dir in mysql layer
+        
+        2010/10/22 0.1.1
+        ================
+        
+         - allow setting the mysql_bin_dir in layer and server
+        
+        2010/07/14 0.1.0
+        ================
+        
+         - fix wait interval in isUp check in server layer
+        
+         - use hashlib instead of sha, to avoid deprecation warnings. Only
+           works with python >= 2.5
+        
+        2010/03/08 0.1.0a7
+        ==================
+        
+         - made mysql layer aware to handle multiple instances of mysqld in parallel
+        
+        
+        2010/02/03 0.1.0a6
+        ==================
+        
+         - added additional argument to set nginx configuration file. usefull if
+           desired config is not located under given prefix
+        
+        
+        2009/12/09 0.1.0a5
+        ==================
+        
+         - factored out the server part of the memcached layer, this could now
+           be used for any server implementations, see ``memcached.py`` as an
+           example how to use it.
+        
+        
+        2009/11/02 0.1.0a4
+        ==================
+        
+         - raising a proper exception if mysqld was not found (fixes #3)
+        
+         - moved dependency for 'transaction' to extras[pgsql] (fixes #2)
+        
+         - fixed wrong path for dump databases in layer. (fixes #1)
+        
+        
+        2009/10/30 0.1.0a3
+        ==================
+        
+         - the postgres and mysql client libs are now only defined as extra
+           dependencies, so installation of this package is also possible
+           without having those libs available
+        
+         - added nginx layer see nginx.txt
+        
+        
+        2009/10/29 0.1.0a2
+        ==================
+        
+         - added coverage
+        
+         - added MySQLDatabaseLayer
+        
+         - added mysql server
+        
+         - added PGDatabaseLayer
+        
+         - added pgsql server
+        
+        
+        2009/10/14 0.1.0a1
+        ==================
+        
+        - initial release
+        
+        
+Keywords: testing zope layer test cassandra memcached
+Platform: UNKNOWN
