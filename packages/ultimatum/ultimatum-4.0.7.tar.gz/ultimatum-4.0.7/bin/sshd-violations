@@ -1,0 +1,61 @@
+#!/usr/bin/env python
+"""
+Parse auth.log to retrieve invalid login attempts to SSH
+"""
+
+import argparse
+
+from datetime import datetime, timedelta
+
+from ultimatum.logformats.auth import SSHViolationsDatabase
+from seine.whois.arin import ARINReverseIPQuery, WhoisError
+from systematic.shell import Script, ScriptCommand, ScriptError
+from systematic.log import LogFile, LogFileError
+
+DEFAULT_LOGFILE = '/var/log/auth.log'
+
+class SSHLoginsCommand(ScriptCommand):
+    def __init__(self, *args, **kwargs):
+        ScriptCommand.__init__(self, *args, **kwargs)
+        self.database = SSHViolationsDatabase()
+
+
+class UpdateCommand(SSHLoginsCommand):
+    def run(self, args):
+        self.database.update()
+
+
+class ListCommand(SSHLoginsCommand):
+    def run(self, args):
+        address = None
+        if args.minutes:
+            start = datetime.now() - timedelta(minutes=args.minutes)
+        else:
+            start = None
+
+        for entry in self.database.login_attempts(start=start):
+            if entry['address'] != address:
+                entry['netblocks'] = ' '.join('%s' % x for x in entry['netblocks'])
+                self.script.message('%s %s' % (entry['address'], entry['netblocks']))
+                address = entry['address']
+
+            self.script.message('  %(timestamp)s %(username)s' % entry)
+
+
+class SummaryCommand(SSHLoginsCommand):
+    def run(self, args):
+        for entry in self.database.source_address_counts():
+            entry['netblocks'] = ' '.join('%s' % x for x in entry['netblocks'])
+            self.script.message('%(count)6d %(address)16s %(netblocks)16s' % entry)
+
+
+script = Script()
+c = script.add_subcommand(UpdateCommand('update', 'Update list of SSH login attempts'))
+c.add_argument('files', nargs='*', help='Log file paths to process')
+
+c = script.add_subcommand(SummaryCommand('summary', 'Summary of login attempts'))
+
+c = script.add_subcommand(ListCommand('list', 'List login attempts'))
+c.add_argument('--minutes', type=int, help='List entries for last n minutes')
+
+args = script.parse_args()
