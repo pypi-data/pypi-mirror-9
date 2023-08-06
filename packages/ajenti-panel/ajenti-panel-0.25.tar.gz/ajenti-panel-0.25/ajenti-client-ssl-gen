@@ -1,0 +1,56 @@
+#!/usr/bin/env python
+import socket
+import random
+import sys
+import yaml
+from OpenSSL.crypto import *
+
+if len(sys.argv) != 3:
+    print('Usage: %s <username> <output file>' % sys.argv[0])
+    sys.exit(1)
+
+username = sys.argv[1]
+output = sys.argv[2]
+etcdir = '/etc/ajenti'
+config_path = '%s/config.yml' % etcdir
+
+config = yaml.load(open(config_path))
+
+if not config['ssl']['enable']:
+    print 'SSL is not enabled in config.yml'
+    sys.exit(2)
+
+cn = '%s@%s' % (username, socket.gethostname())
+key = PKey()
+key.generate_key(TYPE_RSA, 4096)
+ca_key = load_privatekey(FILETYPE_PEM, open(config['ssl']['certificate']).read())
+ca_cert = load_certificate(FILETYPE_PEM, open(config['ssl']['certificate']).read())
+cert = X509()
+cert.get_subject().countryName = 'NA'
+cert.get_subject().organizationName = socket.gethostname()
+cert.get_subject().commonName = cn
+cert.set_pubkey(key)
+cert.set_serial_number(random.getrandbits(8 * 20))
+cert.gmtime_adj_notBefore(0)
+cert.gmtime_adj_notAfter(10 * 365 * 24 * 60 * 60)
+cert.set_issuer(ca_cert.get_subject())
+cert.sign(ca_key, 'sha1')
+
+pkcs = PKCS12()
+#pkcs.set_ca_certificates([ca_cert])
+pkcs.set_certificate(cert)
+pkcs.set_privatekey(key)
+pkcs.set_friendlyname(cn)
+
+cert_info = {
+    'digest': cert.digest('sha1'),
+    'name': ','.join('%s=%s' % x for x in cert.get_subject().get_components()),
+    'serial': cert.get_serial_number(),
+    'user': username,
+}
+config['ssl']['client_auth']['certificates'].append(cert_info)
+
+with open(config_path, 'w') as f:
+    f.write(yaml.dump(config, default_flow_style=False))
+
+open(output, 'w').write(pkcs.export())
