@@ -1,0 +1,514 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>samsifter.tools.filter_ref_identity &mdash; SamSifter 0.5.2 documentation</title>
+    
+    <link rel="stylesheet" href="../../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../../',
+        VERSION:     '0.5.2',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../../_static/doctools.js"></script>
+    <link rel="top" title="SamSifter 0.5.2 documentation" href="../../../index.html" />
+    <link rel="up" title="Module code" href="../../index.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../../index.html">SamSifter 0.5.2 documentation</a> &raquo;</li>
+          <li><a href="../../index.html" accesskey="U">Module code</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <h1>Source code for samsifter.tools.filter_ref_identity</h1><div class="highlight"><pre>
+<span class="c">#!/usr/bin/env python3</span>
+<span class="c"># -*- coding: utf-8 -*-</span>
+<span class="sd">&quot;&quot;&quot;Filters references by identity values of assigned reads.</span>
+
+<span class="sd">This filter processes reference accessions with too few or too many reads of</span>
+<span class="sd">high or low percent identity in MALT&#39;ed SAM files.</span>
+
+<span class="sd">.. moduleauthor:: Florian Aldehoff &lt;faldehoff@student.uni-tuebingen.de&gt;</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">sys</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">version_info</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="mi">3</span><span class="p">):</span>
+    <span class="k">print</span><span class="p">(</span><span class="s">&quot;Error, I need python 3.x or newer&quot;</span><span class="p">)</span>
+    <span class="nb">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+
+<span class="kn">import</span> <span class="nn">argparse</span>
+<span class="kn">import</span> <span class="nn">logging</span> <span class="kn">as</span> <span class="nn">log</span>
+<span class="kn">import</span> <span class="nn">fileinput</span>
+<span class="kn">import</span> <span class="nn">tempfile</span>
+<span class="kn">from</span> <span class="nn">os.path</span> <span class="kn">import</span> <span class="n">basename</span><span class="p">,</span> <span class="n">splitext</span>
+
+<span class="sd">&quot;&quot;&quot; custom libraries &quot;&quot;&quot;</span>
+<span class="kn">from</span> <span class="nn">samsifter.models.filter</span> <span class="kn">import</span> <span class="n">FilterItem</span>
+<span class="kn">from</span> <span class="nn">samsifter.models.parameter</span> <span class="kn">import</span> <span class="p">(</span><span class="n">FilterParameter</span><span class="p">,</span> <span class="n">FilterSwitch</span><span class="p">,</span>
+                                        <span class="n">FilterThreshold</span><span class="p">)</span>
+<span class="kn">from</span> <span class="nn">samsifter.util.arg_sanitation</span> <span class="kn">import</span> <span class="p">(</span><span class="n">check_pos_float_max100</span><span class="p">,</span> <span class="n">check_sam</span><span class="p">)</span>
+<span class="kn">from</span> <span class="nn">samsifter.util.sam</span> <span class="kn">import</span> <span class="n">reconstruct</span>
+<span class="kn">from</span> <span class="nn">samsifter.util.genetics</span> <span class="kn">import</span> <span class="n">aln_identity</span>
+<span class="kn">from</span> <span class="nn">samsifter.util.filters</span> <span class="kn">import</span> <span class="n">line_filter</span>
+<span class="kn">from</span> <span class="nn">samsifter.util.papertrail</span> <span class="kn">import</span> <span class="n">modify_header</span>
+<span class="kn">from</span> <span class="nn">samsifter.version</span> <span class="kn">import</span> <span class="n">samsifter_version</span>
+
+<span class="n">__version__</span> <span class="o">=</span> <span class="n">samsifter_version</span>
+
+<span class="sd">&quot;&quot;&quot; global variables &quot;&quot;&quot;</span>
+<span class="n">TEXT</span> <span class="o">=</span> <span class="s">&quot;Filter references by </span><span class="si">% i</span><span class="s">dentity&quot;</span>
+<span class="n">DESC</span> <span class="o">=</span> <span class="p">(</span><span class="s">&quot;Filters reference accessions with too few/many reads of high/low &quot;</span>
+        <span class="s">&quot;percent identity in MALT&#39;ed SAM files&quot;</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="item"><a class="viewcode-back" href="../../../samsifter.tools.html#samsifter.tools.filter_ref_identity.item">[docs]</a><span class="k">def</span> <span class="nf">item</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;Create item representing this tool in list and tree views.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    FilterItem</span>
+<span class="sd">        Item for use in item-based list and tree views.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">item</span> <span class="o">=</span> <span class="n">FilterItem</span><span class="p">(</span><span class="n">text</span><span class="o">=</span><span class="n">TEXT</span><span class="p">,</span> <span class="n">desc</span><span class="o">=</span><span class="n">DESC</span><span class="p">)</span>
+    <span class="n">item</span><span class="o">.</span><span class="n">set_command</span><span class="p">(</span><span class="n">splitext</span><span class="p">(</span><span class="n">basename</span><span class="p">(</span><span class="n">__file__</span><span class="p">))[</span><span class="mi">0</span><span class="p">])</span>
+
+    <span class="n">item</span><span class="o">.</span><span class="n">add_parameter</span><span class="p">(</span><span class="n">FilterThreshold</span><span class="p">(</span>
+        <span class="n">text</span><span class="o">=</span><span class="s">&quot;min. reads&quot;</span><span class="p">,</span>
+        <span class="n">desc</span><span class="o">=</span><span class="s">&quot;minimum percentage of reads with insufficient identity [50.0]&quot;</span><span class="p">,</span>
+        <span class="n">cli_name</span><span class="o">=</span><span class="s">&quot;--min_reads&quot;</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="mf">50.0</span><span class="p">,</span>
+        <span class="n">unit</span><span class="o">=</span><span class="s">&quot;%&quot;</span><span class="p">,</span>
+        <span class="n">required</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span>
+        <span class="n">active</span><span class="o">=</span><span class="bp">True</span>
+    <span class="p">))</span>
+
+    <span class="n">item</span><span class="o">.</span><span class="n">add_parameter</span><span class="p">(</span><span class="n">FilterThreshold</span><span class="p">(</span>
+        <span class="n">text</span><span class="o">=</span><span class="s">&quot;max. reads&quot;</span><span class="p">,</span>
+        <span class="n">desc</span><span class="o">=</span><span class="s">&quot;maximum percentage of reads with insufficient identity [100.0]&quot;</span><span class="p">,</span>
+        <span class="n">cli_name</span><span class="o">=</span><span class="s">&quot;--max_reads&quot;</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="mf">100.0</span><span class="p">,</span>
+        <span class="n">unit</span><span class="o">=</span><span class="s">&quot;%&quot;</span>
+    <span class="p">))</span>
+
+    <span class="n">item</span><span class="o">.</span><span class="n">add_parameter</span><span class="p">(</span><span class="n">FilterThreshold</span><span class="p">(</span>
+        <span class="n">text</span><span class="o">=</span><span class="s">&quot;min. identity&quot;</span><span class="p">,</span>
+        <span class="n">desc</span><span class="o">=</span><span class="s">&quot;minimum percent identity [90.0]&quot;</span><span class="p">,</span>
+        <span class="n">cli_name</span><span class="o">=</span><span class="s">&quot;--min_identity&quot;</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="mf">90.0</span><span class="p">,</span>
+        <span class="n">unit</span><span class="o">=</span><span class="s">&quot;%&quot;</span><span class="p">,</span>
+        <span class="n">required</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span>
+        <span class="n">active</span><span class="o">=</span><span class="bp">True</span>
+    <span class="p">))</span>
+
+    <span class="n">item</span><span class="o">.</span><span class="n">add_parameter</span><span class="p">(</span><span class="n">FilterThreshold</span><span class="p">(</span>
+        <span class="n">text</span><span class="o">=</span><span class="s">&quot;max. identity&quot;</span><span class="p">,</span>
+        <span class="n">desc</span><span class="o">=</span><span class="s">&quot;maximum percent identity [100.0]&quot;</span><span class="p">,</span>
+        <span class="n">cli_name</span><span class="o">=</span><span class="s">&quot;--max_identity&quot;</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="mf">100.0</span><span class="p">,</span>
+        <span class="n">unit</span><span class="o">=</span><span class="s">&quot;%&quot;</span>
+    <span class="p">))</span>
+
+    <span class="n">item</span><span class="o">.</span><span class="n">add_parameter</span><span class="p">(</span><span class="n">FilterSwitch</span><span class="p">(</span>
+        <span class="n">text</span><span class="o">=</span><span class="s">&quot;filter direction&quot;</span><span class="p">,</span>
+        <span class="n">desc</span><span class="o">=</span><span class="s">&quot;Keep or discard entries passing the filter criteria?&quot;</span><span class="p">,</span>
+        <span class="n">cli_name</span><span class="o">=</span><span class="s">&quot;--discard&quot;</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+        <span class="n">options</span><span class="o">=</span><span class="p">[</span><span class="s">&quot;discard&quot;</span><span class="p">,</span> <span class="s">&quot;keep&quot;</span><span class="p">]</span>
+    <span class="p">))</span>
+
+    <span class="n">item</span><span class="o">.</span><span class="n">add_parameter</span><span class="p">(</span><span class="n">FilterParameter</span><span class="p">(</span>
+        <span class="n">text</span><span class="o">=</span><span class="s">&quot;verbose&quot;</span><span class="p">,</span>
+        <span class="n">desc</span><span class="o">=</span><span class="s">&quot;print additional information to STDERR&quot;</span><span class="p">,</span>
+        <span class="n">cli_name</span><span class="o">=</span><span class="s">&quot;--verbose&quot;</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span>
+        <span class="n">active</span><span class="o">=</span><span class="bp">True</span>
+    <span class="p">))</span>
+
+    <span class="n">item</span><span class="o">.</span><span class="n">add_parameter</span><span class="p">(</span><span class="n">FilterParameter</span><span class="p">(</span>
+        <span class="n">text</span><span class="o">=</span><span class="s">&quot;debug&quot;</span><span class="p">,</span>
+        <span class="n">desc</span><span class="o">=</span><span class="s">&quot;print debug messages to STDERR&quot;</span><span class="p">,</span>
+        <span class="n">cli_name</span><span class="o">=</span><span class="s">&quot;--debug&quot;</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="bp">False</span>
+    <span class="p">))</span>
+
+    <span class="n">item</span><span class="o">.</span><span class="n">add_parameter</span><span class="p">(</span><span class="n">FilterParameter</span><span class="p">(</span>
+        <span class="n">text</span><span class="o">=</span><span class="s">&quot;write PG tag&quot;</span><span class="p">,</span>
+        <span class="n">desc</span><span class="o">=</span><span class="s">&quot;annotate the filtered SAM file by adding a PG tag to the header&quot;</span><span class="p">,</span>
+        <span class="n">cli_name</span><span class="o">=</span><span class="s">&quot;--modify&quot;</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span>
+        <span class="n">active</span><span class="o">=</span><span class="bp">True</span>
+    <span class="p">))</span>
+
+    <span class="k">return</span> <span class="n">item</span>
+
+</div>
+<div class="viewcode-block" id="main"><a class="viewcode-back" href="../../../samsifter.tools.html#samsifter.tools.filter_ref_identity.main">[docs]</a><span class="k">def</span> <span class="nf">main</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;Executable to filter SAM files for references with low identity reads.</span>
+
+<span class="sd">    See ``--help`` for details on expected arguments. Takes input from</span>
+<span class="sd">    either STDIN, or optional, or positional arguments. Logs messages to</span>
+<span class="sd">    STDERR and writes processed SAM files to STDOUT.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c"># parse arguments</span>
+    <span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">description</span><span class="o">=</span><span class="n">DESC</span><span class="p">)</span>
+
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&#39;-i&#39;</span><span class="p">,</span> <span class="s">&#39;--input&#39;</span><span class="p">,</span>
+                        <span class="nb">type</span><span class="o">=</span><span class="n">check_sam</span><span class="p">,</span>
+                        <span class="n">help</span><span class="o">=</span><span class="s">&quot;specify SAM file to be analysed (default: &quot;</span>
+                        <span class="s">&quot;STDIN)&quot;</span><span class="p">,</span>
+                        <span class="n">required</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+
+    <span class="c"># thresholds for filtering</span>
+    <span class="n">threshold_options</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">add_argument_group</span><span class="p">(</span>
+        <span class="n">title</span><span class="o">=</span><span class="s">&quot;filtering thresholds&quot;</span><span class="p">,</span>
+        <span class="n">description</span><span class="o">=</span><span class="s">&quot;modify cutoffs for percent identity filtering&quot;</span>
+    <span class="p">)</span>
+    <span class="n">threshold_options</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&quot;--min_reads&quot;</span><span class="p">,</span>
+                                   <span class="n">action</span><span class="o">=</span><span class="s">&quot;store&quot;</span><span class="p">,</span>
+                                   <span class="nb">type</span><span class="o">=</span><span class="n">check_pos_float_max100</span><span class="p">,</span>
+                                   <span class="n">dest</span><span class="o">=</span><span class="s">&quot;min_reads&quot;</span><span class="p">,</span>
+                                   <span class="n">help</span><span class="o">=</span><span class="s">&quot;minimum percentage of reads with </span><span class="se">\</span>
+<span class="s">                                   insufficient identity [50.0]&quot;</span><span class="p">,</span>
+                                   <span class="n">default</span><span class="o">=</span><span class="mf">50.0</span><span class="p">)</span>
+    <span class="n">threshold_options</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&quot;--max_reads&quot;</span><span class="p">,</span>
+                                   <span class="n">action</span><span class="o">=</span><span class="s">&quot;store&quot;</span><span class="p">,</span>
+                                   <span class="nb">type</span><span class="o">=</span><span class="n">check_pos_float_max100</span><span class="p">,</span>
+                                   <span class="n">dest</span><span class="o">=</span><span class="s">&quot;max_reads&quot;</span><span class="p">,</span>
+                                   <span class="n">help</span><span class="o">=</span><span class="s">&quot;maximum percentage of reads with </span><span class="se">\</span>
+<span class="s">                                   insufficient identity [100.0]&quot;</span><span class="p">,</span>
+                                   <span class="n">default</span><span class="o">=</span><span class="mf">100.0</span><span class="p">)</span>
+    <span class="n">threshold_options</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&quot;--min_identity&quot;</span><span class="p">,</span>
+                                   <span class="n">action</span><span class="o">=</span><span class="s">&quot;store&quot;</span><span class="p">,</span>
+                                   <span class="nb">type</span><span class="o">=</span><span class="n">check_pos_float_max100</span><span class="p">,</span>
+                                   <span class="n">dest</span><span class="o">=</span><span class="s">&quot;min_identity&quot;</span><span class="p">,</span>
+                                   <span class="n">help</span><span class="o">=</span><span class="s">&quot;minimum percent identity [90.0]&quot;</span><span class="p">,</span>
+                                   <span class="n">default</span><span class="o">=</span><span class="mf">90.0</span><span class="p">)</span>
+    <span class="n">threshold_options</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&quot;--max_identity&quot;</span><span class="p">,</span>
+                                   <span class="n">action</span><span class="o">=</span><span class="s">&quot;store&quot;</span><span class="p">,</span>
+                                   <span class="nb">type</span><span class="o">=</span><span class="n">check_pos_float_max100</span><span class="p">,</span>
+                                   <span class="n">dest</span><span class="o">=</span><span class="s">&quot;max_identity&quot;</span><span class="p">,</span>
+                                   <span class="n">help</span><span class="o">=</span><span class="s">&quot;maximum percent identity [100.0]&quot;</span><span class="p">,</span>
+                                   <span class="n">default</span><span class="o">=</span><span class="mf">100.0</span><span class="p">)</span>
+
+    <span class="c"># options to modify calculation of percent identity</span>
+    <span class="n">perc_id_options</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">add_argument_group</span><span class="p">(</span>
+        <span class="n">title</span><span class="o">=</span><span class="s">&quot;percent identity&quot;</span><span class="p">,</span>
+        <span class="n">description</span><span class="o">=</span><span class="p">(</span><span class="s">&quot;Options to modify calculation of percent identity. &quot;</span>
+                     <span class="s">&quot;Setting all three options will calculate values similar &quot;</span>
+                     <span class="s">&quot;to PMDtools, while the default settings calculate &quot;</span>
+                     <span class="s">&quot;values similar to MALT.&quot;</span><span class="p">))</span>
+    <span class="n">perc_id_options</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&quot;--no_deamination&quot;</span><span class="p">,</span>
+                                 <span class="n">action</span><span class="o">=</span><span class="s">&quot;store_true&quot;</span><span class="p">,</span>
+                                 <span class="n">dest</span><span class="o">=</span><span class="s">&quot;no_deamination&quot;</span><span class="p">,</span>
+                                 <span class="n">help</span><span class="o">=</span><span class="s">&quot;do not treat possibly deaminated T&gt;C </span><span class="se">\</span>
+<span class="s">                                 and A&gt;G pairs as mismatches in calculation </span><span class="se">\</span>
+<span class="s">                                 of percent identity&quot;</span><span class="p">,</span>
+                                 <span class="n">default</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+    <span class="n">perc_id_options</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&quot;--no_indels&quot;</span><span class="p">,</span>
+                                 <span class="n">action</span><span class="o">=</span><span class="s">&quot;store_true&quot;</span><span class="p">,</span>
+                                 <span class="n">dest</span><span class="o">=</span><span class="s">&quot;no_indels&quot;</span><span class="p">,</span>
+                                 <span class="n">help</span><span class="o">=</span><span class="s">&quot;do not treat insertions and deletions </span><span class="se">\</span>
+<span class="s">                                 in alignment as mismatches in calculation of </span><span class="se">\</span>
+<span class="s">                                 percent identity&quot;</span><span class="p">,</span>
+                                 <span class="n">default</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+    <span class="n">perc_id_options</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&quot;--no_unknown&quot;</span><span class="p">,</span>
+                                 <span class="n">action</span><span class="o">=</span><span class="s">&quot;store_true&quot;</span><span class="p">,</span>
+                                 <span class="n">dest</span><span class="o">=</span><span class="s">&quot;no_unknown&quot;</span><span class="p">,</span>
+                                 <span class="n">help</span><span class="o">=</span><span class="s">&quot;do not treat Ns in alignment as </span><span class="se">\</span>
+<span class="s">                                 mismatch in calculation of percent identity&quot;</span><span class="p">,</span>
+                                 <span class="n">default</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&#39;--discard&#39;</span><span class="p">,</span>
+                        <span class="nb">type</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span>
+                        <span class="n">help</span><span class="o">=</span><span class="s">&quot;keep or discard entries passing the filter &quot;</span>
+                             <span class="s">&quot;criteria?&quot;</span><span class="p">,</span>
+                        <span class="n">required</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+                        <span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&#39;-v&#39;</span><span class="p">,</span> <span class="s">&#39;--verbose&#39;</span><span class="p">,</span>
+                        <span class="n">required</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+                        <span class="n">action</span><span class="o">=</span><span class="s">&#39;store_true&#39;</span><span class="p">,</span>
+                        <span class="n">help</span><span class="o">=</span><span class="s">&#39;print additional information to stderr&#39;</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&#39;-d&#39;</span><span class="p">,</span> <span class="s">&#39;--debug&#39;</span><span class="p">,</span>
+                        <span class="n">required</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+                        <span class="n">action</span><span class="o">=</span><span class="s">&#39;store_true&#39;</span><span class="p">,</span>
+                        <span class="n">help</span><span class="o">=</span><span class="s">&#39;print debug messages to stderr&#39;</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&#39;-m&#39;</span><span class="p">,</span> <span class="s">&#39;--modify&#39;</span><span class="p">,</span>
+                        <span class="n">required</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+                        <span class="n">action</span><span class="o">=</span><span class="s">&#39;store_true&#39;</span><span class="p">,</span>
+                        <span class="n">help</span><span class="o">=</span><span class="s">&#39;modify header by adding PG record&#39;</span><span class="p">)</span>
+
+    <span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">remainArgs</span><span class="p">)</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">parse_known_args</span><span class="p">()</span>
+
+    <span class="c"># configure logging</span>
+    <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">verbose</span><span class="p">:</span>
+        <span class="n">log</span><span class="o">.</span><span class="n">basicConfig</span><span class="p">(</span><span class="n">format</span><span class="o">=</span><span class="s">&quot;</span><span class="si">%(levelname)s</span><span class="s">: </span><span class="si">%(message)s</span><span class="s">&quot;</span><span class="p">,</span> <span class="n">level</span><span class="o">=</span><span class="n">log</span><span class="o">.</span><span class="n">DEBUG</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">log</span><span class="o">.</span><span class="n">basicConfig</span><span class="p">(</span><span class="n">format</span><span class="o">=</span><span class="s">&quot;</span><span class="si">%(levelname)s</span><span class="s">: </span><span class="si">%(message)s</span><span class="s">&quot;</span><span class="p">)</span>
+
+    <span class="c"># exclude senseless threshold combinations</span>
+    <span class="k">if</span> <span class="p">((</span><span class="n">args</span><span class="o">.</span><span class="n">min_reads</span> <span class="o">&gt;=</span> <span class="n">args</span><span class="o">.</span><span class="n">max_reads</span><span class="p">)</span>
+       <span class="ow">or</span> <span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">min_identity</span> <span class="o">&gt;=</span> <span class="n">args</span><span class="o">.</span><span class="n">max_identity</span><span class="p">)):</span>
+        <span class="n">log</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s">&quot;Filter thresholds too restrictive.&quot;</span><span class="p">)</span>
+        <span class="nb">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="c"># initialize dicts and variables</span>
+    <span class="n">header</span> <span class="o">=</span> <span class="p">[]</span>      <span class="c"># SAM header lines, unmodified</span>
+    <span class="n">filtered_counts</span> <span class="o">=</span> <span class="p">{}</span>    <span class="c"># dict of list of ints: [passed, failed]</span>
+    <span class="n">positions</span> <span class="o">=</span> <span class="p">{}</span>   <span class="c"># dict of list for references and their line numbers</span>
+    <span class="nb">buffer</span> <span class="o">=</span> <span class="bp">None</span>    <span class="c"># file handle used to buffer complete STDIN</span>
+    <span class="n">byte_offset</span> <span class="o">=</span> <span class="mi">0</span>  <span class="c"># offset of first line after end of header</span>
+    <span class="n">line_offset</span> <span class="o">=</span> <span class="mi">0</span>
+
+    <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&quot;START of filtering references by identity.&quot;</span><span class="p">)</span>
+
+    <span class="c"># parse SAM file and filter reads by identity thresholds</span>
+    <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&quot;STEP 1: parsing SAM records and determining reads with&quot;</span>
+             <span class="s">&quot; </span><span class="si">%.1f%%</span><span class="s"> &lt;= identity &lt;= </span><span class="si">%.1f%%</span><span class="s">&quot;</span>
+             <span class="o">%</span> <span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">min_identity</span><span class="p">,</span> <span class="n">args</span><span class="o">.</span><span class="n">max_identity</span><span class="p">))</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        open SAM file from either command line argument or STDIN</span>
+<span class="sd">        use temporary file as buffer if reading from STDIN</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">input</span><span class="p">:</span>
+            <span class="n">handle</span> <span class="o">=</span> <span class="nb">open</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">input</span><span class="p">,</span> <span class="s">&#39;r&#39;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">handle</span> <span class="o">=</span> <span class="n">fileinput</span><span class="o">.</span><span class="n">input</span><span class="p">(</span><span class="n">remainArgs</span><span class="p">)</span>
+            <span class="nb">buffer</span> <span class="o">=</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">TemporaryFile</span><span class="p">(</span><span class="n">mode</span><span class="o">=</span><span class="s">&#39;w+&#39;</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">line_nr</span><span class="p">,</span> <span class="n">line</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">handle</span><span class="p">,</span> <span class="mi">0</span><span class="p">):</span>
+            <span class="k">if</span> <span class="nb">buffer</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+                <span class="nb">buffer</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+
+            <span class="c"># assuming that headers always precede alignments (SAMv1)</span>
+            <span class="k">if</span> <span class="n">line</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s">&quot;@&quot;</span><span class="p">):</span>
+                <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">modify</span><span class="p">:</span>
+                    <span class="n">line_offset</span> <span class="o">=</span> <span class="n">line_nr</span> <span class="o">+</span> <span class="mi">1</span>
+                    <span class="c"># store header lines for later modification</span>
+                    <span class="n">header</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+                    <span class="c"># increase offset until reaching end of header</span>
+                    <span class="n">byte_offset</span> <span class="o">+=</span> <span class="nb">len</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">fields</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s">&quot;</span><span class="se">\t</span><span class="s">&quot;</span><span class="p">)</span>
+                <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">                #   content     description</span>
+<span class="sd">                ===========================</span>
+<span class="sd">                0   QNAME</span>
+<span class="sd">                1   FLAG</span>
+<span class="sd">                2   RNAME</span>
+<span class="sd">                3   POS</span>
+<span class="sd">                4   MAPQ</span>
+<span class="sd">                5   CIGAR</span>
+<span class="sd">                6   RNEXT</span>
+<span class="sd">                7   PNEXT</span>
+<span class="sd">                8   TLEN</span>
+<span class="sd">                9   SEQ</span>
+<span class="sd">                10  QUAL</span>
+<span class="sd">                ...optional fields...</span>
+<span class="sd">                11  AS          alignment score</span>
+<span class="sd">                12  NM          edit distance to reference</span>
+<span class="sd">                13  ZL          reference length</span>
+<span class="sd">                14  ZR          &quot;raw score&quot;</span>
+<span class="sd">                15  ZE          &quot;expected&quot;</span>
+<span class="sd">                16  ZI          percent identify (incl. indels &amp; deaminated)</span>
+<span class="sd">                17  MD          mismatching positions</span>
+<span class="sd">                18  NS          PMD score</span>
+<span class="sd">                &quot;&quot;&quot;</span>
+
+                <span class="c"># extract accession from required RNAME field</span>
+                <span class="c"># (as written by MALT 0.0.3)</span>
+                <span class="n">rname_parts</span> <span class="o">=</span> <span class="n">fields</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s">&quot;|&quot;</span><span class="p">)</span>
+                <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">                #   content</span>
+<span class="sd">                ===============</span>
+<span class="sd">                0   gi</span>
+<span class="sd">                1   GenBank ID</span>
+<span class="sd">                2   ref</span>
+<span class="sd">                3   accession</span>
+<span class="sd">                4   tax</span>
+<span class="sd">                5   taxonomy ID</span>
+<span class="sd">                &quot;&quot;&quot;</span>
+
+                <span class="n">accession</span> <span class="o">=</span> <span class="s">&quot;&quot;</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">accession</span> <span class="o">=</span> <span class="n">rname_parts</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span>
+                <span class="k">except</span> <span class="ne">IndexError</span><span class="p">:</span>
+                    <span class="n">accession</span> <span class="o">=</span> <span class="s">&quot;unknown&quot;</span>
+                    <span class="n">log</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s">&quot;no accession in line </span><span class="si">%s</span><span class="s">, assigning read to &quot;</span>
+                             <span class="s">&quot;accession &#39;unknown&#39;&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">line_nr</span> <span class="o">+</span> <span class="mi">1</span><span class="p">))</span>
+
+                <span class="n">cigar</span> <span class="o">=</span> <span class="n">fields</span><span class="p">[</span><span class="mi">5</span><span class="p">]</span>
+                <span class="n">read</span> <span class="o">=</span> <span class="n">fields</span><span class="p">[</span><span class="mi">9</span><span class="p">]</span>
+
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">md</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s">&#39;MD:Z:&#39;</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">split</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(</span><span class="s">&#39;</span><span class="se">\n</span><span class="s">&#39;</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">IndexError</span><span class="p">:</span>
+                    <span class="n">log</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s">&quot;no MD tag in line </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">line_nr</span> <span class="o">+</span> <span class="mi">1</span><span class="p">))</span>
+                    <span class="nb">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+
+                <span class="c"># recreate alignment</span>
+                <span class="p">(</span><span class="n">ref_full</span><span class="p">,</span> <span class="n">read_full</span><span class="p">,</span> <span class="n">ref_aln</span><span class="p">,</span> <span class="n">read_aln</span><span class="p">)</span> <span class="o">=</span> <span class="n">reconstruct</span><span class="p">(</span><span class="n">read</span><span class="p">,</span>
+                                                                       <span class="n">cigar</span><span class="p">,</span>
+                                                                       <span class="n">md</span><span class="p">,</span>
+                                                                       <span class="bp">False</span><span class="p">)</span>
+
+                <span class="c"># calculate identity of alignment</span>
+                <span class="c"># (PMD method, uses inverted defaults)</span>
+                <span class="n">include_indels</span> <span class="o">=</span> <span class="ow">not</span> <span class="n">args</span><span class="o">.</span><span class="n">no_indels</span>
+                <span class="n">include_deamination</span> <span class="o">=</span> <span class="ow">not</span> <span class="n">args</span><span class="o">.</span><span class="n">no_deamination</span>
+                <span class="n">include_unknown</span> <span class="o">=</span> <span class="ow">not</span> <span class="n">args</span><span class="o">.</span><span class="n">no_unknown</span>
+                <span class="p">(</span><span class="n">identity</span><span class="p">,</span> <span class="n">mm_string</span><span class="p">)</span> <span class="o">=</span> <span class="n">aln_identity</span><span class="p">(</span><span class="n">read_aln</span><span class="p">,</span>
+                                                     <span class="n">ref_aln</span><span class="p">,</span>
+                                                     <span class="n">include_indels</span><span class="p">,</span>
+                                                     <span class="n">include_deamination</span><span class="p">,</span>
+                                                     <span class="n">include_unknown</span><span class="p">)</span>
+
+                <span class="c"># filter alignment, count results</span>
+                <span class="k">if</span> <span class="p">((</span><span class="n">args</span><span class="o">.</span><span class="n">min_identity</span> <span class="o">&lt;=</span> <span class="n">identity</span> <span class="o">*</span> <span class="mi">100</span><span class="p">)</span>
+                   <span class="ow">and</span> <span class="p">(</span><span class="n">identity</span> <span class="o">*</span> <span class="mi">100</span> <span class="o">&lt;=</span> <span class="n">args</span><span class="o">.</span><span class="n">max_identity</span><span class="p">)):</span>
+                    <span class="c"># passed</span>
+                    <span class="k">try</span><span class="p">:</span>
+                        <span class="n">filtered_counts</span><span class="p">[</span><span class="n">accession</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+                    <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
+                        <span class="n">filtered_counts</span><span class="p">[</span><span class="n">accession</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="c"># failed</span>
+                    <span class="k">try</span><span class="p">:</span>
+                        <span class="n">filtered_counts</span><span class="p">[</span><span class="n">accession</span><span class="p">][</span><span class="mi">1</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+                    <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
+                        <span class="n">filtered_counts</span><span class="p">[</span><span class="n">accession</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">]</span>
+
+                <span class="c"># remember occurence of accession and line number(s)</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">positions</span><span class="p">[</span><span class="n">accession</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">line_nr</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
+                    <span class="n">positions</span><span class="p">[</span><span class="n">accession</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">line_nr</span><span class="p">,</span> <span class="p">]</span>
+    <span class="k">finally</span><span class="p">:</span>
+        <span class="n">handle</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+        <span class="nb">buffer</span><span class="o">.</span><span class="n">seek</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+
+    <span class="c"># filter accessions by read thresholds</span>
+    <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&quot;STEP 2: determining accessions with &quot;</span>
+             <span class="s">&quot;</span><span class="si">%.1f%%</span><span class="s"> &lt;= filtered reads &lt;= </span><span class="si">%.1f%%</span><span class="s">&quot;</span>
+             <span class="o">%</span> <span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">min_reads</span><span class="p">,</span> <span class="n">args</span><span class="o">.</span><span class="n">max_reads</span><span class="p">))</span>
+    <span class="n">lines</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">accession</span><span class="p">,</span> <span class="p">(</span><span class="n">passed</span><span class="p">,</span> <span class="n">failed</span><span class="p">)</span> <span class="ow">in</span> <span class="n">filtered_counts</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="n">fraction</span> <span class="o">=</span> <span class="n">failed</span> <span class="o">/</span> <span class="p">(</span><span class="n">failed</span> <span class="o">+</span> <span class="n">passed</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">debug</span><span class="p">:</span>
+            <span class="k">print</span><span class="p">(</span><span class="n">failed</span><span class="p">,</span> <span class="n">passed</span><span class="p">,</span> <span class="n">failed</span> <span class="o">+</span> <span class="n">passed</span><span class="p">,</span> <span class="n">fraction</span><span class="p">,</span> <span class="nb">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+        <span class="k">if</span> <span class="p">((</span><span class="n">args</span><span class="o">.</span><span class="n">min_reads</span> <span class="o">&lt;=</span> <span class="n">fraction</span> <span class="o">*</span> <span class="mf">100.0</span><span class="p">)</span>
+           <span class="ow">and</span> <span class="p">(</span><span class="n">fraction</span> <span class="o">*</span> <span class="mf">100.0</span> <span class="o">&lt;=</span> <span class="n">args</span><span class="o">.</span><span class="n">max_reads</span><span class="p">)):</span>
+            <span class="n">lines</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">positions</span><span class="p">[</span><span class="n">accession</span><span class="p">])</span>
+            <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">debug</span><span class="p">:</span>
+                <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&quot;filtering accession: </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">accession</span><span class="p">,))</span>
+
+    <span class="c"># re-open file if not a buffered stream</span>
+    <span class="k">if</span> <span class="nb">buffer</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+        <span class="nb">buffer</span> <span class="o">=</span> <span class="nb">open</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">input</span><span class="p">,</span> <span class="s">&#39;r&#39;</span><span class="p">)</span>
+
+    <span class="c"># skip original headers and sneak in modified headers instead</span>
+    <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">modify</span><span class="p">:</span>
+        <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&quot;Writing new @PG record to SAM header.&quot;</span><span class="p">)</span>
+        <span class="n">cl</span> <span class="o">=</span> <span class="s">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
+        <span class="n">modified_header</span> <span class="o">=</span> <span class="n">modify_header</span><span class="p">(</span>
+            <span class="n">header</span><span class="p">,</span>
+            <span class="n">name</span><span class="o">=</span><span class="n">splitext</span><span class="p">(</span><span class="n">basename</span><span class="p">(</span><span class="n">__file__</span><span class="p">))[</span><span class="mi">0</span><span class="p">],</span>
+            <span class="n">version</span><span class="o">=</span><span class="n">__version__</span><span class="p">,</span>
+            <span class="n">command_line</span><span class="o">=</span><span class="n">cl</span><span class="p">,</span>
+            <span class="n">description</span><span class="o">=</span><span class="n">TEXT</span>
+        <span class="p">)</span>
+        <span class="n">extra_headers</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">modified_header</span><span class="p">)</span> <span class="o">-</span> <span class="nb">len</span><span class="p">(</span><span class="n">header</span><span class="p">)</span>    <span class="c"># should be 1</span>
+        <span class="k">for</span> <span class="n">record</span> <span class="ow">in</span> <span class="n">modified_header</span><span class="p">:</span>
+            <span class="k">print</span><span class="p">(</span><span class="n">record</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(),</span> <span class="nb">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
+        <span class="c"># fast forward buffer to beginning of alignments</span>
+        <span class="nb">buffer</span><span class="o">.</span><span class="n">seek</span><span class="p">(</span><span class="n">byte_offset</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">debug</span><span class="p">:</span>
+            <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&quot;</span><span class="si">%i</span><span class="s"> new line added to header lines.&quot;</span> <span class="o">%</span> <span class="n">extra_headers</span><span class="p">)</span>
+
+    <span class="c"># keep or remove accessions from SAM file</span>
+    <span class="n">alt</span> <span class="o">=</span> <span class="p">[</span><span class="s">&quot;discarding&quot;</span><span class="p">,</span> <span class="s">&quot;keeping&quot;</span><span class="p">]</span>
+    <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&quot;STEP 3: </span><span class="si">%s</span><span class="s"> </span><span class="si">%i</span><span class="s"> references from SAM file.&quot;</span> <span class="o">%</span>
+             <span class="p">(</span><span class="n">alt</span><span class="p">[</span><span class="n">args</span><span class="o">.</span><span class="n">discard</span><span class="p">],</span> <span class="nb">len</span><span class="p">(</span><span class="n">lines</span><span class="p">)))</span>
+
+    <span class="n">line_filter</span><span class="p">(</span><span class="n">lines</span><span class="p">,</span> <span class="nb">buffer</span><span class="p">,</span> <span class="n">discard</span><span class="o">=</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">discard</span> <span class="o">==</span> <span class="mi">0</span><span class="p">),</span>
+                <span class="n">offset</span><span class="o">=</span><span class="n">line_offset</span><span class="p">)</span>
+    <span class="nb">buffer</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+
+    <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&quot;END of filtering reads by identity.&quot;</span><span class="p">)</span>
+
+    <span class="nb">exit</span><span class="p">()</span>
+</div>
+<span class="k">if</span> <span class="n">__name__</span> <span class="o">==</span> <span class="s">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="n">main</span><span class="p">()</span>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../../index.html">SamSifter 0.5.2 documentation</a> &raquo;</li>
+          <li><a href="../../index.html" >Module code</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2015, Florian Aldehoff.
+      Last updated on Mar 05, 2015.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

@@ -1,0 +1,326 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>samsifter.util.papertrail &mdash; SamSifter 0.5.2 documentation</title>
+    
+    <link rel="stylesheet" href="../../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../../',
+        VERSION:     '0.5.2',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../../_static/doctools.js"></script>
+    <link rel="top" title="SamSifter 0.5.2 documentation" href="../../../index.html" />
+    <link rel="up" title="Module code" href="../../index.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../../index.html">SamSifter 0.5.2 documentation</a> &raquo;</li>
+          <li><a href="../../index.html" accesskey="U">Module code</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <h1>Source code for samsifter.util.papertrail</h1><div class="highlight"><pre>
+<span class="c">#!/usr/bin/env python3</span>
+<span class="c"># -*- coding: utf-8 -*-</span>
+<span class="sd">&quot;&quot;&quot;Annotation of SAM file headers with metadata on applied programs.</span>
+
+<span class="sd">.. moduleauthor:: Florian Aldehoff &lt;faldehoff@student.uni-tuebingen.de&gt;</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">import</span> <span class="nn">sys</span>
+<span class="kn">import</span> <span class="nn">fileinput</span>
+
+
+<div class="viewcode-block" id="find_last_in_chain"><a class="viewcode-back" href="../../../samsifter.util.html#samsifter.util.papertrail.find_last_in_chain">[docs]</a><span class="k">def</span> <span class="nf">find_last_in_chain</span><span class="p">(</span><span class="n">current_id</span><span class="p">,</span> <span class="n">pg_entries</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Recursively identify the last program entry in the chain.</span>
+
+<span class="sd">    @PG entries in SAM file headers can be chained by linking each entry to the</span>
+<span class="sd">    previously applied program using the optional PP tag. The actual last entry</span>
+<span class="sd">    of the chain can only be found under the assumption that all programs are</span>
+<span class="sd">    listed within one chain.</span>
+
+<span class="sd">    Note</span>
+<span class="sd">    ----</span>
+<span class="sd">    May lead to wrong assumptions about the actual order of programs applied to</span>
+<span class="sd">    dataset if the chain of PG entries is interrupted by missing PP tags. Use</span>
+<span class="sd">    at own risk!</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    current_id : str</span>
+<span class="sd">        Unique ID of program entry that serves as arbitrary start point for the</span>
+<span class="sd">        recursive search of the chain end.</span>
+<span class="sd">    pg_entries : dict of dicts</span>
+<span class="sd">        Dictionary of @PG record tags (key:value) referenced by their unique</span>
+<span class="sd">        program ID.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    str</span>
+<span class="sd">        Unique ID of the assumed last entry in the program chain (see note</span>
+<span class="sd">        above!)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">entry</span><span class="p">,</span> <span class="n">tags</span> <span class="ow">in</span> <span class="n">pg_entries</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">current_id</span> <span class="o">==</span> <span class="n">tags</span><span class="p">[</span><span class="s">&#39;PP&#39;</span><span class="p">]:</span>
+                <span class="c"># another entry follows</span>
+                <span class="k">return</span> <span class="n">find_last_in_chain</span><span class="p">(</span><span class="n">entry</span><span class="p">,</span> <span class="n">pg_entries</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
+            <span class="c"># entry has no PP tag</span>
+            <span class="k">continue</span>
+    <span class="c"># no other entry follows</span>
+    <span class="k">return</span> <span class="n">current_id</span>
+
+</div>
+<div class="viewcode-block" id="modify_header"><a class="viewcode-back" href="../../../samsifter.util.html#samsifter.util.papertrail.modify_header">[docs]</a><span class="k">def</span> <span class="nf">modify_header</span><span class="p">(</span><span class="n">lines</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">command_line</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+                  <span class="n">version</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Modify SAM header by inserting a new @PG record into the chain.</span>
+
+<span class="sd">    Ensures unique program identifiers and integrity of program chain.</span>
+<span class="sd">    New entries are always inserted after all current PG entries and their</span>
+<span class="sd">    order is not changed in case the entries are not chained by optional PP</span>
+<span class="sd">    tags.</span>
+
+<span class="sd">    Note</span>
+<span class="sd">    ----</span>
+<span class="sd">    Chaining of entries with PP tags is disabled as the chain of programs is</span>
+<span class="sd">    often incomplete and may be misleading! The recursion through existing</span>
+<span class="sd">    entries may not always be sufficient to identify the current last entry in</span>
+<span class="sd">    the chain.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    lines : list of str</span>
+<span class="sd">        Full set of header lines of SAM file, including the first header line</span>
+<span class="sd">        with @HD record.</span>
+<span class="sd">    name : str, optional</span>
+<span class="sd">        Program name, defaults to None.</span>
+<span class="sd">    command_line : str, optional</span>
+<span class="sd">        Program command line excluding program name/call, just the optional and</span>
+<span class="sd">        positional arguments. Defaults to None.</span>
+<span class="sd">    description : str, optional</span>
+<span class="sd">        Short description of program functionality.</span>
+<span class="sd">    version : str, optional</span>
+<span class="sd">        Program version number/string.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">hd</span> <span class="o">=</span> <span class="bp">None</span>           <span class="c"># first header line, required if header present</span>
+    <span class="n">pg</span> <span class="o">=</span> <span class="p">[]</span>             <span class="c"># list of PG header lines</span>
+    <span class="n">pg_entries</span> <span class="o">=</span> <span class="p">{}</span>     <span class="c"># dict of dict for program records and their tags</span>
+    <span class="n">others</span> <span class="o">=</span> <span class="p">[]</span>         <span class="c"># list of other header lines</span>
+
+    <span class="c"># parse old header</span>
+    <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">lines</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">line</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s">&#39;@HD&#39;</span><span class="p">):</span>
+            <span class="n">hd</span> <span class="o">=</span> <span class="n">line</span>
+        <span class="k">elif</span> <span class="n">line</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s">&#39;@PG&#39;</span><span class="p">):</span>
+            <span class="n">pg</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+            <span class="n">fields</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">lstrip</span><span class="p">(</span><span class="s">&#39;@PG</span><span class="se">\t</span><span class="s">&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s">&#39;</span><span class="se">\t</span><span class="s">&#39;</span><span class="p">)</span>
+            <span class="n">tags</span> <span class="o">=</span> <span class="p">{}</span>
+            <span class="n">identifier</span> <span class="o">=</span> <span class="bp">None</span>
+            <span class="k">for</span> <span class="n">field</span> <span class="ow">in</span> <span class="n">fields</span><span class="p">:</span>
+                <span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span> <span class="o">=</span> <span class="n">field</span><span class="o">.</span><span class="n">rstrip</span><span class="p">()</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s">&#39;:&#39;</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">key</span> <span class="o">==</span> <span class="s">&#39;ID&#39;</span><span class="p">:</span>
+                    <span class="n">identifier</span> <span class="o">=</span> <span class="n">value</span>
+                <span class="n">tags</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+
+            <span class="c"># store program entry</span>
+            <span class="n">pg_entries</span><span class="p">[</span><span class="n">identifier</span><span class="p">]</span> <span class="o">=</span> <span class="n">tags</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">others</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+
+    <span class="c"># disabled as chain is often incomplete and may be misleading!</span>
+<span class="c">#    # recursively identify last program in chain, start with arbitrary entry</span>
+<span class="c">#    current_id = next(iter(pg_entries.keys()))</span>
+<span class="c">#    last = find_last_in_chain(current_id, pg_entries)</span>
+
+    <span class="c"># generate unique but short and consecutive identifier for new @PG record</span>
+    <span class="n">new_id</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+    <span class="n">suffix</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">while</span> <span class="n">new_id</span> <span class="ow">in</span> <span class="n">pg_entries</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+        <span class="n">suffix</span> <span class="o">+=</span> <span class="mi">1</span>
+        <span class="n">new_id</span> <span class="o">=</span> <span class="s">&quot;</span><span class="si">%s</span><span class="s">_</span><span class="si">%i</span><span class="s">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">suffix</span><span class="p">)</span>
+
+    <span class="c"># create new @PG line</span>
+    <span class="n">new_pg</span> <span class="o">=</span> <span class="n">create_pg_line</span><span class="p">(</span><span class="n">new_id</span><span class="p">,</span>
+                            <span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span>
+                            <span class="n">command_line</span><span class="o">=</span><span class="n">command_line</span><span class="p">,</span>
+                            <span class="c"># deactivated chaining, see above</span>
+                            <span class="c"># previous=last,</span>
+                            <span class="n">previous</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+                            <span class="n">description</span><span class="o">=</span><span class="n">description</span><span class="p">,</span>
+                            <span class="n">version</span><span class="o">=</span><span class="n">version</span><span class="p">)</span>
+
+    <span class="c"># insert new PG line into the rest of the lines</span>
+    <span class="n">modified</span> <span class="o">=</span> <span class="p">[</span><span class="n">hd</span><span class="p">]</span>
+    <span class="n">modified</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">pg</span><span class="p">)</span>
+    <span class="n">modified</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">new_pg</span><span class="p">)</span>
+    <span class="n">modified</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">others</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">modified</span>
+
+</div>
+<div class="viewcode-block" id="create_pg_line"><a class="viewcode-back" href="../../../samsifter.util.html#samsifter.util.papertrail.create_pg_line">[docs]</a><span class="k">def</span> <span class="nf">create_pg_line</span><span class="p">(</span><span class="n">identifier</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">command_line</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">previous</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+                   <span class="n">description</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">version</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Create a @PG header for SAM files.</span>
+
+<span class="sd">    Follows SAMv1 specification, see</span>
+<span class="sd">    https://samtools.github.io/hts-specs/SAMv1.pdf</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    identifier : str</span>
+<span class="sd">        Unique program identifier within the context of the current SAM file</span>
+<span class="sd">        that is identical to the identifier used in the alignment section. May</span>
+<span class="sd">        be modified by later processing steps.</span>
+<span class="sd">    name : str, optional</span>
+<span class="sd">        Program name, defaults to None.</span>
+<span class="sd">    command_line : str, optional</span>
+<span class="sd">        Program command line excluding program name/call, just the optional and</span>
+<span class="sd">        positional arguments. Defaults to None.</span>
+<span class="sd">    previous : str, optional</span>
+<span class="sd">        Program identifier of previous step in program chain.</span>
+<span class="sd">    description : str, optional</span>
+<span class="sd">        Short description of program functionality.</span>
+<span class="sd">    version : str, optional</span>
+<span class="sd">        Program version number/string.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    str</span>
+<span class="sd">        Complete standard-compliant @PG header line.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">line</span> <span class="o">=</span> <span class="s">&#39;@PG&#39;</span>
+
+    <span class="c"># Program record identifier. Each @PG line must have a unique ID. The value</span>
+    <span class="c"># of ID is used in the alignment PG tag and PP tags of other @PG lines. PG</span>
+    <span class="c"># IDs may be modified when merging SAM files in order to handle collisions.</span>
+    <span class="n">pg_id</span> <span class="o">=</span> <span class="s">&#39;ID:</span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">identifier</span>
+    <span class="n">line</span> <span class="o">+=</span> <span class="s">&#39;</span><span class="se">\t</span><span class="s">&#39;</span> <span class="o">+</span> <span class="n">pg_id</span>
+
+    <span class="c"># Program name, optional</span>
+    <span class="k">if</span> <span class="n">name</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+        <span class="n">pg_pn</span> <span class="o">=</span> <span class="s">&#39;PN:</span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">name</span>
+        <span class="n">line</span> <span class="o">+=</span> <span class="s">&#39;</span><span class="se">\t</span><span class="s">&#39;</span> <span class="o">+</span> <span class="n">pg_pn</span>
+
+    <span class="c"># Command line, optional</span>
+    <span class="k">if</span> <span class="n">command_line</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+        <span class="n">pg_cl</span> <span class="o">=</span> <span class="s">&#39;CL:</span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">command_line</span>
+        <span class="n">line</span> <span class="o">+=</span> <span class="s">&#39;</span><span class="se">\t</span><span class="s">&#39;</span> <span class="o">+</span> <span class="n">pg_cl</span>
+
+    <span class="c"># Previous @PG-ID. Must match another @PG header’s ID tag. @PG records may</span>
+    <span class="c"># be chained using PP tag, with the last record in the chain having no PP</span>
+    <span class="c"># tag. This chain defines the order of programs that have been applied to</span>
+    <span class="c"># the alignment. PP values may be modified when merging SAM files in order</span>
+    <span class="c"># to handle collisions of PG IDs. The first PG record in a chain (i.e. the</span>
+    <span class="c"># one referred to by the PG tag in a SAM record) describes the most recent</span>
+    <span class="c"># program that operated on the SAM record. The next PG record in the chain</span>
+    <span class="c"># describes the next most recent program that operated on the SAM record.</span>
+    <span class="c"># The PG ID on a SAM record is not required to refer to the newest PG</span>
+    <span class="c"># record in a chain. It may refer to any PG record in a chain, implying</span>
+    <span class="c"># that the SAM record has been operated on by the program in that PG</span>
+    <span class="c"># record, and the program(s) referred to via the PP tag.</span>
+    <span class="k">if</span> <span class="n">previous</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+        <span class="n">pg_pp</span> <span class="o">=</span> <span class="s">&#39;PP:</span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">previous</span>
+        <span class="n">line</span> <span class="o">+=</span> <span class="s">&#39;</span><span class="se">\t</span><span class="s">&#39;</span> <span class="o">+</span> <span class="n">pg_pp</span>
+
+    <span class="c"># Description, optional</span>
+    <span class="k">if</span> <span class="n">description</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+        <span class="n">pg_ds</span> <span class="o">=</span> <span class="s">&#39;DS:</span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">description</span>
+        <span class="n">line</span> <span class="o">+=</span> <span class="s">&#39;</span><span class="se">\t</span><span class="s">&#39;</span> <span class="o">+</span> <span class="n">pg_ds</span>
+
+    <span class="c"># Program version, optional</span>
+    <span class="k">if</span> <span class="n">version</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+        <span class="n">pg_vn</span> <span class="o">=</span> <span class="s">&#39;VN:</span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">version</span>
+        <span class="n">line</span> <span class="o">+=</span> <span class="s">&#39;</span><span class="se">\t</span><span class="s">&#39;</span> <span class="o">+</span> <span class="n">pg_vn</span>
+
+    <span class="n">line</span> <span class="o">+=</span> <span class="s">&#39;</span><span class="se">\n</span><span class="s">&#39;</span>
+
+    <span class="k">return</span> <span class="n">line</span>
+
+</div>
+<div class="viewcode-block" id="main"><a class="viewcode-back" href="../../../samsifter.util.html#samsifter.util.papertrail.main">[docs]</a><span class="k">def</span> <span class="nf">main</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;Simple test of PG header generation.&quot;&quot;&quot;</span>
+    <span class="n">handle</span> <span class="o">=</span> <span class="n">fileinput</span><span class="o">.</span><span class="n">input</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">)</span>
+    <span class="n">header</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">line_nr</span><span class="p">,</span> <span class="n">line</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">handle</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">line</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s">&#39;@&#39;</span><span class="p">):</span>
+            <span class="n">header</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+    <span class="n">handle</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+
+    <span class="n">modified</span> <span class="o">=</span> <span class="n">modify_header</span><span class="p">(</span><span class="n">header</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s">&#39;Test&#39;</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">modified</span><span class="p">:</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">line</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(),</span> <span class="nb">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
+</div>
+<span class="k">if</span> <span class="n">__name__</span> <span class="o">==</span> <span class="s">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="n">main</span><span class="p">()</span>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../../index.html">SamSifter 0.5.2 documentation</a> &raquo;</li>
+          <li><a href="../../index.html" >Module code</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2015, Florian Aldehoff.
+      Last updated on Mar 05, 2015.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

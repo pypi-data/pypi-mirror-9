@@ -1,0 +1,683 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>samsifter.util.sam &mdash; SamSifter 0.5.2 documentation</title>
+    
+    <link rel="stylesheet" href="../../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../../',
+        VERSION:     '0.5.2',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../../_static/doctools.js"></script>
+    <link rel="top" title="SamSifter 0.5.2 documentation" href="../../../index.html" />
+    <link rel="up" title="Module code" href="../../index.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../../index.html">SamSifter 0.5.2 documentation</a> &raquo;</li>
+          <li><a href="../../index.html" accesskey="U">Module code</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <h1>Source code for samsifter.util.sam</h1><div class="highlight"><pre>
+<span class="c">#!/usr/bin/env python3</span>
+<span class="c"># -*- coding: utf-8 -*-</span>
+<span class="sd">&quot;&quot;&quot;Reconstruction of reference sequences from CIGAR and MD tags in SAM files.</span>
+
+<span class="sd">Includes tests for various scenarios of clipping, insertion and deletion.</span>
+
+<span class="sd">.. moduleauthor:: Florian Aldehoff (f.aldehoff@student.uni-tuebingen.de)</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">sys</span>
+<span class="kn">import</span> <span class="nn">re</span>
+
+
+<div class="viewcode-block" id="decompress_cigar"><a class="viewcode-back" href="../../../samsifter.util.html#samsifter.util.sam.decompress_cigar">[docs]</a><span class="k">def</span> <span class="nf">decompress_cigar</span><span class="p">(</span><span class="n">cigar</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Decompress CIGAR string.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    cigar : str</span>
+<span class="sd">        full CIGAR string (numbers and letters)</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    cigar_ext : str</span>
+<span class="sd">        decompressed CIGAR string (letters only)</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">cigar_ext</span> <span class="o">=</span> <span class="s">&quot;&quot;</span>
+    <span class="n">cigar_ops</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="s">&#39;(\d+)(\D)&#39;</span><span class="p">,</span> <span class="n">cigar</span><span class="p">)</span>
+    <span class="k">for</span> <span class="p">(</span><span class="n">count</span><span class="p">,</span> <span class="n">op</span><span class="p">)</span> <span class="ow">in</span> <span class="n">cigar_ops</span><span class="p">:</span>
+        <span class="n">cigar_ext</span> <span class="o">+=</span> <span class="n">op</span> <span class="o">*</span> <span class="nb">int</span><span class="p">(</span><span class="n">count</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">cigar_ext</span>
+
+</div>
+<div class="viewcode-block" id="decompress_md"><a class="viewcode-back" href="../../../samsifter.util.html#samsifter.util.sam.decompress_md">[docs]</a><span class="k">def</span> <span class="nf">decompress_md</span><span class="p">(</span><span class="n">md</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Decompress MD string.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    md : str</span>
+<span class="sd">      MD string from SAM file without MD:Z: prefix</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    md_ext : str</span>
+<span class="sd">      extended MD string without MD:Z: prefix</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">md_ext</span> <span class="o">=</span> <span class="s">&quot;&quot;</span>
+    <span class="n">md_ops</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="s">&#39;(\d*)(\D*)&#39;</span><span class="p">,</span> <span class="n">md</span><span class="p">)</span>
+    <span class="k">for</span> <span class="p">(</span><span class="n">match</span><span class="p">,</span> <span class="n">mismatch</span><span class="p">)</span> <span class="ow">in</span> <span class="n">md_ops</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">md_ext</span> <span class="o">+=</span> <span class="s">&#39;=&#39;</span> <span class="o">*</span> <span class="nb">int</span><span class="p">(</span><span class="n">match</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+            <span class="c"># regex also catches empty string, can be safely ignored</span>
+            <span class="k">pass</span>
+        <span class="n">md_ext</span> <span class="o">+=</span> <span class="n">mismatch</span><span class="o">.</span><span class="n">lstrip</span><span class="p">(</span><span class="s">&#39;^&#39;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">md_ext</span>
+
+</div>
+<div class="viewcode-block" id="reconstruct"><a class="viewcode-back" href="../../../samsifter.util.html#samsifter.util.sam.reconstruct">[docs]</a><span class="k">def</span> <span class="nf">reconstruct</span><span class="p">(</span><span class="n">read</span><span class="p">,</span> <span class="n">cigar</span><span class="p">,</span> <span class="n">md</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Reconstruct both the full and the aligned reference sequence.</span>
+
+<span class="sd">    Uses imformation from CIGAR string and optional MD tag to reconstruct the</span>
+<span class="sd">    reference sequence. The full reference sequence including indels, clips and</span>
+<span class="sd">    skips and the aligned substring can be used for calculation of identity and</span>
+<span class="sd">    post-mortem degradation.</span>
+
+<span class="sd">    Note</span>
+<span class="sd">    ----</span>
+<span class="sd">    Padded references should work as well, but remain untested. Use at your own</span>
+<span class="sd">    risk!</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    read : str</span>
+<span class="sd">        Raw read sequence without gaps, can be clipped.</span>
+<span class="sd">    cigar : str</span>
+<span class="sd">        CIGAR string from SAM file</span>
+<span class="sd">    md : str</span>
+<span class="sd">        matching MD string from SAM file without MD:Z: prefix</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    ref_full : str</span>
+<span class="sd">        full reference sequence including indels, clipped and skipped parts</span>
+<span class="sd">    read_full : str</span>
+<span class="sd">        full read sequence including indels, clipped and skipped parts</span>
+<span class="sd">    ref_aln : str</span>
+<span class="sd">        aligned part of reference sequence (can include gaps)</span>
+<span class="sd">    read_aln : str</span>
+<span class="sd">        aligned part of read sequence (clipped, can include gaps)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">ref_full</span> <span class="o">=</span> <span class="s">&quot;&quot;</span>
+    <span class="n">read_full</span> <span class="o">=</span> <span class="s">&quot;&quot;</span>
+    <span class="n">ref_aln</span> <span class="o">=</span> <span class="s">&quot;&quot;</span>
+    <span class="n">read_aln</span> <span class="o">=</span> <span class="s">&quot;&quot;</span>
+
+    <span class="n">cigar_ext</span> <span class="o">=</span> <span class="n">decompress_cigar</span><span class="p">(</span><span class="n">cigar</span><span class="p">)</span>
+    <span class="n">md_ext</span> <span class="o">=</span> <span class="n">decompress_md</span><span class="p">(</span><span class="n">md</span><span class="p">)</span>
+
+    <span class="c"># reconstruct reference by CIGAR and MD</span>
+    <span class="n">read_idx</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">md_idx</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="p">(</span><span class="n">idx</span><span class="p">,</span> <span class="n">op</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">cigar_ext</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">op</span> <span class="ow">in</span> <span class="p">(</span><span class="s">&#39;M&#39;</span><span class="p">,</span> <span class="s">&#39;X&#39;</span><span class="p">):</span>          <span class="c"># alignment match|mismatch -&gt; consult MD</span>
+            <span class="k">if</span> <span class="n">md_ext</span><span class="p">[</span><span class="n">md_idx</span><span class="p">]</span> <span class="o">==</span> <span class="s">&#39;=&#39;</span><span class="p">:</span>
+                <span class="n">ref_full</span> <span class="o">+=</span> <span class="n">read</span><span class="p">[</span><span class="n">read_idx</span><span class="p">]</span>
+                <span class="n">ref_aln</span> <span class="o">+=</span> <span class="n">read</span><span class="p">[</span><span class="n">read_idx</span><span class="p">]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">ref_full</span> <span class="o">+=</span> <span class="n">md_ext</span><span class="p">[</span><span class="n">md_idx</span><span class="p">]</span>
+                <span class="n">ref_aln</span> <span class="o">+=</span> <span class="n">md_ext</span><span class="p">[</span><span class="n">md_idx</span><span class="p">]</span>
+            <span class="n">read_full</span> <span class="o">+=</span> <span class="n">read</span><span class="p">[</span><span class="n">read_idx</span><span class="p">]</span>
+            <span class="n">read_aln</span> <span class="o">+=</span> <span class="n">read</span><span class="p">[</span><span class="n">read_idx</span><span class="p">]</span>
+            <span class="n">read_idx</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="n">md_idx</span> <span class="o">+=</span> <span class="mi">1</span>
+        <span class="k">elif</span> <span class="n">op</span> <span class="o">==</span> <span class="s">&#39;=&#39;</span><span class="p">:</span>                <span class="c"># certain match</span>
+            <span class="n">ref_full</span> <span class="o">+=</span> <span class="n">read</span><span class="p">[</span><span class="n">read_idx</span><span class="p">]</span>
+            <span class="n">ref_aln</span> <span class="o">+=</span> <span class="n">read</span><span class="p">[</span><span class="n">read_idx</span><span class="p">]</span>
+            <span class="n">read_full</span> <span class="o">+=</span> <span class="n">read</span><span class="p">[</span><span class="n">read_idx</span><span class="p">]</span>
+            <span class="n">read_aln</span> <span class="o">+=</span> <span class="n">read</span><span class="p">[</span><span class="n">read_idx</span><span class="p">]</span>
+            <span class="n">read_idx</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="n">md_idx</span> <span class="o">+=</span> <span class="mi">1</span>
+        <span class="k">elif</span> <span class="n">op</span> <span class="o">==</span> <span class="s">&#39;D&#39;</span><span class="p">:</span>                <span class="c"># deletion from reference -&gt; consult MD</span>
+            <span class="n">ref_full</span> <span class="o">+=</span> <span class="n">md_ext</span><span class="p">[</span><span class="n">md_idx</span><span class="p">]</span>
+            <span class="n">ref_aln</span> <span class="o">+=</span> <span class="n">md_ext</span><span class="p">[</span><span class="n">md_idx</span><span class="p">]</span>
+            <span class="n">read_full</span> <span class="o">+=</span> <span class="s">&#39;-&#39;</span>
+            <span class="n">read_aln</span> <span class="o">+=</span> <span class="s">&#39;-&#39;</span>
+            <span class="n">md_idx</span> <span class="o">+=</span> <span class="mi">1</span>
+        <span class="k">elif</span> <span class="n">op</span> <span class="o">==</span> <span class="s">&#39;I&#39;</span><span class="p">:</span>                <span class="c"># insertion to reference</span>
+            <span class="n">ref_full</span> <span class="o">+=</span> <span class="s">&#39;-&#39;</span>
+            <span class="n">ref_aln</span> <span class="o">+=</span> <span class="s">&#39;-&#39;</span>
+            <span class="n">read_full</span> <span class="o">+=</span> <span class="n">read</span><span class="p">[</span><span class="n">read_idx</span><span class="p">]</span>
+            <span class="n">read_aln</span> <span class="o">+=</span> <span class="n">read</span><span class="p">[</span><span class="n">read_idx</span><span class="p">]</span>
+            <span class="n">read_idx</span> <span class="o">+=</span> <span class="mi">1</span>
+        <span class="k">elif</span> <span class="n">op</span> <span class="o">==</span> <span class="s">&#39;N&#39;</span><span class="p">:</span>                <span class="c"># skipped region in reference (intron?)</span>
+            <span class="n">ref_full</span> <span class="o">+=</span> <span class="s">&#39;X&#39;</span>
+<span class="c">#            ref_aln += &#39;N&#39;</span>
+            <span class="n">read_full</span> <span class="o">+=</span> <span class="s">&#39;-&#39;</span>
+<span class="c">#            read_aln += &#39;N&#39;</span>
+        <span class="k">elif</span> <span class="n">op</span> <span class="o">==</span> <span class="s">&#39;H&#39;</span><span class="p">:</span>                <span class="c"># hard clipping (5&#39; or 3&#39; only)</span>
+            <span class="n">ref_full</span> <span class="o">+=</span> <span class="s">&#39;X&#39;</span>
+<span class="c">#            ref_aln += &#39;N&#39;</span>
+            <span class="n">read_full</span> <span class="o">+=</span> <span class="s">&#39;X&#39;</span>
+<span class="c">#            read_aln += &#39;N&#39;</span>
+        <span class="k">elif</span> <span class="n">op</span> <span class="o">==</span> <span class="s">&#39;S&#39;</span><span class="p">:</span>                <span class="c"># soft clipping (5&#39; or 3&#39; only)</span>
+            <span class="n">ref_full</span> <span class="o">+=</span> <span class="s">&#39;X&#39;</span>
+<span class="c">#            ref_aln += &#39;N&#39;</span>
+            <span class="n">read_full</span> <span class="o">+=</span> <span class="n">read</span><span class="p">[</span><span class="n">read_idx</span><span class="p">]</span>
+<span class="c">#            read_aln += &#39;N&#39;</span>
+            <span class="n">read_idx</span> <span class="o">+=</span> <span class="mi">1</span>
+        <span class="k">elif</span> <span class="n">op</span> <span class="o">==</span> <span class="s">&#39;P&#39;</span><span class="p">:</span>                <span class="c"># ignore padding, aligning single reads</span>
+            <span class="k">pass</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">ref_full</span><span class="p">,</span> <span class="n">read_full</span><span class="p">,</span> <span class="n">ref_aln</span><span class="p">,</span> <span class="n">read_aln</span><span class="p">)</span>
+
+</div>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">tests for reference reconstruction method</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+
+<div class="viewcode-block" id="test_deletion_snp_no_delim"><a class="viewcode-back" href="../../../samsifter.util.html#samsifter.util.sam.test_deletion_snp_no_delim">[docs]</a><span class="k">def</span> <span class="nf">test_deletion_snp_no_delim</span><span class="p">(</span><span class="n">verbose</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Tests reconstruction despite missing 0 delimiter after deletion in MD.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    verbose : bool</span>
+<span class="sd">        Print additional output to STDOUT, defaults to False.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    bool</span>
+<span class="sd">        True if test was successful, otherwise False.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">read</span> <span class="o">=</span> <span class="s">&quot;CTCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&quot;</span>
+    <span class="n">cigar</span> <span class="o">=</span> <span class="s">&quot;37M4D8M&quot;</span>
+    <span class="n">md</span> <span class="o">=</span> <span class="s">&quot;G36^CCTTTC6&quot;</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    CTCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA    AAAAAAAA    read</span>
+<span class="sd">    |||||||||||||||||||||||||||||||||||||----||||||||    extended CIGAR</span>
+<span class="sd">    G||||||||||||||||||||||||||||||||||||CCTTTC||||||    extended MD</span>
+<span class="sd">    GTCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACCTTTCAAAAAA    full reference</span>
+<span class="sd">    CTCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA----AAAAAAAA    full read</span>
+<span class="sd">    GTCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACCTTTCAAAAAA    aligned reference</span>
+<span class="sd">    CTCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA----AAAAAAAA    aligned read</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">ref_full</span> <span class="o">=</span> <span class="s">&quot;GTCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACCTTTCAAAAAA&quot;</span>
+    <span class="n">read_full</span> <span class="o">=</span> <span class="s">&quot;CTCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA----AAAAAAAA&quot;</span>
+    <span class="n">ref_aln</span> <span class="o">=</span> <span class="s">&quot;GTCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACCTTTCAAAAAA&quot;</span>
+    <span class="n">read_aln</span> <span class="o">=</span> <span class="s">&quot;CTCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA----AAAAAAAA&quot;</span>
+
+    <span class="p">(</span><span class="n">rec_ref_full</span><span class="p">,</span> <span class="n">rec_read_full</span><span class="p">,</span> <span class="n">rec_ref_aln</span><span class="p">,</span> <span class="n">rec_read_aln</span><span class="p">)</span> <span class="o">=</span> <span class="n">reconstruct</span><span class="p">(</span><span class="n">read</span><span class="p">,</span> <span class="n">cigar</span><span class="p">,</span> <span class="n">md</span><span class="p">,</span> <span class="n">verbose</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">rec_ref_full</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">reconstructed reference&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">ref_full</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">actual reference&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">rec_read_full</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">reconstructed read&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">read_full</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">actual read&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">rec_ref_aln</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">reconstructed aligned reference&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">ref_aln</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">actual aligned reference&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">rec_read_aln</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">reconstructed aligned read&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">read_aln</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">actual aligned read&quot;</span><span class="p">)</span>
+    <span class="k">print</span><span class="p">(</span><span class="s">&quot;</span><span class="si">%s</span><span class="se">\t</span><span class="s">SNP after deletion without 0 delimiter&quot;</span>
+          <span class="o">%</span> <span class="p">(</span><span class="n">rec_ref_full</span> <span class="o">==</span> <span class="n">ref_full</span>
+             <span class="ow">and</span> <span class="n">rec_read_full</span> <span class="o">==</span> <span class="n">read_full</span>
+             <span class="ow">and</span> <span class="n">rec_ref_aln</span> <span class="o">==</span> <span class="n">ref_aln</span>
+             <span class="ow">and</span> <span class="n">rec_read_aln</span> <span class="o">==</span> <span class="n">read_aln</span><span class="p">,))</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">rec_ref_full</span> <span class="o">==</span> <span class="n">ref_full</span>
+            <span class="ow">and</span> <span class="n">rec_read_full</span> <span class="o">==</span> <span class="n">read_full</span>
+            <span class="ow">and</span> <span class="n">rec_ref_aln</span> <span class="o">==</span> <span class="n">ref_aln</span> <span class="ow">and</span>
+            <span class="n">rec_read_aln</span> <span class="o">==</span> <span class="n">read_aln</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="test_deletion_snp_0_delim"><a class="viewcode-back" href="../../../samsifter.util.html#samsifter.util.sam.test_deletion_snp_0_delim">[docs]</a><span class="k">def</span> <span class="nf">test_deletion_snp_0_delim</span><span class="p">(</span><span class="n">verbose</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Tests reference reconstruction with 0 delimiter after deletion in MD.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    verbose : bool</span>
+<span class="sd">        Print additional output to STDOUT, defaults to False.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    bool</span>
+<span class="sd">        True if test was successful, otherwise False.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">read</span> <span class="o">=</span> <span class="s">&quot;CTCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&quot;</span>
+    <span class="n">cigar</span> <span class="o">=</span> <span class="s">&quot;37M4D8M&quot;</span>
+    <span class="n">md</span> <span class="o">=</span> <span class="s">&quot;G36^CCTT0TC6&quot;</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    CTCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA    AAAAAAAA    read</span>
+<span class="sd">    |||||||||||||||||||||||||||||||||||||----||||||||    extended CIGAR</span>
+<span class="sd">    G||||||||||||||||||||||||||||||||||||CCTTTC||||||    extended MD</span>
+<span class="sd">    GTCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACCTTTCAAAAAA    full reference</span>
+<span class="sd">    CTCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA----AAAAAAAA    full read</span>
+<span class="sd">    GTCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACCTTTCAAAAAA    aligned reference</span>
+<span class="sd">    CTCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA----AAAAAAAA    aligned read</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">ref_full</span>  <span class="o">=</span> <span class="s">&quot;GTCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACCTTTCAAAAAA&quot;</span>
+    <span class="n">read_full</span> <span class="o">=</span> <span class="s">&quot;CTCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA----AAAAAAAA&quot;</span>
+    <span class="n">ref_aln</span>   <span class="o">=</span> <span class="s">&quot;GTCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACCTTTCAAAAAA&quot;</span>
+    <span class="n">read_aln</span>  <span class="o">=</span> <span class="s">&quot;CTCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA----AAAAAAAA&quot;</span>
+
+    <span class="p">(</span><span class="n">rec_ref_full</span><span class="p">,</span> <span class="n">rec_read_full</span><span class="p">,</span> <span class="n">rec_ref_aln</span><span class="p">,</span> <span class="n">rec_read_aln</span><span class="p">)</span> <span class="o">=</span> <span class="n">reconstruct</span><span class="p">(</span><span class="n">read</span><span class="p">,</span> <span class="n">cigar</span><span class="p">,</span> <span class="n">md</span><span class="p">,</span> <span class="n">verbose</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">rec_ref_full</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">reconstructed reference&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">ref_full</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">actual reference&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">rec_read_full</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">reconstructed read&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">read_full</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">actual read&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">rec_ref_aln</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">reconstructed aligned reference&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">ref_aln</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">actual aligned reference&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">rec_read_aln</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">reconstructed aligned read&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">read_aln</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">actual aligned read&quot;</span><span class="p">)</span>
+    <span class="k">print</span><span class="p">(</span><span class="s">&quot;</span><span class="si">%s</span><span class="se">\t</span><span class="s">SNP after deletion with 0 delimiter&quot;</span>
+          <span class="o">%</span> <span class="p">(</span><span class="n">rec_ref_full</span> <span class="o">==</span> <span class="n">ref_full</span>
+             <span class="ow">and</span> <span class="n">rec_read_full</span> <span class="o">==</span> <span class="n">read_full</span>
+             <span class="ow">and</span> <span class="n">rec_ref_aln</span> <span class="o">==</span> <span class="n">ref_aln</span>
+             <span class="ow">and</span> <span class="n">rec_read_aln</span> <span class="o">==</span> <span class="n">read_aln</span><span class="p">,))</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">rec_ref_full</span> <span class="o">==</span> <span class="n">ref_full</span>
+            <span class="ow">and</span> <span class="n">rec_read_full</span> <span class="o">==</span> <span class="n">read_full</span>
+            <span class="ow">and</span> <span class="n">rec_ref_aln</span> <span class="o">==</span> <span class="n">ref_aln</span>
+            <span class="ow">and</span> <span class="n">rec_read_aln</span> <span class="o">==</span> <span class="n">read_aln</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="test_insertion"><a class="viewcode-back" href="../../../samsifter.util.html#samsifter.util.sam.test_insertion">[docs]</a><span class="k">def</span> <span class="nf">test_insertion</span><span class="p">(</span><span class="n">verbose</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Tests reference reconstruction with insertion to reference.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    verbose : bool</span>
+<span class="sd">        Print additional output to STDOUT, defaults to False.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    bool</span>
+<span class="sd">        True if test was successful, otherwise False.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">read</span> <span class="o">=</span> <span class="s">&quot;GCCTTCCGCGTCGGCGAGGACGGCCCCACCCACCAGCCCAT&quot;</span>
+    <span class="n">cigar</span> <span class="o">=</span> <span class="s">&quot;1M1I39M&quot;</span>
+    <span class="n">md</span> <span class="o">=</span> <span class="s">&quot;2A2G2C31&quot;</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    GCCTTCCGCGTCGGCGAGGACGGCCCCACCCACCAGCCCAT    read (41bp)</span>
+<span class="sd">    MIMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM    extended CIGAR (41bp)</span>
+<span class="sd">    = =A==G==C===============================    extended MD (40bp) ! shift by del</span>
+<span class="sd">    G-CATCGGCCTCGGCGAGGACGGCCCCACCCACCAGCCCAT    full reference</span>
+<span class="sd">    GCCTTCCGCGTCGGCGAGGACGGCCCCACCCACCAGCCCAT    full read</span>
+<span class="sd">    G-CATCGGCCTCGGCGAGGACGGCCCCACCCACCAGCCCAT    aligned reference</span>
+<span class="sd">    GCCTTCCGCGTCGGCGAGGACGGCCCCACCCACCAGCCCAT    aligned read</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">ref_full</span>  <span class="o">=</span> <span class="s">&quot;G-CATCGGCCTCGGCGAGGACGGCCCCACCCACCAGCCCAT&quot;</span>
+    <span class="n">read_full</span> <span class="o">=</span> <span class="s">&quot;GCCTTCCGCGTCGGCGAGGACGGCCCCACCCACCAGCCCAT&quot;</span>
+    <span class="n">ref_aln</span>   <span class="o">=</span> <span class="s">&quot;G-CATCGGCCTCGGCGAGGACGGCCCCACCCACCAGCCCAT&quot;</span>
+    <span class="n">read_aln</span>  <span class="o">=</span> <span class="s">&quot;GCCTTCCGCGTCGGCGAGGACGGCCCCACCCACCAGCCCAT&quot;</span>
+
+    <span class="p">(</span><span class="n">rec_ref_full</span><span class="p">,</span> <span class="n">rec_read_full</span><span class="p">,</span> <span class="n">rec_ref_aln</span><span class="p">,</span> <span class="n">rec_read_aln</span><span class="p">)</span> <span class="o">=</span> <span class="n">reconstruct</span><span class="p">(</span><span class="n">read</span><span class="p">,</span> <span class="n">cigar</span><span class="p">,</span> <span class="n">md</span><span class="p">,</span> <span class="n">verbose</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">rec_ref_full</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">reconstructed reference&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">ref_full</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">actual reference&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">rec_read_full</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">reconstructed read&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">read_full</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">actual read&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">rec_ref_aln</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">reconstructed aligned reference&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">ref_aln</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">actual aligned reference&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">rec_read_aln</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">reconstructed aligned read&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">read_aln</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">actual aligned read&quot;</span><span class="p">)</span>
+    <span class="k">print</span><span class="p">(</span><span class="s">&quot;</span><span class="si">%s</span><span class="se">\t</span><span class="s">insertion into reference&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">rec_ref_full</span> <span class="o">==</span> <span class="n">ref_full</span>
+                                            <span class="ow">and</span> <span class="n">rec_read_full</span> <span class="o">==</span> <span class="n">read_full</span>
+                                            <span class="ow">and</span> <span class="n">rec_ref_aln</span> <span class="o">==</span> <span class="n">ref_aln</span>
+                                            <span class="ow">and</span> <span class="n">rec_read_aln</span> <span class="o">==</span> <span class="n">read_aln</span><span class="p">,))</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">rec_ref_full</span> <span class="o">==</span> <span class="n">ref_full</span>
+            <span class="ow">and</span> <span class="n">rec_read_full</span> <span class="o">==</span> <span class="n">read_full</span>
+            <span class="ow">and</span> <span class="n">rec_ref_aln</span> <span class="o">==</span> <span class="n">ref_aln</span>
+            <span class="ow">and</span> <span class="n">rec_read_aln</span> <span class="o">==</span> <span class="n">read_aln</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="test_skipped_intron"><a class="viewcode-back" href="../../../samsifter.util.html#samsifter.util.sam.test_skipped_intron">[docs]</a><span class="k">def</span> <span class="nf">test_skipped_intron</span><span class="p">(</span><span class="n">verbose</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Tests reference reconstruction with skipped intron.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    verbose : bool</span>
+<span class="sd">        Print additional output to STDOUT, defaults to False.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    bool</span>
+<span class="sd">        True if test was successful, otherwise False.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">read</span> <span class="o">=</span> <span class="s">&quot;GTGTAACCCTCAGAATA&quot;</span>
+    <span class="n">cigar</span> <span class="o">=</span> <span class="s">&quot;9M32N8M&quot;</span>
+    <span class="n">md</span> <span class="o">=</span> <span class="s">&quot;17&quot;</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    GTGTAACCC                                TCAGAATA    read (17bp)</span>
+<span class="sd">    MMMMMMMMMNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNMMMMMMMM    extended CIGAR (49bp)</span>
+<span class="sd">    =========                                ========    extended MD (17bp)</span>
+<span class="sd">    GTGTAACCCNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNTCAGAATA    full reference</span>
+<span class="sd">    GTGTAACCC--------------------------------TCAGAATA    full read</span>
+<span class="sd">    GTGTAACCC                                TCAGAATA    aligned reference</span>
+<span class="sd">    GTGTAACCC                                TCAGAATA    aligned read</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">ref_full</span>  <span class="o">=</span> <span class="s">&quot;GTGTAACCCXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTCAGAATA&quot;</span>
+    <span class="n">read_full</span> <span class="o">=</span> <span class="s">&quot;GTGTAACCC--------------------------------TCAGAATA&quot;</span>
+    <span class="n">ref_aln</span>   <span class="o">=</span> <span class="s">&quot;GTGTAACCCTCAGAATA&quot;</span>
+    <span class="n">read_aln</span>  <span class="o">=</span> <span class="s">&quot;GTGTAACCCTCAGAATA&quot;</span>
+
+    <span class="p">(</span><span class="n">rec_ref_full</span><span class="p">,</span> <span class="n">rec_read_full</span><span class="p">,</span> <span class="n">rec_ref_aln</span><span class="p">,</span> <span class="n">rec_read_aln</span><span class="p">)</span> <span class="o">=</span> <span class="n">reconstruct</span><span class="p">(</span><span class="n">read</span><span class="p">,</span> <span class="n">cigar</span><span class="p">,</span> <span class="n">md</span><span class="p">,</span> <span class="n">verbose</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">rec_ref_full</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">reconstructed reference&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">ref_full</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">actual reference&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">rec_read_full</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">reconstructed read&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">read_full</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">actual read&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">rec_ref_aln</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">reconstructed aligned reference&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">ref_aln</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">actual aligned reference&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">rec_read_aln</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">reconstructed aligned read&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">read_aln</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">actual aligned read&quot;</span><span class="p">)</span>
+    <span class="k">print</span><span class="p">(</span><span class="s">&quot;</span><span class="si">%s</span><span class="se">\t</span><span class="s">skipped intron&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">rec_ref_full</span> <span class="o">==</span> <span class="n">ref_full</span>
+                                  <span class="ow">and</span> <span class="n">rec_read_full</span> <span class="o">==</span> <span class="n">read_full</span>
+                                  <span class="ow">and</span> <span class="n">rec_ref_aln</span> <span class="o">==</span> <span class="n">ref_aln</span>
+                                  <span class="ow">and</span> <span class="n">rec_read_aln</span> <span class="o">==</span> <span class="n">read_aln</span><span class="p">,))</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">rec_ref_full</span> <span class="o">==</span> <span class="n">ref_full</span>
+            <span class="ow">and</span> <span class="n">rec_read_full</span> <span class="o">==</span> <span class="n">read_full</span>
+            <span class="ow">and</span> <span class="n">rec_ref_aln</span> <span class="o">==</span> <span class="n">ref_aln</span>
+            <span class="ow">and</span> <span class="n">rec_read_aln</span> <span class="o">==</span> <span class="n">read_aln</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="test_hard_clipping_front"><a class="viewcode-back" href="../../../samsifter.util.html#samsifter.util.sam.test_hard_clipping_front">[docs]</a><span class="k">def</span> <span class="nf">test_hard_clipping_front</span><span class="p">(</span><span class="n">verbose</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Tests reference reconstruction with hard clipped 5&#39; read.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    verbose : bool</span>
+<span class="sd">        Print additional output to STDOUT, defaults to False.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    bool</span>
+<span class="sd">        True if test was successful, otherwise False.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">read</span> <span class="o">=</span> <span class="s">&quot;ATGAGAGTTTGATCCTGGCTCAGGACGAACGCTGGCA&quot;</span>
+    <span class="n">cigar</span> <span class="o">=</span> <span class="s">&quot;23H37M&quot;</span>
+    <span class="n">md</span> <span class="o">=</span> <span class="s">&quot;36G&quot;</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">                           ATGAGAGTTTGATCCTGGCTCAGGACGAACGCTGGCA    read (37bp)</span>
+<span class="sd">    HHHHHHHHHHHHHHHHHHHHHHHMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM    extended CIGAR (50bp)</span>
+<span class="sd">                           ====================================G    extended MD (37bp)</span>
+<span class="sd">    NNNNNNNNNNNNNNNNNNNNNNNATGAGAGTTTGATCCTGGCTCAGGACGAACGCTGGCG    full reference</span>
+<span class="sd">    NNNNNNNNNNNNNNNNNNNNNNNATGAGAGTTTGATCCTGGCTCAGGACGAACGCTGGCA    full read</span>
+<span class="sd">                           ATGAGAGTTTGATCCTGGCTCAGGACGAACGCTGGCG    aligned reference</span>
+<span class="sd">                           ATGAGAGTTTGATCCTGGCTCAGGACGAACGCTGGCA    aligned read</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">ref_full</span>  <span class="o">=</span> <span class="s">&quot;XXXXXXXXXXXXXXXXXXXXXXXATGAGAGTTTGATCCTGGCTCAGGACGAACGCTGGCG&quot;</span>
+    <span class="n">read_full</span> <span class="o">=</span> <span class="s">&quot;XXXXXXXXXXXXXXXXXXXXXXXATGAGAGTTTGATCCTGGCTCAGGACGAACGCTGGCA&quot;</span>
+    <span class="n">ref_aln</span>   <span class="o">=</span> <span class="s">&quot;ATGAGAGTTTGATCCTGGCTCAGGACGAACGCTGGCG&quot;</span>
+    <span class="n">read_aln</span>  <span class="o">=</span> <span class="s">&quot;ATGAGAGTTTGATCCTGGCTCAGGACGAACGCTGGCA&quot;</span>
+
+    <span class="p">(</span><span class="n">rec_ref_full</span><span class="p">,</span> <span class="n">rec_read_full</span><span class="p">,</span> <span class="n">rec_ref_aln</span><span class="p">,</span> <span class="n">rec_read_aln</span><span class="p">)</span> <span class="o">=</span> <span class="n">reconstruct</span><span class="p">(</span><span class="n">read</span><span class="p">,</span> <span class="n">cigar</span><span class="p">,</span> <span class="n">md</span><span class="p">,</span> <span class="n">verbose</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">rec_ref_full</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">reconstructed reference&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">ref_full</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">actual reference&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">rec_read_full</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">reconstructed read&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">read_full</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">actual read&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">rec_ref_aln</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">reconstructed aligned reference&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">ref_aln</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">actual aligned reference&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">rec_read_aln</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">reconstructed aligned read&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">read_aln</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">actual aligned read&quot;</span><span class="p">)</span>
+    <span class="k">print</span><span class="p">(</span><span class="s">&quot;</span><span class="si">%s</span><span class="se">\t</span><span class="s">5&#39; hard clipping&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">rec_ref_full</span> <span class="o">==</span> <span class="n">ref_full</span>
+                                    <span class="ow">and</span> <span class="n">rec_read_full</span> <span class="o">==</span> <span class="n">read_full</span>
+                                    <span class="ow">and</span> <span class="n">rec_ref_aln</span> <span class="o">==</span> <span class="n">ref_aln</span>
+                                    <span class="ow">and</span> <span class="n">rec_read_aln</span> <span class="o">==</span> <span class="n">read_aln</span><span class="p">,))</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">rec_ref_full</span> <span class="o">==</span> <span class="n">ref_full</span>
+            <span class="ow">and</span> <span class="n">rec_read_full</span> <span class="o">==</span> <span class="n">read_full</span>
+            <span class="ow">and</span> <span class="n">rec_ref_aln</span> <span class="o">==</span> <span class="n">ref_aln</span>
+            <span class="ow">and</span> <span class="n">rec_read_aln</span> <span class="o">==</span> <span class="n">read_aln</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="test_hard_clipping_end"><a class="viewcode-back" href="../../../samsifter.util.html#samsifter.util.sam.test_hard_clipping_end">[docs]</a><span class="k">def</span> <span class="nf">test_hard_clipping_end</span><span class="p">(</span><span class="n">verbose</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Tests reference reconstruction with hard clipped 3&#39; read.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    verbose : bool</span>
+<span class="sd">        Print additional output to STDOUT, defaults to False.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    bool</span>
+<span class="sd">        True if test was successful, otherwise False.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">read</span> <span class="o">=</span> <span class="s">&quot;GTTTCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&quot;</span>
+    <span class="n">cigar</span> <span class="o">=</span> <span class="s">&quot;44M6H&quot;</span>
+    <span class="n">md</span> <span class="o">=</span> <span class="s">&quot;44&quot;</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    GTTTCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA        read (44bp)</span>
+<span class="sd">    MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMHHHHHH  extended CIGAR (50bp)</span>
+<span class="sd">    ============================================        extended MD (44bp)</span>
+<span class="sd">    GTTTCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAANNNNNN  full reference</span>
+<span class="sd">    GTTTCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAANNNNNN  full read</span>
+<span class="sd">    GTTTCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA        aligned reference</span>
+<span class="sd">    GTTTCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA        aligned read</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">ref_full</span>  <span class="o">=</span> <span class="s">&quot;GTTTCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAXXXXXX&quot;</span>
+    <span class="n">read_full</span> <span class="o">=</span> <span class="s">&quot;GTTTCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAXXXXXX&quot;</span>
+    <span class="n">ref_aln</span>   <span class="o">=</span> <span class="s">&quot;GTTTCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&quot;</span>
+    <span class="n">read_aln</span>  <span class="o">=</span> <span class="s">&quot;GTTTCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&quot;</span>
+
+    <span class="p">(</span><span class="n">rec_ref_full</span><span class="p">,</span> <span class="n">rec_read_full</span><span class="p">,</span> <span class="n">rec_ref_aln</span><span class="p">,</span> <span class="n">rec_read_aln</span><span class="p">)</span> <span class="o">=</span> <span class="n">reconstruct</span><span class="p">(</span><span class="n">read</span><span class="p">,</span> <span class="n">cigar</span><span class="p">,</span> <span class="n">md</span><span class="p">,</span> <span class="n">verbose</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">rec_ref_full</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">reconstructed reference&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">ref_full</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">actual reference&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">rec_read_full</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">reconstructed read&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">read_full</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">actual read&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">rec_ref_aln</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">reconstructed aligned reference&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">ref_aln</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">actual aligned reference&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">rec_read_aln</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">reconstructed aligned read&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">read_aln</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">actual aligned read&quot;</span><span class="p">)</span>
+    <span class="k">print</span><span class="p">(</span><span class="s">&quot;</span><span class="si">%s</span><span class="se">\t</span><span class="s">3&#39; hard clipping&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">rec_ref_full</span> <span class="o">==</span> <span class="n">ref_full</span>
+                                    <span class="ow">and</span> <span class="n">rec_read_full</span> <span class="o">==</span> <span class="n">read_full</span>
+                                    <span class="ow">and</span> <span class="n">rec_ref_aln</span> <span class="o">==</span> <span class="n">ref_aln</span>
+                                    <span class="ow">and</span> <span class="n">rec_read_aln</span> <span class="o">==</span> <span class="n">read_aln</span><span class="p">,))</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">rec_ref_full</span> <span class="o">==</span> <span class="n">ref_full</span>
+            <span class="ow">and</span> <span class="n">rec_read_full</span> <span class="o">==</span> <span class="n">read_full</span>
+            <span class="ow">and</span> <span class="n">rec_ref_aln</span> <span class="o">==</span> <span class="n">ref_aln</span>
+            <span class="ow">and</span> <span class="n">rec_read_aln</span> <span class="o">==</span> <span class="n">read_aln</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="test_soft_clipping_front"><a class="viewcode-back" href="../../../samsifter.util.html#samsifter.util.sam.test_soft_clipping_front">[docs]</a><span class="k">def</span> <span class="nf">test_soft_clipping_front</span><span class="p">(</span><span class="n">verbose</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Tests reference reconstruction with soft clipped 5&#39; read.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    verbose : bool</span>
+<span class="sd">        Print additional output to STDOUT, defaults to False.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    bool</span>
+<span class="sd">        True if test was successful, otherwise False.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">read</span> <span class="o">=</span> <span class="s">&quot;GGGGGGGGGGGGGGGGGGGGGGGATGAGAGTTTGATCCTGGCTCAGGACGAACGCTGGCA&quot;</span>
+    <span class="n">cigar</span> <span class="o">=</span> <span class="s">&quot;23S37M&quot;</span>
+    <span class="n">md</span> <span class="o">=</span> <span class="s">&quot;36G&quot;</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    GGGGGGGGGGGGGGGGGGGGGGGATGAGAGTTTGATCCTGGCTCAGGACGAACGCTGGCA    read (50bp)</span>
+<span class="sd">    SSSSSSSSSSSSSSSSSSSSSSSMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM    extended CIGAR (50bp)</span>
+<span class="sd">                           ====================================G    extended MD (37bp)</span>
+<span class="sd">    NNNNNNNNNNNNNNNNNNNNNNNATGAGAGTTTGATCCTGGCTCAGGACGAACGCTGGCG    full reference</span>
+<span class="sd">    NNNNNNNNNNNNNNNNNNNNNNNATGAGAGTTTGATCCTGGCTCAGGACGAACGCTGGCA    full read</span>
+<span class="sd">                           ATGAGAGTTTGATCCTGGCTCAGGACGAACGCTGGCG    aligned reference</span>
+<span class="sd">                           ATGAGAGTTTGATCCTGGCTCAGGACGAACGCTGGCA    aligned read</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">ref_full</span>  <span class="o">=</span> <span class="s">&quot;XXXXXXXXXXXXXXXXXXXXXXXATGAGAGTTTGATCCTGGCTCAGGACGAACGCTGGCG&quot;</span>
+    <span class="n">read_full</span> <span class="o">=</span> <span class="s">&quot;GGGGGGGGGGGGGGGGGGGGGGGATGAGAGTTTGATCCTGGCTCAGGACGAACGCTGGCA&quot;</span>
+    <span class="n">ref_aln</span>   <span class="o">=</span> <span class="s">&quot;ATGAGAGTTTGATCCTGGCTCAGGACGAACGCTGGCG&quot;</span>
+    <span class="n">read_aln</span>  <span class="o">=</span> <span class="s">&quot;ATGAGAGTTTGATCCTGGCTCAGGACGAACGCTGGCA&quot;</span>
+
+    <span class="p">(</span><span class="n">rec_ref_full</span><span class="p">,</span> <span class="n">rec_read_full</span><span class="p">,</span> <span class="n">rec_ref_aln</span><span class="p">,</span> <span class="n">rec_read_aln</span><span class="p">)</span> <span class="o">=</span> <span class="n">reconstruct</span><span class="p">(</span><span class="n">read</span><span class="p">,</span> <span class="n">cigar</span><span class="p">,</span> <span class="n">md</span><span class="p">,</span> <span class="n">verbose</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">rec_ref_full</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">reconstructed reference&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">ref_full</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">actual reference&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">rec_read_full</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">reconstructed read&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">read_full</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">actual read&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">rec_ref_aln</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">reconstructed aligned reference&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">ref_aln</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">actual aligned reference&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">rec_read_aln</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">reconstructed aligned read&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">read_aln</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">actual aligned read&quot;</span><span class="p">)</span>
+    <span class="k">print</span><span class="p">(</span><span class="s">&quot;</span><span class="si">%s</span><span class="se">\t</span><span class="s">5&#39; soft clipping&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">rec_ref_full</span> <span class="o">==</span> <span class="n">ref_full</span>
+                                    <span class="ow">and</span> <span class="n">rec_read_full</span> <span class="o">==</span> <span class="n">read_full</span>
+                                    <span class="ow">and</span> <span class="n">rec_ref_aln</span> <span class="o">==</span> <span class="n">ref_aln</span>
+                                    <span class="ow">and</span> <span class="n">rec_read_aln</span> <span class="o">==</span> <span class="n">read_aln</span><span class="p">,))</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">rec_ref_full</span> <span class="o">==</span> <span class="n">ref_full</span>
+            <span class="ow">and</span> <span class="n">rec_read_full</span> <span class="o">==</span> <span class="n">read_full</span>
+            <span class="ow">and</span> <span class="n">rec_ref_aln</span> <span class="o">==</span> <span class="n">ref_aln</span>
+            <span class="ow">and</span> <span class="n">rec_read_aln</span> <span class="o">==</span> <span class="n">read_aln</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="test_soft_clipping_end"><a class="viewcode-back" href="../../../samsifter.util.html#samsifter.util.sam.test_soft_clipping_end">[docs]</a><span class="k">def</span> <span class="nf">test_soft_clipping_end</span><span class="p">(</span><span class="n">verbose</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Tests reference reconstruction with soft clipped 3&#39; read.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    verbose : bool</span>
+<span class="sd">        Print additional output to STDOUT, defaults to False.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    bool</span>
+<span class="sd">        True if test was successful, otherwise False.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">read</span> <span class="o">=</span> <span class="s">&quot;GTTTCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGGGGGG&quot;</span>
+    <span class="n">cigar</span> <span class="o">=</span> <span class="s">&quot;44M6S&quot;</span>
+    <span class="n">md</span> <span class="o">=</span> <span class="s">&quot;44&quot;</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    GTTTCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGGGGGG    read (44bp)</span>
+<span class="sd">    MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMSSSSSS    extended CIGAR (50bp)</span>
+<span class="sd">    ============================================          extended MD (44bp)</span>
+<span class="sd">    GTTTCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAANNNNNN    full reference</span>
+<span class="sd">    GTTTCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAANNNNNN    full read</span>
+<span class="sd">    GTTTCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA          aligned reference</span>
+<span class="sd">    GTTTCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA          aligned read</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">ref_full</span>  <span class="o">=</span> <span class="s">&quot;GTTTCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAXXXXXX&quot;</span>
+    <span class="n">read_full</span> <span class="o">=</span> <span class="s">&quot;GTTTCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGGGGGG&quot;</span>
+    <span class="n">ref_aln</span>   <span class="o">=</span> <span class="s">&quot;GTTTCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&quot;</span>
+    <span class="n">read_aln</span>  <span class="o">=</span> <span class="s">&quot;GTTTCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&quot;</span>
+
+    <span class="p">(</span><span class="n">rec_ref_full</span><span class="p">,</span> <span class="n">rec_read_full</span><span class="p">,</span> <span class="n">rec_ref_aln</span><span class="p">,</span> <span class="n">rec_read_aln</span><span class="p">)</span> <span class="o">=</span> <span class="n">reconstruct</span><span class="p">(</span><span class="n">read</span><span class="p">,</span> <span class="n">cigar</span><span class="p">,</span> <span class="n">md</span><span class="p">,</span> <span class="n">verbose</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">rec_ref_full</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">reconstructed reference&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">ref_full</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">actual reference&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">rec_read_full</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">reconstructed read&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">read_full</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">actual read&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">rec_ref_aln</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">reconstructed aligned reference&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">ref_aln</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">actual aligned reference&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">rec_read_aln</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">reconstructed aligned read&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">read_aln</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">actual aligned read&quot;</span><span class="p">)</span>
+    <span class="k">print</span><span class="p">(</span><span class="s">&quot;</span><span class="si">%s</span><span class="se">\t</span><span class="s">3&#39; soft clipping&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">rec_ref_full</span> <span class="o">==</span> <span class="n">ref_full</span>
+                                    <span class="ow">and</span> <span class="n">rec_read_full</span> <span class="o">==</span> <span class="n">read_full</span>
+                                    <span class="ow">and</span> <span class="n">rec_ref_aln</span> <span class="o">==</span> <span class="n">ref_aln</span>
+                                    <span class="ow">and</span> <span class="n">rec_read_aln</span> <span class="o">==</span> <span class="n">read_aln</span><span class="p">,))</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">rec_ref_full</span> <span class="o">==</span> <span class="n">ref_full</span>
+            <span class="ow">and</span> <span class="n">rec_read_full</span> <span class="o">==</span> <span class="n">read_full</span>
+            <span class="ow">and</span> <span class="n">rec_ref_aln</span> <span class="o">==</span> <span class="n">ref_aln</span>
+            <span class="ow">and</span> <span class="n">rec_read_aln</span> <span class="o">==</span> <span class="n">read_aln</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="main"><a class="viewcode-back" href="../../../samsifter.util.html#samsifter.util.sam.main">[docs]</a><span class="k">def</span> <span class="nf">main</span><span class="p">(</span><span class="n">argv</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Runs simple tests of the reference reconstruction method.&quot;&quot;&quot;</span>
+    <span class="n">tests</span> <span class="o">=</span> <span class="p">[</span><span class="n">test_deletion_snp_no_delim</span><span class="p">(</span><span class="n">verbose</span><span class="o">=</span><span class="bp">False</span><span class="p">),</span>
+             <span class="n">test_deletion_snp_0_delim</span><span class="p">(</span><span class="n">verbose</span><span class="o">=</span><span class="bp">False</span><span class="p">),</span>
+             <span class="n">test_insertion</span><span class="p">(</span><span class="n">verbose</span><span class="o">=</span><span class="bp">False</span><span class="p">),</span>
+             <span class="n">test_skipped_intron</span><span class="p">(</span><span class="n">verbose</span><span class="o">=</span><span class="bp">False</span><span class="p">),</span>
+             <span class="n">test_hard_clipping_front</span><span class="p">(</span><span class="n">verbose</span><span class="o">=</span><span class="bp">False</span><span class="p">),</span>
+             <span class="n">test_hard_clipping_end</span><span class="p">(</span><span class="n">verbose</span><span class="o">=</span><span class="bp">False</span><span class="p">),</span>
+             <span class="n">test_soft_clipping_front</span><span class="p">(</span><span class="n">verbose</span><span class="o">=</span><span class="bp">False</span><span class="p">),</span>
+             <span class="n">test_soft_clipping_end</span><span class="p">(</span><span class="n">verbose</span><span class="o">=</span><span class="bp">False</span><span class="p">)]</span>
+    <span class="k">print</span><span class="p">(</span><span class="s">&quot;passed </span><span class="si">%i</span><span class="s"> out of </span><span class="si">%i</span><span class="s"> tests&quot;</span>
+          <span class="o">%</span> <span class="p">(</span><span class="n">tests</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="bp">True</span><span class="p">),</span> <span class="nb">len</span><span class="p">(</span><span class="n">tests</span><span class="p">)))</span>
+
+    <span class="c"># process command line arguments</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">argv</span><span class="p">)</span> <span class="o">==</span> <span class="mi">4</span><span class="p">:</span>
+        <span class="k">print</span><span class="p">()</span>
+        <span class="p">(</span><span class="n">rec_ref_full</span><span class="p">,</span> <span class="n">rec_read_full</span><span class="p">,</span> <span class="n">rec_ref_aln</span><span class="p">,</span> <span class="n">rec_read_aln</span><span class="p">)</span> <span class="o">=</span> <span class="n">reconstruct</span><span class="p">(</span><span class="n">argv</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">argv</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span> <span class="n">argv</span><span class="p">[</span><span class="mi">3</span><span class="p">],</span> <span class="n">verbose</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">rec_ref_full</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">reconstructed reference&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">rec_ref_aln</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">reconstructed aligned reference&quot;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">rec_read_aln</span> <span class="o">+</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">reconstructed aligned read&quot;</span><span class="p">)</span>
+
+    <span class="nb">exit</span><span class="p">()</span>
+
+</div>
+<span class="k">if</span> <span class="n">__name__</span> <span class="o">==</span> <span class="s">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="n">main</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">)</span>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../../index.html">SamSifter 0.5.2 documentation</a> &raquo;</li>
+          <li><a href="../../index.html" >Module code</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2015, Florian Aldehoff.
+      Last updated on Mar 05, 2015.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>
