@@ -1,0 +1,58 @@
+#!/usr/bin/python
+# -*- coding:utf-8 -*-
+
+# Author: Pablo Saavedra Rodinho
+# Contact: pablo.saavedra@interoud.com
+
+import os
+import sys
+import time
+import calendar
+import dateutil.parser
+import json
+
+reload(sys)
+sys.setdefaultencoding('utf-8')
+print sys.getdefaultencoding()
+
+from optparse import OptionParser
+import logging
+
+def to_timestamp(date_txt):
+    return int(calendar.timegm(dateutil.parser.parse(date_txt).utctimetuple()))
+
+parser = OptionParser()
+parser.add_option("--projectpath", dest="projectpath",
+                  help="Django project path", metavar="PATH",
+                  default=".")
+(options, args) = parser.parse_args()
+
+
+# django environment ###########################################################
+sys.path.append(options.projectpath)
+reload(sys)
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "settings")
+from liver.models import Recording
+logger = logging.getLogger("liver.tools")
+# end django environment #######################################################
+
+
+now_milliseconds = int(time.time())
+
+for r in Recording.objects.filter(to_delete=False).iterator():
+    try:
+        try:
+            metadata = json.loads(r.metadata_json)
+            licensing_window_end = None
+            for m in metadata:
+                if m.has_key("licensing_window_end"):
+                    licensing_window_end = \
+                        to_timestamp(m["licensing_window_end"])
+            if now_milliseconds > licensing_window_end :
+                logger.info ( "Set recording %s to be deleted" % r)
+                r.to_delete = True
+                r.save()
+        except Exception as e:
+            logger.error("No licensing_window_end found: %s" % e)
+    except Exception as e:
+        logger.error( "Error deleting asset: %s" % e)
