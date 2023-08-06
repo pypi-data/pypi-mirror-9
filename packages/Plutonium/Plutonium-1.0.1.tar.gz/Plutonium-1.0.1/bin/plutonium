@@ -1,0 +1,71 @@
+#!/usr/bin/env python
+
+import os, sys
+
+from plutonium.directories import Directory
+from plutonium.modules.logger import load_logger
+
+from plutonium.modules.config import Config
+from plutonium.modules.commands import CommandRequestHandler
+from plutonium.modules.cliargumentstreeparser import CLIArgumentsTreeParser
+from plutonium.modules.tools import FileReader
+from plutonium.modules.plutonium_manager import PlutoniumManager
+from plutonium.modules.configure import Configure
+
+# import the classes with 'commandline' decorated functions! (maybe not used the class, but need to import)
+from plutonium.modules.plutonium_class import Plutonium
+from plutonium.modules.fetcher import Fetcher
+
+# init argument parsing
+
+args_config = [
+    dict(name = 'configure', desc = dict(help = 'Configure the Plutonium for the first use')),
+    dict(name = 'start', desc = dict(help = 'Start Plutonium')),
+    dict(name = 'stop', desc = dict(help = 'Stop Plutonium')),
+    dict(name = 'restart', desc = dict(help = 'Restart Plutonium')),
+    dict(name = 'status', desc = dict(help = 'The status of Plutonium')),
+]
+
+# get the rpc method list to add args
+for name in dir(CommandRequestHandler):
+    attr = getattr(CommandRequestHandler, name)
+    if hasattr(attr, 'commandline'):
+        cmd_desc = attr.commandline
+        args_config.append(dict(name = name, desc = dict(help = cmd_desc.help), arguments = cmd_desc.arguments))
+
+parser = CLIArgumentsTreeParser(args_config, 'core')
+args = parser.parse()
+
+# this is a special command
+if args.sub.name == 'configure':
+    Configure()
+    sys.exit(0)
+
+load_logger(os.path.join(Directory.config(), 'logger.json'))
+
+import logging
+logger = logging.getLogger('init')
+
+logger.info("Plutonium manager script")
+
+# init config
+try:
+    config = Config(FileReader())
+    config.load(os.path.join(Directory.config(), 'core.json'))
+    logger.info('Config has been successfully loaded')
+except Exception as e:
+    logger.error('Exception occured during config parsing: ' + str(e))
+    sys.exit(1)
+
+# create manager
+mgr = PlutoniumManager(config.data['command_server']['port'].value, os.path.join(Directory.base(), 'plutonium.pid'), "plutonium_starter")
+
+if hasattr(mgr, args.sub.name):
+    command = getattr(mgr, args.sub.name)
+    command_args = dict()
+else:
+    command = mgr.control
+    command_args = args.sub
+
+response = command(**command_args)
+logger.info(response.message)
