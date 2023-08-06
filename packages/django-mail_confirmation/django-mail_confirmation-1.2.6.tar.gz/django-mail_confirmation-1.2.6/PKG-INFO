@@ -1,0 +1,259 @@
+Metadata-Version: 1.1
+Name: django-mail_confirmation
+Version: 1.2.6
+Summary: A general django user mail confirmation app usable with multiple models at the same time.
+Home-page: http://v.licheni.net/drc/django-mail_confirmation.git
+Author: Davide Riccardo Caliendo
+Author-email: davide.licheni.net
+License: GPLv3 License
+Description: HOW IT WORKS
+        ============
+        
+        `mail_confirmation` is a general application for providing object approvation from users via email:
+        
+        you create an object, tell `mail_confirmation` to *generate and send* a mail confirmation to the user, and the *user confirms* that object by clicking the url received in the *email*.
+        
+        You can provide different templates, sensible defaults are provided, custom views or templates rendered when the user clicks on that confirmation link, and other settings. Stale requests are optionally handled with celery tasks.
+        
+        For now emails are sent as html unless you provide your function to send emails. 
+        
+        INSTALLATION
+        ============
+        
+        
+        Set the mail confirmation urls:
+        
+        ::
+        
+            from mail_confirmation.views import MailConfirmation
+        
+            #Mail url Confirmation
+            urlpatterns += patterns('',
+                                      url(r'^confirm/', include('mail_confirmation.urls', namespace='mail_confirmation')),
+            )
+        
+        put the app in `installed_apps` settings:
+        
+        ::
+        
+            INSTALLED_APPS += (
+                'mail_confirmation',
+            )
+        
+        and then run syncdb
+        
+        In the `model` that you want to confirm put a generic relation field:
+        
+        ::
+        
+            from django.contrib.contenttypes import generic
+            from mail_confirmation.models import MailConfirmation
+        
+            confirmed = generic.GenericRelation(MailConfirmation,
+                                               content_type_field='toconfirm_type',
+                                               object_id_field='toconfirm_id')
+        
+        With this you could see confirmed object filtering by `myobj.confirmed = True`
+        
+        (Nota bene: you could do this, and not using the actual field `myobj.confirmed.confirmed` , because the models returns that field as part of his representation,
+        
+        note also that in the orm you must check for `confirmed__confirmed=True`)
+        
+        You **must** also provide a template in `youapplication/mail_request.html` that will be used as email body and a template in  `yourapplication/mail_confirmation_succeded.html` that will display a thank you message for the user, you could override their names, see below.
+        
+        Read below on how to connect to a `signal` emitted whenever a model is confirmed by the user.
+        
+        SETTINGS
+        ========
+        
+        * `settings.SITE_SCHEME`  defaults to http
+        * `settings.MAIL_CONFIRMATION_STALE_PERIOD` period after deletion of stale requests
+        * `settings.DEFAULT_FROM_EMAIL` if no email is provided as sender use this one
+        
+        
+        This app optionally uses the `sites framework` for retrieving the domain name of your site, and `SITE_SCHEME` in your settings to know what scheme (defaults to 'https') to use when building urls.
+        
+        
+        USAGE
+        =====
+        
+        Note, you can look up `tests/test.py` to see an example of usage, see `MailConfirmationTest.test_confirmation` how uses the relevant object to confirm and how it is made from `tests.models`
+        
+        Creating your object
+        --------------------
+        
+        say you have a model `MyModel` with a `confirmed` field of the kind explained above:
+          
+        ::
+        
+            obj = MyModel()
+        
+        and ask `mail_confirmation` to send a confirmation email to the user.
+        
+        
+        Sending confirmations to the user
+        ---------------------------------
+        
+        to *generate and send* a confirmation you put this snippet in your code (see below on how to generate a confirmation and send the email indipendently):
+        
+        ::
+        
+            from mail_confirmation.utils import generate_and_send
+        
+            generate_and_send(obj,
+                              request_template,
+                              success_template, success_url,
+                              forusers,
+                              mail_function,
+                              subject, sender, to, confirmurlname, context)
+        
+        
+        * `obj` in an instance of a model that needs a confirmation from the user.
+        * `requerst_template` overrides the default template path used for building the request email.
+        * `success_template` overrides the default template path used for the success view when the user visits the confirmation url from the email
+        * `success_url` optionally you could specify an url to be used as a redirect when the user visits the confirmation url, this is used instead of the `success_template` above.
+        * `forusers` a single or a list of users that can confirm this object, if not provided anyone with the link can confirm this object
+        * `mail_function` if you don't want to use the default send_confirmation function you can specify a function used to send the email, the signature should be the same of `send_confirmation` in utils.py, Note that every additional argument you pass to generate_and_send will be also passed to your custom function.
+        * `subject` is the optional email subject
+        * `sender` is the optional email sender
+        * `to` is the user email, or a list of user email, where the confirmation email is sent
+        * `confirmurlname` if you put this app in a different namespace you can configure the url name used by `reverse` to compose the confirmation url by passing `confirmurlname='custom_appname:url'` to `send_confirmation` or `generate_and_send`
+        * `context` is an optional context passed to the email template
+          
+        
+        The email is rendered by passing as context an optional `context` you provi and various variables used to build the confirmation url: `confirmation_url` is the path of that url, `SITE_DOMAIN` and `SITE_SCHEME` contains the site scheme and domain name.
+        
+        
+        **Default values:**
+        
+        *Read this carefully to know where `mail confirmation` looks for picking up various templates*
+        
+        `request_template`: `yourapplication/templates/yourapplication/mail_request.html`
+        
+            `yourapplication` is the application the object you are trying to confirm belongs to, for example if I have `obj = appname.MyModel()`, then the mail request template will be searched in `appname/templates/appname/mail_request.html`
+        
+        `success_template`: `yourapplication/templates/yourapplication/mail_confirmation_succeded.html`,
+        
+            `yourapplication` has the same meaning as above
+        
+        `subject`: `"Confirmation mail"`
+        
+        `success_url`: None
+        
+        `sender`: `settings.DEFAULT_FROM_EMAIL`
+        
+        `confirmurlname`: `mail_confirmation:url`
+        
+        `SITE_SCHEME`: `https`
+        
+        `SITE_DOMAIN`: it uses the `Site` framework, `Site.objects.get_current().domain`. or looks in the settings for a `SITE_DOMAIN` attribute. 
+        
+        
+        **Example**
+        
+        Given sensible defaults a generate and send call could be as simple as:
+        
+        ::
+           obj = MyModel()
+           generate_and_send(obj, to='to@example.com')
+        
+        
+        **NOTE**
+        
+        You could optionally **split the confirmation generation and sending** by using those two functions, `generate_confirmation` and `send_confirmation`, look at `utils.py` to see their signature.
+        
+        
+        Rendering the mail template
+        ---------------------------
+        
+        The email template receives your optional `context` and the `SITE_SCHEME`, `SITE_DOMAIN` and `confirmation_url` variables:
+        
+        ::
+           Hello, click the link below to confirm your object:
+           <a href="{{ SITE_SCHEME }}://{{SITE_DOMAIN}}{{ confirmation_url }}">url</a>
+        
+           
+        Rendering the success(confirmation) template
+        --------------------------------------------
+        
+        The success template will have the `confirmation` object as context, you can access the object you want to confirm from `confirmation.toconfirm_object`.
+        
+        
+        Getting the confirmed id (listening signals)
+        --------------------------------------------
+        
+        Whenever a confirmation is made from an user a `signal` is emitted;
+        you can connect to that signal and do things™ with this code:
+        
+        ::
+        
+            from mail_confirmation.signals import confirmed_signal
+        
+            confirmed_signal.connect(my_callback)
+        
+        or
+        
+        ::
+        
+            @receiver(confirmed_signal, 
+                      sender=MailConfirmation)
+            def my_callback(sender, toconfirm_type, object_id, **kwargs):
+                if toconfirm_type == MyModel:
+                    print("do something")
+        
+        where toconfirm_type is the model you passed as instance to the confirmation generation and object_id is the id of your MyModel object
+        
+        
+        Enforcing permissions
+        ---------------------
+        
+        Usually for email confirmations it is enough to rely on the secrecy of the mailed link, some other times we want to be sure that only a given user has access to that link, this is done by associating one or more users to a particular mail confirmation, by providing `forusers` parameter to `generate_confirmation` or `generate_and_send`.
+        
+        This will enforce the permission for the confirmation view, only a certain user if specified can confirm that object, if the user is already logged, a 403 is returned, if the user is anonymous then the login page is showed, with a next parameter of the confirmation url.
+        
+        
+        Clearing stale requests
+        -----------------------
+        
+        import from utils clear_stale() or a celery task that runs every first of the month is provided for you.
+        
+        ::
+        
+            CELERY_IMPORTS += (
+                'mail_confirmation.tasks',
+            ) 
+        
+        
+        you also should set  settings.MAIL_CONFIRMATION_STALE_PERIOD to a timedelta in days
+        
+        it defaults to 30 days, set it to 0 to disable temporarly
+        
+        TESTS
+        =====
+        
+        `./manage.py test mail_confirmation --settings=mail_confirmation.tests.settings`
+        
+        
+        
+        
+        CHANGELOG
+        =========
+        
+        1.0:
+        * possibility to use a custom mail function in `generate_and_send` instead of default `send_confirmation`
+        * corrected the default values of `send_confirmation` function
+        * changed the context in the email from `domain` to `SITE_DOMAIN` and `url` to `confirmation_url`
+        * using `uuid4.hex` as confirmation ids for confirmation objects, prviously was generated in a slow as hell method.
+        * passing the `confirmation` object in the rendered success template
+        
+Platform: UNKNOWN
+Classifier: Environment :: Web Environment
+Classifier: Framework :: Django
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: GNU General Public License v3 (GPLv3)
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python
+Classifier: Programming Language :: Python :: 2.6
+Classifier: Programming Language :: Python :: 2.7
+Classifier: Topic :: Internet :: WWW/HTTP
+Classifier: Topic :: Internet :: WWW/HTTP :: Dynamic Content
