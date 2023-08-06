@@ -1,0 +1,2 @@
+xmldirector.plonecore demo package
+==================================
