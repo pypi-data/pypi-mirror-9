@@ -1,0 +1,10 @@
+__version__ = "0.5.29"
+__git_commiter_name__ = "Guy Rozendorn"
+__git_commiter_email__ = "guy@rzn.co.il"
+__git_branch__ = '(detached from v0.5.29)'
+__git_remote_tracking_branch__ = '(No remote tracking)'
+__git_remote_url__ = '(Not remote tracking)'
+__git_head_hash__ = '003c37b3897674abbefec679950810a4b2913a4d'
+__git_head_subject__ = 'Finished release v0.5.29.'
+__git_head_message__ = "* release/v0.5.29:\n  add suse to rpm tests\n  fix tests\n  fix tests\n  TRIVIAL fixing previous commit\n  TRIVIAL BinaryDistributionsCompiler.extract_archive: handling the case all the files are on the tld\n  fixing windows python include path for embedded builds\n  TRIVIAL workaround for options variables on Windows\n  added more customization to embedded packaging (CPPPATH, CPPDEFINES, etc.) fixed re-parsing of phython's sysconfig compilation flags\n  TRIVIAL changing support for embedded builds to fix CPPPATH and not only CCFLAGS fixing  tests to support pycrypto-2.6.1.1.\n  HOSTDEV-1972 packager now bundles separate version of bootstrap.py\n  fix tests\n  TRIVIAL adding IOKit framework to OSX builds\n  COMVE-81 restructuring which compiler/linker flags are passed via which argument (CCFLAGS/LINKFLAGS/etc.)\n  fix tests"
+__git_dirty_diff__ = ''
