@@ -1,0 +1,200 @@
+{% extends 'assets/base.html' %}
+{% load assets bob i18n icons %}
+
+{% block extra_headers %}
+    {{ block.super }}
+{% endblock %}
+
+{% block scripts %}
+    {{ block.super }}
+{% endblock %}
+
+
+{% block sidebar_search%}
+
+    <div class="form search-form well well-small" id="sidebar_search">
+        {% trans "Hint: you can use quotation marks for exact matches." %}
+        <hr>
+        {% collapsed_form form %}
+    </div>
+{% endblock %}
+
+{% block content %}
+
+    {% if assets_count %}
+        <div class="alert alert-info">
+            <strong data-searched-items="{{assets_count}}">{{assets_count}}</strong> {% trans "items searched" %}
+        </div>
+    {% endif %}
+    <div class='clearfix'>
+        <h3 class="pull-left">{{ header }}</h3>
+        {% mode_switch %}
+    </div>
+        <div class="alert alert-success selected-assets-info-box" data-selected="false">
+            <strong data-searched-items="{{assets_count}}">{{assets_count}}</strong> {% trans "assets selected" %}
+        </div>
+        <table id='assets_table' class="table table-bordered table-striped">
+        {% table_header columns url_query sort fugue_icons=1 sort_variable_name=sort_variable_name %}
+                <tbody>
+                {% for row in bob_page %}
+                <tr {% if row.deleted %} class="asset-deleted" {% endif %}>
+                    <td class="column-checkbox">
+                        <input type="checkbox" name="select" value="{{row.id}}">
+                    </td>
+                    <td>
+                        <a href="./edit/{% if row.get_data_type == 'part'%}part{% elif row.get_data_type == 'device' %}device{% endif %}/{{row.id}}">
+                            {% icon row.get_data_icon %}&nbsp;{{row.get_data_type|capfirst}}
+                        </a>
+                    </td>
+                    <td>{{row.get_status_display}}</td>
+                    <td>{{row.barcode|default:'-' }}</td>
+                    <td>{{row.purchase_order|default:'-' }}</td>
+                    {% if mode == 'back_office' %}
+                        <td>{{row.model.category|default:'-' }}</td>
+                        <td>{{row.model.manufacturer.name|default:'-' }}</td>
+                    {% endif %}
+                    <td>{{row.model.name|default:'-' }}</td>
+                    {% if mode == 'back_office' %}
+                        <td>{{row.user|default:'-' }}</td>
+                    {% endif %}
+                    <td>{{row.warehouse}}</td>
+                    <td>{{row.sn|default:'-' }}</td>
+                    {% if mode == 'back_office' %}
+                        <td>{{row.office_info.imei|default:'-' }}</td>
+                        <td>{{row.property_of|default:'-' }}</td>
+                        <td>{{row.hostname|default:'-' }}</td>
+                        <td>{{row.service_name|default:'-' }}</td>
+                    {% endif %}
+                    <td>{{row.invoice_date|default:'-' }}</td>
+                    <td>{{row.invoice_no|default:'-' }}</td>
+                    {% if mode == 'dc' %}
+                        <td>{{row.order_no|default:'-' }}</td>
+                        <td>{{row.price}}</td>
+                        <td>{{row.venture}}</td>
+                        <td>
+                            {% if row.is_discovered %}
+                                <i class="fugue-icon fugue-tick-circle"></i>
+                            {% else %}
+                                <i class="fugue-icon fugue-cross-octagon"></i>
+                            {% endif %}
+                        </td>
+                    {% endif %}
+                    {% if mode == 'back_office' %}
+                        <td>{{row.remarks|default:'-' }}</td>
+                    {% endif %}
+                    {% if mode == 'back_office' %}
+                        <td>{{row.created|default:'-' }}</td>
+                    {% endif %}
+                    {% if not asset_hide_action_search %}
+                    <td>
+                    <div class="btn-group">
+                      <a class="btn dropdown-toggle" data-toggle="dropdown" href="#">
+                        Action
+                        <span class="caret"></span>
+                      </a>
+                      <ul class="dropdown-menu pull-right">
+
+                    {% if row.get_data_type == 'device' %}
+                        <li><a href="./edit/device/{{row.id}}">{% trans "Edit" %}</a></li>
+                        <li><a href="./history/device/{{row.id}}">{% trans "History" %}</a></li>
+                        {% if row.device_info.ralph_device_id%}
+                            <li><a href="{% url search 'info' row.device_info.ralph_device_id %}">{% trans "View in Ralph" %}</a></li>
+                        {% endif %}
+                    {% else %}
+                        <li><a href="./edit/part/{{row.id}}">{% trans "Edit" %}</a></li>
+                        <li><a href="./history/part/{{row.id}}">{% trans "History" %}</a></li>
+                    {% endif %}
+                        {% if not row.deleted %}
+                            <li class="divider"></li>
+                            <li>
+                                <form class='form-inline' style="padding: 3px 20px;" method="POST" action="./delete/asset/">
+                                    {% csrf_token %}
+                                    <input type='hidden' name='record_id' value='{{ row.id }}'/>
+                                        <input class='btn btn-link del-asset-btn' style="color: #ff0011;" value='Delete' type='submit'></input>
+                                </form>
+                            </li>
+                        {% endif %}
+                        </ul>
+                    </div>
+                    </td>
+                    {% endif %}
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+
+            {% pagination bob_page url_query=url_query show_all=0 show_csv=1 fugue_icons=1 export_variable_name=export_variable_name %}
+            <div id="eta"></div>
+            <div class="progress" id="async-progress">
+                <div class="bar"></div>
+            </div>
+            <div class="btn-group pull-left">
+              <a class="btn dropdown-toggle btn-primary" data-toggle="dropdown" href="#">
+                {% trans "Bulk actions..." %}
+                <span class="caret"></span>
+              </a>
+            <ul class="dropdown-menu">
+                <li>
+                    <a href="#" id='post_add_attachment'>{% trans "Add attachments" %}</a>
+                </li>
+            {% if asset_reports_enable %}
+                <li>
+                    <a href="#" id='post_invoice_report_selected'>
+                        {% trans "Invoice report from selected" %}
+                    </a>
+                </li>
+                <li class="divider"></li>
+            {% endif %}
+                <li>
+                    <a href="#" id='post_edit_all'>{% trans "Edit selected" %}</a>
+                </li>
+                {% if mode == 'dc' %}
+                <li>
+                    <a href="#" id='post_edit_all_location'>{% trans "Edit location" %}</a>
+                </li>
+                {% endif %}
+            </ul>
+            </div>
+            {% if asset_transitions_enable %}
+            <div class="btn-group pull-left">
+                <a class="btn dropdown-toggle btn-info" data-toggle="dropdown" href="#">
+                    {% trans "Transition asset" %}
+                    <span class="caret"></span>
+                </a>
+                <ul class="dropdown-menu">
+                    <li>
+                        <a href="#" id='post_release_transition_selected' data-transition-type="release-asset">
+                            {% trans "Release assets" %}
+                        </a>
+                    </li>
+                    <li class="divider"></li>
+                    <li >
+                        <a href="#" id='post_return_transition_selected' data-transition-type="return-asset">
+                            {% trans "Return assets" %}
+                        </a>
+                    </li>
+                    <li class="divider"></li>
+                    <li>
+                        <a href="#" id='post_loan_transition_selected' data-transition-type="loan-asset">
+                            {% trans "Loan assets" %}
+                        </a>
+                    </li>
+                    <li class="divider"></li>
+                    <li>
+                        <a href="#" id='post_loan_transition_selected' data-transition-type="change-hostname">
+                            {% trans "Change hostname" %}
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            {% endif %}
+            <li class="select-all-pages">
+                <a href="#" class="bob-select-all-pages">
+                    {% icon 'fugue-documents-stack' %}
+                    <span>{% trans "Select on all pages" %}</span>
+                    <span class="bolded" style="display:none;">{% trans "Deselect on all pages" %}</span>
+                </a>
+            </li>
+{% endblock %}
+
+
