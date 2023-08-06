@@ -1,0 +1,77 @@
+|wq.db|
+
+`wq.db <https://wq.io/wq.db>`__ is a collection of Python modules for
+building robust, flexible schemas and REST APIs for use in creating
+field data collection apps and (more generally) mobile-first websites
+with progressive enhancement. wq.db is the backend component of
+`wq <https://wq.io>`__ and is geared primarily for use with
+`wq.app <https://wq.io/wq.app>`__, though it can be used separately.
+wq.db is built on the `Django <https://www.djangoproject.com/>`__
+platform.
+
+`**Release Notes** <https://github.com/wq/wq.db/releases>`__ \|
+`**Installation** <https://wq.io/docs/setup>`__ \|
+`**Documentation** <https://wq.io/wq.db>`__ \| `**Issue
+Tracker** <https://github.com/wq/wq.db/issues>`__
+
+|Build Status| |PyPI Package|
+
+Tested on Python 2.7 and 3.4, with Django 1.6 and 1.7.
+
+Getting Started
+---------------
+
+.. code:: bash
+
+    pip3 install wq.db
+    # Or, if using together with wq.app and/or wq.io
+    pip3 install wq
+
+See `the documentation <https://wq.io/docs/>`__ for more information.
+
+Features
+--------
+
+wq.db provides the following modules:
+
+`wq.db.rest <https://wq.io/docs/about-rest>`__
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Extends the excellent `Django REST
+Framework <http://django-rest-framework.org>`__ with a collection of
+views, serializers, and context processors useful for creating a
+progresively enhanced website that serves as its own mobile app and `its
+own REST API <https://wq.io/docs/website-rest-api>`__. The core of the
+library (`app.py <https://wq.io/docs/app.py>`__) includes an admin-style
+Router that connects REST urls to registered models, and provides a
+descriptive `configuration object <https://wq.io/docs/config>`__ for
+consumption by `wq.app's client-side
+router <https://wq.io/docs/app-js>`__. wq.db.rest also includes a
+CRS-aware GeoJSON serializer/renderer.
+
+`wq.db.patterns <https://wq.io/docs/about-patterns>`__
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A collection of `design
+patterns <https://wq.io/docs/about-patterns>`__ (e.g.
+`identify <https://wq.io/docs/identify>`__,
+`relate <https://wq.io/docs/relate>`__) that provide long-term
+flexibility and sustainability for user-maintained data collection
+applications. These patterns are implemented as installable Django apps.
+
+`wq.db.contrib <https://wq.io/chapters/contrib/docs>`__
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Like Django itself, wq.db includes a
+`contrib <https://wq.io/chapters/contrib/docs>`__ module that provides
+additional functionality not considered to be part of the "core"
+library, including a `file manager <https://wq.io/docs/files>`__, a
+`search <https://wq.io/docs/search>`__ API, and a
+`chart <https://wq.io/docs/chart>`__ backend.
+
+.. |wq.db| image:: https://raw.github.com/wq/wq/master/images/256/wq.db.png
+   :target: https://wq.io/wq.db
+.. |Build Status| image:: https://travis-ci.org/wq/wq.db.svg?branch=master
+   :target: https://travis-ci.org/wq/wq.db
+.. |PyPI Package| image:: https://pypip.in/version/wq.db/badge.svg?style=flat
+   :target: https://pypi.python.org/pypi/wq.db
