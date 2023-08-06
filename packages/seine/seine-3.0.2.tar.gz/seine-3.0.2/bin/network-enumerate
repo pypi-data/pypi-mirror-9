@@ -1,0 +1,75 @@
+#!/usr/bin/env python
+"""
+Simple wrapper to enumerate addresses in a network. For IPv6, this is silly
+but who cares.
+"""
+
+import sys,os,logging
+
+from systematic.shell import Script,ScriptError
+from seine.address import IPv4Address,IPv6Address
+from seine.dns.resolver import resolve_records,QueryError
+
+USAGE = """
+This script can be used to:
+- enumerate IPv4/IPv6 addresses in given address range
+- enumerate DNS reverse records for hosts in given address range
+
+The address should be given as CIDR IPv4 address or IPv6 address with bitmask.
+You can give multiple targets on the command line, mixing IPv4 and IPv6
+addresses.
+
+Currently DNS server address can be only given as IPv4 address."""
+
+script = Script(description=USAGE)
+script.add_argument('-r','--reverse-dns',action='store_true',help='Enumerate DNS Pointers')
+script.add_argument('-s','--dns-server',help='DNS Server for Queries')
+script.add_argument('addresses',nargs='*',help='Addresses to process')
+args = script.parse_args()
+
+if not args.addresses:
+    script.exit(1,'No addresses provided')
+
+if args.dns_server:
+    try:
+        server = IPv4Address(args.dns_server).ipaddress
+    except ValueError:
+        script.exit(1,'Invalid DNS server address: %s' % server)
+
+if args.reverse_dns and not args.dns_server:
+    script.exit(1,'DNS server IPv4 address must be provider to query reverse DNS')
+
+for network in args.addresses:
+    try:
+        addr = IPv4Address(network)
+        if addr.bitmask >= 30:
+            script.exit(1,'Enumerating networks with mask > 29 does not make sense.')
+        last = addr.last.next.raw_value + 1
+        a = addr
+
+        while a.raw_value < last:
+            if args.reverse_dns:
+                try:
+                    response = resolve_records(a.dns_reverse_ptr,server,'PTR')
+                    ptrs = [str(r['target']) for r in response['results']]
+                    if len(ptrs)>0:
+                        print '%-16s %s' % (a.ipaddress,','.join(ptrs))
+                    else:
+                        script.log.info('%-16s no PTR records' % a.ipaddress)
+                except QueryError,e:
+                    script.exit(1,'Error querying DNS server: %s' % e)
+            else:
+                script.message('%s' % a.ipaddress)
+            a = a.next
+
+    except ValueError:
+        try:
+            addr = IPv6Address(network)
+        except ValueError:
+            script.exit(1,'Unsupported address value: %s' % network)
+        last = int(addr.last.bitstring,16) + 1
+        a = addr
+        while int(a.bitstring,16)<last:
+            script.message('%s/%s' % (a.address,a.bitmask))
+            a = a.next
+
