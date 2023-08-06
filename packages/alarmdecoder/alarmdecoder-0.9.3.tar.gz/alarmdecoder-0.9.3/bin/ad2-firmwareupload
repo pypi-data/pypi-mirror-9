@@ -1,0 +1,61 @@
+#!/usr/bin/env python
+
+import sys, time
+import alarmdecoder
+
+def handle_firmware(stage):
+    if stage == alarmdecoder.util.Firmware.STAGE_START:
+        handle_firmware.wait_tick = 0
+        handle_firmware.upload_tick = 0
+    elif stage == alarmdecoder.util.Firmware.STAGE_WAITING:
+        if handle_firmware.wait_tick == 0:
+            sys.stdout.write('Waiting for device.')
+        handle_firmware.wait_tick += 1
+
+        sys.stdout.write('.')
+        sys.stdout.flush()
+    elif stage == alarmdecoder.util.Firmware.STAGE_BOOT:
+        if handle_firmware.wait_tick > 0: print ""
+        print "Rebooting device.."
+    elif stage == alarmdecoder.util.Firmware.STAGE_LOAD:
+        print 'Waiting for boot loader..'
+    elif stage == alarmdecoder.util.Firmware.STAGE_UPLOADING:
+        if handle_firmware.upload_tick == 0:
+            sys.stdout.write('Uploading firmware.')
+
+        handle_firmware.upload_tick += 1
+
+        if handle_firmware.upload_tick % 30 == 0:
+            sys.stdout.write('.')
+            sys.stdout.flush()
+    elif stage == alarmdecoder.util.Firmware.STAGE_DONE:
+        print "\r\nDone!"
+
+def main():
+    device = '/dev/ttyUSB0'
+    firmware = None
+    baudrate = 115200
+
+    if len(sys.argv) < 2:
+        print "Syntax: {0} <firmware> [interface] [baudrate]".format(sys.argv[0])
+        sys.exit(1)
+
+    firmware = sys.argv[1]
+    if len(sys.argv) > 2:
+        device = sys.argv[2]
+
+    if len(sys.argv) > 3:
+        baudrate = sys.argv[3]
+
+    print "Flashing device: {0} - {2} baud\r\nFirmware: {1}".format(device, firmware, baudrate)
+
+    dev = alarmdecoder.devices.SerialDevice(interface=device)
+    dev.open(baudrate=baudrate, no_reader_thread=True)
+
+    time.sleep(3)
+    alarmdecoder.util.Firmware.upload(dev, firmware, handle_firmware)
+
+    dev.close()
+
+if __name__ == "__main__":
+    main()
