@@ -1,0 +1,112 @@
+# -*- mode: makefile; coding: utf-8 -*-
+
+BUMPER := $(BINDIR)bump_version --scheme pep440
+VERSION_TXT := version.txt
+VERSION = $(shell cat $(VERSION_TXT))
+MANIFEST := manifest.json
+define MEDPRSTMT
+from pkg_resources import resource_filename as rfn;
+print(rfn('metapensiero.extjs.desktop',''))
+endef
+MEDSRC := $(shell $(PYTHON) -c "$(MEDPRSTMT)")
+PACKED_CSS := $(SOLSRC)/static/all-styles.css
+PACKED_JS := $(SOLSRC)/static/all-classes.js
+MINIFIER := $(BINDIR)minify_js_scripts \
+		--output-js $(PACKED_JS) \
+		--output-css $(PACKED_CSS) \
+		--prefix-map /static=$(SOLSRC)/static \
+		--prefix-map /desktop=$(MEDSRC)/assets \
+		--prefix-map SoL=$(SOLSRC)/static/app \
+		--prefix-map MP=$(MEDSRC)/assets/js \
+		--prefix-map Ext=$(MEDSRC)/assets/extjs/src \
+		--extjs-auto-deps \
+		--extjs-core-bundle $(MEDSRC)/assets/extjs/ext-dev.js \
+		$(MANIFEST)
+YUICOMPRESSOR := $(BINDIR)yuicompressor
+SOL_INIT = $(SOLSRC)/__init__.py
+
+.PHONY: bump-beta-version
+bump-beta-version:
+	$(BUMPER) --field pre $(VERSION_TXT)
+
+.PHONY: bump-minor-version
+bump-minor-version:
+	$(BUMPER) --field release --index 1 $(VERSION_TXT)
+
+.PHONY: bump-major-version
+bump-major-version:
+	$(BUMPER) --field release --index 0 $(VERSION_TXT)
+
+.PHONY: assert-clean-tree
+assert-clean-tree:
+	@(test -z "$(shell git status -s --untracked=no)" || \
+	  (echo "UNCOMMITTED STAFF" && false))
+
+.PHONY: assert-master-branch
+assert-master-branch:
+	@(test "$(shell git rev-parse --abbrev-ref HEAD)" = "master" || \
+	  (echo "NOT IN MASTER BRANCH" && false))
+
+.PHONY: beta-release
+beta-release: assert-master-branch assert-clean-tree
+	$(MAKE) bump-beta-version update-catalogs
+	@echo ">>>"
+	@echo ">>> Do your duties (update CHANGES.rst for example), then"
+	@echo ">>> execute “make tag-release”."
+	@echo ">>>"
+
+.PHONY: release
+release: assert-master-branch assert-clean-tree
+	$(MAKE) bump-minor-version update-catalogs
+	@echo ">>>"
+	@echo ">>> Do your duties (update CHANGES.rst for example), then"
+	@echo ">>> execute “make tag-release”."
+	@echo ">>>"
+
+.PHONY: major-release
+major-release: assert-master-branch assert-clean-tree
+	$(MAKE) bump-major-version update-catalogs
+	@echo ">>>"
+	@echo ">>> Do your duties (update CHANGES.rst for example), then"
+	@echo ">>> execute “make tag-release”."
+	@echo ">>>"
+
+.PHONY: tag-release
+tag-release: assert-master-branch requirements/versions.cfg test-readme+changes-markup
+	sed -i "s/__exact_version__ = '.*'/__exact_version__ = 'v$(VERSION)'/" $(SOL_INIT)
+	git commit -a -m "Release $(VERSION)"
+	git tag -a -m "Version $(VERSION)" v$(VERSION)
+
+requirements/versions.cfg: requirements/base.txt $(VERSION_TXT)
+	@echo "[versions]" > $@
+	@sed 's/==/ = /' $< >> $@
+	@echo 'SoL = $(VERSION)' >> $@
+
+.PHONY: dist
+dist: clean compile-catalogs manual minimize
+
+.PHONY: minimize
+minimize: $(SOLSRC)/static/ext.js
+	$(MINIFIER)
+
+$(SOLSRC)/static/ext.js: $(MEDSRC)/assets/extjs/ext-dev.js
+	$(YUICOMPRESSOR) $< -o $@
+
+.PHONY: test-readme+changes-markup
+test-readme+changes-markup:
+	@[ `(cat README.rst; echo; cat CHANGES.rst) \
+	    | rst2html.py 2>&1 >/dev/null \
+	    | wc -l` -eq 0 ] \
+	  || (echo "ERROR: README+CHANGES rst markup check failed!"; exit 1)
+	@fgrep -qi unreleased CHANGES.rst \
+	  && (echo "ERROR: release date not set in CHANGES.rst"; exit 1) \
+	  || true
+
+.PHONY: pypi-upload
+pypi-upload: assert-master-branch assert-clean-tree dist
+	$(PYTHON) setup.py sdist bdist_wheel upload
+
+.PHONY: publish
+publish: pypi-upload
+	git push
+	git push --tags
