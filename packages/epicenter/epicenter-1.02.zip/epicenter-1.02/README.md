@@ -1,0 +1,14 @@
+## Python Package for Forio Epicenter
+
+Forio's Epicenter Python Package ("epicenter.py") is used by the Forio
+Epicenter platform (http://www.forio.com/epicenter) to interact with
+Python models. The package contains functions for queueing variables to
+record them with the Epicenter Data API and for setting variables to
+values using the variable PATCH API. This package is not intended to
+provide any functionality outside of the Epicenter environment. It is
+provided only for local development of models that are planned to be
+uploaded to the Epicenter platform.
+
+Questions about the package can be answered by looking at the
+documentation (https://forio.com/epicenter/docs/public/) or by
+e-mailing the package author(s).
