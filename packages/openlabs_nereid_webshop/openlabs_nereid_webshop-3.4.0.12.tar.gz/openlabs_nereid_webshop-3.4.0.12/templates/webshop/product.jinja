@@ -1,0 +1,448 @@
+{% extends 'base.jinja' %}
+
+{% set node = node or product.nodes and product.nodes[0].node %}
+{% set cross_sells = product.cross_sells|selectattr("displayed_on_eshop")|list %}
+
+{% from '_helpers.jinja' import render_product %}
+
+{% block title %}{{ product.name }} {{ super() }}{% endblock title %}
+{% block meta_description %}{{ (product.description or '')|striptags|truncate(300) }}{% endblock %}
+
+{% block base_stylesheet %}
+  <link rel="stylesheet" type="text/css" href="{{ CDN }}{{ url_for('nereid.webshop.send_static_file', filename='css/lightbox.css') }}">
+  {{ super() }}
+{% endblock base_stylesheet %}
+
+{% block extra_head %}
+{{ super() }}
+<!-- og -->
+<meta property="og:url" content="{{ url_for('product.product.render', uri=product.uri, _external=True) }}"/>
+<meta property="og:title" content="{{ product.name  }}" />
+<meta property="og:description" content="{{ (product.description or '')|striptags|truncate(300) }}" />
+<meta property="og:type" content="product"/>
+<meta property="og:image" content="{{ CDN }}{{ product.default_image.transform_command().thumbnail(1500, 1500, 'a') }}"/>
+{% for code in product.codes %}
+{% if code.code_type == 'upc-a' %}
+<meta property="og:upc" content="{{ code.code }}"/>
+{% endif %}
+{% endfor %}
+{% endblock extra_head %}
+
+{% block breadcrumb %}
+{{ super() }}
+{% if node %}
+  {% for url, title in make_tree_crumbs(node=node, add_home=False)[1:] %}
+    {{ render_breadcrumb_item(title, url) }}
+  {% endfor %}
+{% endif %}
+{{ render_breadcrumb_item(product.name, product.get_absolute_url()) }}
+{% endblock breadcrumb %}
+
+{% block main %}
+<!-- Product Section starts -->
+<div class="container" itemscope itemtype="http://data-vocabulary.org/Product">
+  {% if node %}
+  <meta itemprop="category" content="{{ node.rec_name.replace('/', '>')}}"/>
+  {% endif %}
+
+  <!--Product-main section-->
+  {% block product_top %}
+  <div class="row">
+
+    {% block product_image_gallery %}
+    <div class="col-md-5 col-sm-4 col-xs-12">
+      <div class="col-md-12 product-img-gallery">
+        <div class="tab-content" id="pane-tab">
+          {% if product.get_images() %}
+          {% for image in product.get_images() %}
+          <div class="tab-pane {% if loop.first %}active{% endif %}" id="tab{{ loop.index }}">
+            <div class="zoom-container">
+              <a id="zoom-target" href="{{ image.url }}" data-lightbox="{{ product.id }}" >
+                <img class="zoom-image" src="{{ image.transform_command().thumbnail(500, 500, 'a') }}"/>
+              </a>
+            </div>
+          </div>
+          {% endfor %}
+          {% else %}
+          <img class="img img-responsive margin-auto"
+              src="{{ CDN }}{{ product.default_image.transform_command().thumbnail(400, 400, 'a') }}"
+              alt="{{ product.name }}" title="{{ product.name }}"/>
+          {% endif %}
+        </div>
+      </div>
+      <div class="col-md-12 related-products">
+        <ul class="list-inline" id="list-tab">
+          {% for image in product.get_images() %}
+          <li class="{% if loop.first %}active{% endif %} sub-products">
+            <a href="#tab{{ loop.index }}" data-toggle="tab">
+              <img src="{{ image.transform_command().thumbnail(120, 120, 'a') }}" />
+            </a>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+    {% endblock product_image_gallery %}
+
+    {% block product_info %}
+    <div class="col-md-4 col-sm-5 col-xs-12">
+
+      {% block product_name_price %}
+      <h3 class="product-heading product-name product-item-name">
+        <span itemprop="name" class="heading-500">{{ product.name }}</span>
+      </h3>
+      {% if product.code %}
+      <h4>
+        <small class="product-code" itemprop="identifier" content="sku:{{ product.code }}">{{ product.code }}</small>
+      </h4>
+      {% endif %}
+      {% endblock product_name_price %}
+      {% block product_description %}
+      <!--Product Description -->
+      <div class="row">
+        <div class="col-md-12 product-desc">
+          <p itemprop="description">{{ product.get_description() }}</p>
+        </div>
+      </div>
+      {% endblock product_description %}
+      <span class="text-warning" style="display:none" id="product-not-available">
+        <i class="fa fa-warning"></i> {{ _('This product is not available') }}
+      </span>
+    </div>
+    <div class="col-md-3 col-sm-3 col-xs-12">
+      <div class="buy-box">
+        <div itemprop="offerDetails" itemscope itemtype="http://data-vocabulary.org/Offer">
+          <meta itemprop="priceCurrency" content="{{ request.nereid_currency.code }}" />
+          {% set sale_price = product.sale_price(1) %}
+          {% if sale_price < product.list_price %}
+          <h4 class="product-price heading-500">
+            <span class="not">{{ product.list_price|currencyformat(request.nereid_currency.code) }}</span>
+            <span itemprop="price">{{ sale_price|currencyformat(request.nereid_currency.code) }}</span>
+          </h4>
+          {% else %}
+          <h4 class="product-price product-list-price" itemprop="price">{{ sale_price|currencyformat(request.nereid_currency.code) }}</h4>
+          {% endif %}
+          {% if product.template.get_product_variation_data %}
+            <div class="row" id="product-varying-attrs"></div>
+          {% else %}
+            {% if product.template.products_displayed_on_eshop|length > 1 %}
+            {# show if there are more variants than the one being displayed #}
+            <div class="product-size row"> Select Variation : <br>
+              <div class="size-buttons">
+                {% for variant in product.template.products_displayed_on_eshop %}
+                <a class="btn btn-size"
+                  href="{{ url_for('product.product.render', uri=variant.uri) }}"
+                  type="radio" value="{{ variant.id }}">{{ variant.code }}</a>
+                {% endfor %}
+              </div>
+              <span class="error-text text-danger"> Please select an option</span>
+            </div>
+            {% endif %}
+          {% endif %}
+        </div>
+        {% block buy_buttons %}
+        <div class="row">
+          {% if product.salable %}
+          <div class="col-md-12 col-sm-12 col-xs-12 buy-now">
+            <form action="{{ url_for("nereid.cart.add_to_cart") }}" method="post" id="product-buy-now" class="add-to-cart" autocomplete="off" data-ga-event-label="Add To Cart" data-ga-product-name="{{ product.name }}" data-ga-product-category="{{ product.category and product.category.name or None }}" data-ga-product-price="{{ product.sale_price()|currencyformat(request.nereid_currency.code) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+              <input type="hidden" name="quantity" value="1"/>
+              <input type="hidden" name="size" id="size-id"/>
+              <input type="hidden" name="product" value="{{ product.id }}"/>
+              <input type="hidden" name="action" value="add"/>
+              <button class="btn btn-primary btn-buynow btn-block btn-lg" type="submit" quantity="1" id="buy-now-btn">Buy Now</button>
+            </form>
+          </div>
+          {% else %}
+          <div style="padding-top:15px;">
+            <span class="text-danger" id="product-not-for-sale"><i class="fa fa-warning"></i>This product is not for sale</span>
+          </div>
+          {% endif %}
+        </div>
+        <hr/>
+        {% endblock buy_buttons %}
+
+        {% block add_to_wishlist %}
+        {% if current_user.is_authenticated() %}
+        <div class="row">
+          <div class="col-md-12 col-sm-12 col-xs-12 center" id="add-to-wishlist">
+            <form method="post" action="{{ url_for('wishlist.wishlist.wishlist_product') }}" 
+            autocomplete="off" style="display:inline-block">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+              <input type="hidden" name="action" value="add"/>
+              <input type="hidden" name="product" value="{{ product.id }}" />
+              <div class="btn-group btn-block ">
+                <button type="submit" class="btn btn-link wishlist_button_nopop">Add To Wishlist</button>
+
+                {% if current_user.wishlists|length > 0 %}
+                <button type="button" class="btn btn-link dropdown-toggle" data-toggle="dropdown" id="wishlist-dropdown">
+                  <i class="fa fa-angle-down"></i>
+                  <span class="sr-only">Toggle Dropdown</span>
+                </button>
+                {# Drop down for add to wishlist #}
+                <ul class="dropdown-menu" role="menu" aria-labelledby="wishlist-dropdown">
+                  {% for wishlist in current_user.wishlists %}
+                  <li name="wishlist" value="{{ wishlist.id }}" class="center">{{ wishlist.name|title }}</li>
+                  {% endfor %}
+                </ul>
+                {% endif %}
+              </div>
+            </form>
+          </div>
+        </div>
+        <hr/>
+        {% endif %}
+        {% endblock add_to_wishlist %}
+      </div>
+      {% block social_sharing %}
+      <div class="row">
+        <div class="col-md-12 col-sm-12 col-xs-12 margin-top-15">
+          <iframe src="//www.facebook.com/plugins/like.php?href={{ request.url }}&amp;width=100&amp;layout=button_count&amp;action=like&amp;show_faces=true&amp;share=false&amp;height=21" scrolling="no" frameborder="0" class="social-share-size fb-share" allowTransparency="true"></iframe>
+
+          <iframe id="twitter-widget-0" scrolling="no" frameborder="0" allowtransparency="true" src="https://platform.twitter.com/widgets/tweet_button.1409790579.html#_=1410386437422&amp;count=horizontal&amp;id=twitter-widget-0&amp;lang=en&amp;original_referer={{ request.url }}&amp;size=m&amp;text={{ product.name }}&amp;url={{ request.url }}&amp;via=lienielsen" class="twitter-share-button twitter-tweet-button twitter-share-button twitter-count-horizontal social-share-size" title="Twitter Tweet Button" data-twttr-rendered="true"></iframe>
+
+          <iframe frameborder="0" hspace="0" marginheight="0" marginwidth="0" scrolling="no" class="social-share-size g-plus-share" tabindex="0" vspace="0" width="100%" id="I0_1410386437914" name="I0_1410386437914" src="https://apis.google.com/u/0/se/0/_/+1/fastbutton?usegapi=1&amp;size=medium&amp;origin={{ url_for('nereid.website.home') }}&amp;url={{ request.url }}&amp;gsrc=3p&amp;ic=1&amp;jsh=m%3B%2F_%2Fscs%2Fapps-static%2F_%2Fjs%2Fk%3Doz.gapi.en_GB.bOMtuFSNe94.O%2Fm%3D__features__%2Fam%3DAQ%2Frt%3Dj%2Fd%3D1%2Ft%3Dzcms%2Frs%3DAItRSTOujc8SYAzCQeCkyBpa4IGrtBYRdA#_methods=onPlusOne%2C_ready%2C_close%2C_open%2C_resizeMe%2C_renderstart%2Concircled%2Cdrefresh%2Cerefresh%2Conload&amp;id=I0_1410386437914&amp;parent={{ url_for('nereid.website.home') }}&amp;pfname=&amp;rpctoken=39349999" data-gapiattached="true" title="+1"></iframe>
+
+        </div>
+      </div>
+      {% endblock social_sharing %}
+
+    {% endblock product_info %}
+    </div>
+
+  </div><!-- END row -->
+  {% endblock product_top %}
+
+  <hr/>
+
+  {% block product_bottom %}
+
+  {% block related_products %}
+  <!-- Related Products -->
+  <div class="{% if cross_sells %} col-md-5 col-sm-5 {% else %} hidden {% endif %} related-prod">
+    {# heading for column #}
+    <h4>Related Items</h4>
+
+    {% for related_product in cross_sells %}
+    <div class="row related-product-row">
+      <div class="col-md-3">
+        <a class="media-left" href="{{ related_product.get_absolute_url() }}" ga-product-link data-ga-product-list="Related Products" data-ga-event-label="Product Thumbnail" data-ga-product-id="{{ related_product.id }}" data-ga-product-name="{{ related_product.name }}" data-ga-product-category="{{ related_product.category and related_product.category.name or None }}">
+          <img src="{{ CDN }}{{ related_product.default_image.transform_command().thumbnail(100, 100, 'a') }}" class="img" alt="{{ related_product.name }}">
+        </a>
+      </div>
+      <div class="col-md-9">
+        <h5 class="media-heading">
+          <a href="{{ related_product.get_absolute_url() }}" ga-product-link data-ga-product-list="Related Products" data-ga-event-label="Product Name" data-ga-product-id="{{ related_product.id }}" data-ga-product-name="{{ related_product.name }}" data-ga-product-category="{{ related_product.category and related_product.category.name or None }}">
+            {{ related_product.name }}
+          </a>
+        </h5>
+        <span class="text-muted related-cost">
+          <strong>{{ related_product.sale_price(1)|currencyformat(request.nereid_currency.code) }}</strong>
+        </span>
+        <div class="row">
+          <span class="col-md-12">
+          {% if related_product.salable %}
+            {% if related_product.is_gift_card %}
+                <a class="btn btn-related-item-add-cart" href="{{ related_product.get_absolute_url() }}">Add to Cart</a>
+            {% else %}
+                <form action="{{ url_for("nereid.cart.add_to_cart") }}" method="post" id="product-buy-now" autocomplete="off" class="form-related-inline add-to-cart" data-ga-event-label="Add To Cart Related Product" data-ga-product-name="{{ related_product.name }}" data-ga-product-category="{{ related_product.category and related_product.category.name or None }}" data-ga-product-price="{{ related_product.sale_price()|currencyformat(request.nereid_currency.code) }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                  <input type="hidden" name="quantity" value="1"/>
+                  <input type="hidden" name="size" id="size-id"/>
+                  <input type="hidden" name="product" value="{{ related_product.id }}"/>
+                  <input type="hidden" name="action" value="add"/>
+                  <button class="btn btn-related-item-add-cart" type="submit" quantity="1" id="buy-now-btn">Add to Cart</button>
+                </form>
+            {% endif %}
+          {% else %}
+            <span class="text-danger" id="product-not-for-sale"><i class="fa fa-warning"></i>This product is not for sale</span>
+          {% endif %}
+          </span>
+        </div>
+      </div>
+    </div>
+    <hr/>
+    {% endfor %}
+  </div>
+  {% endblock related_products %}
+
+  {% endblock product_bottom %}
+
+</div>
+{% endblock main %}
+
+{% block script_tags %}
+  {{ super() }}
+  <script src="{{ CDN }}{{ url_for('nereid.webshop.send_static_file', filename='js/lightbox.js') }}"></script>
+{% endblock script_tags %}
+
+{# all this is valid only if nereid-catalog-variants module is installed #}
+{% block scripts %}
+{{ super() }}
+{% if product.template.get_product_variation_data %}
+<script type="text/html"  id='product-varying-attrs-tpl'>
+  <div class="col-md-12">
+    <% _.each(attrs, function(attr, index) { %>
+      <% if (attr.widget == 'dropdown') { %>
+        <div class="form-group"> Select <%= attr.display_name %>: <br/>
+          <select class="form-control select-sort attribute input-lg" data-attr-id="<%= attr.attribute_id %>">
+            <% _.each(attr.options, function(option, index) { %>
+            <option value="<%= _.escape(option[0]) %>" <% if (option[0] == currentVariantAttrs[attr.id]) { %> selected <% } %> ><%= _.escape(option[1]) %></option>
+            <% }); %>
+          </select>
+        </div>
+      <% } %>
+    <% }); %>
+  </div>
+</script>
+
+<script type="text/html" id="tab-pane-images">
+  <%
+    _.each(variant.image_urls, function(url_collection, index) {
+  %>
+    <div class="tab-pane <% if (index == 0) { %> active <% } %>" id="tab<%= index %>">
+      <div class="zoom-container">
+        <a id="zoom-target" href="<%- url_collection.regular %>" data-lightbox="<%= variant.id %>" >
+          <img class="zoom-image" src="<%- url_collection.large %>" alt="<%= variant.rec_name %>" />
+        </a>
+      </div>
+    </div>
+  <%
+    });
+  %>
+</script>
+
+<script type="text/html" id="tab-list-images">
+  <%
+    _.each(variant.image_urls, function(url_collection, index) {
+  %>
+    <li class="<% if (index == 0) { %> active <% } %>">
+      <a href="#tab<%= index %>" data-toggle="tab">
+        <img src="<%- url_collection.thumbnail %>" alt="<%= variant.rec_name %>" />
+      </a>
+    </li>
+  <%
+    });
+  %>
+</script>
+
+<script type="text/javascript">
+  $(document).ready(function() {
+
+    var productObj = {{ product.template.get_product_variation_data()|safe }};
+
+    var currentVariantId = {{ product.id }}; // on page load this is the product ID
+
+    /*
+       Return the variant information given a product variant ID
+    */
+    var getVariantInfo = function(variantId) {
+      return _.find(productObj['variants'], function(product) {
+        return (product.id == variantId) ;
+      });
+    };
+
+    var currentVariant = getVariantInfo(currentVariantId);
+
+    /*
+       Find a variant from the list which matches the attributes
+       selected. If there is none then return null
+    */
+    var findVariantMatching = function(attributeSelection) {
+      return _.find(productObj['variants'], function(product) {
+        return _.isEqual(product.attributes, attributeSelection)
+      });
+    };
+
+    /*
+       called when an attribute changes. Based on the selected attributes,
+       it tries to identify the product. If it does, then it returns the
+       id of that product
+    */
+    var onChangeAttribute = function() {
+      var attributeSelection = _.reduce(
+        $(".attribute"),  // Selector for the attribute fields.
+        function(memo, attrEl) {
+          // Append the attribute name and value to the map
+          memo[attrEl.getAttribute('data-attr-id')] = attrEl.value;
+          return memo;
+        },
+        {} // Initial empty attribute set
+      );
+
+      // Find a product which matches the attributes
+      product = findVariantMatching(attributeSelection);
+
+      if (product) {
+        // Set this product's assets as the current product
+        $('#product-not-available').hide();
+        $('#buy-now-btn').removeAttr('disabled');
+        $('.product-price').show();
+        $('.product-code').text(product.code);
+        $('.product-price').text(product.price);
+
+        // Set only, no removals
+        $('.product-name').text(product.name);
+        // Set the correct product in all input field
+        $('input[name="product"]').val(product.id);
+
+        // Set the images
+        var tab_pane_template = $("#tab-pane-images").html();
+        $('#pane-tab').html(_.template(tab_pane_template,
+          {'variant': product}
+        ));
+        var tab_list_template = $("#tab-list-images").html();
+        $('#list-tab').html(_.template(tab_list_template,
+          {'variant': product}
+        ));
+
+      } else {
+        // Display that the product is not available
+        $('#product-not-available').show();
+        $('#buy-now-btn').attr('disabled', 'disabled');
+        $('.product-price').hide();
+        $('.product-code').text('');
+      }
+    };
+
+    /* Use _ templates to render the attribute options
+       Same thing could have been done in jinja but at the
+       cost of server time ;)
+       */
+    $("#product-varying-attrs").html(_.template(
+      $("#product-varying-attrs-tpl").html(), {
+        'attrs': productObj.variation_attributes,
+        'currentVariantAttrs': getVariantInfo({{ product.id }}).attributes
+      }
+    ));
+
+    $('.attribute').change(onChangeAttribute);
+  });
+</script>
+{% endif %}
+<script type="text/javascript">
+  $(document).ready(function() {
+    $('#add-to-wishlist .dropdown-menu li').on('click', function(){
+      var wishlist_id = $(this).val();
+      var product_id = {{ product.id }};
+      var data = {'wishlist': wishlist_id, 'product': product_id, 'action': "add"}
+      console.log(data);
+      $.ajax({
+        type: "POST",
+        url: "{{ url_for('wishlist.wishlist.wishlist_product') }}",
+        data: data,
+      }).done(function(){
+        $(location).attr('href',"{{ url_for('wishlist.wishlist.render_wishlists', _external=True) }}");
+      });
+    });
+  });
+</script>
+
+{% endblock scripts %}
+
+
+{% block ga_page_view %}
+    // 1. Send product and impression data with pageview.
+    ga('ec:addProduct', {{ product.ga_product_data()|tojson|safe }});
+    ga('ec:setAction', 'detail');
+{% endblock ga_page_view %}
