@@ -1,0 +1,10 @@
+__version__ = "0.1.9"
+__git_commiter_name__ = "Guy Rozendorn"
+__git_commiter_email__ = "guy@rzn.co.il"
+__git_branch__ = '(detached from v0.1.9)'
+__git_remote_tracking_branch__ = '(No remote tracking)'
+__git_remote_url__ = '(Not remote tracking)'
+__git_head_hash__ = '05d38eb42963685d0514668361fe7e7f78db27d8'
+__git_head_subject__ = 'Finished release v0.1.9.'
+__git_head_message__ = '* release/v0.1.9:\n  Python 3 compatibility\n  STORAGEMODEL-321 removing assertion\n  TRIVIAL fixing host_reset'
+__git_dirty_diff__ = ''
