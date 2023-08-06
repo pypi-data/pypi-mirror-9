@@ -1,0 +1,222 @@
+#!/usr/bin/env python
+
+__appname__ = "pysub-dl"
+__version__ = "0.3.0"
+__author__ = "iamsudip <iamsudip@programmer.net>"
+__license__ = "MIT"
+
+import argparse
+import sys
+from HTMLParser import HTMLParser
+import requests
+from BeautifulSoup import BeautifulSoup
+from download_it import download_file
+from prompt_user import prompt1, prompt2
+
+data = {}           # Dictionary to keep all data including links and name of the subtitle.
+movie_list = {}     # Dictionary to keep all movie names and corresponding urls in case of wrong movie input.
+temp = {}           # Temporary dictionary to parse movie_list url correctly
+
+def alternate_search_choice_handler(choice):
+    ''' Alternate searches user input handler which calls the function to search subtitle for selected movie.
+
+       :kwarg choice: The choice which user returned after alternate movie selection.
+
+    '''
+    try:
+        search_sub(movie_list[temp[int(choice)]])
+        choice = prompt1()
+        handle_choice(choice)
+    except (KeyError, ValueError) as errors:
+        alternate_search_choice_handler(prompt2())
+
+
+def handle_choice(choice):
+    ''' Error handling due to wrong user input.
+
+       :kwarg choice: It holds the user choice sent by various calling funtions.
+
+        If no error occurs it calls the function scrap the download page according to user choice.
+
+    '''
+    try:
+        down_link(data[int(choice)])
+    except (KeyError, ValueError) as errors:
+        print "Use the index number respective to your desired subtitle. You entered wrong choice."
+        choice = prompt1()
+        handle_choice(choice)
+
+
+def alternate_search():
+    ''' Prints a list for probable movie names corresponding to the movie name input in case of movie name mismatch.
+
+    '''
+    url = 'http://subscene.com/subtitles/title.aspx?q={movie}'.format(
+            movie=args.movie)
+    response = requests.get(url)
+    soup = BeautifulSoup(response.text)
+    del response
+    parser = HTMLParser()
+    for popular in soup.findAll('div', attrs={'class' : 'title'}):
+        for link in popular.findAll('a'):
+            movie_list[parser.unescape(link.text)] = 'http://subscene.com' + \
+                    link.get('href') + '/' + args.language
+    for num, key in enumerate(movie_list.keys()):
+        print "{counter}. {key}".format(counter=num+1, key=key)
+        temp[num+1] = key
+    alternate_search_choice_handler(prompt2())
+
+
+def down_link(link):
+    ''' Downloads the subtitle & prompts if it is ok or not.
+
+       :kwarg link: It holds the download page link of a particular subtitle.
+
+    '''
+    response = requests.get(link)
+    soup = BeautifulSoup(response.text)
+    del response
+    for subs in soup.findAll('div', attrs={'class' : 'download'}):
+        for link in subs.findAll('a'):
+            user_response = download_file('http://subscene.com' + link.get('href'))
+    if 'y' in user_response:
+        print "Cool. Enjoy the movie!"
+        sys.exit(0)
+    else:
+        print "Choose another one subtitle"
+        choice = prompt1()
+        handle_choice(choice)
+
+
+def make_link(movie_name, language=None):
+    ''' Returns url which contains all subtitles of a particular movie.
+
+       :kwarg movie_name: The user input for the movie name. Valid values are:
+        * "movie name": The movie name inside double quote.
+                        As one can see user can use blank space inside quotes.
+                        It is very preferable way to use. One can write whatever he/she wants inside double quotes.
+
+        * movie-name: If the movie name do not contains any special character,
+                      one can also use this type of input, but here is a restriction
+                      that user can not use blank spacehere. They should use hyphen(-) instead of blank spaces.
+
+       :kwarg language: The user input for his/her choice of subtitle language. Valid values are:
+        * Arabic
+        * Brazillian-Portuguese
+        * Danish
+        * Dutch
+        * English
+        * Farsi_Persian
+        * French
+        * Indonesian
+        * Italian
+        * Norwegian
+        * Spanish
+        * Swedish
+        * Vietnamese
+                         Other valid values are in alphabatical order:
+        * Albanian
+        * Azerbaijani
+        * Bengali
+        * Big_5_code
+        * Bosnian
+        * Bulgarian
+        * Bulgarian-English
+        * Burmese
+        * Catalan
+        * Chinese_BG_code
+        * Croatian
+        * Czech
+        * Dutch-English
+        * English-German
+        * Esperanto
+        * Estonian
+        * Finnish
+        * German
+        * Greek
+        * Greenlandic
+        * Hebrew
+        * Hindi
+        * Hungarian
+        * Hungarian_English
+        * Icelandic
+        * Japanese
+        * Korean
+        * Kurdish
+        * Latvian
+        * Lithuanian
+        * Macedonian
+        * Malay
+        * Polish
+        * Portuguese
+        * Romanian
+        * Russian
+        * Serbian
+        * Sinhala
+        * Slovak
+        * Slovenian
+        * Tagalog
+        * Tamil
+        * Thai
+        * Turkish
+        * Ukranian
+        * Urdu
+
+        If language input is ok then it returns the url to use the user provided language all over the program.
+        If any error occurs i. e.
+        * user made a wrong spelling of the language
+          or
+        * subtitle in desired language is not available, then it returns the url using the movie name only.
+
+    '''
+    link = 'http://subscene.com/subtitles/{movie}/{language}'.format(
+            movie=movie_name, language=language)
+    response = requests.head(link)
+    if response.status_code == 200:
+        return link
+    else:
+        print "Wrong input, fixing things hang tight"
+        return 'http://subscene.com/subtitles/{movie}/'.format(
+                movie=movie_name)
+
+
+def search_sub(link):
+    ''' After searching shows the subtitle list.
+
+       :kwarg link: It holds the url sent by calling funtion.
+
+    '''
+    response = requests.get(link)
+    if not response.status_code == 200:
+        print "Sorry! Please choose movie name from the list and enter the corresponding index number."
+        alternate_search()
+    soup = BeautifulSoup(response.text)
+    del response
+    for num, subs in enumerate(soup.findAll('td', attrs={'class' : 'a1'})):
+        for link in subs.findAll('a'):
+            data[num+1] = 'http://subscene.com' + link.get('href')
+    print "List of subtitles available at subscene.com"
+    for num, subs in enumerate(soup.findAll('td', attrs={'class' : 'a1'})):
+        print "{counter}. Language:".format(counter=num+1),
+        for movie_name in subs.findAll('span'):
+            print "{width}{movie}".format(width=' '*4, movie=movie_name.text)
+
+
+if __name__ == '__main__':
+
+    parser = argparse.ArgumentParser(description = 'Searches and downloads subtitle for your movie')
+    parser.add_argument("movie", type = str,
+                    help = "Name of the movie")
+    parser.add_argument("language", type = str, nargs='?',
+                    default='', help = "Subtitle language")
+    args = parser.parse_args()
+
+    try:
+        link = make_link(args.movie, args.language)
+        search_sub(link)
+        choice = prompt1()
+        handle_choice(choice)
+    except (KeyboardInterrupt, EOFError) as errors:
+        print '\nExit'
+        sys.exit(0)
+
