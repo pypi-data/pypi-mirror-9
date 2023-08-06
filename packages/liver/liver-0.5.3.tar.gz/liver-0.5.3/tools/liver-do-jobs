@@ -1,0 +1,505 @@
+#!/usr/bin/python
+# -*- coding:utf-8 -*-
+
+# Maintainer: Pablo Saavedra
+# Contact: pablo.saavedra@interoud.com
+
+import os
+import sys
+import StringIO
+
+reload(sys)
+sys.setdefaultencoding('utf-8')
+
+import struct
+import socket
+import signal
+
+from httplib2 import Http
+from urllib import urlencode
+from optparse import OptionParser
+from slugify import slugify
+from threading import Thread
+import ConfigParser
+import simplejson as json
+import subprocess
+import time
+import random
+
+class file_writer(Thread):
+
+    def __init__ (self,filename, logger):
+        Thread.__init__(self)
+        self.f = open(filename,"w+b")
+        self.filename = filename
+        self.buffer_ = []
+        self.stopped = False
+        self.logger = logger
+
+    def run(self):
+        current_time = time.time()
+        while not self.stopped:
+            buffer_length = len(self.buffer_)
+            if current_time + 60 < time.time() and buffer_length > 250:
+                current_time = time.time()
+                m = "%s elements on buffer_length in file_writer (%s)" \
+                    % (buffer_length,self.filename)
+                self.logger.debug(m)
+            if buffer_length > 1000:
+                m = "Resetting buffer in file_writer (%s)" % self.filename
+                self.logger.error(m)
+                self.buffer_ = []
+            if buffer_length < 10:
+                time.sleep(0.6)
+            if buffer_length > 5:
+                try:
+                    data=self.buffer_[0]
+                    self.buffer_.__delitem__(0)
+                    self.f.write(data)
+                    self.f.flush()
+                except Exception, e:
+                    m = "Exception in file_writer run function: %s" % str(e)
+                    self.logger.error(m)
+
+    def stop(self):
+        try:
+            self.f.close()
+        except Exception:
+            pass
+
+
+def udp_record(group,port,duration,filename):
+    duration = float(duration)
+    port = int(port)
+    current_time=time.time()
+    init_time = current_time
+    sockettimeout = 30
+    stopped = False
+    udp_timeout_reached = True
+    
+    # Look up multicast group address in name server and find out IP version
+    addrinfo = socket.getaddrinfo(group, None)[0]
+
+    # Create a socket
+    s = socket.socket(addrinfo[0], socket.SOCK_DGRAM)
+    # Allow multiple copies of this program on one machine
+    # (not strictly needed)
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    # Bind it to the ip:port
+    s.bind((group, port))
+    # Timeout
+    s.settimeout(sockettimeout)
+    m = "Socket timeout: " + str(s.gettimeout())
+    logger.debug(m)
+    # # print s.getsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF)
+    # s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 507904)
+    # # print s.getsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF)
+    # m = "Socket SO_RCVBUF: " + str(s.getsockopt(socket.SOL_SOCKET,socket.SO_RCVBUF))
+    # logger.debug(m)
+
+    group_bin = socket.inet_pton(addrinfo[0], addrinfo[4][0])
+    # Join group
+    if addrinfo[0] == socket.AF_INET: # IPv4
+        mreq = group_bin + struct.pack('=I', socket.INADDR_ANY)
+        s.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+    else:
+        mreq = group_bin + struct.pack('@I', 0)
+        s.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_JOIN_GROUP, mreq)
+
+    t_file_writer = file_writer(filename, logger)
+    t_file_writer.start()
+    errors = 0
+    while not stopped or errors > 10:
+        current_time=time.time()
+        if current_time > init_time + duration:
+            stopped = True
+            t_file_writer.stopped = True
+        try:
+            data, sender = s.recvfrom(128 * 1024 * 8)
+            try:
+                t_file_writer.buffer_.append(data)
+                errors = 0 # Errors is set to 0. Count reinitialized
+            except socket.timeout:
+                m = "Source is off"
+                logger.error(m)
+                errors += 1
+        except Exception, e:
+            m = "Exception occurred: %s" % str(e)
+            logger.error(m)
+            errors += 1
+
+    t.join()
+
+
+def get_http_requester():
+    try:
+        h = Http(timeout=10)
+    except Exception:
+        h = Http()
+    return h
+
+DEV_NULL='/dev/null'
+
+avconv_path="/usr/bin/"
+qtfaststart_path="/usr/bin/"
+hostname = "localhost"
+port = "80"
+storage_base_dir = "/storage/videos"
+tmp_base_dir = "/liver"
+token = "token"
+ssl = False
+logfile = "/dev/stdout"
+loglevel = 20
+
+# command line options parser ##################################################
+
+parser = OptionParser()
+parser.add_option("--qtfaststartpath", 
+        dest="qtfaststart_path", default=qtfaststart_path,
+        help="qtfaststart path (default: %s)" % qtfaststart_path)
+parser.add_option("--avconvpath", 
+        dest="avconv_path", default=avconv_path,
+        help="avconv path (default: %s)" % avconv_path)
+parser.add_option("-H", "--hostname", 
+        dest="hostname", default=hostname,
+        help="LiveR hostname (default: %s)" % hostname)
+parser.add_option("-P", "--port", 
+        dest="port", help="LiveR port number (default: %s)" % port, 
+        default=port)
+parser.add_option("-l", "--logfile",
+        dest="logfile", help="Log file (default: %s)" % logfile,
+        default=logfile)
+parser.add_option("--loglevel",
+        dest="loglevel", help="Log level (default: %s)" % loglevel,
+        default=loglevel)
+parser.add_option("-t", "--token",
+        dest="token", help="Token for LiveR access (default: %s)" % token,
+        default=token)
+parser.add_option("--tmpbasedir", 
+        dest="tmp_base_dir", help="Temporary basedir (default: %s)" % tmp_base_dir,
+        default=tmp_base_dir)
+parser.add_option("--storagebasedir", 
+        dest="storage_base_dir", help="Storage basedir (default: %s)" % storage_base_dir,
+        default=storage_base_dir)
+parser.add_option("--ssl", 
+        dest="ssl", help="SSL ON/OFF (default: %s)" % ssl,
+        action="store_true",
+        default=ssl)
+(options, args) = parser.parse_args()
+
+avconv_path = options.avconv_path
+qtfaststart_path = options.qtfaststart_path
+hostname = options.hostname
+print hostname
+port = options.port
+storage_base_dir = os.path.abspath(options.storage_base_dir)
+tmp_base_dir = os.path.abspath(options.tmp_base_dir)
+token = options.token
+ssl = options.ssl
+logfile = options.logfile
+loglevel = options.loglevel
+
+
+# classes ######################################################################
+
+class avconvRunner(Thread):
+
+    def __init__ (self,ffmpeg_params):
+        Thread.__init__(self)
+        self.name = ffmpeg_params["name"]
+        self.ffmpeg = None
+        self.ffmpeg_params = ffmpeg_params
+
+    def run (self):
+        # /libav/bin/avconv -y -i udp://239.1.140.100:6123 -t 120  -codec copy  -bsf:a aac_adtstoasc    -map 0 /wowza/content/p99_aux.mp4 
+        # /libav/bin/avconv -y -ss 3 -i p99_aux.mp4 -codec copy -map 0 /wowza/content/p99.mp4
+
+        wait_time = float(self.ffmpeg_params["job_start"]) - time.time()
+        wait_time = wait_time - 60 #XXX We do a offset +60s in avconv in order to find a key frame
+        if wait_time > 0:
+            logger.info("Waiting for the job start (%s) %s seconds"
+                % (wait_time,self.ffmpeg_params["job_start"]))
+            time.sleep(wait_time) # waiting for the job start time
+
+        try:
+             logger.info("Starting the TS UDP recording step 1/5 for %s stream: %s" \
+                 % (self.name,self.ffmpeg_params))
+             group = self.ffmpeg_params["uri"].split("//")[1].split(":")[0]
+             port = self.ffmpeg_params["uri"].split("//")[1].split(":")[1]
+             duration = float(self.ffmpeg_params["duration"]) + 60 # record margin
+             udp_record(group,port,duration, "%(tmp)s.ts" % self.ffmpeg_params)
+             time.sleep(5)
+        except Exception, e:
+             logger.error("Unexpected error: %s" % e)
+
+        time.sleep(random.randrange(0,10))
+        lock_file = "%(lock_file)s" % self.ffmpeg_params
+        print_waiting_msg_in_log=True
+        while os.path.exists(lock_file):
+            if print_waiting_msg_in_log:
+                logger.info("Waiting for no lock_file in the filesystem for %s stream" \
+                   % (self.name))
+                print_waiting_msg_in_log = False
+            time.sleep(random.randrange(50,70))
+
+        try:
+            f = open(lock_file, 'a')
+            f.flush()
+            os.fsync(f)
+            f.close()
+            logger.info("Created %s file for %s stream" \
+                 % (lock_file,self.name))
+        except Exception, e:
+             logger.error("Error creating %s file: %s" % (lock_file,e))
+
+        logger.info("Starting avconv (to MP4) step 2/5 for %s stream: %s" \
+                % (self.name,self.ffmpeg_params))
+
+        # workoutput_log_file = open("%(destination)s.log" % self.ffmpeg_params, "a")
+        workoutput_log_file = open(DEV_NULL, "a")
+        cmd = "ionice -c 3 %(avconv_path)s/avconv -v error -y -i %(tmp)s.ts -codec copy -bsf:a aac_adtstoasc -map 0 -f mp4 %(tmp)s.tmp" % self.ffmpeg_params
+        logger.debug("cmd: %s" % cmd)
+        workoutput_log_file.write("cmd: %s\n" % cmd)
+        self.udp_cat = subprocess.Popen(cmd.split(), shell=False, bufsize=1024,
+                stdin=subprocess.PIPE, stdout=workoutput_log_file,
+                stderr=workoutput_log_file, close_fds=True)
+        p = self.udp_cat
+        logger.info("Launched avconv for %s stream (%s)" \
+                % (self.name,str(p.pid)))
+        p.wait()
+        logger.info("Ending avconv for %s stream (%s)"
+                % (self.name,str(p.pid)))
+        workoutput_log_file.write("result: %s\n" % p.returncode)
+
+        logger.info("Starting avconv (offset) step 3/5 for %s stream: %s" \
+                % (self.name,self.ffmpeg_params))
+
+        time.sleep(5)
+        cmd = "ionice -c 3 %(avconv_path)s/avconv -y -ss 60 -i %(tmp)s.tmp -t %(duration)s -codec copy  -map 0 %(tmp)s.mp4" % self.ffmpeg_params
+        logger.debug("cmd: %s" % cmd)
+        workoutput_log_file.write("cmd: %s\n" % cmd)
+        self.ffmpeg = subprocess.Popen(cmd.split(), shell=False, bufsize=1024,
+                stdin=subprocess.PIPE, stdout=workoutput_log_file,
+                stderr=workoutput_log_file, close_fds=True)
+        p = self.ffmpeg
+        logger.info("Launched avconv for %s stream (%s)" \
+                % (self.name,str(p.pid)))
+        p.wait()
+        logger.info("Ending avconv for %s stream (%s)"
+                % (self.name,str(p.pid)))
+        self.ffmpeg_params["result"] = p.returncode
+
+        if p.returncode != 0:
+            logger.error("Recording failed for %s stream (%s)"
+                % (self.name,str(p.pid)))
+
+        workoutput_log_file.write("result: %s\n" % p.returncode)
+
+        time.sleep(5)
+        try:
+            tmpfilename = "%(tmp)s.tmp" % self.ffmpeg_params
+            if not os.path.isfile(tmpfilename):
+                logger.warning("%s is not present in the system" % tmpfilename)
+            os.remove(tmpfilename)
+            logger.info("Deleting the %s file" % tmpfilename)
+            if os.path.isfile(tmpfilename):
+                logger.error("%s has not been deleted from the system" % tmpfilename)
+        except Exception as e:
+            logger.error( "Error deleting tmp in file in %s: %s"% (self.name,e))
+
+        logger.info("Starting qtfaststart step 4/5 for %s stream: %s" \
+                % (self.name,self.ffmpeg_params))
+
+        time.sleep(5)
+        cmd = "ionice -c 3 %(qtfaststart_path)s/qtfaststart %(tmp)s.mp4 %(destination)s" % self.ffmpeg_params
+        logger.debug("cmd: %s" % cmd)
+        workoutput_log_file.write("cmd: %s\n" % cmd)
+        self.ffmpeg = subprocess.Popen(cmd.split(), shell=False, bufsize=1024,
+                stdin=subprocess.PIPE, stdout=workoutput_log_file,
+                stderr=workoutput_log_file, close_fds=True)
+        p = self.ffmpeg
+        logger.info("Launched qtfaststart for %s stream (%s)" \
+                % (self.name,str(p.pid)))
+        p.wait()
+        logger.info("Ending qtfaststart for %s stream (%s)"
+                % (self.name,str(p.pid)))
+
+        logger.info("Starting tmp file deletion step 5/5 for %s stream: %s" \
+                % (self.name,self.ffmpeg_params))
+
+        time.sleep(5)
+        try:
+            tmpfilename = "%(tmp)s.mp4" % self.ffmpeg_params
+            if not os.path.isfile(tmpfilename):
+                logger.warning("%s is not present in the system" % tmpfilename)
+            os.remove(tmpfilename)
+            logger.info("Deleting the %s file" % tmpfilename)
+            if os.path.isfile(tmpfilename):
+                logger.error("%s has not been deleted from the system" % tmpfilename)
+        except Exception as e:
+            logger.error( "Error deleting tmp MP4 file in %s: %s"% (self.name,e))
+
+        time.sleep(5)
+        try:
+            tmpfilename = "%(tmp)s.ts" % self.ffmpeg_params
+            if not os.path.isfile(tmpfilename):
+                logger.warning("%s is not present in the system" % tmpfilename)
+            os.remove(tmpfilename)
+            logger.info("Deleting the %s file" % tmpfilename)
+            if os.path.isfile(tmpfilename):
+                logger.error("%s has not been deleted from the system" % tmpfilename)
+        except Exception as e:
+            logger.error( "Error deleting tmp TS file in %s: %s"% (self.name,e))
+
+        time.sleep(5)
+        try:
+            lock_file = "%(lock_file)s" % self.ffmpeg_params
+            if not os.path.isfile(lock_file):
+                logger.warning("%s is not present in the system" % lock_file)
+            os.remove(lock_file)
+            logger.info("Deleting the %s file" % lock_file)
+            if os.path.isfile(lock_file):
+                logger.error("%s has not been deleted from the system" % lock_file)
+        except Exception as e:
+            logger.error( "Error deleting the lockfile in %s: %s"% (self.name,e))
+
+        workoutput_log_file.write("result: %s\n" % p.returncode)
+        workoutput_log_file.write("\n")
+        workoutput_log_file.close()
+
+
+# logging ######################################################################
+import logging
+logger = logging.getLogger('liver')
+logger.setLevel(int(loglevel))
+
+hdlr = logging.FileHandler(logfile)
+hdlr.setFormatter(logging.Formatter('%(levelname)s %(asctime)s %(message)s'))
+logger.addHandler(hdlr)
+
+string_io_result=StringIO.StringIO()
+hdlr_result = logging.StreamHandler(string_io_result)
+hdlr_result.setFormatter(logging.Formatter('%(levelname)s %(asctime)s %(message)s'))
+logger.addHandler(hdlr_result)
+
+# setting up ###################################################################
+
+logger.info("Default encoding: %s" % sys.getdefaultencoding())
+
+liver_http_base="http://" + hostname + ":" + port
+if ssl:
+    liver_http_base="https://" + hostname + ":" + port
+logger.info("LiveR base URL: %s" % liver_http_base)
+
+getJobURL = "%s/liver/api/external/get_worker_job?token=%s" % ( liver_http_base,token )
+notifyJobURL = "%s/liver/api/external/notify_worker_job_result?token=%s" % ( liver_http_base, token )
+
+headers = {'User-Agent': 'job notifier'}
+
+
+try:
+        # randomized start
+        time.sleep(random.randrange(0,10))
+
+        logger.info("Requesting for new jobs")
+        h = get_http_requester()
+        resp, content = h.request(getJobURL, "GET", None , headers=headers)
+
+        logger.debug("Response: %s" % resp)
+        logger.debug("Content: %s" % content)
+
+        j_content=json.loads(content)
+
+except Exception, e:
+        logger.error("Unexpected error getting JSON jobs: %s" % str(e))
+        sys.exit(-1)
+
+try:
+        json_result = j_content['result']
+        logger.debug("Result: %s" % json_result)
+        json_response = j_content['response']
+        logger.debug("Response: %s" % json_response)
+except Exception, e:
+        logger.error("Non valid JSON: %s" % str(e))
+        sys.exit(-1)
+
+if json_result == -2:
+    sys.exit(-2)
+
+FFMPEG_THREADS=[]
+try:
+        if j_content['result'] == 0:
+            logger.info( "Parsing and doing jobs")
+            job_dict = json_response
+            job_dict['result']=0
+            job_id=job_dict['id']
+            job_start=job_dict['start']
+            job_duration=job_dict['duration']
+            profiles=job_dict['profiles']
+            for p in profiles:
+                    # p['id']
+                    # p['uri']
+                    # p['name']
+                    params=p
+                    params["job_id"]=job_id
+                    params["job_start"]=job_start
+                    params["job_duration"]=job_duration
+                    params["destination"]=storage_base_dir + "/" + params["name"]
+                    params["tmp"]=tmp_base_dir + "/" + params["name"]
+                    params["duration"]=job_duration
+                    params["avconv_path"]=avconv_path
+                    params["qtfaststart_path"]=qtfaststart_path
+                    params["lock_file"]=tmp_base_dir + "/liver-do-jobs.lock"
+
+                    t = avconvRunner(params)
+                    t.start()
+                    FFMPEG_THREADS.append(t)
+
+
+except Exception, e:
+        logger.error("Unexpected error: %s" % str(e))
+        sys.exit(-1)
+
+j_content['result']=0
+# print j_content
+for f in FFMPEG_THREADS:
+        f.join()
+        if f.ffmpeg_params['result'] != 0:
+            j_content['result']=f.ffmpeg_params['result']
+            j_content['response']['result']=f.ffmpeg_params['result']
+
+if j_content['result'] != 0:
+  logger.error("Recording failed")
+else:
+  logger.info("Recording done")
+
+j_content['job'] = j_content.pop('response')
+log = string_io_result.getvalue()
+j_content['log']=log
+
+smil = storage_base_dir + "/" + j_content['job']["smil"]
+smil_f = open(smil,"w")
+smil_f.write("<smil><head></head><body><switch>")
+for p in j_content['job']["profiles"]:
+            smil_f.write(\
+'<video src="%(name)s" system-bitrate="%(bitrate)s"/>' % p
+            )
+smil_f.write("</switch></body></smil>")
+smil_f.close()
+
+try:
+        logger.info("Posting results")
+        logger.debug("j_content: %s" % j_content)
+        json_ret=json.dumps(j_content)
+        # json_ret=urlencode({"argv":json_ret})
+
+        h = get_http_requester()
+        resp, content = h.request(notifyJobURL, "POST", json_ret , headers=headers)
+        logger.debug("Response: %s" % resp)
+        logger.debug("Content: %s" % content)
+except Exception, e:
+        logger.error("Results can not be submitted to the server: %s" % str(e))
+        sys.exit(-1)
+
+
+

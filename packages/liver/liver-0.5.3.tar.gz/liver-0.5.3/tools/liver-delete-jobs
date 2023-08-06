@@ -1,0 +1,49 @@
+#!/usr/bin/env python
+
+# Author: Pablo Saavedra
+# Contact: pablo.saavedra@interoud.com
+
+import os
+import sys
+
+reload(sys)
+sys.setdefaultencoding('utf-8')
+print sys.getdefaultencoding()
+
+from optparse import OptionParser
+from datetime import datetime
+import time, pytz
+
+parser = OptionParser()
+parser.add_option("-k", "--keepbackdays", dest="days",
+                  help="Days to keep back", metavar="DAYS",
+                  default=7)
+parser.add_option("--projectpath", dest="projectpath",
+                  help="Django project path", metavar="PATH",
+                  default=".")
+
+(options, args) = parser.parse_args()
+
+now_seconds = int(time.time())
+seconds_of_week = int(options.days) * 24 * 60 * 60
+t=now_seconds-seconds_of_week
+
+
+# django environment ###########################################################
+sys.path.append(options.projectpath)
+reload(sys)
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "settings")
+from liver.models import RecordingJob
+from django.db.models import Q
+# end django environment #######################################################
+
+
+objs = RecordingJob.objects\
+        .filter(
+            execution_date__lt=datetime.fromtimestamp(t,pytz.UTC))\
+        .iterator()
+
+for o in objs:
+    print "Deleting " + unicode(o) + " (" + str(o.execution_date) + ")"
+    o.delete()
+
