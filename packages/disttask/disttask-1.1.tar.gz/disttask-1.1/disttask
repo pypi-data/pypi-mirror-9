@@ -1,0 +1,137 @@
+#!/usr/bin/env python
+
+#Copyright (c) Timothy Savannah under GPLv3, All Rights Reserved. See LICENSE for more information
+"""
+Disttask is a utility which provides the ability to distribute a task across a fixed number of processes, for better utilization of multiprocessing.
+
+Use it with existing single-threaded/process tools and scripts to take full advantage of your computer's resources.
+
+ | Usage: ./disttask [cmd] [concurrent tasks] [argset]
+ | Use a %s in [cmd] where you want the args to go. use %d for the pipe number.
+
+
+The application runs at most "concurrent task" # of processes ( good to match total number of processors available to this number - 1 ).
+It captures stdout and stderr to ensure that any output is not intertwined between the applications.
+
+Each command should specify a "%s" to where each argument will go (one argument from @argset per application). "%d" is also available as the pipe number, but may not be very useful.
+
+Example:
+
+ | ./disttask "echo %d %s" 3 "this" "is" "some" "text" "blah" "whooptie" "Doo"
+ | 0 this
+ | 1 is
+ | 2 some
+ | 0 text
+ | 1 blah
+ | 2 whooptie
+ | 0 Doo
+
+Another Example:
+
+Run pyflakes, using 10 simultanious processes, on all python files in subdirectories (requires shopt -s globstar. Notice the backticks, not single-quotes.)
+
+ | ./disttask "pyflakes %s" 10 `echo **/*.py`
+
+"""
+
+import sys
+import subprocess
+import threading
+import time
+
+try:
+	bytes
+except:
+	bytes = str # Python < 2.6
+	
+if bytes == str:
+	# Python 2, no additional decoding necessary.
+	tostr = str
+else:
+	# Python 3, additional decoding necessary
+	try:
+		defaultEncoding = sys.getdefaultencoding()
+	except:
+		defaultEncoding = 'utf-8'
+	
+	def tostr(x):
+		if isinstance(x, bytes) is False:
+			return str(x)
+		return x.decode(defaultEncoding)
+		
+
+stdoutLock = threading.Lock()
+def write_stdout(txt):
+    stdoutLock.acquire()
+    sys.stdout.write(tostr(txt))
+    sys.stdout.flush()
+    time.sleep(.05)
+    stdoutLock.release()
+
+class Runner(threading.Thread):
+
+    def __init__(self, cmd):
+        threading.Thread.__init__(self)
+        self.cmd = cmd
+
+    def run(self):
+        pipe = subprocess.Popen(self.cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        output = pipe.stdout.read()
+        pipe.wait()
+        write_stdout(output)
+
+class DistTask(object):
+    def __init__(self, cmd, concurrent_tasks, argset):
+        self.cmd = cmd
+        self.concurrent_tasks = concurrent_tasks
+        self.argset = argset
+
+    def run(self):
+        argset = self.argset[:] # Copy so we can modify
+        for i in range(self.concurrent_tasks):
+            pipes.append(None)
+
+        pipesRunning = -1
+
+        while pipesRunning != 0:
+            pipesRunning = 0
+            for i in range(self.concurrent_tasks):
+                if pipes[i] == None:
+                    if len(argset):
+                        cmd = self.cmd.replace('%s', argset[0]).replace('%d', str(i))
+                        pipes[i] = Runner(cmd)
+                        pipes[i].start()
+                        pipesRunning += 1
+                        del argset[0]
+                else:
+                    if pipes[i].isAlive() == False:
+                        if len(argset):
+                            cmd = self.cmd.replace('%s', argset[0]).replace('%d', str(i))
+                            pipes[i].join() # cleanup
+                            pipes[i] = Runner(cmd)
+                            pipes[i].start()
+                            pipesRunning += 1
+                            del argset[0]
+                    else:
+                        pipesRunning += 1
+
+            time.sleep(.002)
+
+if (__name__ == "__main__"):
+    if len(sys.argv) < 4:
+        sys.stderr.write("Usage: " + sys.argv[0] + " [cmd] [concurrent tasks] [argset]\n")
+        sys.stderr.write("Use a %s in [cmd] where you want the args to go. use %d for the pipe number.\n")
+        sys.exit(1)
+
+
+    pipes = []
+
+
+    cmd = sys.argv[1]
+    if cmd.find('%s') == -1:
+        sys.stderr.write("No %s in command!\n")
+        sys.exit(1)
+    concurrent_tasks = int(sys.argv[2])
+    argset = sys.argv[3:]
+    runner = DistTask(cmd, concurrent_tasks, argset)
+    runner.run()
