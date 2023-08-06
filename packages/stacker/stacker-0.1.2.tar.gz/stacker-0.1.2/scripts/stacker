@@ -1,0 +1,106 @@
+#!/usr/bin/env python
+""" Launches AWS Cloudformation stacks from config.
+"""
+
+import argparse
+import logging
+import code
+from collections import Mapping
+import copy
+
+import yaml
+from stacker.builder import StackBuilder
+
+
+DEBUG_FORMAT = ('[%(asctime)s] %(levelname)s %(name)s:%(lineno)d'
+                '(%(funcName)s) - %(message)s')
+INFO_FORMAT = ('[%(asctime)s] %(message)s')
+
+ISO_8601 = '%Y-%m-%dT%H:%M:%S'
+
+
+class KeyValueAction(argparse.Action):
+    def __init__(self, option_strings, dest, nargs=None, **kwargs):
+        if nargs:
+            raise ValueError("nargs not allowed")
+        super(KeyValueAction, self).__init__(option_strings, dest, nargs,
+                                             **kwargs)
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        if not isinstance(values, Mapping):
+            raise ValueError("type must be 'key_value'")
+        if not getattr(namespace, self.dest):
+            setattr(namespace, self.dest, {})
+        getattr(namespace, self.dest).update(values)
+
+
+def key_value_arg(string):
+    try:
+        k, v = string.split("=")
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            "%s does not match KEY=VALUE format." % string)
+    return {k: v}
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('-r', '--region', default='us-east-1',
+                        help="The AWS region to launch in. Default: "
+                             "%(default)s")
+    parser.add_argument('-m', '--max-zones', type=int,
+                        help="Gives you the ability to limit the # of zones "
+                             "that resources will be launched in. If not "
+                             "given, then resources will be launched in all "
+                             "available availability zones.")
+    parser.add_argument('-v', '--verbose', action='count', default=0,
+                        help='Increase output verbosity. May be specified up '
+                             'to twice.')
+    parser.add_argument('-d', '--domain',
+                        help="The domain to run in. Gets converted into the "
+                             "BaseDomain Parameter for use in stack "
+                             "templates.")
+    parser.add_argument("-p", "--parameter", dest="parameters",
+                        metavar="PARAMETER=VALUE", type=key_value_arg,
+                        action=KeyValueAction,
+                        help="Adds parameters from the command line "
+                             "that can be used inside any of the stacks "
+                             "being built. Can be specified more than once.")
+    parser.add_argument("--prompt", action="store_true",
+                        help="Drop to python prompt rather than kicking off "
+                             "build of the stack.")
+    parser.add_argument('config',
+                        help="The config file where stack configuration is "
+                             "located. Must be in yaml format.")
+
+    return parser.parse_args()
+
+
+def setup_logging(verbosity):
+    log_level = logging.INFO
+    log_format = INFO_FORMAT
+    if verbosity > 0:
+        log_level = logging.DEBUG
+        log_format = DEBUG_FORMAT
+    if verbosity < 2:
+        logging.getLogger('boto').setLevel(logging.CRITICAL)
+
+    return logging.basicConfig(format=log_format, datefmt=ISO_8601,
+                               level=log_level)
+
+if __name__ == '__main__':
+    args = parse_args()
+    setup_logging(args.verbose)
+    parameters = copy.deepcopy(args.parameters)
+    parameters['BaseDomain'] = args.domain
+
+    with open(args.config) as fd:
+        config = yaml.load(fd)
+
+    builder = StackBuilder(args.region, mappings=config['mappings'],
+                           config=config, parameters=parameters)
+    if args.prompt:
+        print "Dropping into interactive console..."
+        code.InteractiveConsole(locals()).interact()
+    else:
+        builder.build(config['stacks'])
