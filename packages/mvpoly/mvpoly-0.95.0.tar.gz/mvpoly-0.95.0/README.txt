@@ -1,0 +1,7 @@
+mvpoly
+======
+
+A library for the numeric (rather than symbolic) treatment 
+of multivariate polynomials.
+
+
