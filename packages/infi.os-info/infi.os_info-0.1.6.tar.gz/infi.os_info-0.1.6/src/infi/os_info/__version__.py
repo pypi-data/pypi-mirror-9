@@ -1,0 +1,11 @@
+__version__ = "0.1.6"
+__git_commiter_name__ = "Guy Rozendorn"
+__git_commiter_email__ = "guy@rzn.co.il"
+__git_branch__ = '(detached from v0.1.6)'
+__git_remote_tracking_branch__ = '(No remote tracking)'
+__git_remote_url__ = '(Not remote tracking)'
+__git_head_hash__ = 'fd8492fb998945c800011ab79b5220f9e6cf2755'
+__git_head_subject__ = 'HOSTDEV-1988 fix for solaris versions'
+__git_head_message__ = ''
+__git_dirty_diff__ = ''
+__git_commit_date__ = '2015-03-22 12:02:14'
