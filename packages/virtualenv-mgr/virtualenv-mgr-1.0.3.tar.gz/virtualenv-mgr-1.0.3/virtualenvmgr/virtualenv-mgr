@@ -1,0 +1,179 @@
+#!/usr/bin/env python
+
+## CLI ##
+#########
+
+from virtualenvmgr.envmanager import EnvManager
+from virtualenvmgr.piphisto import PipHisto
+import argparse
+import os
+import subprocess
+import sys
+from os import environ
+from os import linesep
+
+from virtualenvmgr.utils import pptable
+
+parser = argparse.ArgumentParser()
+
+
+
+## ENVIRONMENT ##
+parser.add_argument('environment', nargs='?', type=str,
+                    help='path to file with paths to envs')
+parser.add_argument('-z', '--envfreeze', action='store_true',
+                    help='prints all the envs on .')
+parser.add_argument('-s', '--searchroot', type=str,
+                    help='path for envfreeze, where to search')
+
+## ENVMANAGER ##
+parser.add_argument('-f', '--find', type=str,
+                    help='find app, use commas to search for more')
+parser.add_argument("-l", "--freezelist", action='store_true',
+                    help="pints the freeze_ist of all envs")
+parser.add_argument("-i", "--install", type=str,
+                    help="installes an app, use commas to add more")
+parser.add_argument('-u', '--uninstall', type=str,
+                    help='uninstalles an app, use commas to add more')
+
+## PIP OPTION ##
+
+parser.add_argument('-o','--pipoption', type=str,
+                    help='allows you to add options to the pip command(-i/--install and -u/--uninstall)')
+
+
+
+## COMPARE ENVS ##
+
+parser.add_argument('-d','--diff', action='store_true',
+                    help='commpares the packages installed in envs')
+parser.add_argument('-n','--notinstalled', action='store_true',
+                    help='lists apps that are not installed on all envs')
+parser.add_argument('-a','--versiondiff', action='store_true',
+                    help='lists apps that dont have the same version number on all envs')
+
+
+## PIP HISTO ##
+parser.add_argument('-p', '--piphisto', action='store_true',
+                    help='pip histogram')
+parser.add_argument('-e', '--egg', action='store_true',
+                    help='pip histogram takes eggs into consideration')
+parser.add_argument('-v', '--version', action='store_true',
+                    help='pip histogram takes versions into consideration')
+
+
+## Style ##
+
+parser.add_argument('-y','--style', action='store_true',)
+                    #help='adds style')
+
+args = ()
+args = parser.parse_args()
+
+cm_input = sys.stdin
+
+#BASH_COMMAND = 'find /Users/yannik/ztemp -wholename "*/bin/activate" -prune | sed -e "s,/bin/activate,,g" | sed -e "s,//,/,g"'
+
+
+## ENVFREEZE ##
+###############
+
+if args.envfreeze:
+    path = environ['PWD']
+    if args.searchroot:
+        path = args.searchroot
+    find_popen = subprocess.Popen(['find', path, '-wholename', '*/bin/activate', '-prune'], stdout=subprocess.PIPE)
+    subprocess.call(('sed', '-e', 's,/bin/activate,,g', '-e', 's,//,/,g'), stdin=find_popen.stdout)
+    find_popen.wait()
+    quit()
+
+
+## Set ENVS ##
+##############
+
+if args.environment:
+    env_list = file_name = None
+    # python p.py -p "`python p.py --envfreeze`"
+    if '\n' in args.environment:
+        env_list = [n.replace('/bin/activate', '') for n in args.environment.split(linesep)]
+    else:
+        file_name = args.environment
+    em = EnvManager(file_name=file_name, env_list=env_list)
+elif not sys.stdin.isatty():
+    env_list = []
+    for n in sys.stdin:
+        env_list.append(n.replace(linesep, ''))
+    em = EnvManager(env_list=env_list)
+else:
+    if os.environ.get('VIRTUAL_ENV'):
+        em = EnvManager(env_list=[os.environ['VIRTUAL_ENV']])
+    else:
+        print('no active virtualenv and no --environment input, no pipe input')
+        quit()
+
+
+## ENVMANAGER CLI ##
+####################
+
+# Set pip option for install & uninstall #
+pipoption = []
+if args.pipoption:
+    pipoption = args.pipoption.split(',')
+
+
+find_env = False
+if args.find:
+    find = args.find.split(',')
+    find_env = em.finder(find)
+    # print find_env
+
+if args.install:
+    install = args.install.split(',')
+    em.install(install, envs=find_env, pipoption=pipoption)
+
+if args.uninstall:
+    uninstall = args.uninstall.split(',')
+    em.uninstall(uninstall, envs=find_env, pipoption=pipoption)
+
+
+if args.freezelist:
+    for n in em.freezeList(envs=find_env):
+        print(n)
+
+
+## PIPHISTO CLI ##
+##################
+
+if args.piphisto or args.version or args.egg:
+    version = False
+    egg = False
+    if args.version:
+        version = True
+    if args.egg:
+        egg = True
+    ph = PipHisto(em.freezeList(envs=find_env))
+    table = {'head': ['App', 'Installations'], 'body': ph.pip_histo(version=version,egg=egg)}
+    if args.style:
+        pptable(table)
+    else:
+        ph.print_pip_histo(version=version, egg=egg)
+
+
+## DIFF ##
+
+if args.diff or args.notinstalled or args.versiondiff:
+    notinstalled = False
+    versiondiff = False
+    if args.notinstalled:
+        notinstalled = True
+    if args.versiondiff:
+        versiondiff = True
+    diff = em.pipDiff(notinstalled=notinstalled, versiondiff=versiondiff)
+    pptable(diff)
+
+
+
+
+
+
+
