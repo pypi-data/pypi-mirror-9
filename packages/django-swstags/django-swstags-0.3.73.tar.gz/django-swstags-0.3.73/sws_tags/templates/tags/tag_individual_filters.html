@@ -1,0 +1,313 @@
+{% load i18n l10n swstags %}
+
+{% get_current_language as LANGUAGE_CODE %}
+
+<style>
+	.individual_filters{
+		/*border:1px solid green;*/
+		display: inline-block;
+		float:left;
+		margin: 1px 0px 1px 0px;
+	
+	}
+
+	.individual_filter{
+		/*border:1px solid pink;*/
+		height: 22px;
+		float:left;
+		display: inline-block;
+	}
+
+
+	.label_filter{
+
+		
+		/*font-size:  8px !important;*/
+		/*border:1px solid red;*/
+		min-width: 80px;
+		text-align: right;
+		margin:1px;
+		margin: 3px 0px 0px 5px;
+
+/*		min-width: 30px !important;*/
+		float: left;
+	}
+
+	.input_individual_filter{
+		min-height: 15px;
+		display: inline-block;
+		float: left;
+		/*border:1px solid red;*/
+	}
+
+
+</style>
+
+<div id='{{view_name}}{{name}}_filters' class='individual_filters'>
+	<form id="{{view_name}}{{name}}_filters_form" method="GET" action=""> 
+		{% for k,v in dimension_filters.items %}
+			<div id ='{{view_name}}{{name}}_{{v}}_div_filters' class='individual_filter'>
+					<label id ='{{view_name}}{{name}}_{{v}}_label_filters' class="label_filter"> {% trans k %} </label> 
+					<input id='{{v}}_{{view_name}}{{name}}_query' name='{{v}}' type='hidden' class="input_individual_filter" />
+			</div>
+		{% endfor%}
+	</form>	
+	<p class="clear-fix"></p>
+</div>
+
+
+<script type="text/javascript" lang="text/javascript">
+
+dimension_filters = {% autoescape off %} {{dimension_filters}} {% endautoescape %}; 
+
+default_value_filters = {% autoescape off%} {{default_value_filters}} {% endautoescape %};
+
+filters_sel2 = new Array();
+filters_control = new Array();
+
+
+ jQuery.each(dimension_filters, function() 
+ {
+ 	var select_identifier = this
+
+	default_value = '-- All --'
+ 	if (select_identifier in default_value_filters)
+ 	{	
+		default_value = String(default_value_filters[select_identifier])
+	}
+ 	// console.log('thjis-->',JSON.stringify(select_identifier));
+ 	filters_sel2[select_identifier] = ''
+	query_data = ''
+	filters_control.push(select_identifier)
+
+	$('#'+this+'_{{view_name}}{{name}}_query').select2({
+		//minimumInputLength: 3,
+		// placeholder: 'Select a '+this,
+		placeholder: default_value,
+		query:function(options){
+			// filters_sel2[select_identifier] = ''
+
+			if (options.term=='')
+			{	
+				param={{view_name}}_{{name}}prepareParam(select_identifier);
+				param.unique_exec_id=unique_exec_id;
+				$.ajax({
+					url: '{{URL_INDIVIDUAL_FILTERS}}',
+					method: 'GET',
+					dataType: 'json',
+					async:true,
+					data:param,
+					beforeSend:function(param){
+						$('.select2-drop').block()
+
+						controlBlock('{{view_name}}_control_panel','block');
+						controlBlockClass('.select2-drop','block');
+					},
+
+					error: function(jqXHR, textStatus, errorThrown){
+						console.log('ERROR INDIVIDUAL FILTERS :'+errorThrown);
+						console.log('textStatus :'+textStatus);
+						console.log('jqXHR :'+jqXHR);
+						// $('#'+form_id).unblock();
+					},
+					complete: function(data, page ) 
+					{
+						query_data = data;
+						// console.log(query_data.responseText);
+						filters_sel2[select_identifier] = $.parseJSON(query_data.responseText);
+						controlBlock('{{view_name}}_control_panel','unblock');
+						controlBlockClass('.select2-drop','unblock');
+
+					},
+					success:function(response)
+					{
+						options.callback(response);
+						// options.callback(response);
+					// 	controlBlock('cdr_control_panel','unblock');
+					}
+				});
+
+			}
+			
+			else
+			{
+				name_search = options.term 
+				var actual = filters_sel2[select_identifier]
+				var new_filters_opt=new Array();
+				if (name_search !='')
+				{
+					filters_sel2[select_identifier] = $.parseJSON(query_data.responseText)
+					z=filters_sel2[select_identifier]
+					for (i=0; i<filters_sel2[select_identifier].results.length; i++)
+					{
+						name_search = String(name_search)
+						name = String(filters_sel2[select_identifier].results[i].text)
+						
+						name_search = name_search.toUpperCase();
+						name = name.toUpperCase();
+
+						if (name.search(name_search)!=-1)
+						{
+							// filters_sel2[select_identifier].results.splice(i,1);
+							new_filters_opt.push(filters_sel2[select_identifier].results[i]);
+							// i=0;
+						}
+					}
+					// filters_sel2[select_identifier].results.splice(0,1);
+					filters_sel2[select_identifier].results=new_filters_opt
+				}
+				// if(filters_sel2[select_identifier].results.length==0)
+				// {
+					// filters_sel2[select_identifier] = $.parseJSON(query_data.responseText)
+				// }	
+				options.callback(filters_sel2[select_identifier])
+			}
+			
+		},
+		formatResult: function(object,container,query) 
+		{ 
+			return "<div class='select2-user-result'>" + object.text + "</div>"; 
+		},
+		formatSelection: function(results) 
+		{ 
+			for(i=0; i < filters_control.length;i++)
+			{
+				name=filters_control[i]
+				filters_sel2[name]=''
+			}
+
+			$('#s2id_'+select_identifier+'_{{view_name}}{{name}}_query').children("a").children("span").text(results.text);
+			{{view_name}}_callback('filters{{name}}',results.id);
+			return results.term; 
+		},
+		dropdownCssClass: "bigdrop"
+	});
+});
+
+function clone(from) 
+{
+	if(from == null || typeof from != 'object')
+		return from;
+
+	if(from.constructor != Object && from.constructor != Array)
+		return from;
+
+	if(from.constructor == Date || from.constructor == RegExp ||from.constructor == Function ||from.constructor == String || from.constructor == Number ||from.constructor == Boolean)
+		return new from.constructor(from);
+
+	var to = {};
+	to = to || new from.constructor();
+	for (var name in from) 
+	{
+		to[name] = typeof to[name] == 'undefined' ?
+		this.clone(from[name]) :
+		to[name];
+	}	
+	return to;
+}
+
+function {{view_name}}{{name}}loadParam()
+{
+	param_filters = $('#{{view_name}}{{name}}_filters_form').serialize(); 
+	return param_filters
+}
+
+
+function {{view_name}}_{{name}}prepareParam(select_identifier)
+{
+		result = {
+			types:select_identifier,
+			limit: -1,
+			term: '',
+			page:1,
+		}
+		data_filters = {{view_name}}{{name}}loadParam()
+
+		// while (data_filters.indexOf('NULL')>0)
+		// {
+		// 	data_filters = data_filters.replace('NULL','None')
+
+		// }	
+
+
+		data_filters = data_filters + '&filter_selected='+select_identifier
+		{{view_name}}_filter_selected = select_identifier;
+		data_filters = data_filters.split('&')
+
+
+	 	for (i=0;i<data_filters.length;i++)
+		{	
+
+			d = data_filters[i].split('=')
+
+			data_encode = d[1]
+			data_encode = data_encode.replace(/\+/g,' ');
+			data_encode = data_encode.replace('%3A',':');
+			data_encode = data_encode.replace('%3A',':');
+			d[1]=data_encode
+			data_filters[i]= d
+		}
+
+
+		for (i=0;i<data_filters.length;i++)
+		{
+			result[data_filters[i][0]]=data_filters[i][1]
+		}
+
+	return result;
+}
+
+$.each(
+    $("#{{view_name}}{{name}}_filters input[class='input_individual_filter']"),
+    function(){
+    	name_filters_{{view_name}} = this.id;
+		$('#'+name_filters_{{view_name}}).val('NULL');  
+    }
+);
+
+
+function {{view_name}}{{name}}_updateFilters()
+{
+	$('#{{view_name}}_div_select_filters').unblock();	
+	$.each(
+	    $("#"+view_actual+"{{name}}_filters input[class='input_individual_filter']"),
+	    function(){
+	    	name_filters_{{view_name}} = this.id;
+
+	    	name_clear = name_filters_{{view_name}}.replace('{{view_name}}','')
+	    	name_clear = name_clear.replace('__query','')
+
+	    	if ($('#'+name_filters_{{view_name}}).val() == 'NULL')
+	    	{
+	    		name_filters_{{view_name}} = this.id;
+				filters_sel2[name_clear] = '';
+
+				$('#'+name_filters_{{view_name}}).val('NULL');
+				$('#s2id_'+name_filters_{{view_name}}).children("a").children("span").text('-- All --');
+	    	}
+	    }
+	);
+}
+
+
+function {{view_name}}{{name}}clearFilterSelect2()
+{
+
+
+	$.each(
+	    $("#"+view_actual+"{{name}}_filters input[class='input_individual_filter']"),
+	    function(){
+	    	name_filters_{{view_name}} = this.id;
+	    	
+	    	name_clear = name_filters_{{view_name}}.replace('{{view_name}}','')
+	    	name_clear = name_clear.replace('__query','')
+			filters_sel2[name_clear] = '';
+
+			$('#'+name_filters_{{view_name}}).val('NULL');
+			$('#s2id_'+name_filters_{{view_name}}).children("a").children("span").text('-- All --'); 
+			// $('#s2id_'+name_filters).children("a")[0].text='Select a '+name_filters.replace('_query',''); 
+	    }
+	);
+}
+
+</script>
