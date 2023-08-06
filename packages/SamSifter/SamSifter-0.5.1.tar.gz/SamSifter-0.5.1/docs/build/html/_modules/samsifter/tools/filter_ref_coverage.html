@@ -1,0 +1,1310 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>samsifter.tools.filter_ref_coverage &mdash; SamSifter 0.5.0 documentation</title>
+    
+    <link rel="stylesheet" href="../../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../../',
+        VERSION:     '0.5.0',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../../_static/doctools.js"></script>
+    <link rel="top" title="SamSifter 0.5.0 documentation" href="../../../index.html" />
+    <link rel="up" title="Module code" href="../../index.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../../index.html">SamSifter 0.5.0 documentation</a> &raquo;</li>
+          <li><a href="../../index.html" accesskey="U">Module code</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <h1>Source code for samsifter.tools.filter_ref_coverage</h1><div class="highlight"><pre>
+<span class="c">#!/usr/bin/env python3</span>
+<span class="c"># -*- coding: utf-8 -*-</span>
+<span class="sd">&quot;&quot;&quot;Identify reference accessions with uneven coverage in MALT&#39;ed SAM files.</span>
+
+<span class="sd">Comes with several methods to create optional plots of coverage and read length</span>
+<span class="sd">distributions.</span>
+
+<span class="sd">Warning</span>
+<span class="sd">-------</span>
+<span class="sd">Activating the plotting of these distributions for a large input dataset can</span>
+<span class="sd">create I/O problems due to the large amounts of PNG files generated. It will</span>
+<span class="sd">also decrease the performance of this filter considerably and should only be</span>
+<span class="sd">used to troubleshoot filter parameters for small subsets of the data.</span>
+
+<span class="sd">.. moduleauthor:: Florian Aldehoff &lt;faldehoff@student.uni-tuebingen.de&gt;</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">sys</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">version_info</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="mi">3</span><span class="p">):</span>
+    <span class="k">print</span><span class="p">(</span><span class="s">&quot;Error, I need python 3.x or newer&quot;</span><span class="p">)</span>
+    <span class="nb">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+
+<span class="kn">import</span> <span class="nn">argparse</span>
+<span class="kn">import</span> <span class="nn">logging</span> <span class="kn">as</span> <span class="nn">log</span>
+<span class="kn">import</span> <span class="nn">fileinput</span>
+<span class="kn">import</span> <span class="nn">tempfile</span>
+<span class="kn">from</span> <span class="nn">os.path</span> <span class="kn">import</span> <span class="n">basename</span><span class="p">,</span> <span class="n">splitext</span>
+<span class="kn">import</span> <span class="nn">re</span>
+<span class="kn">import</span> <span class="nn">matplotlib</span> <span class="kn">as</span> <span class="nn">mpl</span>
+<span class="n">mpl</span><span class="o">.</span><span class="n">use</span><span class="p">(</span><span class="s">&#39;Agg&#39;</span><span class="p">)</span>       <span class="c"># before importing numpy, else trouble on headless server</span>
+<span class="kn">import</span> <span class="nn">matplotlib.pyplot</span> <span class="kn">as</span> <span class="nn">plt</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="kn">as</span> <span class="nn">np</span>
+
+<span class="sd">&quot;&quot;&quot; custom libraries &quot;&quot;&quot;</span>
+<span class="kn">from</span> <span class="nn">samsifter.models.filter</span> <span class="kn">import</span> <span class="n">FilterItem</span>
+<span class="kn">from</span> <span class="nn">samsifter.models.parameter</span> <span class="kn">import</span> <span class="p">(</span><span class="n">FilterParameter</span><span class="p">,</span> <span class="n">FilterSwitch</span><span class="p">,</span>
+                                        <span class="n">FilterThreshold</span><span class="p">,</span> <span class="n">FilterFilepath</span><span class="p">)</span>
+<span class="kn">from</span> <span class="nn">samsifter.util.arg_sanitation</span> <span class="kn">import</span> <span class="p">(</span><span class="n">check_pos_float</span><span class="p">,</span>
+                                           <span class="n">check_pos_float_max1</span><span class="p">,</span>
+                                           <span class="n">check_pos_int</span><span class="p">,</span> <span class="n">check_sam</span><span class="p">)</span>
+<span class="kn">from</span> <span class="nn">samsifter.util.filters</span> <span class="kn">import</span> <span class="n">line_filter</span>
+<span class="kn">from</span> <span class="nn">samsifter.util.papertrail</span> <span class="kn">import</span> <span class="n">modify_header</span>
+<span class="kn">from</span> <span class="nn">samsifter.version</span> <span class="kn">import</span> <span class="n">samsifter_version</span>
+
+<span class="n">__version__</span> <span class="o">=</span> <span class="n">samsifter_version</span>
+
+<span class="sd">&quot;&quot;&quot; global variables &quot;&quot;&quot;</span>
+<span class="n">TEXT</span> <span class="o">=</span> <span class="s">&quot;Filter references by evenness of coverage&quot;</span>
+<span class="n">DESC</span> <span class="o">=</span> <span class="p">(</span><span class="s">&quot;Filters reference accessions exceeding a Gini Index threshold.&quot;</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="item"><a class="viewcode-back" href="../../../samsifter.tools.html#samsifter.tools.filter_ref_coverage.item">[docs]</a><span class="k">def</span> <span class="nf">item</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;Create item representing this tool in list and tree views.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    FilterItem</span>
+<span class="sd">        Item for use in item-based list and tree views.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">item</span> <span class="o">=</span> <span class="n">FilterItem</span><span class="p">(</span><span class="n">text</span><span class="o">=</span><span class="n">TEXT</span><span class="p">,</span> <span class="n">desc</span><span class="o">=</span><span class="n">DESC</span><span class="p">)</span>
+    <span class="n">item</span><span class="o">.</span><span class="n">set_command</span><span class="p">(</span><span class="n">splitext</span><span class="p">(</span><span class="n">basename</span><span class="p">(</span><span class="n">__file__</span><span class="p">))[</span><span class="mi">0</span><span class="p">])</span>
+
+    <span class="n">item</span><span class="o">.</span><span class="n">add_parameter</span><span class="p">(</span><span class="n">FilterThreshold</span><span class="p">(</span>
+        <span class="n">text</span><span class="o">=</span><span class="s">&quot;min. Gini&quot;</span><span class="p">,</span>
+        <span class="n">desc</span><span class="o">=</span><span class="s">&quot;minimum Gini coefficient&quot;</span><span class="p">,</span>
+        <span class="n">cli_name</span><span class="o">=</span><span class="s">&#39;--min_gini&#39;</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="mf">0.00</span><span class="p">,</span>
+        <span class="n">maximum</span><span class="o">=</span><span class="mf">1.00</span>
+    <span class="p">))</span>
+
+    <span class="n">item</span><span class="o">.</span><span class="n">add_parameter</span><span class="p">(</span><span class="n">FilterThreshold</span><span class="p">(</span>
+        <span class="n">text</span><span class="o">=</span><span class="s">&quot;max. Gini&quot;</span><span class="p">,</span>
+        <span class="n">desc</span><span class="o">=</span><span class="s">&quot;maximum Gini coefficient&quot;</span><span class="p">,</span>
+        <span class="n">cli_name</span><span class="o">=</span><span class="s">&#39;--max_gini&#39;</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="mf">0.90</span><span class="p">,</span>
+        <span class="n">maximum</span><span class="o">=</span><span class="mf">1.00</span><span class="p">,</span>
+        <span class="n">required</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span>
+        <span class="n">active</span><span class="o">=</span><span class="bp">True</span>
+    <span class="p">))</span>
+
+    <span class="n">item</span><span class="o">.</span><span class="n">add_parameter</span><span class="p">(</span><span class="n">FilterParameter</span><span class="p">(</span>
+        <span class="n">text</span><span class="o">=</span><span class="s">&quot;read lengths&quot;</span><span class="p">,</span>
+        <span class="n">desc</span><span class="o">=</span><span class="s">&quot;analyze read length distributions&quot;</span><span class="p">,</span>
+        <span class="n">cli_name</span><span class="o">=</span><span class="s">&quot;--read_lengths&quot;</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="bp">False</span>
+    <span class="p">))</span>
+
+    <span class="n">item</span><span class="o">.</span><span class="n">add_parameter</span><span class="p">(</span><span class="n">FilterParameter</span><span class="p">(</span>
+        <span class="n">text</span><span class="o">=</span><span class="s">&quot;covered bases only&quot;</span><span class="p">,</span>
+        <span class="n">desc</span><span class="o">=</span><span class="s">&quot;covered bases only, ignore uncovered bases&quot;</span><span class="p">,</span>
+        <span class="n">cli_name</span><span class="o">=</span><span class="s">&quot;--covered&quot;</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="bp">False</span>
+    <span class="p">))</span>
+
+    <span class="n">item</span><span class="o">.</span><span class="n">add_parameter</span><span class="p">(</span><span class="n">FilterFilepath</span><span class="p">(</span>
+        <span class="n">text</span><span class="o">=</span><span class="s">&quot;statistics file&quot;</span><span class="p">,</span>
+        <span class="n">desc</span><span class="o">=</span><span class="p">(</span><span class="s">&quot;override filename for tab-separated statistics &quot;</span>
+              <span class="s">&quot;[${filename}.stats.csv]&quot;</span><span class="p">),</span>
+        <span class="n">cli_name</span><span class="o">=</span><span class="s">&#39;--stats_file&#39;</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="s">&quot;${filename}.stats.csv&quot;</span>
+    <span class="p">))</span>
+
+    <span class="n">item</span><span class="o">.</span><span class="n">add_parameter</span><span class="p">(</span><span class="n">FilterParameter</span><span class="p">(</span>
+        <span class="n">text</span><span class="o">=</span><span class="s">&quot;plot distribution(s)&quot;</span><span class="p">,</span>
+        <span class="n">desc</span><span class="o">=</span><span class="s">&quot;plot coverage and/or read length distributions&quot;</span><span class="p">,</span>
+        <span class="n">cli_name</span><span class="o">=</span><span class="s">&quot;--plot&quot;</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="bp">False</span>
+    <span class="p">))</span>
+
+<span class="c">#    item.add_parameter(FilterThreshold(</span>
+<span class="c">#        text=&quot;LCI argument&quot;,</span>
+<span class="c">#        desc=&quot;fraction of mean coverage to use for LCI integration&quot;,</span>
+<span class="c">#        cli_name=&#39;--lci_arg&#39;,</span>
+<span class="c">#        default=0.50,</span>
+<span class="c">#        maximum=1.00</span>
+<span class="c">#    ))</span>
+<span class="c">#</span>
+<span class="c">#    item.add_parameter(FilterThreshold(</span>
+<span class="c">#        text=&quot;min. LCI&quot;,</span>
+<span class="c">#        desc=&quot;minimum low-coverage index&quot;,</span>
+<span class="c">#        cli_name=&#39;--min_lci&#39;,</span>
+<span class="c">#        default=0.0,</span>
+<span class="c">#        maximum=1000.0</span>
+<span class="c">#    ))</span>
+<span class="c">#</span>
+<span class="c">#    item.add_parameter(FilterThreshold(</span>
+<span class="c">#        text=&quot;max. LCI&quot;,</span>
+<span class="c">#        desc=&quot;maximum low coverage index&quot;,</span>
+<span class="c">#        cli_name=&#39;--max_lci&#39;,</span>
+<span class="c">#        default=1000.0,</span>
+<span class="c">#        maximum=1000.0</span>
+<span class="c">#    ))</span>
+
+    <span class="n">item</span><span class="o">.</span><span class="n">add_parameter</span><span class="p">(</span><span class="n">FilterThreshold</span><span class="p">(</span>
+        <span class="n">text</span><span class="o">=</span><span class="s">&quot;min. coverage&quot;</span><span class="p">,</span>
+        <span class="n">desc</span><span class="o">=</span><span class="s">&quot;minimum average coverage&quot;</span><span class="p">,</span>
+        <span class="n">cli_name</span><span class="o">=</span><span class="s">&#39;--min_cov&#39;</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+        <span class="n">maximum</span><span class="o">=</span><span class="mi">9999</span><span class="p">,</span>
+        <span class="n">precision</span><span class="o">=</span><span class="mi">0</span>
+    <span class="p">))</span>
+
+    <span class="n">item</span><span class="o">.</span><span class="n">add_parameter</span><span class="p">(</span><span class="n">FilterThreshold</span><span class="p">(</span>
+        <span class="n">text</span><span class="o">=</span><span class="s">&quot;max. coverage&quot;</span><span class="p">,</span>
+        <span class="n">desc</span><span class="o">=</span><span class="s">&quot;maximum average coverage&quot;</span><span class="p">,</span>
+        <span class="n">cli_name</span><span class="o">=</span><span class="s">&#39;--max_cov&#39;</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="mi">9999</span><span class="p">,</span>
+        <span class="n">maximum</span><span class="o">=</span><span class="mi">9999</span><span class="p">,</span>
+        <span class="n">precision</span><span class="o">=</span><span class="mi">0</span>
+    <span class="p">))</span>
+
+    <span class="n">item</span><span class="o">.</span><span class="n">add_parameter</span><span class="p">(</span><span class="n">FilterSwitch</span><span class="p">(</span>
+        <span class="n">text</span><span class="o">=</span><span class="s">&quot;filter direction&quot;</span><span class="p">,</span>
+        <span class="n">desc</span><span class="o">=</span><span class="s">&quot;Keep or discard entries passing the filter criteria?&quot;</span><span class="p">,</span>
+        <span class="n">cli_name</span><span class="o">=</span><span class="s">&quot;--discard&quot;</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+        <span class="n">options</span><span class="o">=</span><span class="p">[</span><span class="s">&quot;discard&quot;</span><span class="p">,</span> <span class="s">&quot;keep&quot;</span><span class="p">]</span>
+    <span class="p">))</span>
+
+    <span class="n">item</span><span class="o">.</span><span class="n">add_parameter</span><span class="p">(</span><span class="n">FilterParameter</span><span class="p">(</span>
+        <span class="n">text</span><span class="o">=</span><span class="s">&quot;verbose&quot;</span><span class="p">,</span>
+        <span class="n">desc</span><span class="o">=</span><span class="s">&quot;print additional information to STDERR&quot;</span><span class="p">,</span>
+        <span class="n">cli_name</span><span class="o">=</span><span class="s">&quot;--verbose&quot;</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span>
+        <span class="n">active</span><span class="o">=</span><span class="bp">True</span>
+    <span class="p">))</span>
+
+    <span class="n">item</span><span class="o">.</span><span class="n">add_parameter</span><span class="p">(</span><span class="n">FilterParameter</span><span class="p">(</span>
+        <span class="n">text</span><span class="o">=</span><span class="s">&quot;debug&quot;</span><span class="p">,</span>
+        <span class="n">desc</span><span class="o">=</span><span class="s">&quot;print debug messages to STDERR&quot;</span><span class="p">,</span>
+        <span class="n">cli_name</span><span class="o">=</span><span class="s">&quot;--debug&quot;</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="bp">False</span>
+    <span class="p">))</span>
+
+    <span class="n">item</span><span class="o">.</span><span class="n">add_parameter</span><span class="p">(</span><span class="n">FilterParameter</span><span class="p">(</span>
+        <span class="n">text</span><span class="o">=</span><span class="s">&quot;write PG tag&quot;</span><span class="p">,</span>
+        <span class="n">desc</span><span class="o">=</span><span class="s">&quot;annotate the filtered SAM file by adding a PG tag to the header&quot;</span><span class="p">,</span>
+        <span class="n">cli_name</span><span class="o">=</span><span class="s">&quot;--modify&quot;</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span>
+        <span class="n">active</span><span class="o">=</span><span class="bp">True</span>
+    <span class="p">))</span>
+
+    <span class="k">return</span> <span class="n">item</span>
+
+</div>
+<span class="sd">&quot;&quot;&quot; plotting methods &quot;&quot;&quot;</span>
+
+
+<div class="viewcode-block" id="plot_rld"><a class="viewcode-back" href="../../../samsifter.tools.html#samsifter.tools.filter_ref_coverage.plot_rld">[docs]</a><span class="k">def</span> <span class="nf">plot_rld</span><span class="p">(</span><span class="n">ax</span><span class="p">,</span> <span class="n">length_dist</span><span class="p">,</span> <span class="n">min_length</span><span class="p">,</span> <span class="n">max_length</span><span class="p">,</span> <span class="n">read_count</span><span class="p">,</span>
+             <span class="n">length_dist_total</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Creates a bar plot of a read length distribution.</span>
+
+<span class="sd">    Includes scaled expected distribution based on all reads in file.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    ax : Axes</span>
+<span class="sd">        Axes instance of current plot.</span>
+<span class="sd">    length_dist : array_like</span>
+<span class="sd">        Read length distribution of subset of reads.</span>
+<span class="sd">    min_length : int</span>
+<span class="sd">        Minimum read length.</span>
+<span class="sd">    max_length : int</span>
+<span class="sd">        Maximum read length.</span>
+<span class="sd">    read_count : int</span>
+<span class="sd">        Total number of reads.</span>
+<span class="sd">    length_dist_total : array_like</span>
+<span class="sd">        Read length distribution of all reads.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s">&#39;RLD&#39;</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">bar</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">length_dist</span><span class="o">.</span><span class="n">size</span><span class="p">),</span>
+           <span class="n">length_dist</span><span class="p">,</span>
+           <span class="n">align</span><span class="o">=</span><span class="s">&#39;center&#39;</span><span class="p">,</span>
+           <span class="n">width</span><span class="o">=</span><span class="mf">0.8</span><span class="p">,</span>
+           <span class="n">color</span><span class="o">=</span><span class="s">&#39;gray&#39;</span><span class="p">,</span>
+           <span class="n">label</span><span class="o">=</span><span class="s">&#39;actual&#39;</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">min_length</span><span class="p">,</span> <span class="n">max_length</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int</span><span class="p">),</span>
+            <span class="c"># scale expected dist down</span>
+            <span class="p">(</span><span class="n">length_dist_total</span> <span class="o">*</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="n">read_count</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">length_dist</span><span class="p">),</span>
+            <span class="n">color</span><span class="o">=</span><span class="s">&#39;red&#39;</span><span class="p">,</span>
+            <span class="n">linestyle</span><span class="o">=</span><span class="s">&#39;dashed&#39;</span><span class="p">,</span>
+            <span class="n">label</span><span class="o">=</span><span class="s">&#39;expected&#39;</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">axis</span><span class="p">([</span><span class="n">min_length</span><span class="p">,</span> <span class="n">max_length</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="bp">None</span><span class="p">])</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s">&quot;read length [bp]&quot;</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s">&quot;number of reads&quot;</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="plot_cd"><a class="viewcode-back" href="../../../samsifter.tools.html#samsifter.tools.filter_ref_coverage.plot_cd">[docs]</a><span class="k">def</span> <span class="nf">plot_cd</span><span class="p">(</span><span class="n">ax</span><span class="p">,</span> <span class="n">depth_dist</span><span class="p">,</span> <span class="n">avg_depth</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Creates a bar plot of a coverage distribution.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    ax : Axes</span>
+<span class="sd">        Axes instance of current plot.</span>
+<span class="sd">    depth_dist : array_like</span>
+<span class="sd">        Coverage depth distribution.</span>
+<span class="sd">    avg_depth : float</span>
+<span class="sd">        Mean coverage.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s">&quot;CD&quot;</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">bar</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">depth_dist</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int</span><span class="p">),</span>
+           <span class="n">depth_dist</span><span class="p">,</span>
+           <span class="n">align</span><span class="o">=</span><span class="s">&#39;center&#39;</span><span class="p">,</span>
+           <span class="n">width</span><span class="o">=</span><span class="mf">0.8</span><span class="p">,</span>
+           <span class="n">color</span><span class="o">=</span><span class="s">&#39;gray&#39;</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">axis</span><span class="p">([</span><span class="o">-</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">depth_dist</span><span class="o">.</span><span class="n">size</span> <span class="o">-</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="bp">None</span><span class="p">])</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">axvline</span><span class="p">(</span><span class="n">x</span><span class="o">=</span><span class="n">avg_depth</span><span class="p">,</span>
+               <span class="n">color</span><span class="o">=</span><span class="s">&#39;green&#39;</span><span class="p">,</span>
+               <span class="n">label</span><span class="o">=</span><span class="s">&quot;avg. coverage: </span><span class="si">%.2f</span><span class="s">x&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">avg_depth</span><span class="p">,))</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s">&quot;coverage&quot;</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s">&quot;reference bases&quot;</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">legend</span><span class="p">(</span><span class="n">loc</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>  <span class="c"># upper right</span>
+
+</div>
+<div class="viewcode-block" id="plot_scd"><a class="viewcode-back" href="../../../samsifter.tools.html#samsifter.tools.filter_ref_coverage.plot_scd">[docs]</a><span class="k">def</span> <span class="nf">plot_scd</span><span class="p">(</span><span class="n">ax</span><span class="p">,</span> <span class="n">depth_dist</span><span class="p">,</span> <span class="n">avg_depth</span><span class="p">,</span> <span class="n">ref_length</span><span class="p">,</span> <span class="n">max_depth</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Creates a bar plot of a scaled coverage distribution.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    ax : Axes</span>
+<span class="sd">        Axes instance of current plot.</span>
+<span class="sd">    depth_dist : array_like</span>
+<span class="sd">        coverage depth distribution.</span>
+<span class="sd">    avg_depth : float</span>
+<span class="sd">        Mean coverage.</span>
+<span class="sd">    ref_length : int</span>
+<span class="sd">        Length of reference in nucleotides.</span>
+<span class="sd">    max_depth : int</span>
+<span class="sd">        Maximum coverage depth.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">depth_dist</span> <span class="o">=</span> <span class="n">depth_dist</span> <span class="o">*</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="n">ref_length</span>
+
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s">&quot;SCD&quot;</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">bar</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">depth_dist</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int</span><span class="p">),</span>
+           <span class="n">depth_dist</span><span class="p">,</span>
+           <span class="n">align</span><span class="o">=</span><span class="s">&#39;center&#39;</span><span class="p">,</span>
+           <span class="n">width</span><span class="o">=</span><span class="mf">0.8</span><span class="p">,</span>
+           <span class="n">color</span><span class="o">=</span><span class="s">&#39;gray&#39;</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">axis</span><span class="p">([</span><span class="o">-</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">depth_dist</span><span class="o">.</span><span class="n">size</span> <span class="o">-</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">])</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">axvline</span><span class="p">(</span><span class="n">x</span><span class="o">=</span><span class="n">avg_depth</span><span class="p">,</span>
+               <span class="n">color</span><span class="o">=</span><span class="s">&#39;green&#39;</span><span class="p">,</span>
+               <span class="n">label</span><span class="o">=</span><span class="s">&quot;avg. coverage: </span><span class="si">%.2f</span><span class="s">x&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">avg_depth</span><span class="p">,))</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s">&quot;coverage&quot;</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s">&quot;fraction of reference bases&quot;</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">legend</span><span class="p">(</span><span class="n">loc</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>  <span class="c"># upper right</span>
+
+</div>
+<div class="viewcode-block" id="plot_ccd"><a class="viewcode-back" href="../../../samsifter.tools.html#samsifter.tools.filter_ref_coverage.plot_ccd">[docs]</a><span class="k">def</span> <span class="nf">plot_ccd</span><span class="p">(</span><span class="n">ax</span><span class="p">,</span> <span class="n">depth_dist_cumsum</span><span class="p">,</span> <span class="n">avg_depth</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Creates a bar plot of a cumulative coverage distribution.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    ax : Axes</span>
+<span class="sd">        Axes instance of current plot.</span>
+<span class="sd">    depth_dist_cumsum : array_like</span>
+<span class="sd">        Cumulative coverage depth distribution.</span>
+<span class="sd">    avg_depth : float</span>
+<span class="sd">        Mean coverage.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s">&quot;CCD&quot;</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">bar</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">depth_dist_cumsum</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int</span><span class="p">),</span>
+           <span class="n">depth_dist_cumsum</span><span class="p">,</span>
+           <span class="n">align</span><span class="o">=</span><span class="s">&#39;center&#39;</span><span class="p">,</span>
+           <span class="n">width</span><span class="o">=</span><span class="mf">0.8</span><span class="p">,</span>
+           <span class="n">color</span><span class="o">=</span><span class="s">&#39;gray&#39;</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">axis</span><span class="p">([</span><span class="o">-</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">depth_dist_cumsum</span><span class="o">.</span><span class="n">size</span> <span class="o">-</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="bp">None</span><span class="p">])</span>
+<span class="c">#    ax.axis([None, None, 0, None])</span>
+
+    <span class="n">ax</span><span class="o">.</span><span class="n">axvline</span><span class="p">(</span><span class="n">x</span><span class="o">=</span><span class="n">avg_depth</span><span class="p">,</span>
+               <span class="n">color</span><span class="o">=</span><span class="s">&#39;green&#39;</span><span class="p">,</span>
+               <span class="n">label</span><span class="o">=</span><span class="s">&quot;avg. coverage: </span><span class="si">%.2f</span><span class="s">x&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">avg_depth</span><span class="p">,))</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s">&quot;coverage&quot;</span><span class="p">)</span>
+<span class="c">#    ax.set_xticks(None, None, 1.0)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s">&quot;cumulative bases&quot;</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="plot_sccd"><a class="viewcode-back" href="../../../samsifter.tools.html#samsifter.tools.filter_ref_coverage.plot_sccd">[docs]</a><span class="k">def</span> <span class="nf">plot_sccd</span><span class="p">(</span><span class="n">ax</span><span class="p">,</span> <span class="n">depth_dist_cumperc</span><span class="p">,</span> <span class="n">avg_depth</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Creates a bar plot of a scaled cumulative coverage distribution.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    ax : Axes</span>
+<span class="sd">        Axes instance of current plot.</span>
+<span class="sd">    depth_dist_cumperc : array_like</span>
+<span class="sd">        Scaled cumulative coverage depth distribution.</span>
+<span class="sd">    avg_depth : float</span>
+<span class="sd">        Mean coverage.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s">&quot;SCCD&quot;</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">bar</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">depth_dist_cumperc</span><span class="o">.</span><span class="n">size</span><span class="p">),</span>
+           <span class="n">depth_dist_cumperc</span><span class="p">,</span>
+           <span class="n">align</span><span class="o">=</span><span class="s">&#39;edge&#39;</span><span class="p">,</span>
+           <span class="n">width</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+           <span class="n">color</span><span class="o">=</span><span class="s">&#39;gray&#39;</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">axis</span><span class="p">([</span><span class="mi">0</span><span class="p">,</span> <span class="n">depth_dist_cumperc</span><span class="o">.</span><span class="n">size</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="bp">None</span><span class="p">])</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">axvline</span><span class="p">(</span><span class="n">x</span><span class="o">=</span><span class="n">avg_depth</span><span class="p">,</span>
+               <span class="n">color</span><span class="o">=</span><span class="s">&#39;green&#39;</span><span class="p">,</span>
+               <span class="n">label</span><span class="o">=</span><span class="s">&quot;avg. coverage: </span><span class="si">%.2f</span><span class="s">x&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">avg_depth</span><span class="p">,))</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s">&quot;coverage&quot;</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s">&quot;cumulative fraction of alignment&quot;</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="plot_nccd"><a class="viewcode-back" href="../../../samsifter.tools.html#samsifter.tools.filter_ref_coverage.plot_nccd">[docs]</a><span class="k">def</span> <span class="nf">plot_nccd</span><span class="p">(</span><span class="n">ax</span><span class="p">,</span> <span class="n">depth_dist_cumperc</span><span class="p">,</span> <span class="n">avg_depth</span><span class="p">,</span> <span class="n">max_depth</span><span class="p">,</span> <span class="n">avg_depth_scaled</span><span class="p">,</span>
+              <span class="n">lci</span><span class="p">,</span> <span class="n">color</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Creates a bar plot of a normalized cumulative coverage distribution.</span>
+
+<span class="sd">    Includes legend stating average scaled and total depth.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    ax : Axes</span>
+<span class="sd">        Axes instance of current plot.</span>
+<span class="sd">    depth_dist_cumperc : array_like</span>
+<span class="sd">        Scaled cumulative coverage depth distribution.</span>
+<span class="sd">    avg_depth : float</span>
+<span class="sd">        Mean coverage.</span>
+<span class="sd">    max_depth : int</span>
+<span class="sd">        Maximum coverage depth.</span>
+<span class="sd">    avg_depth_scaled : float</span>
+<span class="sd">        Scaled mean coverage.</span>
+<span class="sd">    lci : float</span>
+<span class="sd">        LCI parameter.</span>
+<span class="sd">    color : str</span>
+<span class="sd">        Color name to be used for the bar plot.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s">&quot;NCCD&quot;</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">bar</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">depth_dist_cumperc</span><span class="o">.</span><span class="n">size</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="n">max_depth</span><span class="p">,</span>
+           <span class="n">depth_dist_cumperc</span><span class="p">,</span>
+           <span class="n">align</span><span class="o">=</span><span class="s">&#39;edge&#39;</span><span class="p">,</span>
+           <span class="n">width</span><span class="o">=</span><span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="n">depth_dist_cumperc</span><span class="o">.</span><span class="n">size</span> <span class="o">-</span> <span class="mi">1</span><span class="p">),</span>
+           <span class="n">color</span><span class="o">=</span><span class="n">color</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">axis</span><span class="p">([</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">])</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">axvline</span><span class="p">(</span><span class="n">x</span><span class="o">=</span><span class="n">avg_depth_scaled</span><span class="p">,</span>
+               <span class="n">color</span><span class="o">=</span><span class="s">&#39;green&#39;</span><span class="p">,</span>
+               <span class="n">label</span><span class="o">=</span><span class="s">&quot;avg. coverage: </span><span class="si">%.2f</span><span class="s"> [</span><span class="si">%.2f</span><span class="s">x]&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">avg_depth_scaled</span><span class="p">,</span>
+                                                      <span class="n">avg_depth</span><span class="p">))</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">axvline</span><span class="p">(</span><span class="n">x</span><span class="o">=</span><span class="n">lci</span> <span class="o">*</span> <span class="n">avg_depth_scaled</span><span class="p">,</span>
+               <span class="n">linestyle</span><span class="o">=</span><span class="s">&#39;dashed&#39;</span><span class="p">,</span>
+               <span class="n">color</span><span class="o">=</span><span class="s">&#39;green&#39;</span><span class="p">,</span>
+               <span class="n">label</span><span class="o">=</span><span class="s">&quot;</span><span class="si">%.2f</span><span class="s"> x avg. cov.: </span><span class="si">%.2f</span><span class="s"> [</span><span class="si">%.2f</span><span class="s">x]&quot;</span> <span class="o">%</span> <span class="p">(</span>
+                   <span class="n">lci</span><span class="p">,</span> <span class="n">lci</span> <span class="o">*</span> <span class="n">avg_depth_scaled</span><span class="p">,</span> <span class="n">lci</span> <span class="o">*</span> <span class="n">avg_depth</span><span class="p">))</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s">&quot;fraction of max coverage&quot;</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s">&quot;cumulative fraction of alignment&quot;</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">legend</span><span class="p">(</span><span class="n">loc</span><span class="o">=</span><span class="mi">4</span><span class="p">)</span>  <span class="c"># lower right</span>
+
+</div>
+<div class="viewcode-block" id="plot_lorenz"><a class="viewcode-back" href="../../../samsifter.tools.html#samsifter.tools.filter_ref_coverage.plot_lorenz">[docs]</a><span class="k">def</span> <span class="nf">plot_lorenz</span><span class="p">(</span><span class="n">ax</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Creates a Lorenz curve plot of a coverage distribution.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    ax : Axes</span>
+<span class="sd">        Axes instance of current plot.</span>
+<span class="sd">    x : array_like</span>
+<span class="sd">        Coverage bins.</span>
+<span class="sd">    Y : array_like</span>
+<span class="sd">        Aligned bases per coverage bin.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="p">(</span><span class="n">gini</span><span class="p">,</span> <span class="n">auc</span><span class="p">)</span> <span class="o">=</span> <span class="n">get_gini_auc</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span>
+
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s">&quot;Lorenz&quot;</span><span class="p">)</span>
+
+    <span class="c"># show equal distribution</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">([</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span>
+            <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span>
+            <span class="n">color</span><span class="o">=</span><span class="s">&#39;green&#39;</span><span class="p">,</span>
+            <span class="n">label</span><span class="o">=</span><span class="s">&quot;equal distribution&quot;</span><span class="p">)</span>
+
+    <span class="c"># show actual distribution</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s">&quot;actual distribution&quot;</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s">&#39;gray&#39;</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.2</span><span class="p">)</span>
+
+    <span class="n">ax</span><span class="o">.</span><span class="n">axis</span><span class="p">([</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">])</span>
+
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s">&quot;fraction of coverage bins&quot;</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s">&quot;fraction of alignment&quot;</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">text</span><span class="p">(</span><span class="mf">0.05</span><span class="p">,</span> <span class="mf">0.75</span><span class="p">,</span> <span class="s">&quot;Gini = </span><span class="si">%.2f</span><span class="s">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">gini</span><span class="p">,),</span> <span class="n">transform</span><span class="o">=</span><span class="n">ax</span><span class="o">.</span><span class="n">transAxes</span><span class="p">)</span>
+
+    <span class="n">ax</span><span class="o">.</span><span class="n">legend</span><span class="p">(</span><span class="n">loc</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>  <span class="c"># upper left</span>
+
+</div>
+<div class="viewcode-block" id="plot_lorenz_b2b"><a class="viewcode-back" href="../../../samsifter.tools.html#samsifter.tools.filter_ref_coverage.plot_lorenz_b2b">[docs]</a><span class="k">def</span> <span class="nf">plot_lorenz_b2b</span><span class="p">(</span><span class="n">ax</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Creates a Lorenz curve plot of a base2base coverage distribution.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    ax : Axes</span>
+<span class="sd">        Axes instance of current plot.</span>
+<span class="sd">    x : array_like</span>
+<span class="sd">        reference base positions.</span>
+<span class="sd">    Y : array_like</span>
+<span class="sd">        Aligned bases per reference base.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="p">(</span><span class="n">gini</span><span class="p">,</span> <span class="n">auc</span><span class="p">)</span> <span class="o">=</span> <span class="n">get_gini_auc</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span>
+
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s">&quot;Lorenz base2base&quot;</span><span class="p">)</span>
+
+    <span class="c"># show equal distribution</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">([</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span>
+            <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span>
+            <span class="n">color</span><span class="o">=</span><span class="s">&#39;green&#39;</span><span class="p">,</span>
+            <span class="n">label</span><span class="o">=</span><span class="s">&quot;equal distribution&quot;</span><span class="p">)</span>
+
+    <span class="c"># show actual distribution</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s">&quot;actual distribution&quot;</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s">&#39;gray&#39;</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.2</span><span class="p">)</span>
+
+    <span class="n">ax</span><span class="o">.</span><span class="n">axis</span><span class="p">([</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">])</span>
+
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s">&quot;fraction of reference bases&quot;</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s">&quot;fraction of aligned read bases&quot;</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">text</span><span class="p">(</span><span class="mf">0.05</span><span class="p">,</span> <span class="mf">0.75</span><span class="p">,</span> <span class="s">&quot;Gini = </span><span class="si">%.2f</span><span class="s">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">gini</span><span class="p">,),</span> <span class="n">transform</span><span class="o">=</span><span class="n">ax</span><span class="o">.</span><span class="n">transAxes</span><span class="p">)</span>
+
+    <span class="n">ax</span><span class="o">.</span><span class="n">legend</span><span class="p">(</span><span class="n">loc</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>  <span class="c"># upper left</span>
+
+</div>
+<span class="sd">&quot;&quot;&quot; Integration methods &quot;&quot;&quot;</span>
+
+
+<div class="viewcode-block" id="integral_discrete"><a class="viewcode-back" href="../../../samsifter.tools.html#samsifter.tools.filter_ref_coverage.integral_discrete">[docs]</a><span class="k">def</span> <span class="nf">integral_discrete</span><span class="p">(</span><span class="n">dist</span><span class="p">,</span> <span class="n">limit</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Integrate discrete distribution with stepsize 1 by adding up values.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    dist : array_like</span>
+<span class="sd">        Discrete distribution with stepsize 1.</span>
+<span class="sd">    limit : int</span>
+<span class="sd">        Upper limit (exclusive).</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    float</span>
+<span class="sd">        Integral of the distribution between 0 and upper limit.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">dist</span><span class="p">[</span><span class="mi">0</span><span class="p">:</span><span class="n">limit</span><span class="p">])</span> <span class="o">/</span> <span class="mf">100.0</span>
+
+</div>
+<div class="viewcode-block" id="integral_scaled"><a class="viewcode-back" href="../../../samsifter.tools.html#samsifter.tools.filter_ref_coverage.integral_scaled">[docs]</a><span class="k">def</span> <span class="nf">integral_scaled</span><span class="p">(</span><span class="n">dist</span><span class="p">,</span> <span class="n">limit</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Integrates scaled discrete distribution with arbitrary stepsize.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    dist : array_like</span>
+<span class="sd">        Scaled discrete distribution with arbitrary stepsize.</span>
+<span class="sd">    limit : float</span>
+<span class="sd">        Upper limit (exclusive).</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    float</span>
+<span class="sd">        Integral of the distribution between 0 and upper limit.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">area</span> <span class="o">=</span> <span class="mi">0</span>
+
+    <span class="c"># prevent division by zero (for cases with 100% 1x coverage)</span>
+    <span class="k">if</span> <span class="n">dist</span><span class="o">.</span><span class="n">size</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mf">1.0</span> <span class="o">*</span> <span class="n">limit</span>
+
+    <span class="c"># scale limit by max depth</span>
+    <span class="k">if</span> <span class="n">limit</span> <span class="o">&lt;=</span> <span class="n">dist</span><span class="o">.</span><span class="n">size</span> <span class="o">-</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="n">limit_scaled</span> <span class="o">=</span> <span class="n">limit</span> <span class="o">*</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="n">dist</span><span class="o">.</span><span class="n">size</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">limit_scaled</span> <span class="o">=</span> <span class="mf">1.0</span>
+
+    <span class="n">stepsize</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="n">dist</span><span class="o">.</span><span class="n">size</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">stepsize</span>
+    <span class="k">for</span> <span class="n">y</span> <span class="ow">in</span> <span class="n">np</span><span class="o">.</span><span class="n">nditer</span><span class="p">(</span><span class="n">dist</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">limit_scaled</span> <span class="o">&gt;</span> <span class="n">x</span><span class="p">:</span>
+            <span class="n">area</span> <span class="o">+=</span> <span class="n">stepsize</span> <span class="o">*</span> <span class="n">y</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">area</span> <span class="o">+=</span> <span class="p">(</span><span class="n">limit_scaled</span> <span class="o">-</span> <span class="p">(</span><span class="n">x</span> <span class="o">-</span> <span class="n">stepsize</span><span class="p">))</span> <span class="o">*</span> <span class="n">y</span>
+            <span class="k">break</span>
+        <span class="n">x</span> <span class="o">+=</span> <span class="n">stepsize</span>
+
+    <span class="k">return</span> <span class="n">area</span>
+
+</div>
+<div class="viewcode-block" id="lorenzify"><a class="viewcode-back" href="../../../samsifter.tools.html#samsifter.tools.filter_ref_coverage.lorenzify">[docs]</a><span class="k">def</span> <span class="nf">lorenzify</span><span class="p">(</span><span class="n">depth_dist</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Calculates Lorenz curve from coverage distribution.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    depth_dist : array_like</span>
+<span class="sd">        Coverage depth distribution.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    x : array_like</span>
+<span class="sd">        X coordinates of Lorenz curve.</span>
+<span class="sd">    y : array_like</span>
+<span class="sd">        Y coordinates of Lorenz curve.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">reads_sum</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">depth_dist</span><span class="p">)</span>
+    <span class="n">dd_scaled</span> <span class="o">=</span> <span class="n">depth_dist</span> <span class="o">*</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="n">reads_sum</span>
+    <span class="n">dd_sorted</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">dd_scaled</span><span class="p">)</span>
+    <span class="n">dd_cum</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">cumsum</span><span class="p">(</span><span class="n">dd_sorted</span><span class="p">)</span>
+
+    <span class="c"># append (0|0) origin to beginning of arrays</span>
+    <span class="n">y</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">0.0</span><span class="p">]),</span> <span class="n">dd_cum</span><span class="p">)</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">0.0</span><span class="p">]),</span>
+                  <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">depth_dist</span><span class="o">.</span><span class="n">size</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="n">depth_dist</span><span class="o">.</span><span class="n">size</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="lorenzify_b2b"><a class="viewcode-back" href="../../../samsifter.tools.html#samsifter.tools.filter_ref_coverage.lorenzify_b2b">[docs]</a><span class="k">def</span> <span class="nf">lorenzify_b2b</span><span class="p">(</span><span class="n">depth_dist</span><span class="p">,</span> <span class="n">ignore_uncovered</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Calculate Lorenz curve from base2base coverage distribution.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    depth_dist : array_like</span>
+<span class="sd">        Coverage depth distribution.</span>
+<span class="sd">    ignore_uncovered : bool</span>
+<span class="sd">        Ignore bases with zero coverage, defaults to True.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    x : array_like</span>
+<span class="sd">        X coordinates of Lorenz curve.</span>
+<span class="sd">    y : array_like</span>
+<span class="sd">        Y coordinates of Lorenz curve.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">ali_total</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">ref_total</span> <span class="o">=</span> <span class="mi">0</span>
+
+    <span class="n">ali_bases_list</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">ref_bases_list</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="p">(</span><span class="n">coverage</span><span class="p">,</span> <span class="n">count</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">depth_dist</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">ignore_uncovered</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">coverage</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="k">continue</span>
+        <span class="n">ali_bases</span> <span class="o">=</span> <span class="n">count</span> <span class="o">*</span> <span class="n">coverage</span>
+        <span class="n">ali_bases_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ali_bases</span><span class="p">)</span>
+        <span class="n">ref_bases_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">count</span><span class="p">)</span>
+
+        <span class="n">ali_total</span> <span class="o">+=</span> <span class="n">ali_bases</span>
+        <span class="n">ref_total</span> <span class="o">+=</span> <span class="n">count</span>
+
+    <span class="c"># turn lists into arrays and scale them</span>
+    <span class="n">b</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">ref_bases_list</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="n">ref_total</span>
+    <span class="n">v</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">ali_bases_list</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="n">ali_total</span>
+
+    <span class="n">triples</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">b</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">v</span><span class="o">/</span><span class="n">b</span><span class="p">])</span>
+    <span class="n">ttriples</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="n">triples</span><span class="p">)</span>
+    <span class="n">tttriples</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="n">ttriples</span><span class="p">[</span><span class="n">ttriples</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">argsort</span><span class="p">()])</span>
+
+    <span class="n">x</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">cumsum</span><span class="p">(</span><span class="n">tttriples</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+    <span class="n">y</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">cumsum</span><span class="p">(</span><span class="n">tttriples</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+
+    <span class="c"># append (0|0) origin to beginning of arrays, scale both axes on the fly</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mi">0</span><span class="p">]),</span> <span class="n">x</span><span class="p">)</span>
+    <span class="n">y</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mi">0</span><span class="p">]),</span> <span class="n">y</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="get_gini_auc"><a class="viewcode-back" href="../../../samsifter.tools.html#samsifter.tools.filter_ref_coverage.get_gini_auc">[docs]</a><span class="k">def</span> <span class="nf">get_gini_auc</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Calculates Gini coefficient and area under Lorenz curve.</span>
+
+<span class="sd">    The Gini coefficient (also known as the Gini index) is a measure of</span>
+<span class="sd">    statistical dispersion. When applied to the distribution of aligned read</span>
+<span class="sd">    bases per reference base an even distribution of reads across the reference</span>
+<span class="sd">    should have a low Gini coefficient (towards 0) while an alignment with all</span>
+<span class="sd">    reads covering the same reference region should have a high Gini</span>
+<span class="sd">    coefficient (towards 1).</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    x : array_like</span>
+<span class="sd">        X coordinates of a normalized Lorenz distribution.</span>
+<span class="sd">    y : array_like</span>
+<span class="sd">        Y coordinates of a normalized Lorenz distribution.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    float</span>
+<span class="sd">        Gini coefficient. Ranges from 0 for a perfectly even distribution to 1</span>
+<span class="sd">        for a maximally uneven distribution.</span>
+<span class="sd">    float</span>
+<span class="sd">        Integral of the Lorenz curve (area under curve). Maximal value is 0.5</span>
+<span class="sd">        if the given distribution is uniform.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c"># calculate area under curve</span>
+    <span class="n">auc</span> <span class="o">=</span> <span class="mf">0.0</span>
+    <span class="k">for</span> <span class="p">(</span><span class="n">idx</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+        <span class="c"># no area at origin (0|0)</span>
+        <span class="k">if</span> <span class="n">idx</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="n">square</span> <span class="o">=</span> <span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="o">-</span> <span class="n">x</span><span class="p">[</span><span class="n">idx</span> <span class="o">-</span> <span class="mi">1</span><span class="p">])</span> <span class="o">*</span> <span class="n">y</span><span class="p">[</span><span class="n">idx</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span>
+        <span class="n">triangle</span> <span class="o">=</span> <span class="p">((</span><span class="n">x</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="o">-</span> <span class="n">x</span><span class="p">[</span><span class="n">idx</span> <span class="o">-</span> <span class="mi">1</span><span class="p">])</span> <span class="o">*</span> <span class="p">(</span><span class="n">y</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="o">-</span> <span class="n">y</span><span class="p">[</span><span class="n">idx</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]))</span> <span class="o">/</span> <span class="mf">2.0</span>
+        <span class="n">auc</span> <span class="o">=</span> <span class="n">auc</span> <span class="o">+</span> <span class="n">square</span> <span class="o">+</span> <span class="n">triangle</span>
+
+    <span class="c"># calculate Gini coefficient (area under normalized uniform dist is 0.5)</span>
+    <span class="n">gini</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">auc</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="p">(</span><span class="n">gini</span><span class="p">,</span> <span class="n">auc</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="covered_length_from_cigar"><a class="viewcode-back" href="../../../samsifter.tools.html#samsifter.tools.filter_ref_coverage.covered_length_from_cigar">[docs]</a><span class="k">def</span> <span class="nf">covered_length_from_cigar</span><span class="p">(</span><span class="n">cigar</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Calculates length of reference covered by read from CIGAR operations.</span>
+
+<span class="sd">    Note</span>
+<span class="sd">    ----</span>
+<span class="sd">    * not counting padding, skipping or insertions into the reference.</span>
+<span class="sd">    * not counting hard or soft clipped bases of the read</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    cigar : str</span>
+<span class="sd">        Unmodified CIGAR string from SAM file.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    int</span>
+<span class="sd">        Length of the reference sequence.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">regex</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="s">&quot;(\d+)([MIDNSHP=X])&quot;</span><span class="p">)</span>
+    <span class="n">length</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">match</span> <span class="ow">in</span> <span class="n">regex</span><span class="o">.</span><span class="n">finditer</span><span class="p">(</span><span class="n">cigar</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">match</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span> <span class="ow">in</span> <span class="p">(</span><span class="s">&quot;M&quot;</span><span class="p">,</span> <span class="s">&quot;=&quot;</span><span class="p">,</span> <span class="s">&quot;X&quot;</span><span class="p">,</span> <span class="s">&quot;D&quot;</span><span class="p">):</span>
+            <span class="n">length</span> <span class="o">+=</span> <span class="nb">int</span><span class="p">(</span><span class="n">match</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">length</span>
+
+</div>
+<div class="viewcode-block" id="calc_avg_depth"><a class="viewcode-back" href="../../../samsifter.tools.html#samsifter.tools.filter_ref_coverage.calc_avg_depth">[docs]</a><span class="k">def</span> <span class="nf">calc_avg_depth</span><span class="p">(</span><span class="n">depth_dist</span><span class="p">,</span> <span class="n">ignore_uncovered</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Calculate average depth from a coverage distribution.</span>
+
+<span class="sd">    Optionally ignores uncovered bases (first array element).</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    depth_dist : array_like</span>
+<span class="sd">        Sorted coverage depth distribution.</span>
+<span class="sd">    ignore_uncovered : bool, optional</span>
+<span class="sd">        Ignore bases with zero coverage (first array element), defaults to</span>
+<span class="sd">        True.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">sum_bases</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">sum_cover</span> <span class="o">=</span> <span class="mi">0</span>
+
+    <span class="k">for</span> <span class="p">(</span><span class="n">coverage</span><span class="p">,</span> <span class="n">count</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">depth_dist</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">ignore_uncovered</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">coverage</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="k">continue</span>
+        <span class="n">sum_bases</span> <span class="o">+=</span> <span class="n">count</span>
+        <span class="n">sum_cover</span> <span class="o">+=</span> <span class="n">coverage</span> <span class="o">*</span> <span class="n">count</span>
+
+    <span class="k">return</span> <span class="n">sum_cover</span> <span class="o">/</span> <span class="p">(</span><span class="n">sum_bases</span> <span class="o">*</span> <span class="mf">1.0</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="main"><a class="viewcode-back" href="../../../samsifter.tools.html#samsifter.tools.filter_ref_coverage.main">[docs]</a><span class="k">def</span> <span class="nf">main</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;Executable to filter SAM files for references with uneven coverage.</span>
+
+<span class="sd">    See ``--help`` for details on expected arguments. Takes input from</span>
+<span class="sd">    either STDIN, or optional, or positional arguments. Logs messages to</span>
+<span class="sd">    STDERR and writes processed SAM files to STDOUT.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c"># parse arguments</span>
+    <span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">description</span><span class="o">=</span><span class="n">DESC</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&#39;-i&#39;</span><span class="p">,</span> <span class="s">&#39;--input&#39;</span><span class="p">,</span>
+                        <span class="nb">type</span><span class="o">=</span><span class="n">check_sam</span><span class="p">,</span>
+                        <span class="n">help</span><span class="o">=</span><span class="s">&quot;specify SAM file to be analysed (default: &quot;</span>
+                        <span class="s">&quot;STDIN)&quot;</span><span class="p">,</span>
+                        <span class="n">required</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&#39;--discard&#39;</span><span class="p">,</span>
+                        <span class="nb">type</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span>
+                        <span class="n">help</span><span class="o">=</span><span class="s">&quot;keep or discard entries passing the filter &quot;</span>
+                             <span class="s">&quot;criteria?&quot;</span><span class="p">,</span>
+                        <span class="n">required</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+                        <span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&#39;-v&#39;</span><span class="p">,</span> <span class="s">&#39;--verbose&#39;</span><span class="p">,</span>
+                        <span class="n">required</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+                        <span class="n">action</span><span class="o">=</span><span class="s">&#39;store_true&#39;</span><span class="p">,</span>
+                        <span class="n">help</span><span class="o">=</span><span class="s">&#39;print additional information to stderr&#39;</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&#39;-d&#39;</span><span class="p">,</span> <span class="s">&#39;--debug&#39;</span><span class="p">,</span>
+                        <span class="n">required</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+                        <span class="n">action</span><span class="o">=</span><span class="s">&#39;store_true&#39;</span><span class="p">,</span>
+                        <span class="n">help</span><span class="o">=</span><span class="s">&#39;print debug messages to stderr&#39;</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&#39;-m&#39;</span><span class="p">,</span> <span class="s">&#39;--modify&#39;</span><span class="p">,</span>
+                        <span class="n">required</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+                        <span class="n">action</span><span class="o">=</span><span class="s">&#39;store_true&#39;</span><span class="p">,</span>
+                        <span class="n">help</span><span class="o">=</span><span class="s">&#39;modify header by adding PG record&#39;</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&#39;-r&#39;</span><span class="p">,</span> <span class="s">&#39;--read_lengths&#39;</span><span class="p">,</span>
+                        <span class="n">required</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+                        <span class="n">action</span><span class="o">=</span><span class="s">&#39;store_true&#39;</span><span class="p">,</span>
+                        <span class="n">help</span><span class="o">=</span><span class="s">&#39;analyze read length distributions&#39;</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&#39;-c&#39;</span><span class="p">,</span> <span class="s">&#39;--covered&#39;</span><span class="p">,</span>
+                        <span class="n">required</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+                        <span class="n">action</span><span class="o">=</span><span class="s">&#39;store_true&#39;</span><span class="p">,</span>
+                        <span class="n">help</span><span class="o">=</span><span class="s">&#39;covered bases only, ignore uncovered bases&#39;</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&#39;-p&#39;</span><span class="p">,</span> <span class="s">&#39;--plot&#39;</span><span class="p">,</span>
+                        <span class="n">required</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+                        <span class="n">action</span><span class="o">=</span><span class="s">&#39;store_true&#39;</span><span class="p">,</span>
+                        <span class="n">help</span><span class="o">=</span><span class="s">&#39;plot distribution(s)&#39;</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&#39;-l&#39;</span><span class="p">,</span> <span class="s">&#39;--lci_arg&#39;</span><span class="p">,</span>
+                        <span class="n">required</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+                        <span class="nb">type</span><span class="o">=</span><span class="n">check_pos_float_max1</span><span class="p">,</span>
+                        <span class="n">help</span><span class="o">=</span><span class="s">&#39;fraction of mean coverage to use for LCI </span><span class="se">\</span>
+<span class="s">                        integration&#39;</span><span class="p">,</span>
+                        <span class="n">default</span><span class="o">=</span><span class="mf">0.5</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&#39;-s&#39;</span><span class="p">,</span> <span class="s">&#39;--stats_file&#39;</span><span class="p">,</span>
+                        <span class="n">required</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+                        <span class="n">help</span><span class="o">=</span><span class="s">&quot;override filename for tab-separated statistics&quot;</span><span class="p">)</span>
+
+    <span class="n">acc_thresholds</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">add_mutually_exclusive_group</span><span class="p">(</span><span class="n">required</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+    <span class="n">acc_thresholds</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&#39;--min_cov&#39;</span><span class="p">,</span>
+                                <span class="nb">type</span><span class="o">=</span><span class="n">check_pos_int</span><span class="p">,</span>
+                                <span class="n">help</span><span class="o">=</span><span class="s">&#39;minimum average coverage&#39;</span><span class="p">,</span>
+                                <span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="n">acc_thresholds</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&#39;--max_cov&#39;</span><span class="p">,</span>
+                                <span class="nb">type</span><span class="o">=</span><span class="n">check_pos_int</span><span class="p">,</span>
+                                <span class="n">help</span><span class="o">=</span><span class="s">&#39;maximum average coverage&#39;</span><span class="p">,</span>
+                                <span class="n">default</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">maxsize</span><span class="p">)</span>
+    <span class="n">acc_thresholds</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&#39;--min_lci&#39;</span><span class="p">,</span>
+                                <span class="nb">type</span><span class="o">=</span><span class="n">check_pos_float</span><span class="p">,</span>
+                                <span class="n">help</span><span class="o">=</span><span class="s">&#39;minimum LCI&#39;</span><span class="p">,</span>
+                                <span class="n">default</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span>
+    <span class="n">acc_thresholds</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&#39;--max_lci&#39;</span><span class="p">,</span>
+                                <span class="nb">type</span><span class="o">=</span><span class="n">check_pos_float</span><span class="p">,</span>
+                                <span class="n">help</span><span class="o">=</span><span class="s">&#39;maximum LCI&#39;</span><span class="p">,</span>
+                                <span class="n">default</span><span class="o">=</span><span class="mf">1000.0</span><span class="p">)</span>
+    <span class="n">acc_thresholds</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&#39;--min_gini&#39;</span><span class="p">,</span>
+                                <span class="nb">type</span><span class="o">=</span><span class="n">check_pos_float_max1</span><span class="p">,</span>
+                                <span class="n">help</span><span class="o">=</span><span class="s">&#39;minimum Gini coefficient&#39;</span><span class="p">,</span>
+                                <span class="n">default</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span>
+    <span class="n">acc_thresholds</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&#39;--max_gini&#39;</span><span class="p">,</span>
+                                <span class="nb">type</span><span class="o">=</span><span class="n">check_pos_float_max1</span><span class="p">,</span>
+                                <span class="n">help</span><span class="o">=</span><span class="s">&#39;maximum Gini coefficient&#39;</span><span class="p">,</span>
+                                <span class="n">default</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span>
+
+    <span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">remainArgs</span><span class="p">)</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">parse_known_args</span><span class="p">()</span>
+
+    <span class="c"># configure logging</span>
+    <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">verbose</span><span class="p">:</span>
+        <span class="n">log</span><span class="o">.</span><span class="n">basicConfig</span><span class="p">(</span><span class="n">format</span><span class="o">=</span><span class="s">&quot;</span><span class="si">%(levelname)s</span><span class="s">: </span><span class="si">%(message)s</span><span class="s">&quot;</span><span class="p">,</span> <span class="n">level</span><span class="o">=</span><span class="n">log</span><span class="o">.</span><span class="n">DEBUG</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">log</span><span class="o">.</span><span class="n">basicConfig</span><span class="p">(</span><span class="n">format</span><span class="o">=</span><span class="s">&quot;</span><span class="si">%(levelname)s</span><span class="s">: </span><span class="si">%(message)s</span><span class="s">&quot;</span><span class="p">)</span>
+
+<span class="c">#    if args.debug:</span>
+<span class="c">#        from pprint import pprint</span>
+
+    <span class="c"># set filename for statistics output</span>
+    <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">stats_file</span><span class="p">:</span>
+        <span class="n">stats_filename</span> <span class="o">=</span> <span class="n">args</span><span class="o">.</span><span class="n">stats_file</span>
+    <span class="k">elif</span> <span class="n">args</span><span class="o">.</span><span class="n">input</span><span class="p">:</span>
+        <span class="n">stats_filename</span> <span class="o">=</span> <span class="n">args</span><span class="o">.</span><span class="n">input</span> <span class="o">+</span> <span class="s">&quot;.stats.csv&quot;</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="c"># this assumes that filename was explicitly set by calling batch script</span>
+        <span class="n">stats_filename</span> <span class="o">=</span> <span class="s">&quot;${filename}.stats.csv&quot;</span>
+
+    <span class="c"># initialize dicts</span>
+    <span class="n">header</span> <span class="o">=</span> <span class="p">[]</span>                     <span class="c"># SAM header lines, unmodified</span>
+    <span class="n">depths</span> <span class="o">=</span> <span class="p">{}</span>                     <span class="c"># dict of np.array of ints</span>
+    <span class="n">ref_lengths</span> <span class="o">=</span> <span class="p">{}</span>                <span class="c"># dict of ints</span>
+    <span class="n">read_counts</span> <span class="o">=</span> <span class="p">{}</span>                <span class="c"># dict of ints</span>
+    <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">read_lengths</span><span class="p">:</span>
+        <span class="n">read_lenghts</span> <span class="o">=</span> <span class="p">{}</span>           <span class="c"># dict of dict of ints</span>
+        <span class="n">read_lenghtsTotal</span> <span class="o">=</span> <span class="p">{}</span>      <span class="c"># dict of ints</span>
+    <span class="n">line_count</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">positions</span> <span class="o">=</span> <span class="p">{}</span>   <span class="c"># dict of list for references and their line numbers</span>
+    <span class="nb">buffer</span> <span class="o">=</span> <span class="bp">None</span>    <span class="c"># file handle used to buffer complete STDIN</span>
+    <span class="n">byte_offset</span> <span class="o">=</span> <span class="mi">0</span>  <span class="c"># offset of first line after end of header</span>
+    <span class="n">line_offset</span> <span class="o">=</span> <span class="mi">0</span>
+
+    <span class="c"># parse SAM file and divide reads by reference accession</span>
+    <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&quot;START of filtering reads by conservation.&quot;</span><span class="p">)</span>
+
+    <span class="c"># parse SAM file</span>
+    <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&quot;STEP 1: parsing SAM records.&quot;</span><span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        open SAM file from either command line argument or STDIN</span>
+<span class="sd">        use temporary file as buffer if reading from STDIN</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">input</span><span class="p">:</span>
+            <span class="n">handle</span> <span class="o">=</span> <span class="nb">open</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">input</span><span class="p">,</span> <span class="s">&#39;r&#39;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">handle</span> <span class="o">=</span> <span class="n">fileinput</span><span class="o">.</span><span class="n">input</span><span class="p">(</span><span class="n">remainArgs</span><span class="p">)</span>
+            <span class="nb">buffer</span> <span class="o">=</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">TemporaryFile</span><span class="p">(</span><span class="n">mode</span><span class="o">=</span><span class="s">&#39;w+&#39;</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">line_nr</span><span class="p">,</span> <span class="n">line</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">handle</span><span class="p">,</span> <span class="mi">0</span><span class="p">):</span>
+            <span class="n">line_count</span> <span class="o">=</span> <span class="n">line_nr</span> <span class="o">+</span> <span class="mi">1</span>
+            <span class="k">if</span> <span class="nb">buffer</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+                <span class="nb">buffer</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+
+            <span class="c"># assuming that headers always precede alignments (SAMv1)</span>
+            <span class="k">if</span> <span class="n">line</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s">&quot;@&quot;</span><span class="p">):</span>
+                <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">modify</span><span class="p">:</span>
+                    <span class="n">line_offset</span> <span class="o">=</span> <span class="n">line_nr</span> <span class="o">+</span> <span class="mi">1</span>
+                    <span class="c"># store header lines for later modification</span>
+                    <span class="n">header</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+                    <span class="c"># increase offset until reaching end of header</span>
+                    <span class="n">byte_offset</span> <span class="o">+=</span> <span class="nb">len</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">fields</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s">&quot;</span><span class="se">\t</span><span class="s">&quot;</span><span class="p">)</span>
+                <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">                #   content     description</span>
+<span class="sd">                ===========================</span>
+<span class="sd">                0   QNAME</span>
+<span class="sd">                1   FLAG</span>
+<span class="sd">                2   RNAME</span>
+<span class="sd">                3   POS</span>
+<span class="sd">                4   MAPQ</span>
+<span class="sd">                5   CIGAR</span>
+<span class="sd">                6   RNEXT</span>
+<span class="sd">                7   PNEXT</span>
+<span class="sd">                8   TLEN</span>
+<span class="sd">                9   SEQ</span>
+<span class="sd">                10  QUAL</span>
+<span class="sd">                ...optional fields...</span>
+<span class="sd">                11  AS          alignment score</span>
+<span class="sd">                12  NM          edit distance to reference</span>
+<span class="sd">                13  ZL          reference length</span>
+<span class="sd">                14  ZR          &quot;raw score&quot;</span>
+<span class="sd">                15  ZE          &quot;expected&quot;</span>
+<span class="sd">                16  ZI          percent identify (incl. indels and deaminated)</span>
+<span class="sd">                17  MD          mismatching positions</span>
+<span class="sd">                18  NS          PMD score</span>
+<span class="sd">                &quot;&quot;&quot;</span>
+
+                <span class="c"># extract accession from required RNAME field</span>
+                <span class="c"># (as written by MALT 0.0.3)</span>
+                <span class="n">rname_parts</span> <span class="o">=</span> <span class="n">fields</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s">&quot;|&quot;</span><span class="p">)</span>
+                <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">                #   content</span>
+<span class="sd">                ===============</span>
+<span class="sd">                0   gi</span>
+<span class="sd">                1   GenBank ID</span>
+<span class="sd">                2   ref</span>
+<span class="sd">                3   accession</span>
+<span class="sd">                4   tax</span>
+<span class="sd">                5   taxonomy ID</span>
+<span class="sd">                &quot;&quot;&quot;</span>
+
+                <span class="n">accession</span> <span class="o">=</span> <span class="s">&quot;&quot;</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">accession</span> <span class="o">=</span> <span class="n">rname_parts</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span>
+                <span class="k">except</span> <span class="ne">IndexError</span><span class="p">:</span>
+                    <span class="n">accession</span> <span class="o">=</span> <span class="s">&quot;unknown&quot;</span>
+                    <span class="n">log</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s">&quot;no accession in line </span><span class="si">%s</span><span class="s">, assigning read to &quot;</span>
+                             <span class="s">&quot;accession &#39;unknown&#39;&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">line_nr</span> <span class="o">+</span> <span class="mi">1</span><span class="p">))</span>
+
+                <span class="c"># extract reference sequence length from optional ZL field</span>
+                <span class="n">ref_length</span> <span class="o">=</span> <span class="mi">0</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">zl_parts</span> <span class="o">=</span> <span class="n">fields</span><span class="p">[</span><span class="mi">13</span><span class="p">]</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s">&quot;:&quot;</span><span class="p">)</span>
+                    <span class="n">ref_length</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">zl_parts</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+                <span class="k">except</span> <span class="ne">IndexError</span><span class="p">:</span>
+                    <span class="n">log</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s">&quot;no ZL field in line&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">line_nr</span> <span class="o">+</span> <span class="mi">1</span><span class="p">))</span>
+                    <span class="nb">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+
+                <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">                read                ------------------------------</span>
+<span class="sd">                ref     -----------------------------------------------------</span>
+<span class="sd">                cover   00000000000011111111111111111111111111111100000000000</span>
+<span class="sd">                            pre    |         covered              |   post</span>
+<span class="sd">                                 start                           stop</span>
+<span class="sd">                &quot;&quot;&quot;</span>
+
+                <span class="c"># get 1-based start position of read from required POS field</span>
+                <span class="n">pre</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">fields</span><span class="p">[</span><span class="mi">3</span><span class="p">])</span> <span class="o">-</span> <span class="mi">1</span>
+
+                <span class="c"># obtain stop position from required CIGAR field</span>
+                <span class="n">covered</span> <span class="o">=</span> <span class="n">covered_length_from_cigar</span><span class="p">(</span><span class="n">fields</span><span class="p">[</span><span class="mi">5</span><span class="p">])</span>
+                <span class="n">stop</span> <span class="o">=</span> <span class="n">pre</span> <span class="o">+</span> <span class="n">covered</span>
+
+                <span class="k">if</span> <span class="n">accession</span> <span class="ow">in</span> <span class="n">depths</span><span class="p">:</span>
+                    <span class="n">read_counts</span><span class="p">[</span><span class="n">accession</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+                    <span class="k">for</span> <span class="n">position</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">pre</span><span class="p">,</span> <span class="n">stop</span> <span class="o">+</span> <span class="mi">1</span><span class="p">):</span>
+                        <span class="k">if</span> <span class="n">position</span> <span class="ow">in</span> <span class="n">depths</span><span class="p">[</span><span class="n">accession</span><span class="p">]:</span>
+                            <span class="n">depths</span><span class="p">[</span><span class="n">accession</span><span class="p">][</span><span class="n">position</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+                        <span class="k">else</span><span class="p">:</span>
+                            <span class="n">depths</span><span class="p">[</span><span class="n">accession</span><span class="p">][</span><span class="n">position</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">ref_lengths</span><span class="p">[</span><span class="n">accession</span><span class="p">]</span> <span class="o">=</span> <span class="n">ref_length</span>
+                    <span class="n">read_counts</span><span class="p">[</span><span class="n">accession</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1</span>
+                    <span class="k">for</span> <span class="n">position</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">pre</span><span class="p">,</span> <span class="n">stop</span> <span class="o">+</span> <span class="mi">1</span><span class="p">):</span>
+                        <span class="n">depths</span><span class="p">[</span><span class="n">accession</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="n">position</span><span class="p">:</span> <span class="mi">1</span><span class="p">}</span>
+
+                <span class="c"># optional: read length distribution</span>
+                <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">read_lengths</span><span class="p">:</span>
+                    <span class="n">readLen</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">fields</span><span class="p">[</span><span class="mi">9</span><span class="p">])</span>
+
+                    <span class="k">if</span> <span class="n">readLen</span> <span class="ow">in</span> <span class="n">read_lenghtsTotal</span><span class="p">:</span>
+                        <span class="n">read_lenghtsTotal</span><span class="p">[</span><span class="n">readLen</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">read_lenghtsTotal</span><span class="p">[</span><span class="n">readLen</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1</span>
+
+                    <span class="k">if</span> <span class="n">accession</span> <span class="ow">in</span> <span class="n">read_lenghts</span><span class="p">:</span>
+                        <span class="k">if</span> <span class="n">readLen</span> <span class="ow">in</span> <span class="n">read_lenghts</span><span class="p">[</span><span class="n">accession</span><span class="p">]:</span>
+                            <span class="n">read_lenghts</span><span class="p">[</span><span class="n">accession</span><span class="p">][</span><span class="n">readLen</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+                        <span class="k">else</span><span class="p">:</span>
+                            <span class="n">read_lenghts</span><span class="p">[</span><span class="n">accession</span><span class="p">][</span><span class="n">readLen</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">read_lenghts</span><span class="p">[</span><span class="n">accession</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="n">readLen</span><span class="p">:</span> <span class="mi">1</span><span class="p">}</span>
+
+                <span class="c"># remember occurence of accession and line number(s)</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">positions</span><span class="p">[</span><span class="n">accession</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">line_nr</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
+                    <span class="n">positions</span><span class="p">[</span><span class="n">accession</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">line_nr</span><span class="p">,</span> <span class="p">]</span>
+    <span class="k">finally</span><span class="p">:</span>
+        <span class="n">handle</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+        <span class="nb">buffer</span><span class="o">.</span><span class="n">seek</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+
+    <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&quot;</span><span class="si">%i</span><span class="s"> reads are aligned to </span><span class="si">%i</span><span class="s"> references&quot;</span>
+             <span class="o">%</span> <span class="p">(</span><span class="n">line_count</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">depths</span><span class="p">)))</span>
+
+    <span class="c"># get overall read length statistics</span>
+    <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">read_lengths</span><span class="p">:</span>
+        <span class="n">max_length_total</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">read_lenghtsTotal</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
+        <span class="n">min_length_total</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">read_lenghtsTotal</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
+        <span class="n">length_dist_total</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span>
+            <span class="p">(</span><span class="n">max_length_total</span> <span class="o">-</span> <span class="n">min_length_total</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int</span><span class="p">)</span>
+        <span class="k">for</span> <span class="p">(</span><span class="n">length</span><span class="p">,</span> <span class="n">count</span><span class="p">)</span> <span class="ow">in</span> <span class="n">read_lenghtsTotal</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">length_dist_total</span><span class="p">[</span><span class="n">length</span> <span class="o">-</span> <span class="n">min_length_total</span><span class="p">]</span> <span class="o">=</span> <span class="n">count</span>
+
+        <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&quot;read lengths range from </span><span class="si">%i</span><span class="s"> to </span><span class="si">%i</span><span class="s"> bp&quot;</span>
+                 <span class="o">%</span> <span class="p">(</span><span class="n">min_length_total</span><span class="p">,</span> <span class="n">max_length_total</span><span class="p">))</span>
+
+    <span class="c"># iterate over accessions and calculate statistics for filtering</span>
+    <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&quot;STEP 2: determining accessions matching the filter criteria.&quot;</span><span class="p">)</span>
+    <span class="n">lines</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">max_depths</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">max_lengths</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">stats_filename</span><span class="p">,</span> <span class="s">&quot;w&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">handle</span><span class="p">:</span>
+        <span class="c"># create statistics header</span>
+        <span class="n">header</span> <span class="o">=</span> <span class="s">&quot;accession</span><span class="se">\t</span><span class="s">reference length [bp]</span><span class="se">\t</span><span class="s">reads&quot;</span>
+        <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">read_lengths</span><span class="p">:</span>
+            <span class="n">header</span> <span class="o">+=</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">min length [bp]</span><span class="se">\t</span><span class="s">max length [bp]</span><span class="se">\t</span><span class="s">mean length [bp]&quot;</span>
+        <span class="n">header</span> <span class="o">+=</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">min coverage</span><span class="se">\t</span><span class="s">max coverage</span><span class="se">\t</span><span class="s">mean coverage&quot;</span>
+        <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">covered</span><span class="p">:</span>
+            <span class="n">header</span> <span class="o">+=</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">min coverage*</span><span class="se">\t</span><span class="s">max coverage*</span><span class="se">\t</span><span class="s">mean coverage*&quot;</span>
+        <span class="n">header</span> <span class="o">+=</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">LCI(</span><span class="si">%.2f</span><span class="s">)</span><span class="se">\t</span><span class="s">Gini&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">lci_arg</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">covered</span><span class="p">:</span>
+            <span class="n">header</span> <span class="o">+=</span> <span class="s">&quot;</span><span class="se">\t</span><span class="s">LCI(</span><span class="si">%.2f</span><span class="s">)*</span><span class="se">\t</span><span class="s">Gini*&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">lci_arg</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">header</span><span class="p">,</span> <span class="nb">file</span><span class="o">=</span><span class="n">handle</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">accession</span> <span class="ow">in</span> <span class="n">depths</span><span class="p">:</span>
+            <span class="n">ref_length</span> <span class="o">=</span> <span class="n">ref_lengths</span><span class="p">[</span><span class="n">accession</span><span class="p">]</span>
+            <span class="n">read_count</span> <span class="o">=</span> <span class="n">read_counts</span><span class="p">[</span><span class="n">accession</span><span class="p">]</span>
+
+            <span class="c"># calculate coverage statistics</span>
+            <span class="n">max_depth</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">depths</span><span class="p">[</span><span class="n">accession</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
+            <span class="n">max_depths</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">max_depth</span><span class="p">)</span>
+
+            <span class="c"># determine depth distribution</span>
+            <span class="n">uncovered_bases</span> <span class="o">=</span> <span class="n">ref_length</span>
+            <span class="n">depth_dist</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">max_depth</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int</span><span class="p">)</span>
+            <span class="k">for</span> <span class="p">(</span><span class="n">pos</span><span class="p">,</span> <span class="n">depth</span><span class="p">)</span> <span class="ow">in</span> <span class="n">depths</span><span class="p">[</span><span class="n">accession</span><span class="p">]</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="n">depth_dist</span><span class="p">[</span><span class="n">depth</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+                <span class="n">uncovered_bases</span> <span class="o">-=</span> <span class="mi">1</span>
+            <span class="n">depth_dist</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">uncovered_bases</span>
+            <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">debug</span><span class="p">:</span>
+                <span class="k">print</span><span class="p">(</span><span class="n">depth_dist</span><span class="p">)</span>
+
+            <span class="n">min_depth</span> <span class="o">=</span> <span class="mi">0</span>
+            <span class="k">if</span> <span class="n">uncovered_bases</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">min_depth</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">depths</span><span class="p">[</span><span class="n">accession</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
+            <span class="n">avg_depth</span> <span class="o">=</span> <span class="n">calc_avg_depth</span><span class="p">(</span><span class="n">depth_dist</span><span class="p">,</span> <span class="bp">False</span><span class="p">)</span>
+            <span class="n">avg_depth_scaled</span> <span class="o">=</span> <span class="n">avg_depth</span> <span class="o">*</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="n">max_depth</span>
+
+            <span class="c"># convert counts to percentage of total reads (normalize y)</span>
+            <span class="n">depth_dist_cumsum</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">cumsum</span><span class="p">(</span><span class="n">depth_dist</span><span class="p">)</span>
+            <span class="n">depth_dist_cumperc</span> <span class="o">=</span> <span class="n">depth_dist_cumsum</span> <span class="o">*</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="n">ref_length</span><span class="p">)</span>
+
+            <span class="c"># integrate distribution as lci(0.5)</span>
+            <span class="n">limit</span> <span class="o">=</span> <span class="n">args</span><span class="o">.</span><span class="n">lci_arg</span> <span class="o">*</span> <span class="n">avg_depth</span>
+<span class="c">#            lci = integral_discrete(depth_dist_cumperc, limit)</span>
+            <span class="n">lci</span> <span class="o">=</span> <span class="n">integral_scaled</span><span class="p">(</span><span class="n">depth_dist_cumperc</span><span class="p">,</span> <span class="n">limit</span><span class="p">)</span>
+
+<span class="c">#            # calculate Gini coefficient from Lorenz curve</span>
+<span class="c">#            (x,y) = lorenzify(depth_dist)</span>
+<span class="c">#            (gini, auc) = get_gini_auc(x, y)</span>
+
+            <span class="c"># alternative Lorenz curve using base to base assignments</span>
+            <span class="p">(</span><span class="n">u</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span> <span class="o">=</span> <span class="n">lorenzify_b2b</span><span class="p">(</span><span class="n">depth_dist</span><span class="p">,</span> <span class="bp">False</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">debug</span><span class="p">:</span>
+                <span class="k">print</span><span class="p">(</span><span class="s">&quot;x (</span><span class="si">%i</span><span class="s"> entries): </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">u</span><span class="p">),</span> <span class="n">u</span><span class="p">))</span>
+                <span class="k">print</span><span class="p">(</span><span class="s">&quot;y (</span><span class="si">%i</span><span class="s"> entries): </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">v</span><span class="p">),</span> <span class="n">v</span><span class="p">))</span>
+            <span class="p">(</span><span class="n">gini_b2b</span><span class="p">,</span> <span class="n">auc_b2b</span><span class="p">)</span> <span class="o">=</span> <span class="n">get_gini_auc</span><span class="p">(</span><span class="n">u</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span>
+
+            <span class="c"># TODO also calculate Theil index, see</span>
+            <span class="c"># https://en.wikipedia.org/wiki/Theil_Index</span>
+
+            <span class="c"># optional: coverage stats for covered bases only</span>
+            <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">covered</span><span class="p">:</span>
+                <span class="n">min_depth_covered</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">depths</span><span class="p">[</span><span class="n">accession</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
+                <span class="k">if</span> <span class="n">uncovered_bases</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="n">min_depth_covered</span> <span class="o">=</span> <span class="n">min_depth</span>
+                <span class="n">avg_depth_covered</span> <span class="o">=</span> <span class="n">calc_avg_depth</span><span class="p">(</span><span class="n">depth_dist</span><span class="p">,</span> <span class="bp">True</span><span class="p">)</span>
+<span class="c">#                avg_depth_covered_scaled = avg_depth_covered * 1.0 / max_depth</span>
+
+                <span class="n">depth_dist_covered_cumsum</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">cumsum</span><span class="p">(</span><span class="n">depth_dist</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
+                <span class="n">depth_dist_covered_cumperc</span> <span class="o">=</span> <span class="p">(</span><span class="n">depth_dist_covered_cumsum</span> <span class="o">*</span> <span class="mf">1.0</span>
+                                              <span class="o">/</span> <span class="p">(</span><span class="n">ref_length</span> <span class="o">-</span> <span class="n">uncovered_bases</span><span class="p">))</span>
+
+                <span class="n">limit_covered</span> <span class="o">=</span> <span class="n">args</span><span class="o">.</span><span class="n">lci_arg</span> <span class="o">*</span> <span class="n">avg_depth_covered</span>
+                <span class="n">lci_covered</span> <span class="o">=</span> <span class="n">integral_scaled</span><span class="p">(</span><span class="n">depth_dist_covered_cumperc</span><span class="p">,</span>
+                                              <span class="n">limit_covered</span><span class="p">)</span>
+
+                <span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span> <span class="o">=</span> <span class="n">lorenzify_b2b</span><span class="p">(</span><span class="n">depth_dist</span><span class="p">,</span> <span class="bp">True</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">debug</span><span class="p">:</span>
+                    <span class="k">print</span><span class="p">(</span><span class="s">&quot;x (</span><span class="si">%i</span><span class="s"> entries): </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">m</span><span class="p">),</span> <span class="n">m</span><span class="p">))</span>
+                    <span class="k">print</span><span class="p">(</span><span class="s">&quot;y (</span><span class="si">%i</span><span class="s"> entries): </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">n</span><span class="p">),</span> <span class="n">n</span><span class="p">))</span>
+                <span class="p">(</span><span class="n">gini_b2b_covered</span><span class="p">,</span> <span class="n">auc_b2b_covered</span><span class="p">)</span> <span class="o">=</span> <span class="n">get_gini_auc</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span>
+
+            <span class="c"># optional: read length stats</span>
+            <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">read_lengths</span><span class="p">:</span>
+                <span class="n">max_length</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">read_lenghts</span><span class="p">[</span><span class="n">accession</span><span class="p">]</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
+                <span class="n">min_length</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">read_lenghts</span><span class="p">[</span><span class="n">accession</span><span class="p">]</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
+                <span class="n">avg_length</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">fromiter</span><span class="p">(</span>
+                    <span class="n">read_lenghts</span><span class="p">[</span><span class="n">accession</span><span class="p">]</span><span class="o">.</span><span class="n">keys</span><span class="p">(),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int</span><span class="p">,</span>
+                    <span class="n">count</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">read_lenghts</span><span class="p">[</span><span class="n">accession</span><span class="p">])))</span>
+                <span class="n">max_lengths</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">max_length</span><span class="p">)</span>
+
+                <span class="c"># determine length distribution</span>
+                <span class="n">length_dist</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">max_length</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int</span><span class="p">)</span>
+                <span class="k">for</span> <span class="p">(</span><span class="n">length</span><span class="p">,</span> <span class="n">count</span><span class="p">)</span> <span class="ow">in</span> <span class="n">read_lenghts</span><span class="p">[</span><span class="n">accession</span><span class="p">]</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                    <span class="n">length_dist</span><span class="p">[</span><span class="n">length</span><span class="p">]</span> <span class="o">=</span> <span class="n">count</span>
+
+            <span class="c"># compile accession statistics</span>
+            <span class="n">stats</span> <span class="o">=</span> <span class="s">&quot;</span><span class="si">%s</span><span class="se">\t</span><span class="si">%i</span><span class="se">\t</span><span class="si">%i</span><span class="s">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">accession</span><span class="p">,</span> <span class="n">ref_length</span><span class="p">,</span> <span class="n">read_count</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">read_lengths</span><span class="p">:</span>
+                <span class="n">stats</span> <span class="o">+=</span> <span class="s">&quot;</span><span class="se">\t</span><span class="si">%i</span><span class="se">\t</span><span class="si">%i</span><span class="se">\t</span><span class="si">%f</span><span class="s">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">min_length</span><span class="p">,</span> <span class="n">max_length</span><span class="p">,</span> <span class="n">avg_length</span><span class="p">)</span>
+            <span class="n">stats</span> <span class="o">+=</span> <span class="s">&quot;</span><span class="se">\t</span><span class="si">%i</span><span class="se">\t</span><span class="si">%i</span><span class="se">\t</span><span class="si">%f</span><span class="s">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">min_depth</span><span class="p">,</span> <span class="n">max_depth</span><span class="p">,</span> <span class="n">avg_depth</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">covered</span><span class="p">:</span>
+                <span class="n">stats</span> <span class="o">+=</span> <span class="s">&quot;</span><span class="se">\t</span><span class="si">%i</span><span class="se">\t</span><span class="si">%i</span><span class="se">\t</span><span class="si">%f</span><span class="s">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">min_depth_covered</span><span class="p">,</span> <span class="n">max_depth</span><span class="p">,</span>
+                                           <span class="n">avg_depth_covered</span><span class="p">)</span>
+            <span class="n">stats</span> <span class="o">+=</span> <span class="s">&quot;</span><span class="se">\t</span><span class="si">%f</span><span class="se">\t</span><span class="si">%f</span><span class="s">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">lci</span><span class="p">,</span> <span class="n">gini_b2b</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">covered</span><span class="p">:</span>
+                <span class="n">stats</span> <span class="o">+=</span> <span class="s">&quot;</span><span class="se">\t</span><span class="si">%f</span><span class="se">\t</span><span class="si">%f</span><span class="s">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">lci_covered</span><span class="p">,</span> <span class="n">gini_b2b_covered</span><span class="p">)</span>
+            <span class="k">print</span><span class="p">(</span><span class="n">stats</span><span class="p">,</span> <span class="nb">file</span><span class="o">=</span><span class="n">handle</span><span class="p">)</span>
+
+            <span class="c"># apply filters before time-consuming plotting steps</span>
+            <span class="k">if</span> <span class="p">((</span><span class="n">avg_depth</span> <span class="o">&lt;</span> <span class="n">args</span><span class="o">.</span><span class="n">min_cov</span><span class="p">)</span>
+               <span class="ow">or</span> <span class="p">(</span><span class="n">avg_depth</span> <span class="o">&gt;</span> <span class="n">args</span><span class="o">.</span><span class="n">max_cov</span><span class="p">)</span>
+               <span class="ow">or</span> <span class="p">(</span><span class="n">lci</span> <span class="o">&lt;</span> <span class="n">args</span><span class="o">.</span><span class="n">min_lci</span><span class="p">)</span>
+               <span class="ow">or</span> <span class="p">(</span><span class="n">lci</span> <span class="o">&gt;</span> <span class="n">args</span><span class="o">.</span><span class="n">max_lci</span><span class="p">)</span>
+               <span class="ow">or</span> <span class="p">(</span><span class="n">gini_b2b</span> <span class="o">&lt;</span> <span class="n">args</span><span class="o">.</span><span class="n">min_gini</span><span class="p">)</span>
+               <span class="ow">or</span> <span class="p">(</span><span class="n">gini_b2b</span> <span class="o">&gt;</span> <span class="n">args</span><span class="o">.</span><span class="n">max_gini</span><span class="p">)):</span>
+                <span class="k">continue</span>
+
+            <span class="n">color</span> <span class="o">=</span> <span class="s">&#39;blue&#39;</span>
+
+            <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">plot</span><span class="p">:</span>
+                <span class="n">fig_cover</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">num</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+                                       <span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">24</span><span class="p">,</span> <span class="mi">12</span><span class="p">),</span>  <span class="c"># inch x inch</span>
+                                       <span class="n">dpi</span><span class="o">=</span><span class="mi">80</span><span class="p">,</span>            <span class="c"># 1 inch = 80 pixels</span>
+                                       <span class="n">facecolor</span><span class="o">=</span><span class="s">&#39;white&#39;</span><span class="p">,</span>
+                                       <span class="n">edgecolor</span><span class="o">=</span><span class="s">&#39;black&#39;</span><span class="p">)</span>
+<span class="c">#                x = np.arange(depth_dist_cumperc.size) * 1.0 / max_depth</span>
+
+                <span class="c"># CD = coverage distribution plot</span>
+                <span class="n">ax_cd</span> <span class="o">=</span> <span class="n">fig_cover</span><span class="o">.</span><span class="n">add_subplot</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+                <span class="n">plot_cd</span><span class="p">(</span><span class="n">ax_cd</span><span class="p">,</span> <span class="n">depth_dist</span><span class="p">,</span> <span class="n">avg_depth</span><span class="p">)</span>
+
+                <span class="c"># SCD = scaled coverage distribution plot</span>
+                <span class="n">ax_scd</span> <span class="o">=</span> <span class="n">fig_cover</span><span class="o">.</span><span class="n">add_subplot</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+                <span class="n">plot_scd</span><span class="p">(</span><span class="n">ax_scd</span><span class="p">,</span> <span class="n">depth_dist</span><span class="p">,</span> <span class="n">avg_depth</span><span class="p">,</span> <span class="n">ref_length</span><span class="p">,</span> <span class="n">max_depth</span><span class="p">)</span>
+
+                <span class="c"># SCD = scaled coverage distribution plot</span>
+                <span class="n">ax_scd_covered</span> <span class="o">=</span> <span class="n">fig_cover</span><span class="o">.</span><span class="n">add_subplot</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+                <span class="n">plot_scd</span><span class="p">(</span><span class="n">ax_scd_covered</span><span class="p">,</span>
+                         <span class="n">np</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mi">0</span><span class="p">]),</span> <span class="n">depth_dist</span><span class="p">[</span><span class="mi">1</span><span class="p">:]),</span>
+                         <span class="n">avg_depth_covered</span><span class="p">,</span>
+                         <span class="n">ref_length</span> <span class="o">-</span> <span class="n">uncovered_bases</span><span class="p">,</span>
+                         <span class="n">max_depth</span><span class="p">)</span>
+
+<span class="c">#                # CCD = cumulative coverage distribution plot</span>
+<span class="c">#                ax_ccd = fig_cover.add_subplot(2, 4, 2)</span>
+<span class="c">#                plot_ccd(ax_ccd, depth_dist_cumsum, avg_depth)</span>
+
+<span class="c">#                # SCCD = scaled cumulative coverage distribution plot</span>
+<span class="c">#                ax_sccd = fig_cover.add_subplot(2, 4, 3)</span>
+<span class="c">#                plot_sccd(ax_sccd, depth_dist_cumperc, avg_depth)</span>
+
+                <span class="c"># NCCD = normalized cumulative coverage distribution</span>
+                <span class="n">ax_nccd</span> <span class="o">=</span> <span class="n">fig_cover</span><span class="o">.</span><span class="n">add_subplot</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>
+                <span class="n">plot_nccd</span><span class="p">(</span><span class="n">ax_nccd</span><span class="p">,</span> <span class="n">depth_dist_cumperc</span><span class="p">,</span> <span class="n">avg_depth</span><span class="p">,</span> <span class="n">max_depth</span><span class="p">,</span>
+                          <span class="n">avg_depth_scaled</span><span class="p">,</span> <span class="n">args</span><span class="o">.</span><span class="n">lci_arg</span><span class="p">,</span> <span class="n">color</span><span class="p">)</span>
+                <span class="n">ax_nccd</span><span class="o">.</span><span class="n">text</span><span class="p">(</span><span class="mf">0.05</span><span class="p">,</span> <span class="mf">0.95</span><span class="p">,</span>
+                             <span class="s">&quot;lci(</span><span class="si">%.2f</span><span class="s">) = </span><span class="si">%.2f</span><span class="s">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">lci_arg</span><span class="p">,</span> <span class="n">lci</span><span class="p">),</span>
+                             <span class="n">transform</span><span class="o">=</span><span class="n">ax_nccd</span><span class="o">.</span><span class="n">transAxes</span><span class="p">)</span>
+
+<span class="c">#                # Lorenz curve</span>
+<span class="c">#                ax_lorenz = fig_cover.add_subplot(2, 4, 5)</span>
+<span class="c">#                plot_lorenz(ax_lorenz, x, y)</span>
+
+                <span class="c"># Lorenz curve base2base</span>
+                <span class="n">ax_b2b</span> <span class="o">=</span> <span class="n">fig_cover</span><span class="o">.</span><span class="n">add_subplot</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">6</span><span class="p">)</span>
+                <span class="n">plot_lorenz_b2b</span><span class="p">(</span><span class="n">ax_b2b</span><span class="p">,</span> <span class="n">u</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span>
+
+                <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">covered</span><span class="p">:</span>
+                    <span class="n">ax_b2b_covered</span> <span class="o">=</span> <span class="n">fig_cover</span><span class="o">.</span><span class="n">add_subplot</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">7</span><span class="p">)</span>
+                    <span class="n">plot_lorenz_b2b</span><span class="p">(</span><span class="n">ax_b2b_covered</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span>
+
+                <span class="c"># save plot to png</span>
+                <span class="n">fig_cover</span><span class="o">.</span><span class="n">tight_layout</span><span class="p">()</span>
+                <span class="n">fig_cover</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="n">accession</span> <span class="o">+</span> <span class="s">&quot;_coverage.png&quot;</span><span class="p">)</span>
+                <span class="n">plt</span><span class="o">.</span><span class="n">close</span><span class="p">(</span><span class="n">fig_cover</span><span class="p">)</span>
+
+                <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">read_lengths</span><span class="p">:</span>
+                    <span class="n">fig_readlength</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">num</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+                                                <span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">6</span><span class="p">,</span> <span class="mi">6</span><span class="p">),</span>  <span class="c"># inch x inch</span>
+                                                <span class="n">dpi</span><span class="o">=</span><span class="mi">80</span><span class="p">,</span>        <span class="c"># 1 inch = 80px</span>
+                                                <span class="n">facecolor</span><span class="o">=</span><span class="s">&#39;white&#39;</span><span class="p">,</span>
+                                                <span class="n">edgecolor</span><span class="o">=</span><span class="s">&#39;black&#39;</span><span class="p">)</span>
+
+                    <span class="c"># RLD = read length distribution</span>
+                    <span class="n">ax_rld</span> <span class="o">=</span> <span class="n">fig_readlength</span><span class="o">.</span><span class="n">add_subplot</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+                    <span class="n">plot_rld</span><span class="p">(</span><span class="n">ax_rld</span><span class="p">,</span> <span class="n">length_dist</span><span class="p">,</span> <span class="n">min_length_total</span><span class="p">,</span>
+                             <span class="n">max_length_total</span><span class="p">,</span> <span class="n">line_nr</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">length_dist_total</span><span class="p">)</span>
+
+                    <span class="c"># save plot to png</span>
+                    <span class="n">fig_readlength</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="n">accession</span> <span class="o">+</span> <span class="s">&quot;_readlengths.png&quot;</span><span class="p">)</span>
+                    <span class="n">plt</span><span class="o">.</span><span class="n">close</span><span class="p">(</span><span class="n">fig_readlength</span><span class="p">)</span>
+
+            <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&quot;accession </span><span class="si">%s</span><span class="s">: reference has a length of </span><span class="si">%i</span><span class="s"> bp and </span><span class="si">%i</span><span class="s"> &quot;</span>
+                     <span class="s">&quot;aligned reads&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">accession</span><span class="p">,</span> <span class="n">ref_length</span><span class="p">,</span> <span class="n">read_count</span><span class="p">))</span>
+            <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&quot;accession </span><span class="si">%s</span><span class="s">: coverage ranges from </span><span class="si">%i</span><span class="s">x to </span><span class="si">%i</span><span class="s">x, average &quot;</span>
+                     <span class="s">&quot;is </span><span class="si">%.3f</span><span class="s">x&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">accession</span><span class="p">,</span> <span class="n">min_depth</span><span class="p">,</span> <span class="n">max_depth</span><span class="p">,</span> <span class="n">avg_depth</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">covered</span><span class="p">:</span>
+                <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&quot;accession </span><span class="si">%s</span><span class="s">: coverage for covered bases only &quot;</span>
+                         <span class="s">&quot;ranges from </span><span class="si">%i</span><span class="s">x to </span><span class="si">%i</span><span class="s">x, average is </span><span class="si">%.3f</span><span class="s">x&quot;</span>
+                         <span class="o">%</span> <span class="p">(</span><span class="n">accession</span><span class="p">,</span> <span class="n">min_depth_covered</span><span class="p">,</span> <span class="n">max_depth</span><span class="p">,</span>
+                            <span class="n">avg_depth_covered</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">read_lengths</span><span class="p">:</span>
+                <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&quot;accession </span><span class="si">%s</span><span class="s">: read length ranges from </span><span class="si">%i</span><span class="s"> bp to </span><span class="si">%i</span><span class="s"> &quot;</span>
+                         <span class="s">&quot;bp, average is </span><span class="si">%.3f</span><span class="s"> bp&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">accession</span><span class="p">,</span> <span class="n">min_length</span><span class="p">,</span>
+                                                     <span class="n">max_length</span><span class="p">,</span> <span class="n">avg_length</span><span class="p">))</span>
+
+            <span class="c"># finally print accession for later filtering steps</span>
+            <span class="n">lines</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">positions</span><span class="p">[</span><span class="n">accession</span><span class="p">])</span>
+            <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">debug</span><span class="p">:</span>
+                <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&quot;filtering accession: </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">accession</span><span class="p">,))</span>
+
+    <span class="c"># re-open file if not a buffered stream</span>
+    <span class="k">if</span> <span class="nb">buffer</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+        <span class="nb">buffer</span> <span class="o">=</span> <span class="nb">open</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">input</span><span class="p">,</span> <span class="s">&#39;r&#39;</span><span class="p">)</span>
+
+    <span class="c"># skip original headers and sneak in modified headers instead</span>
+    <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">modify</span><span class="p">:</span>
+        <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&quot;Writing new @PG record to SAM header.&quot;</span><span class="p">)</span>
+        <span class="n">cl</span> <span class="o">=</span> <span class="s">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
+        <span class="n">modified_header</span> <span class="o">=</span> <span class="n">modify_header</span><span class="p">(</span>
+            <span class="n">header</span><span class="p">,</span>
+            <span class="n">name</span><span class="o">=</span><span class="n">splitext</span><span class="p">(</span><span class="n">basename</span><span class="p">(</span><span class="n">__file__</span><span class="p">))[</span><span class="mi">0</span><span class="p">],</span>
+            <span class="n">version</span><span class="o">=</span><span class="n">__version__</span><span class="p">,</span>
+            <span class="n">command_line</span><span class="o">=</span><span class="n">cl</span><span class="p">,</span>
+            <span class="n">description</span><span class="o">=</span><span class="n">TEXT</span>
+        <span class="p">)</span>
+        <span class="n">extra_headers</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">modified_header</span><span class="p">)</span> <span class="o">-</span> <span class="nb">len</span><span class="p">(</span><span class="n">header</span><span class="p">)</span>    <span class="c"># should be 1</span>
+        <span class="k">for</span> <span class="n">record</span> <span class="ow">in</span> <span class="n">modified_header</span><span class="p">:</span>
+            <span class="k">print</span><span class="p">(</span><span class="n">record</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(),</span> <span class="nb">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
+        <span class="c"># fast forward buffer to beginning of alignments</span>
+        <span class="nb">buffer</span><span class="o">.</span><span class="n">seek</span><span class="p">(</span><span class="n">byte_offset</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">debug</span><span class="p">:</span>
+            <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&quot;</span><span class="si">%i</span><span class="s"> new line added to header lines.&quot;</span> <span class="o">%</span> <span class="n">extra_headers</span><span class="p">)</span>
+    <span class="c"># keep or remove accessions from SAM file</span>
+    <span class="n">alt</span> <span class="o">=</span> <span class="p">[</span><span class="s">&quot;discarding&quot;</span><span class="p">,</span> <span class="s">&quot;keeping&quot;</span><span class="p">]</span>
+    <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&quot;STEP 3: </span><span class="si">%s</span><span class="s"> </span><span class="si">%i</span><span class="s"> unevenly covered references from SAM file.&quot;</span> <span class="o">%</span>
+             <span class="p">(</span><span class="n">alt</span><span class="p">[</span><span class="n">args</span><span class="o">.</span><span class="n">discard</span><span class="p">],</span> <span class="nb">len</span><span class="p">(</span><span class="n">lines</span><span class="p">)))</span>
+
+    <span class="n">line_filter</span><span class="p">(</span><span class="n">lines</span><span class="p">,</span> <span class="nb">buffer</span><span class="p">,</span> <span class="n">discard</span><span class="o">=</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">discard</span> <span class="o">==</span> <span class="mi">0</span><span class="p">),</span>
+                <span class="n">offset</span><span class="o">=</span><span class="n">line_offset</span><span class="p">)</span>
+    <span class="nb">buffer</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+
+    <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&quot;END of filtering references by coverage, statistics saved to &quot;</span>
+             <span class="s">&quot;file </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">stats_filename</span><span class="p">,</span> <span class="p">))</span>
+
+    <span class="nb">exit</span><span class="p">()</span>
+</div>
+<span class="k">if</span> <span class="n">__name__</span> <span class="o">==</span> <span class="s">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="n">main</span><span class="p">()</span>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../../index.html">SamSifter 0.5.0 documentation</a> &raquo;</li>
+          <li><a href="../../index.html" >Module code</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2015, Florian Aldehoff.
+      Last updated on Mar 01, 2015.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

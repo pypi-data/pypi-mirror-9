@@ -1,0 +1,299 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>samsifter.models.filter &mdash; SamSifter 0.5.0 documentation</title>
+    
+    <link rel="stylesheet" href="../../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../../',
+        VERSION:     '0.5.0',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../../_static/doctools.js"></script>
+    <link rel="top" title="SamSifter 0.5.0 documentation" href="../../../index.html" />
+    <link rel="up" title="Module code" href="../../index.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../../index.html">SamSifter 0.5.0 documentation</a> &raquo;</li>
+          <li><a href="../../index.html" accesskey="U">Module code</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <h1>Source code for samsifter.models.filter</h1><div class="highlight"><pre>
+<span class="c"># -*- coding: utf-8 -*-</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Abstraction of filters and other tools usable in POSIX pipelines.</span>
+
+<span class="sd">.. moduleauthor:: Florian Aldehoff &lt;faldehoff@student.uni-tuebingen.de&gt;</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="sd">&quot;&quot;&quot; Qt4 libraries &quot;&quot;&quot;</span>
+<span class="kn">from</span> <span class="nn">PyQt4.QtGui</span> <span class="kn">import</span> <span class="n">QStandardItem</span><span class="p">,</span> <span class="n">QIcon</span>
+
+<span class="sd">&quot;&quot;&quot; custom libraries &quot;&quot;&quot;</span>
+<span class="kn">from</span> <span class="nn">samsifter.gui.widgets</span> <span class="kn">import</span> <span class="n">FilterWidget</span>
+<span class="kn">from</span> <span class="nn">samsifter.resources</span> <span class="kn">import</span> <span class="n">resources</span>
+<span class="k">assert</span> <span class="n">resources</span>  <span class="c"># silence pyflakes</span>
+
+<span class="n">SUPPORTED_FORMATS</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;SAM&#39;</span><span class="p">,</span> <span class="s">&#39;BAM&#39;</span><span class="p">,</span> <span class="s">&#39;any&#39;</span><span class="p">,</span> <span class="s">&#39;as_input&#39;</span><span class="p">)</span>
+<span class="n">SUPPORTED_SORTINGS</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;unsorted&#39;</span><span class="p">,</span> <span class="s">&#39;queryname&#39;</span><span class="p">,</span> <span class="s">&#39;coordinate&#39;</span><span class="p">,</span> <span class="s">&#39;any&#39;</span><span class="p">,</span> <span class="s">&#39;as_input&#39;</span><span class="p">)</span>
+<span class="n">SUPPORTED_COMPRESSIONS</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;uncompressed&#39;</span><span class="p">,</span> <span class="s">&#39;gzip&#39;</span><span class="p">,</span> <span class="s">&#39;any&#39;</span><span class="p">,</span> <span class="s">&#39;as_input&#39;</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="FilterItem"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.filter.FilterItem">[docs]</a><span class="k">class</span> <span class="nc">FilterItem</span><span class="p">(</span><span class="n">QStandardItem</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Representation of filter tool in item-based views.</span>
+
+<span class="sd">    This class can abstract any tool that takes line-based input from STDIN,</span>
+<span class="sd">    logs messages to STDERR and writes output to STDOUT. It is used to</span>
+<span class="sd">    represent this tool in item-based views by means of an icon and</span>
+<span class="sd">    descriptive text.</span>
+
+<span class="sd">    Each item has a list of parameters as well as input and output requirements</span>
+<span class="sd">    in terms file format, sort order and compression.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c"># icon paths correspond to resource entries</span>
+    <span class="n">ICON_ANALYZER</span> <span class="o">=</span> <span class="s">&quot;:/x-office-spreadsheet.png&quot;</span>
+    <span class="n">ICON_CONVERTER</span> <span class="o">=</span> <span class="s">&quot;:/applications-other.png&quot;</span>
+    <span class="n">ICON_FILTER</span> <span class="o">=</span> <span class="s">&quot;:/view-filter.png&quot;</span>
+    <span class="n">ICON_SORTER</span> <span class="o">=</span> <span class="s">&quot;:/view-sort-ascending.png&quot;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">text</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">desc</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">icon</span><span class="o">=</span><span class="n">ICON_FILTER</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Initialize new instance of a FilterItem.</span>
+
+<span class="sd">        By default the new filter item both accepts and outputs only</span>
+<span class="sd">        uncompressed SAM files ordered by queryname.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        text : str</span>
+<span class="sd">            Short label for tool, should not exceed one line.</span>
+<span class="sd">        desc : str</span>
+<span class="sd">            Longer description of tool, should explain basic functionality.</span>
+<span class="sd">        icon : str</span>
+<span class="sd">            Path to icon resource, defaults to filter icon.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">icon</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="nb">super</span><span class="p">(</span><span class="n">FilterItem</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="nb">super</span><span class="p">(</span><span class="n">FilterItem</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="n">QIcon</span><span class="p">(</span><span class="n">icon</span><span class="p">),</span> <span class="n">text</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">desc</span> <span class="o">=</span> <span class="n">desc</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">icon_path</span> <span class="o">=</span> <span class="n">icon</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">command</span> <span class="o">=</span> <span class="s">&quot;tester&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">input_format</span> <span class="o">=</span> <span class="s">&#39;SAM&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">input_sorting</span> <span class="o">=</span> <span class="s">&#39;queryname&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">input_compression</span> <span class="o">=</span> <span class="s">&#39;uncompressed&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">output_format</span> <span class="o">=</span> <span class="s">&#39;SAM&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">output_sorting</span> <span class="o">=</span> <span class="s">&#39;queryname&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">output_compression</span> <span class="o">=</span> <span class="s">&#39;uncompressed&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">parameters</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">valid</span> <span class="o">=</span> <span class="bp">True</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">setEditable</span><span class="p">(</span><span class="bp">False</span><span class="p">)</span>
+
+<div class="viewcode-block" id="FilterItem.clone"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.filter.FilterItem.clone">[docs]</a>    <span class="k">def</span> <span class="nf">clone</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Creates new instance with identical settings.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        FilterItem</span>
+<span class="sd">            Exact clone of this filter item.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">clone</span> <span class="o">=</span> <span class="n">FilterItem</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">text</span><span class="p">(),</span> <span class="bp">self</span><span class="o">.</span><span class="n">desc</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">icon_path</span><span class="p">)</span>
+        <span class="n">clone</span><span class="o">.</span><span class="n">set_command</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">command</span><span class="p">)</span>
+        <span class="n">clone</span><span class="o">.</span><span class="n">set_input_format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">input_format</span><span class="p">)</span>
+        <span class="n">clone</span><span class="o">.</span><span class="n">set_input_sorting</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">input_sorting</span><span class="p">)</span>
+        <span class="n">clone</span><span class="o">.</span><span class="n">set_input_compression</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">input_compression</span><span class="p">)</span>
+        <span class="n">clone</span><span class="o">.</span><span class="n">set_output_format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">output_format</span><span class="p">)</span>
+        <span class="n">clone</span><span class="o">.</span><span class="n">set_output_sorting</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">output_sorting</span><span class="p">)</span>
+        <span class="n">clone</span><span class="o">.</span><span class="n">set_output_compression</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">output_compression</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">param</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">parameters</span><span class="p">:</span>
+            <span class="n">clone</span><span class="o">.</span><span class="n">add_parameter</span><span class="p">(</span><span class="n">param</span><span class="o">.</span><span class="n">clone</span><span class="p">())</span>
+        <span class="k">return</span> <span class="n">clone</span>
+</div>
+<div class="viewcode-block" id="FilterItem.commandline"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.filter.FilterItem.commandline">[docs]</a>    <span class="k">def</span> <span class="nf">commandline</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">basenames</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Prints full bash command line for filter with all parameters.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        basenames : bool</span>
+<span class="sd">            Shorten file paths to filename only, defaults to False.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        str</span>
+<span class="sd">            Command to execute filter with all parameters.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">cl</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">command</span>
+        <span class="k">for</span> <span class="n">param</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">parameters</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">param</span><span class="o">.</span><span class="n">is_active</span><span class="p">()</span> <span class="ow">or</span> <span class="n">param</span><span class="o">.</span><span class="n">is_required</span><span class="p">():</span>
+                <span class="n">cl</span> <span class="o">+=</span> <span class="s">&quot; &quot;</span> <span class="o">+</span> <span class="n">param</span><span class="o">.</span><span class="n">cli</span><span class="p">(</span><span class="n">basenames</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">cl</span>
+</div>
+<div class="viewcode-block" id="FilterItem.make_widget"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.filter.FilterItem.make_widget">[docs]</a>    <span class="k">def</span> <span class="nf">make_widget</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Creates a FilterWidget visualizing all parameters of this filter.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        FilterWidget</span>
+<span class="sd">            Qt4 widget visualizing all parameters of this filter.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">FilterWidget</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+</div>
+    <span class="k">def</span> <span class="nf">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">text</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">rep</span> <span class="o">=</span> <span class="s">&quot;</span><span class="se">\n</span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">text</span><span class="p">()</span>
+        <span class="n">rep</span> <span class="o">+=</span> <span class="s">&quot;</span><span class="se">\n</span><span class="s">- command:</span><span class="se">\t\t</span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">command</span>
+        <span class="n">rep</span> <span class="o">+=</span> <span class="s">&quot;</span><span class="se">\n</span><span class="s">- description:</span><span class="se">\t</span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">desc</span>
+        <span class="k">for</span> <span class="n">param</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">parameters</span><span class="p">:</span>
+            <span class="n">rep</span> <span class="o">+=</span> <span class="nb">repr</span><span class="p">(</span><span class="n">param</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">rep</span>
+
+    <span class="sd">&quot;&quot;&quot; Getters &amp; Setters &quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="FilterItem.add_parameter"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.filter.FilterItem.add_parameter">[docs]</a>    <span class="k">def</span> <span class="nf">add_parameter</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">parameter</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Append parameter to list of parameters.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        parameter : FilterParameter</span>
+<span class="sd">            Parameter to be added to this filter.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">parameters</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">parameter</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="FilterItem.get_parameters"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.filter.FilterItem.get_parameters">[docs]</a>    <span class="k">def</span> <span class="nf">get_parameters</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">parameters</span>
+</div>
+<div class="viewcode-block" id="FilterItem.set_command"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.filter.FilterItem.set_command">[docs]</a>    <span class="k">def</span> <span class="nf">set_command</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">command</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">command</span> <span class="o">=</span> <span class="n">command</span>
+</div>
+<div class="viewcode-block" id="FilterItem.get_description"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.filter.FilterItem.get_description">[docs]</a>    <span class="k">def</span> <span class="nf">get_description</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">desc</span>
+</div>
+<div class="viewcode-block" id="FilterItem.set_description"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.filter.FilterItem.set_description">[docs]</a>    <span class="k">def</span> <span class="nf">set_description</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">desc</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">desc</span> <span class="o">=</span> <span class="n">desc</span>
+</div>
+<div class="viewcode-block" id="FilterItem.get_icon_path"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.filter.FilterItem.get_icon_path">[docs]</a>    <span class="k">def</span> <span class="nf">get_icon_path</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">icon_path</span>
+</div>
+<div class="viewcode-block" id="FilterItem.set_icon_path"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.filter.FilterItem.set_icon_path">[docs]</a>    <span class="k">def</span> <span class="nf">set_icon_path</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">icon_path</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">icon_path</span> <span class="o">=</span> <span class="n">icon_path</span>
+</div>
+<div class="viewcode-block" id="FilterItem.set_input_format"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.filter.FilterItem.set_input_format">[docs]</a>    <span class="k">def</span> <span class="nf">set_input_format</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fileformat</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">fileformat</span> <span class="ow">in</span> <span class="n">SUPPORTED_FORMATS</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">input_format</span> <span class="o">=</span> <span class="n">fileformat</span>
+</div>
+<div class="viewcode-block" id="FilterItem.get_input_format"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.filter.FilterItem.get_input_format">[docs]</a>    <span class="k">def</span> <span class="nf">get_input_format</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">input_format</span>
+</div>
+<div class="viewcode-block" id="FilterItem.set_output_format"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.filter.FilterItem.set_output_format">[docs]</a>    <span class="k">def</span> <span class="nf">set_output_format</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fileformat</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">fileformat</span> <span class="ow">in</span> <span class="n">SUPPORTED_FORMATS</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">output_format</span> <span class="o">=</span> <span class="n">fileformat</span>
+</div>
+<div class="viewcode-block" id="FilterItem.get_output_format"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.filter.FilterItem.get_output_format">[docs]</a>    <span class="k">def</span> <span class="nf">get_output_format</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">output_format</span>
+</div>
+<div class="viewcode-block" id="FilterItem.set_input_sorting"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.filter.FilterItem.set_input_sorting">[docs]</a>    <span class="k">def</span> <span class="nf">set_input_sorting</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sorting</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">sorting</span> <span class="ow">in</span> <span class="n">SUPPORTED_SORTINGS</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">input_sorting</span> <span class="o">=</span> <span class="n">sorting</span>
+</div>
+<div class="viewcode-block" id="FilterItem.get_input_sorting"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.filter.FilterItem.get_input_sorting">[docs]</a>    <span class="k">def</span> <span class="nf">get_input_sorting</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">input_sorting</span>
+</div>
+<div class="viewcode-block" id="FilterItem.set_output_sorting"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.filter.FilterItem.set_output_sorting">[docs]</a>    <span class="k">def</span> <span class="nf">set_output_sorting</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sorting</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">sorting</span> <span class="ow">in</span> <span class="n">SUPPORTED_SORTINGS</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">output_sorting</span> <span class="o">=</span> <span class="n">sorting</span>
+</div>
+<div class="viewcode-block" id="FilterItem.get_output_sorting"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.filter.FilterItem.get_output_sorting">[docs]</a>    <span class="k">def</span> <span class="nf">get_output_sorting</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">output_sorting</span>
+</div>
+<div class="viewcode-block" id="FilterItem.set_input_compression"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.filter.FilterItem.set_input_compression">[docs]</a>    <span class="k">def</span> <span class="nf">set_input_compression</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">compression</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">compression</span> <span class="ow">in</span> <span class="n">SUPPORTED_COMPRESSIONS</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">input_compression</span> <span class="o">=</span> <span class="n">compression</span>
+</div>
+<div class="viewcode-block" id="FilterItem.get_input_compression"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.filter.FilterItem.get_input_compression">[docs]</a>    <span class="k">def</span> <span class="nf">get_input_compression</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">input_compression</span>
+</div>
+<div class="viewcode-block" id="FilterItem.set_output_compression"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.filter.FilterItem.set_output_compression">[docs]</a>    <span class="k">def</span> <span class="nf">set_output_compression</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">compression</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">compression</span> <span class="ow">in</span> <span class="n">SUPPORTED_COMPRESSIONS</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">output_compression</span> <span class="o">=</span> <span class="n">compression</span>
+</div>
+<div class="viewcode-block" id="FilterItem.get_output_compression"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.filter.FilterItem.get_output_compression">[docs]</a>    <span class="k">def</span> <span class="nf">get_output_compression</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">output_compression</span>
+</div>
+<div class="viewcode-block" id="FilterItem.is_valid"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.filter.FilterItem.is_valid">[docs]</a>    <span class="k">def</span> <span class="nf">is_valid</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">valid</span>
+</div>
+<div class="viewcode-block" id="FilterItem.set_valid"><a class="viewcode-back" href="../../../samsifter.models.html#samsifter.models.filter.FilterItem.set_valid">[docs]</a>    <span class="k">def</span> <span class="nf">set_valid</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">boolean</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">valid</span> <span class="o">=</span> <span class="n">boolean</span></div></div>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../../index.html">SamSifter 0.5.0 documentation</a> &raquo;</li>
+          <li><a href="../../index.html" >Module code</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2015, Florian Aldehoff.
+      Last updated on Mar 01, 2015.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>
