@@ -1,0 +1,585 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>aleph &mdash; edeposit.amqp.aleph 1.8.0 documentation</title>
+    
+    <link rel="stylesheet" href="../_static/classic.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../',
+        VERSION:     '1.8.0',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../_static/jquery.js"></script>
+    <script type="text/javascript" src="../_static/underscore.js"></script>
+    <script type="text/javascript" src="../_static/doctools.js"></script>
+    <link rel="top" title="edeposit.amqp.aleph 1.8.0 documentation" href="../index.html" />
+    <link rel="up" title="Module code" href="index.html" /> 
+  </head>
+  <body role="document">
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../index.html">edeposit.amqp.aleph 1.8.0 documentation</a> &raquo;</li>
+          <li class="nav-item nav-item-1"><a href="index.html" accesskey="U">Module code</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for aleph</h1><div class="highlight"><pre>
+<span class="c">#! /usr/bin/env python</span>
+<span class="c"># -*- coding: utf-8 -*-</span>
+<span class="c">#</span>
+<span class="c"># Interpreter version: python 2.7</span>
+<span class="c">#</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Query workflow</span>
+<span class="sd">==============</span>
+
+<span class="sd">AQMP is handled by `edeposit.amqp &lt;http://edeposit-amqp.readthedocs.org&gt;`_</span>
+<span class="sd">module, this package provides just datastructures and</span>
+<span class="sd">:func:`reactToAMQPMessage` function, which is used in daemon to translate</span>
+<span class="sd">highlevel requests to lowlevel queries to Aleph&#39;s webapi.</span>
+
+<span class="sd">AMQP query</span>
+<span class="sd">----------</span>
+<span class="sd">To query Aleph thru AMQP, run :class:`.edeposit_amqp_alephdaemon` (from</span>
+<span class="sd">:mod:`edeposit.amqp` package) and  create one of the Queries -</span>
+<span class="sd">:class:`ISBNQuery` for example and put it into :class:`.SearchRequest` wrapper</span>
+<span class="sd">and send the message to the Aleph&#39;s exchange::</span>
+
+<span class="sd">    request = SearchRequest(</span>
+<span class="sd">        ISBNQuery(&quot;80-251-0225-4&quot;)</span>
+<span class="sd">    )</span>
+
+<span class="sd">    amqp.send(  # you can use pika library to send data to AMQP queue</span>
+<span class="sd">        message    = serialize(request),</span>
+<span class="sd">        properties = &quot;..&quot;,</span>
+<span class="sd">        exchange   = &quot;ALEPH&#39;S_EXCHANGE&quot;</span>
+<span class="sd">    )</span>
+
+<span class="sd">and you will get back AMQP message with :class:`.SearchResult`.</span>
+
+<span class="sd">Note:</span>
+<span class="sd">    You don&#39;t have to import all structures from :class:`datastructures`, they</span>
+<span class="sd">    should be automatically imported and made global in ``__init__.py``.</span>
+
+<span class="sd">Count requests</span>
+<span class="sd">--------------</span>
+<span class="sd">If you want to just get count of how many items is there in Aleph, just wrap</span>
+<span class="sd">the :class:`.ISBNQuery` with :class:`.CountRequest` class::</span>
+
+<span class="sd">    isbnq = ISBNQuery(&quot;80-251-0225-4&quot;)</span>
+<span class="sd">    request = CountRequest(isbnq)</span>
+
+<span class="sd">    # rest is same..</span>
+
+<span class="sd">and you will get back :class:`.CountResult`.</span>
+
+<span class="sd">Note:</span>
+<span class="sd">    You should always use :class:`.CountRequest` instead of just calling</span>
+<span class="sd">    :py:func:`len()` to :attr:`.SearchResult.records` - it doesn&#39;t put that</span>
+<span class="sd">    much load to Aleph. Also Aleph is restricted to 150 requests per second.</span>
+
+<span class="sd">Direct queries</span>
+<span class="sd">--------------</span>
+<span class="sd">As I said, this module provides only direct access to Aleph, AMQP communication</span>
+<span class="sd">is handled in :mod:`edeposit.amqp`.</span>
+
+<span class="sd">If you want to access module directly, you can use :func:`reactToAMQPMessage`</span>
+<span class="sd">wrapper, or query :mod:`aleph &lt;aleph.aleph&gt;` submodule directly.</span>
+
+<span class="sd">:func:`reactToAMQPMessage` is preferred, because in that case, you don&#39;t have</span>
+<span class="sd">to deal with Aleph lowlevel API, which can be little bit annoying.</span>
+
+<span class="sd">Diagrams</span>
+<span class="sd">--------</span>
+<span class="sd">Here is ASCII flow diagram for you::</span>
+
+<span class="sd"> ISBNQuery      ----.                                 ,--&gt; CountResult</span>
+<span class="sd"> AuthorQuery    ----|                                 |       `- num_of_records</span>
+<span class="sd"> PublisherQuery ----|                                 |</span>
+<span class="sd"> TitleQuery     ----|          ExportRequest          |--&gt; SearchResult</span>
+<span class="sd"> GenericQuery   ----|      ISBNValidationRequest      |       `- AlephRecord</span>
+<span class="sd"> DocumentQuery  ----|                |                |</span>
+<span class="sd"> ICZQuery       ----|                |                |--&gt; ISBNValidationResult</span>
+<span class="sd">                    |                |                |        - ISBN</span>
+<span class="sd">                    V                |                |</span>
+<span class="sd">       Count/Search/ExportRequest    |                |--&gt; ExportResult</span>
+<span class="sd">                    |                |                |</span>
+<span class="sd">                    |                |                |</span>
+<span class="sd">                    |                |                |</span>
+<span class="sd">                    V                |                |</span>
+<span class="sd">               serialize()&lt;----------&#39;           deserialize()</span>
+<span class="sd">                    |                                 ^</span>
+<span class="sd">                    V             Client              |</span>
+<span class="sd">               AMQPMessage ------&gt; AMQP -------&gt; AMQPMessage</span>
+<span class="sd">                                  |    ^</span>
+<span class="sd">                                  V    |</span>
+<span class="sd">                                  |    ^</span>
+<span class="sd">                                  V    |</span>
+<span class="sd">                                  |    ^</span>
+<span class="sd">                                  V    |</span>
+<span class="sd">               AMQPMessage &lt;------ AMQP &lt;-------- AMQPMessage</span>
+<span class="sd">                    |             Service              ^</span>
+<span class="sd">                    |                                  |</span>
+<span class="sd">                    V                                  |</span>
+<span class="sd">           reactToAMQPMessage() ............... magic_happens()</span>
+
+<span class="sd">and here is (pseudo) UML:</span>
+
+<span class="sd">.. image:: /_static/reactoamqpmessage.png</span>
+
+<span class="sd">Neat, isn&#39;t it?</span>
+
+<span class="sd">API</span>
+<span class="sd">---</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="c"># Imports =====================================================================</span>
+<span class="kn">from</span> <span class="nn">collections</span> <span class="kn">import</span> <span class="n">namedtuple</span>
+
+<span class="kn">import</span> <span class="nn">isbn_validator</span>
+
+<span class="kn">import</span> <span class="nn">aleph</span>
+<span class="kn">import</span> <span class="nn">export</span>
+<span class="kn">import</span> <span class="nn">settings</span>
+<span class="kn">import</span> <span class="nn">doc_number</span>
+<span class="kn">from</span> <span class="nn">datastructures</span> <span class="kn">import</span> <span class="o">*</span>
+
+
+<span class="c"># Queries =====================================================================</span>
+<span class="k">class</span> <span class="nc">_QueryTemplate</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    This class is here to just save some effort by using common ancestor with</span>
+<span class="sd">    same .getSearchResult() and .getCountResult() definition.</span>
+
+<span class="sd">    You probably shouldn&#39;t use it.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">getSearchResult</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">records</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">xml</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_getXML</span><span class="p">():</span>
+            <span class="n">records</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="n">AlephRecord</span><span class="p">(</span>
+                    <span class="n">base</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">base</span><span class="p">,</span>
+                    <span class="n">library</span><span class="o">=</span><span class="n">settings</span><span class="o">.</span><span class="n">DEFAULT_LIBRARY</span><span class="p">,</span>
+                    <span class="n">docNumber</span><span class="o">=</span><span class="n">doc_number</span><span class="o">.</span><span class="n">getDocNumber</span><span class="p">(</span><span class="n">xml</span><span class="p">),</span>
+                    <span class="n">xml</span><span class="o">=</span><span class="n">xml</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">SearchResult</span><span class="p">(</span><span class="n">records</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">getCountResult</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">CountResult</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_getCount</span><span class="p">())</span>
+
+
+<div class="viewcode-block" id="GenericQuery"><a class="viewcode-back" href="../api/aleph.html#aleph.GenericQuery">[docs]</a><span class="k">class</span> <span class="nc">GenericQuery</span><span class="p">(</span><span class="n">namedtuple</span><span class="p">(</span><span class="s">&quot;GenericQuery&quot;</span><span class="p">,</span> <span class="p">[</span><span class="s">&#39;base&#39;</span><span class="p">,</span>
+                                               <span class="s">&#39;phrase&#39;</span><span class="p">,</span>
+                                               <span class="s">&#39;considerSimilar&#39;</span><span class="p">,</span>
+                                               <span class="s">&#39;field&#39;</span><span class="p">]),</span>
+                   <span class="n">_QueryTemplate</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Used for generic queries to Aleph.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        base (str): Which base in Aleph will be queried. This depends on</span>
+<span class="sd">                    settings of your server. See :func:`aleph.getListOfBases`</span>
+<span class="sd">                    for details.</span>
+<span class="sd">        phrase (str): What are you looking for.</span>
+<span class="sd">        considerSimilar (bool): Don&#39;t use this, it usually doesn&#39;t work.</span>
+<span class="sd">        field (str): Which field you want to use for search.</span>
+<span class="sd">                     See :attr:`aleph.VALID_ALEPH_FIELDS` for list of valid</span>
+<span class="sd">                     bases.</span>
+
+<span class="sd">    For details of base/phrase/.. parameters, see :func:`aleph.searchInAleph`.</span>
+<span class="sd">    All parameters also serves as properties.</span>
+
+<span class="sd">    This is used mainly if you want to search by your own parameters and don&#39;t</span>
+<span class="sd">    want to use prepared wrappers (:class:`AuthorQuery`/:class:`ISBNQuery`/..).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">_getIDs</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">aleph</span><span class="o">.</span><span class="n">getDocumentIDs</span><span class="p">(</span>
+            <span class="n">aleph</span><span class="o">.</span><span class="n">searchInAleph</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">base</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">phrase</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">considerSimilar</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">field</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_getCount</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">aleph</span><span class="o">.</span><span class="n">searchInAleph</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">base</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">phrase</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">considerSimilar</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">field</span>
+        <span class="p">)[</span><span class="s">&quot;no_entries&quot;</span><span class="p">]</span>
+
+</div>
+<div class="viewcode-block" id="DocumentQuery"><a class="viewcode-back" href="../api/aleph.html#aleph.DocumentQuery">[docs]</a><span class="k">class</span> <span class="nc">DocumentQuery</span><span class="p">(</span><span class="n">namedtuple</span><span class="p">(</span><span class="s">&quot;DocumentQuery&quot;</span><span class="p">,</span> <span class="p">[</span><span class="s">&quot;doc_id&quot;</span><span class="p">,</span> <span class="s">&quot;library&quot;</span><span class="p">])):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Query Aleph when you know the Document ID.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        doc_id (str): ID number as string.</span>
+<span class="sd">        library (str, default settings.DEFAULT_LIBRARY): Library.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">__new__</span><span class="p">(</span><span class="n">cls</span><span class="p">,</span> <span class="n">doc_id</span><span class="p">,</span> <span class="n">library</span><span class="o">=</span><span class="n">settings</span><span class="o">.</span><span class="n">DEFAULT_LIBRARY</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">DocumentQuery</span><span class="p">,</span> <span class="n">cls</span><span class="p">)</span><span class="o">.</span><span class="n">__new__</span><span class="p">(</span>
+            <span class="n">cls</span><span class="p">,</span>
+            <span class="n">doc_id</span><span class="p">,</span>
+            <span class="n">library</span>
+        <span class="p">)</span>
+
+<div class="viewcode-block" id="DocumentQuery.getSearchResult"><a class="viewcode-back" href="../api/aleph.html#aleph.DocumentQuery.getSearchResult">[docs]</a>    <span class="k">def</span> <span class="nf">getSearchResult</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns:</span>
+<span class="sd">            object: :class:`SearchResult` document with given `doc_id`.</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            aleph.DocumentNotFoundException: When document is not found.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">xml</span> <span class="o">=</span> <span class="n">aleph</span><span class="o">.</span><span class="n">downloadMARCOAI</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">doc_id</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">library</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">SearchResult</span><span class="p">([</span>
+            <span class="n">AlephRecord</span><span class="p">(</span>
+                <span class="bp">None</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">library</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">doc_id</span><span class="p">,</span>
+                <span class="n">xml</span>
+            <span class="p">)</span>
+        <span class="p">])</span>
+</div>
+<div class="viewcode-block" id="DocumentQuery.getCountResult"><a class="viewcode-back" href="../api/aleph.html#aleph.DocumentQuery.getCountResult">[docs]</a>    <span class="k">def</span> <span class="nf">getCountResult</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns:</span>
+<span class="sd">            int: 0/1 whether the document is found or not.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">getSearchResult</span><span class="p">()</span>
+        <span class="k">except</span> <span class="n">aleph</span><span class="o">.</span><span class="n">DocumentNotFoundException</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mi">0</span>
+
+        <span class="k">return</span> <span class="mi">1</span>
+
+</div></div>
+<div class="viewcode-block" id="ISBNQuery"><a class="viewcode-back" href="../api/aleph.html#aleph.ISBNQuery">[docs]</a><span class="k">class</span> <span class="nc">ISBNQuery</span><span class="p">(</span><span class="n">namedtuple</span><span class="p">(</span><span class="s">&quot;ISBNQuery&quot;</span><span class="p">,</span> <span class="p">[</span><span class="s">&quot;ISBN&quot;</span><span class="p">,</span> <span class="s">&quot;base&quot;</span><span class="p">]),</span> <span class="n">_QueryTemplate</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Used to query Aleph to get books by ISBN.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        ISBN (str): ISBN 10/13.</span>
+<span class="sd">        base (str, optional): If not set, :attr:`settings.ALEPH_DEFAULT_BASE`</span>
+<span class="sd">                              is used.</span>
+
+<span class="sd">    Note:</span>
+<span class="sd">        ISBN is not unique, so you can get back lot of books with same ISBN.</span>
+<span class="sd">        Some books also have two or more ISBNs.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">__new__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ISBN</span><span class="p">,</span> <span class="n">base</span><span class="o">=</span><span class="n">settings</span><span class="o">.</span><span class="n">ALEPH_DEFAULT_BASE</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">ISBNQuery</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__new__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ISBN</span><span class="p">,</span> <span class="n">base</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_getXML</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">aleph</span><span class="o">.</span><span class="n">getISBNsXML</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ISBN</span><span class="p">,</span> <span class="n">base</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">base</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_getCount</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">aleph</span><span class="o">.</span><span class="n">getISBNCount</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ISBN</span><span class="p">,</span> <span class="n">base</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">base</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="AuthorQuery"><a class="viewcode-back" href="../api/aleph.html#aleph.AuthorQuery">[docs]</a><span class="k">class</span> <span class="nc">AuthorQuery</span><span class="p">(</span><span class="n">namedtuple</span><span class="p">(</span><span class="s">&quot;AuthorQuery&quot;</span><span class="p">,</span> <span class="p">[</span><span class="s">&quot;author&quot;</span><span class="p">,</span> <span class="s">&quot;base&quot;</span><span class="p">]),</span>
+                  <span class="n">_QueryTemplate</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Used to query Aleph to get books by Author.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        author (str): Author&#39;s name/lastname in UTF-8.</span>
+<span class="sd">        base (str, optional): If not set, :attr:`settings.ALEPH_DEFAULT_BASE`</span>
+<span class="sd">                              is used.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">__new__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">author</span><span class="p">,</span> <span class="n">base</span><span class="o">=</span><span class="n">settings</span><span class="o">.</span><span class="n">ALEPH_DEFAULT_BASE</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">AuthorQuery</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__new__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">author</span><span class="p">,</span> <span class="n">base</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_getXML</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">aleph</span><span class="o">.</span><span class="n">getAuthorsBooksXML</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">author</span><span class="p">,</span> <span class="n">base</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">base</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_getCount</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">aleph</span><span class="o">.</span><span class="n">getAuthorsBooksCount</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">author</span><span class="p">,</span> <span class="n">base</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">base</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="PublisherQuery"><a class="viewcode-back" href="../api/aleph.html#aleph.PublisherQuery">[docs]</a><span class="k">class</span> <span class="nc">PublisherQuery</span><span class="p">(</span><span class="n">namedtuple</span><span class="p">(</span><span class="s">&quot;PublisherQuery&quot;</span><span class="p">,</span> <span class="p">[</span><span class="s">&quot;publisher&quot;</span><span class="p">,</span> <span class="s">&quot;base&quot;</span><span class="p">]),</span>
+                     <span class="n">_QueryTemplate</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Used to query Aleph to get books by Publisher.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        publisher (str): Publisher&#39;s name in UTF-8.</span>
+<span class="sd">        base (str, optional): If not set, :attr:`settings.ALEPH_DEFAULT_BASE`</span>
+<span class="sd">                              is used.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">__new__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">publisher</span><span class="p">,</span> <span class="n">base</span><span class="o">=</span><span class="n">settings</span><span class="o">.</span><span class="n">ALEPH_DEFAULT_BASE</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">PublisherQuery</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__new__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">publisher</span><span class="p">,</span> <span class="n">base</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_getXML</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">aleph</span><span class="o">.</span><span class="n">getPublishersBooksXML</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">publisher</span><span class="p">,</span> <span class="n">base</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">base</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_getCount</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">aleph</span><span class="o">.</span><span class="n">getPublishersBooksCount</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">publisher</span><span class="p">,</span> <span class="n">base</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">base</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="TitleQuery"><a class="viewcode-back" href="../api/aleph.html#aleph.TitleQuery">[docs]</a><span class="k">class</span> <span class="nc">TitleQuery</span><span class="p">(</span><span class="n">_QueryTemplate</span><span class="p">,</span>
+                 <span class="n">namedtuple</span><span class="p">(</span><span class="s">&quot;TitleQuery&quot;</span><span class="p">,</span> <span class="p">[</span><span class="s">&quot;title&quot;</span><span class="p">,</span> <span class="s">&quot;base&quot;</span><span class="p">])):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Used to query Aleph to get books by book&#39;s title/name.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        title (str): Book&#39;s title in UTF-8.</span>
+<span class="sd">        base (str, optional): If not set, :attr:`settings.ALEPH_DEFAULT_BASE`</span>
+<span class="sd">                              is used.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">__new__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">title</span><span class="p">,</span> <span class="n">base</span><span class="o">=</span><span class="n">settings</span><span class="o">.</span><span class="n">ALEPH_DEFAULT_BASE</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">TitleQuery</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__new__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">title</span><span class="p">,</span> <span class="n">base</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_getXML</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">aleph</span><span class="o">.</span><span class="n">getBooksTitleXML</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">title</span><span class="p">,</span> <span class="n">base</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">base</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_getCount</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">aleph</span><span class="o">.</span><span class="n">getBooksTitleCount</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">title</span><span class="p">,</span> <span class="n">base</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">base</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="ICZQuery"><a class="viewcode-back" href="../api/aleph.html#aleph.ICZQuery">[docs]</a><span class="k">class</span> <span class="nc">ICZQuery</span><span class="p">(</span><span class="n">_QueryTemplate</span><span class="p">,</span> <span class="n">namedtuple</span><span class="p">(</span><span class="s">&quot;ICZQuery&quot;</span><span class="p">,</span> <span class="p">[</span><span class="s">&quot;icz&quot;</span><span class="p">,</span> <span class="s">&quot;base&quot;</span><span class="p">])):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Used to query Aleph to get books by record&#39;s identification number `icz`.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        icz (str): Identification number (``nkc20150003029`` for example).</span>
+<span class="sd">        base (str, optional): If not set, :attr:`settings.ALEPH_DEFAULT_BASE`</span>
+<span class="sd">                              is used.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">__new__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">icz</span><span class="p">,</span> <span class="n">base</span><span class="o">=</span><span class="n">settings</span><span class="o">.</span><span class="n">ALEPH_DEFAULT_BASE</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">ICZQuery</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__new__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">icz</span><span class="p">,</span> <span class="n">base</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_getXML</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">aleph</span><span class="o">.</span><span class="n">getICZBooksXML</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">icz</span><span class="p">,</span> <span class="n">base</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">base</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_getCount</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">aleph</span><span class="o">.</span><span class="n">getICZBooksCount</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">icz</span><span class="p">,</span> <span class="n">base</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">base</span><span class="p">)</span>
+
+
+<span class="c"># Variables ===================================================================</span></div>
+<span class="n">QUERY_TYPES</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="n">ISBNQuery</span><span class="p">,</span>
+    <span class="n">AuthorQuery</span><span class="p">,</span>
+    <span class="n">PublisherQuery</span><span class="p">,</span>
+    <span class="n">TitleQuery</span><span class="p">,</span>
+    <span class="n">GenericQuery</span><span class="p">,</span>
+    <span class="n">DocumentQuery</span><span class="p">,</span>
+    <span class="n">ICZQuery</span><span class="p">,</span>
+<span class="p">]</span>
+
+<span class="n">REQUEST_TYPES</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="n">SearchRequest</span><span class="p">,</span>
+    <span class="n">CountRequest</span><span class="p">,</span>
+    <span class="n">ExportRequest</span><span class="p">,</span>
+    <span class="n">ISBNValidationRequest</span><span class="p">,</span>
+<span class="p">]</span>
+
+
+<span class="c"># Interface for an external world =============================================</span>
+<span class="k">def</span> <span class="nf">_iiOfAny</span><span class="p">(</span><span class="n">instance</span><span class="p">,</span> <span class="n">classes</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Returns true, if `instance` is instance of any (_iiOfAny) of the `classes`.</span>
+
+<span class="sd">    This function doesn&#39;t use :func:`isinstance` check, it just compares the</span>
+<span class="sd">    class names.</span>
+
+<span class="sd">    This can be generally dangerous, but it is really useful when you are</span>
+<span class="sd">    comparing class serialized in one module and deserialized in another.</span>
+
+<span class="sd">    This causes, that module paths in class internals are different and</span>
+<span class="sd">    :func:`isinstance` and :func:`type` comparsions thus fails.</span>
+
+<span class="sd">    Use this function instead, if you want to check what type is your</span>
+<span class="sd">    deserialized message.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        instance (object): class instance you want to know the type</span>
+<span class="sd">        classes (list): classes, or just the class you want to compare - func</span>
+<span class="sd">                        automatically converts nonlist/nontuple parameters to</span>
+<span class="sd">                        list</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        bool: True if `instance` is instance of any of the `classes`.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">classes</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">[</span><span class="nb">list</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">]:</span>
+        <span class="n">classes</span> <span class="o">=</span> <span class="p">[</span><span class="n">classes</span><span class="p">]</span>
+
+    <span class="k">return</span> <span class="nb">any</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="nb">type</span><span class="p">(</span><span class="n">instance</span><span class="p">)</span><span class="o">.</span><span class="n">__name__</span> <span class="o">==</span> <span class="n">x</span><span class="o">.</span><span class="n">__name__</span><span class="p">,</span> <span class="n">classes</span><span class="p">))</span>
+
+
+<span class="c"># Functions ===================================================================</span>
+<div class="viewcode-block" id="reactToAMQPMessage"><a class="viewcode-back" href="../api/aleph.html#aleph.reactToAMQPMessage">[docs]</a><span class="k">def</span> <span class="nf">reactToAMQPMessage</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">send_back</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    React to given (AMQP) message.</span>
+
+<span class="sd">    This function is used by :mod:`edeposit.amqp.alephdaemon`. It works as</span>
+<span class="sd">    highlevel wrapper for whole module.</span>
+
+<span class="sd">    Example:</span>
+<span class="sd">        &gt;&gt;&gt; import aleph</span>
+
+<span class="sd">        &gt;&gt;&gt; request = aleph.SearchRequest(</span>
+<span class="sd">        ...     aleph.ISBNQuery(&quot;80-251-0225-4&quot;)</span>
+<span class="sd">        ... )</span>
+<span class="sd">        &gt;&gt;&gt; request</span>
+<span class="sd">        SearchRequest(query=ISBNQuery(ISBN=&#39;80-251-0225-4&#39;, base=&#39;nkc&#39;))</span>
+
+<span class="sd">        &gt;&gt;&gt; response = aleph.reactToAMQPMessage(request, None)</span>
+
+<span class="sd">        &gt;&gt;&gt; response  # formated by hand for purposes of example</span>
+<span class="sd">        SearchResult(</span>
+<span class="sd">            records=[</span>
+<span class="sd">                AlephRecord(</span>
+<span class="sd">                    base=&#39;nkc&#39;,</span>
+<span class="sd">                    library=&#39;NKC01&#39;,</span>
+<span class="sd">                    docNumber=1492461,</span>
+<span class="sd">                    xml=&#39;HERE IS WHOLE MARC OAI RECORD&#39;,</span>
+<span class="sd">                    epublication=EPublication(</span>
+<span class="sd">                        ISBN=[&#39;80-251-0225-4&#39;],</span>
+<span class="sd">                        nazev=&#39;Umění programování v UNIXu /&#39;,</span>
+<span class="sd">                        podnazev=&#39;&#39;,</span>
+<span class="sd">                        vazba=&#39;(bro\xc5\xbe.) :&#39;,</span>
+<span class="sd">                        cena=&#39;K\xc4\x8d 590,00&#39;,</span>
+<span class="sd">                        castDil=&#39;&#39;,</span>
+<span class="sd">                        nazevCasti=&#39;&#39;,</span>
+<span class="sd">                        nakladatelVydavatel=&#39;Computer Press,&#39;,</span>
+<span class="sd">                        datumVydani=&#39;2004&#39;,</span>
+<span class="sd">                        poradiVydani=&#39;1. vyd.&#39;,</span>
+<span class="sd">                        zpracovatelZaznamu=&#39;BOA001&#39;,</span>
+<span class="sd">                        format=&#39;23 cm&#39;,</span>
+<span class="sd">                        url=&#39;&#39;,</span>
+<span class="sd">                        mistoVydani=&#39;Brno :&#39;,</span>
+<span class="sd">                        ISBNSouboruPublikaci=[],</span>
+<span class="sd">                        autori=[</span>
+<span class="sd">                            Author(</span>
+<span class="sd">                                firstName=&#39;Eric S.&#39;,</span>
+<span class="sd">                                lastName=&#39;Raymond&#39;,</span>
+<span class="sd">                                title=&#39;&#39;</span>
+<span class="sd">                            )</span>
+<span class="sd">                        ],</span>
+<span class="sd">                        originaly=[</span>
+<span class="sd">                            &#39;Art of UNIX programming&#39;</span>
+<span class="sd">                        ],</span>
+<span class="sd">                        internal_url=&#39;&#39;</span>
+<span class="sd">                    )</span>
+<span class="sd">                )</span>
+<span class="sd">            ]</span>
+<span class="sd">        )</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        req (Request class): Any of the Request class from</span>
+<span class="sd">                          :class:`aleph.datastructures.requests`.</span>
+<span class="sd">        send_back (fn reference): Reference to function for responding. This is</span>
+<span class="sd">                  useful for progress monitoring for example. Function takes</span>
+<span class="sd">                  one parameter, which may be response structure/namedtuple, or</span>
+<span class="sd">                  string or whatever would be normally returned.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        Result class: Result of search in Aleph. \</span>
+<span class="sd">                      See :mod:`aleph.datastructures.results` submodule.</span>
+
+<span class="sd">    Raises:</span>
+<span class="sd">        ValueError: If bad type of `req` structure is given.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">_iiOfAny</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">REQUEST_TYPES</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="s">&quot;Unknown type of request: &#39;&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">req</span><span class="p">))</span> <span class="o">+</span> <span class="s">&quot;&#39;!&quot;</span>
+        <span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">_iiOfAny</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">CountRequest</span><span class="p">)</span> <span class="ow">and</span> <span class="n">_iiOfAny</span><span class="p">(</span><span class="n">req</span><span class="o">.</span><span class="n">query</span><span class="p">,</span> <span class="n">QUERY_TYPES</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">req</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">getCountResult</span><span class="p">()</span>
+
+    <span class="k">elif</span> <span class="n">_iiOfAny</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">SearchRequest</span><span class="p">)</span> <span class="ow">and</span> <span class="n">_iiOfAny</span><span class="p">(</span><span class="n">req</span><span class="o">.</span><span class="n">query</span><span class="p">,</span> <span class="n">QUERY_TYPES</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">req</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">getSearchResult</span><span class="p">()</span>
+
+    <span class="k">elif</span> <span class="n">_iiOfAny</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">ISBNValidationRequest</span><span class="p">):</span>
+        <span class="n">ISBN</span> <span class="o">=</span> <span class="n">req</span><span class="o">.</span><span class="n">ISBN</span>
+
+        <span class="k">if</span> <span class="n">_iiOfAny</span><span class="p">(</span><span class="n">ISBN</span><span class="p">,</span> <span class="n">ISBNQuery</span><span class="p">):</span>
+            <span class="n">ISBN</span> <span class="o">=</span> <span class="n">ISBN</span><span class="o">.</span><span class="n">ISBN</span>
+
+        <span class="k">return</span> <span class="n">ISBNValidationResult</span><span class="p">(</span><span class="n">isbn_validator</span><span class="o">.</span><span class="n">is_valid_isbn</span><span class="p">(</span><span class="n">ISBN</span><span class="p">))</span>
+
+    <span class="k">elif</span> <span class="n">_iiOfAny</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">ExportRequest</span><span class="p">):</span>
+        <span class="n">export</span><span class="o">.</span><span class="n">exportEPublication</span><span class="p">(</span><span class="n">req</span><span class="o">.</span><span class="n">epublication</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">ExportResult</span><span class="p">(</span><span class="n">req</span><span class="o">.</span><span class="n">epublication</span><span class="o">.</span><span class="n">ISBN</span><span class="p">)</span>
+
+    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+        <span class="s">&quot;Unknown type of request: &#39;&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">req</span><span class="p">))</span> <span class="o">+</span> <span class="s">&quot;&#39; or query: &#39;&quot;</span> <span class="o">+</span>
+        <span class="nb">str</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">req</span><span class="o">.</span><span class="n">query</span><span class="p">))</span> <span class="o">+</span> <span class="s">&quot;&#39;!&quot;</span>
+    <span class="p">)</span></div>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+            <p class="logo"><a href="../index.html">
+              <img class="logo" src="../_static/nkp_logo.png" alt="Logo"/>
+            </a></p>
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <form class="search" action="../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../index.html">edeposit.amqp.aleph 1.8.0 documentation</a> &raquo;</li>
+          <li class="nav-item nav-item-1"><a href="index.html" >Module code</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer" role="contentinfo">
+        &copy; Copyright 2015 E-deposit team.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.3.1.
+    </div>
+  </body>
+</html>
