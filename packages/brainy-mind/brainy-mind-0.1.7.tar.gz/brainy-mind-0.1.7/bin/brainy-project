@@ -1,0 +1,85 @@
+#!/usr/bin/env python2.7
+# -*- coding: utf-8 -*-
+'''
+brainy-project
+==============
+
+A part of brainy CLI:
+
+ - Project management
+ - Application skeleton builder
+ - Run (execute) brainy project
+
+@author: Yauhen Yakimovich <yauhen.yakimovich@uzh.ch>,
+         Pelkmans Lab  <https://www.pelkmanslab.org>
+
+@license: The MIT License (MIT)
+
+Copyright (c) 2014 Pelkmans Lab
+'''
+import os
+import sys
+import argparse
+# We include <pkg_root>/src, <pkg_root>/lib/python
+extend_path = lambda root_path, folder: sys.path.insert(
+    0, os.path.join(root_path, folder))
+ROOT = os.path.dirname(os.path.dirname(__file__))
+extend_path(ROOT, '')
+extend_path(ROOT, 'src')
+extend_path(ROOT, 'lib/python')
+# Import brainy modules.
+from brainy.project.base import BrainyProject
+from brainy.errors import BrainyProjectError
+from brainy.workflows import WORKFLOWS
+from brainy.log import setup_logging, LOGGING_OPTIONS
+
+
+# Now parse and handle command line.
+if __name__ == '__main__':
+    program = os.path.basename(sys.argv[0])
+    parser = argparse.ArgumentParser(description='Manage brainy projects')
+    parser.add_argument('project_name', nargs='?',
+                        help='Brainy project name (alphanumerical).')
+    parser.add_argument('-p', '--path', default=os.getcwd(),
+                        help='Full path to the folder containing brainy '
+                        'project.')
+    parser.add_argument('-i', '--imperative', dest='action',
+                        choices=['run', 'create', 'clean', 'restart', 'help',
+                                 'init'],
+                        help='Action')
+    parser.add_argument('-s', '--subjective')
+    parser.add_argument('--from', dest='workflow_name',
+                        choices=WORKFLOWS.keys(),
+                        default='canonical',
+                        help='Specify name of the workflow')
+    parser.add_argument('--logging', dest='logging_option',
+                        choices=LOGGING_OPTIONS, default='console')
+
+    args = parser.parse_args()
+
+    if args.project_name is None:
+        if args.action == 'create':
+            sys.stderr.write('%s: Create command requires ' % program +
+                             'project_name or path specified. See \n\n  '
+                             'brainy help project\n\n')
+            exit()
+        # Assume is a part of path, e.g. current working dir.
+        args.project_name = os.path.basename(args.path)
+
+    if args.action == 'help':
+        parser.print_help()
+        exit()
+
+    brainy_project = BrainyProject(args.project_name, args.path)
+    setup_logging(args.logging_option)
+    try:
+        if args.action == 'create':
+            brainy_project.create(from_workflow=args.workflow_name)
+        elif args.action == 'init':
+            brainy_project.init()
+        elif args.action == 'run':
+            brainy_project.run()
+        elif args.action == 'clean':
+            brainy_project.clean()
+    except BrainyProjectError as error:
+        sys.stderr.write('%s\n' % str(error))
