@@ -1,0 +1,49 @@
+import json
+from collections import defaultdict
+
+
+COMMON_CHANNEL = 'all'
+
+
+class BasicPubSubManager(object):
+    # used by in memory pubsubmixin
+
+    def __init__(self):
+        self.channels = defaultdict(set)
+
+    def subscribe(self, channels, subscriber):
+        if isinstance(channels, (list, tuple)):
+            for channel in channels:
+                self.channels[channel].add(subscriber)
+        else:
+            self.channels[channels].add(subscriber)
+
+    def unsubscribe(self, channel, subscriber):
+        try:
+            self.channels[channel].remove(subscriber)
+            if len(self.channels[channel]) == 0:
+                del self.channels[channel]
+        except (KeyError, ValueError):
+            pass
+
+    def publish(self, channel, message):
+        subscribers = self.channels.get(channel, [])
+        message = json.dumps(message)
+        if subscribers:
+            for s in subscribers:
+                if not s.session.is_closed:
+                    s.broadcast(subscribers, message)
+                    break
+
+
+def is_request_body_json(f):
+
+    def wrapper(self, *args, **kwargs):
+        try:
+            json.loads(self.request.body)
+            f(self, *args, **kwargs)
+        except ValueError:
+            self.error(u"Request body is not valid JSON.", 400)
+            return
+
+    return wrapper
