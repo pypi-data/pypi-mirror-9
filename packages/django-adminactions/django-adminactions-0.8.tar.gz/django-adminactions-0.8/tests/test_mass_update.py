@@ -1,0 +1,84 @@
+from __future__ import absolute_import
+import six
+from django.contrib.auth.models import User
+from django.core.urlresolvers import reverse
+from django_dynamic_fixture import G
+from django_webtest import WebTestMixin
+from django.test import TransactionTestCase
+from demo.models import DemoModel
+from demo.utils import CheckSignalsMixin, user_grant_permission, SelectRowsMixin
+
+
+__all__ = ['MassUpdateTest', ]
+
+
+class MassUpdateTest(SelectRowsMixin, CheckSignalsMixin, WebTestMixin, TransactionTestCase):
+    fixtures = ['adminactions', 'demoproject']
+    urls = 'demo.urls'
+
+    _selected_rows = [0, 1]
+
+    action_name = 'mass_update'
+    sender_model = DemoModel
+
+    def setUp(self):
+        super(MassUpdateTest, self).setUp()
+        self._url = reverse('admin:demo_demomodel_changelist')
+        self.user = G(User, username='user', is_staff=True, is_active=True)
+
+    def _run_action(self, steps=2, **kwargs):
+        selected_rows = kwargs.pop('selected_rows', self._selected_rows)
+        with user_grant_permission(self.user, ['demo.change_demomodel', 'demo.adminactions_massupdate_demomodel']):
+            res = self.app.get('/', user='user')
+            res = res.click('Demo models')
+            if steps >= 1:
+                form = res.forms['changelist-form']
+                form['action'] = 'mass_update'
+                self._select_rows(form, selected_rows)
+                res = form.submit()
+            if steps >= 2:
+                for k, v in kwargs.items():
+                    res.form[k] = v
+                res.form['chk_id_char'].checked = True
+                res.form['func_id_char'] = 'upper'
+                res.form['chk_id_choices'].checked = True
+                res.form['func_id_choices'] = 'set'
+                res.form['choices'] = '1'
+                res = res.form.submit('apply')
+        return res
+
+    def test_no_permission(self):
+        with user_grant_permission(self.user, ['demo.change_demomodel']):
+            res = self.app.get('/', user='user')
+            res = res.click('Demo models')
+            form = res.forms['changelist-form']
+            form['action'] = 'mass_update'
+            form.set('_selected_action', True, 0)
+            res = form.submit().follow()
+            assert six.b('Sorry you do not have rights to execute this action') in res.body
+
+    def test_validate_on(self):
+        self._run_action(**{'_validate': 1})
+        assert DemoModel.objects.filter(char='BBB').exists()
+        assert not DemoModel.objects.filter(char='bbb').exists()
+
+    def test_validate_off(self):
+        self._run_action(**{'_validate': 0})
+        self.assertIn("Unable no mass update using operators without", self.app.cookies['messages'])
+
+    def test_clean_on(self):
+        self._run_action(**{'_clean': 1})
+        assert DemoModel.objects.filter(char='BBB').exists()
+        assert not DemoModel.objects.filter(char='bbb').exists()
+
+    def test_messages(self):
+        with user_grant_permission(self.user, ['demo.change_demomodel', 'demo.adminactions_massupdate_demomodel']):
+            res = self._run_action(**{'_clean': 1}).follow()
+            messages = [m.message for m in list(res.context['messages'])]
+            self.assertTrue(messages)
+            self.assertEqual('Updated 2 records', messages[0])
+
+            res = self._run_action(selected_rows=[1]).follow()
+            messages = [m.message for m in list(res.context['messages'])]
+            self.assertTrue(messages)
+            self.assertEqual('Updated 1 records', messages[0])
