@@ -1,0 +1,919 @@
+--- mrjob/compat.py	(original)
++++ mrjob/compat.py	(refactored)
+@@ -672,10 +672,10 @@
+ def version_gte(version, cmp_version_str):
+     """Return ``True`` if version >= *cmp_version_str*."""
+ 
+-    if not isinstance(version, basestring):
++    if not isinstance(version, str):
+         raise TypeError('%r is not a string' % version)
+ 
+-    if not isinstance(cmp_version_str, basestring):
++    if not isinstance(cmp_version_str, str):
+         raise TypeError('%r is not a string' % cmp_version_str)
+ 
+     return LooseVersion(version) >= LooseVersion(cmp_version_str)
+--- mrjob/conf.py	(original)
++++ mrjob/conf.py	(refactored)
+@@ -194,7 +194,7 @@
+     inherited = []
+     if conf.get('include', None):
+         includes = conf['include']
+-        if isinstance(includes, basestring):
++        if isinstance(includes, str):
+             includes = [includes]
+ 
+         for include in includes:
+@@ -298,7 +298,7 @@
+ 
+     if cmd is None:
+         return None
+-    elif isinstance(cmd, basestring):
++    elif isinstance(cmd, str):
+         return shlex_split(cmd)
+     else:
+         return list(cmd)
+--- mrjob/emr.py	(original)
++++ mrjob/emr.py	(refactored)
+@@ -23,7 +23,7 @@
+ import signal
+ import socket
+ import time
+-import urllib2
++import urllib.request, urllib.error, urllib.parse
+ from collections import defaultdict
+ from datetime import datetime
+ from datetime import timedelta
+@@ -31,10 +31,10 @@
+ from subprocess import PIPE
+ 
+ try:
+-    from cStringIO import StringIO
++    from io import StringIO
+     StringIO  # quiet "redefinition of unused ..." warning from pyflakes
+ except ImportError:
+-    from StringIO import StringIO
++    from io import StringIO
+ 
+ try:
+     import simplejson as json  # preferred because of C speedups
+@@ -408,7 +408,7 @@
+             's3_upload_part_size': 100,  # 100 MB
+             'sh_bin': ['/bin/sh', '-ex'],
+             'ssh_bin': ['ssh'],
+-            'ssh_bind_ports': range(40001, 40841),
++            'ssh_bind_ports': list(range(40001, 40841)),
+             'ssh_tunnel_to_job_tracker': False,
+             'ssh_tunnel_is_open': False,
+             'visible_to_all_users': False,
+@@ -614,7 +614,7 @@
+                 if isinstance(maybe_path_dict, dict):
+                     self._bootstrap_dir_mgr.add(**maybe_path_dict)
+ 
+-        if not (isinstance(self._opts['additional_emr_info'], basestring) or
++        if not (isinstance(self._opts['additional_emr_info'], str) or
+                 self._opts['additional_emr_info'] is None):
+             self._opts['additional_emr_info'] = json.dumps(
+                 self._opts['additional_emr_info'])
+@@ -924,7 +924,7 @@
+             s3_key.set_contents_from_filename(path)
+ 
+     def _upload_parts(self, mpul, path, fsize, part_size):
+-        offsets = xrange(0, fsize, part_size)
++        offsets = range(0, fsize, part_size)
+ 
+         for i, offset in enumerate(offsets):
+             part_num = i + 1
+@@ -1379,7 +1379,7 @@
+         steps we want to run."""
+         # quick, add the other steps before the job spins up and
+         # then shuts itself down (in practice this takes several minutes)
+-        return [self._build_step(n) for n in xrange(self._num_steps())]
++        return [self._build_step(n) for n in range(self._num_steps())]
+ 
+     def _build_step(self, step_num):
+         step = self._get_step(step_num)
+@@ -1601,7 +1601,7 @@
+ 
+                 if self._show_tracker_progress:
+                     try:
+-                        tracker_handle = urllib2.urlopen(self._tracker_url)
++                        tracker_handle = urllib.request.urlopen(self._tracker_url)
+                         tracker_page = ''.join(tracker_handle.readlines())
+                         tracker_handle.close()
+                         # first two formatted percentages, map then reduce
+@@ -1633,7 +1633,7 @@
+             log.info('Running time was %.1fs (not counting time spent waiting'
+                      ' for the EC2 instances)' % total_step_time)
+             self._fetch_counters(step_nums, lg_step_num_mapping)
+-            self.print_counters(range(1, len(step_nums) + 1))
++            self.print_counters(list(range(1, len(step_nums) + 1)))
+         else:
+             msg = 'Job on job flow %s failed with status %s: %s' % (
+                 job_flow.jobflowid, job_state, reason)
+@@ -2057,7 +2057,7 @@
+                 "bootstrap_cmds is deprecated since v0.4.2 and will be"
+                 " removed in v0.6.0. Consider using bootstrap instead.")
+         for cmd in self._opts['bootstrap_cmds']:
+-            if not isinstance(cmd, basestring):
++            if not isinstance(cmd, str):
+                 cmd = cmd_line(cmd)
+             bootstrap.append([cmd])
+ 
+--- mrjob/hadoop.py	(original)
++++ mrjob/hadoop.py	(refactored)
+@@ -306,7 +306,7 @@
+     def _run_job_in_hadoop(self):
+         self._counters = []
+ 
+-        for step_num in xrange(self._num_steps()):
++        for step_num in range(self._num_steps()):
+             log.debug('running step %d of %d' %
+                       (step_num + 1, self._num_steps()))
+ 
+--- mrjob/inline.py	(original)
++++ mrjob/inline.py	(refactored)
+@@ -19,10 +19,10 @@
+ import os
+ 
+ try:
+-    from cStringIO import StringIO
++    from io import StringIO
+     StringIO  # quiet "redefinition of unused ..." warning from pyflakes
+ except ImportError:
+-    from StringIO import StringIO
++    from io import StringIO
+ 
+ from mrjob.job import MRJob
+ from mrjob.parse import parse_mr_job_stderr
+--- mrjob/job.py	(original)
++++ mrjob/job.py	(refactored)
+@@ -26,10 +26,10 @@
+ import sys
+ 
+ try:
+-    from cStringIO import StringIO
++    from io import StringIO
+     StringIO  # quiet "redefinition of unused ..." warning from pyflakes
+ except ImportError:
+-    from StringIO import StringIO
++    from io import StringIO
+ 
+ try:
+     import simplejson as json
+@@ -399,7 +399,7 @@
+         with semicolons (commas confuse Hadoop streaming).
+         """
+         # don't allow people to pass in floats
+-        if not isinstance(amount, (int, long)):
++        if not isinstance(amount, int):
+             raise TypeError('amount must be an integer, not %r' % (amount,))
+ 
+         # Extra commas screw up hadoop and there's no way to escape them. So
+@@ -409,9 +409,9 @@
+         #
+         # The relevant Hadoop code is incrCounter(), here:
+         # http://svn.apache.org/viewvc/hadoop/mapreduce/trunk/src/contrib/streaming/src/java/org/apache/hadoop/streaming/PipeMapRed.java?view=markup  # noqa
+-        if isinstance(group, unicode) or isinstance(counter, unicode):
+-            group = unicode(group).replace(',', ';')
+-            counter = unicode(counter).replace(',', ';')
++        if isinstance(group, str) or isinstance(counter, str):
++            group = str(group).replace(',', ';')
++            counter = str(counter).replace(',', ';')
+             stderr = codecs.getwriter('utf-8')(self.stderr)
+         else:
+             group = str(group).replace(',', ';')
+@@ -419,7 +419,7 @@
+             stderr = self.stderr
+ 
+         stderr.write(
+-            u'reporter:counter:%s,%s,%d\n' % (group, counter, amount))
++            'reporter:counter:%s,%s,%d\n' % (group, counter, amount))
+         stderr.flush()
+ 
+     def set_status(self, msg):
+@@ -432,8 +432,8 @@
+         If the type of **msg** is ``unicode``, then the message will be written
+         as unicode. Otherwise, it will be written as ASCII.
+         """
+-        if isinstance(msg, unicode):
+-            status = u'reporter:status:%s\n' % (msg,)
++        if isinstance(msg, str):
++            status = 'reporter:status:%s\n' % (msg,)
+             stderr = codecs.getwriter('utf-8')(self.stderr)
+         else:
+             status = 'reporter:status:%s\n' % (msg,)
+--- mrjob/launch.py	(original)
++++ mrjob/launch.py	(refactored)
+@@ -23,10 +23,10 @@
+ import time
+ 
+ try:
+-    from cStringIO import StringIO
++    from io import StringIO
+     StringIO  # quiet "redefinition of unused ..." warning from pyflakes
+ except ImportError:
+-    from StringIO import StringIO
++    from io import StringIO
+ 
+ from mrjob.conf import combine_dicts
+ from mrjob.options import add_basic_opts
+--- mrjob/local.py	(original)
++++ mrjob/local.py	(refactored)
+@@ -242,7 +242,7 @@
+         :return: dict(proc=Popen, args=[process args], write_to=file)
+         """
+         log.info('> %s > %s' % (' | '.join(
+-            args if isinstance(args, basestring) else cmd_line(args)
++            args if isinstance(args, str) else cmd_line(args)
+             for args in procs_args), output_path))
+ 
+         with open(output_path, 'w') as write_to:
+--- mrjob/parse.py	(original)
++++ mrjob/parse.py	(refactored)
+@@ -19,14 +19,14 @@
+ import logging
+ import re
+ import time
+-from urlparse import ParseResult
+-from urlparse import urlparse as urlparse_buggy
++from urllib.parse import ParseResult
++from urllib.parse import urlparse as urlparse_buggy
+ 
+ try:
+-    from cStringIO import StringIO
++    from io import StringIO
+     StringIO  # quiet "redefinition of unused ..." warning from pyflakes
+ except ImportError:
+-    from StringIO import StringIO
++    from io import StringIO
+ 
+ from mrjob.compat import uses_020_counters
+ 
+@@ -140,7 +140,7 @@
+     for range_str in range_list_str.split(','):
+         if ':' in range_str:
+             a, b = [int(x) for x in range_str.split(':')]
+-            all_ranges.extend(xrange(a, b + 1))
++            all_ranges.extend(range(a, b + 1))
+         else:
+             all_ranges.append(int(range_str))
+     return all_ranges
+--- mrjob/protocol.py	(original)
++++ mrjob/protocol.py	(refactored)
+@@ -18,7 +18,7 @@
+ """
+ # don't add imports here that aren't part of the standard Python library,
+ # since MRJobs need to run in Amazon's generic EMR environment
+-import cPickle
++import pickle
+ 
+ from mrjob.util import safeeval
+ 
+@@ -111,10 +111,10 @@
+     """
+ 
+     def _loads(self, value):
+-        return cPickle.loads(value.decode('string_escape'))
++        return pickle.loads(value.decode('string_escape'))
+ 
+     def _dumps(self, value):
+-        return cPickle.dumps(value).encode('string_escape')
++        return pickle.dumps(value).encode('string_escape')
+ 
+ 
+ class PickleValueProtocol(object):
+@@ -122,10 +122,10 @@
+     (``key`` is read in as ``None``).
+     """
+     def read(self, line):
+-        return (None, cPickle.loads(line.decode('string_escape')))
++        return (None, pickle.loads(line.decode('string_escape')))
+ 
+     def write(self, key, value):
+-        return cPickle.dumps(value).encode('string_escape')
++        return pickle.dumps(value).encode('string_escape')
+ 
+ 
+ # This was added in 0.3, so no @classmethod for backwards compatibility
+--- mrjob/py2.py	(original)
++++ mrjob/py2.py	(refactored)
+@@ -20,8 +20,8 @@
+ # note that Python 2.6+ does have a "bytes" type (same as str) and b'' literals
+ if IN_PY2:
+     # only for use in isinstance(x, basestring)
+-    basestring = (str, unicode)
+-    unicode = unicode
++    str = (str, str)
++    str = str
+ else:
+-    basestring = str
+-    unicode = str
++    str = str
++    str = str
+--- mrjob/retry.py	(original)
++++ mrjob/retry.py	(refactored)
+@@ -62,7 +62,7 @@
+         def call_and_maybe_retry(*args, **kwargs):
+             n = len(self.__alternatives)
+ 
+-            for i in xrange(n):
++            for i in range(n):
+                 index = (self.__start_index + i) % n
+                 alternative = self.__alternatives[index]
+ 
+--- mrjob/runner.py	(original)
++++ mrjob/runner.py	(refactored)
+@@ -31,10 +31,10 @@
+ import tempfile
+ 
+ try:
+-    from cStringIO import StringIO
++    from io import StringIO
+     StringIO  # quiet "redefinition of unused ..." warning from pyflakes
+ except ImportError:
+-    from StringIO import StringIO
++    from io import StringIO
+ 
+ try:
+     import simplejson as json
+@@ -205,7 +205,7 @@
+         # old API accepts strings for cleanup
+         # new API wants lists
+         for opt_key in ('cleanup', 'cleanup_on_failure'):
+-            if isinstance(self[opt_key], basestring):
++            if isinstance(self[opt_key], str):
+                 self[opt_key] = [self[opt_key]]
+ 
+         def validate_cleanup(error_str, opt_list):
+@@ -956,7 +956,7 @@
+                 " in v0.6.0. Consider using setup instead.")
+ 
+         for cmd in self._opts['setup_cmds']:
+-            if not isinstance(cmd, basestring):
++            if not isinstance(cmd, str):
+                 cmd = cmd_line(cmd)
+             setup.append([cmd])
+ 
+--- mrjob/setup.py	(original)
++++ mrjob/setup.py	(refactored)
+@@ -120,7 +120,7 @@
+                       m.group('colon_or_equals'))
+ 
+         if keep_as_is:
+-            if tokens and isinstance(tokens[-1], basestring):
++            if tokens and isinstance(tokens[-1], str):
+                 tokens[-1] += keep_as_is
+             else:
+                 tokens.append(keep_as_is)
+@@ -421,7 +421,7 @@
+         if name is None:
+             return
+ 
+-        if not isinstance(name, basestring):
++        if not isinstance(name, str):
+             raise TypeError('name must be a string or None: %r' % (name,))
+ 
+         if '/' in name:
+--- mrjob/step.py	(original)
++++ mrjob/step.py	(refactored)
+@@ -158,7 +158,7 @@
+     def _render_substep(self, cmd_key, pre_filter_key=None):
+         if self._steps[cmd_key]:
+             cmd = self._steps[cmd_key]
+-            if not isinstance(cmd, basestring):
++            if not isinstance(cmd, str):
+                 cmd = cmd_line(cmd)
+             if (pre_filter_key and self._steps[pre_filter_key]):
+                 raise ValueError('Cannot specify both %s and %s' % (
+--- mrjob/util.py	(original)
++++ mrjob/util.py	(refactored)
+@@ -671,7 +671,7 @@
+             path = os.path.join(dirpath, filename)
+             # janky version of os.path.relpath() (Python 2.6):
+             rel_path = path[len(os.path.join(dir, '')):]
+-            if filter(rel_path):
++            if list(filter(rel_path)):
+                 # copy over real files, not symlinks
+                 real_path = os.path.realpath(path)
+                 path_in_tar_gz = os.path.join(prefix, rel_path)
+--- mrjob/examples/mr_text_classifier.py	(original)
++++ mrjob/examples/mr_text_classifier.py	(refactored)
+@@ -66,8 +66,8 @@
+     id -- a unique ID for the document (any kind of JSON-able value should
+         work). If not specified, we'll auto-generate one.
+     """
+-    text = unicode(text)
+-    cats = dict((unicode(cat), bool(is_in_cat))
++    text = str(text)
++    cats = dict((str(cat), bool(is_in_cat))
+                 for cat, is_in_cat
+                 in (cats or {}).iteritems())
+ 
+--- mrjob/examples/mr_travelling_salesman/mr_travelling_salesman.py	(original)
++++ mrjob/examples/mr_travelling_salesman/mr_travelling_salesman.py	(refactored)
+@@ -49,7 +49,7 @@
+     i -- the integer to be mapped to the set of tours for the graph
+     start_node -- the node index to begin and end the tour on
+     """
+-    nodes_remaining = range(0, start_node) + range(start_node + 1, num_nodes)
++    nodes_remaining = list(range(0, start_node)) + list(range(start_node + 1, num_nodes))
+     tour = []
+ 
+     while len(nodes_remaining) > 0:
+@@ -72,7 +72,7 @@
+     tour -- A list of integers representing a tour through the graph where each
+             entry is the index of a node on the graph.
+     """
+-    steps = zip(tour[0:-1], tour[1:])
++    steps = list(zip(tour[0:-1], tour[1:]))
+     cost = sum([graph[step_from, step_to] for step_from, step_to in steps])
+     return cost
+ 
+@@ -131,8 +131,8 @@
+         #pieces. Each piece is passed along as a key along with the trip
+         #description.
+         step_size = int(100 if num_tours < 100**2 else num_tours / 100)
+-        steps = range(0, num_tours, step_size) + [num_tours]
+-        ranges = zip(steps[0:-1], steps[1:])
++        steps = list(range(0, num_tours, step_size)) + [num_tours]
++        ranges = list(zip(steps[0:-1], steps[1:]))
+ 
+         for range_low, range_high in ranges:
+             #The key prepresents the range of tours to cost
+@@ -154,7 +154,7 @@
+         num_nodes = matrix.shape[0]
+ 
+         #The key prepresents the range of tours to cost
+-        range_low, range_high = map(int,key.split('-'))
++        range_low, range_high = list(map(int,key.split('-')))
+         for i in range(range_low,range_high):
+ 
+             tour = map_int_to_tour(num_nodes, i, sales_trip['start_node'])
+--- mrjob/fs/hadoop.py	(original)
++++ mrjob/fs/hadoop.py	(refactored)
+@@ -20,10 +20,10 @@
+ from subprocess import CalledProcessError
+ 
+ try:
+-    from cStringIO import StringIO
++    from io import StringIO
+     StringIO  # quiet "redefinition of unused ..." warning from pyflakes
+ except ImportError:
+-    from StringIO import StringIO
++    from io import StringIO
+ 
+ from mrjob.fs.base import Filesystem
+ from mrjob.parse import is_uri
+--- mrjob/fs/ssh.py	(original)
++++ mrjob/fs/ssh.py	(refactored)
+@@ -15,10 +15,10 @@
+ import posixpath
+ 
+ try:
+-    from cStringIO import StringIO
++    from io import StringIO
+     StringIO  # quiet "redefinition of unused ..." warning from pyflakes
+ except ImportError:
+-    from StringIO import StringIO
++    from io import StringIO
+ 
+ from mrjob.fs.base import Filesystem
+ from mrjob.ssh import ssh_cat
+--- mrjob/tools/emr/audit_usage.py	(original)
++++ mrjob/tools/emr/audit_usage.py	(refactored)
+@@ -421,7 +421,7 @@
+         })
+ 
+     # fill in end_billing
+-    for i in xrange(len(intervals) - 1):
++    for i in range(len(intervals) - 1):
+         intervals[i]['end_billing'] = intervals[i + 1]['start']
+ 
+     intervals[-1]['end_billing'] = jf_end_billing
+--- mrjob/tools/emr/collect_emr_stats.py	(original)
++++ mrjob/tools/emr/collect_emr_stats.py	(refactored)
+@@ -83,7 +83,7 @@
+     if options.pretty_print:
+         pretty_print(stats)
+     else:
+-        print json.dumps(stats)
++        print(json.dumps(stats))
+ 
+ 
+ def pretty_print(stats):
+@@ -92,11 +92,11 @@
+     :param stats: A dictionary returned by :py:func:`job_flows_to_stats`
+     """
+     s = stats
+-    print '                Timestamp: %s' % s['timestamp']
+-    print 'Number of active jobflows: %s' % s['num_jobflows']
+-    print 'Number of instance counts: %s' % s['total_instance_count']
+-    print '* The active jobflows are those in states of BOOTSTRAPPING,'
+-    print '  STARTING, RUNNING, and WAITING.'
++    print('                Timestamp: %s' % s['timestamp'])
++    print('Number of active jobflows: %s' % s['num_jobflows'])
++    print('Number of instance counts: %s' % s['total_instance_count'])
++    print('* The active jobflows are those in states of BOOTSTRAPPING,')
++    print('  STARTING, RUNNING, and WAITING.')
+ 
+ 
+ def collect_active_job_flows(conf_paths):
+--- mrjob/tools/emr/fetch_logs.py	(original)
++++ mrjob/tools/emr/fetch_logs.py	(refactored)
+@@ -95,7 +95,7 @@
+         desc = runner._describe_jobflow()
+         runner._set_s3_job_log_uri(desc)
+         runner._fetch_counters(
+-            xrange(1, len(desc.steps) + 1), skip_s3_wait=True)
++            range(1, len(desc.steps) + 1), skip_s3_wait=True)
+         runner.print_counters()
+ 
+     if options.find_failure:
+@@ -275,7 +275,7 @@
+     else:
+         job_flow = runner._describe_jobflow()
+         if job_flow:
+-            step_nums = range(1, len(job_flow.steps) + 1)
++            step_nums = list(range(1, len(job_flow.steps) + 1))
+         else:
+             print('You do not have access to that job flow.')
+             sys.exit(1)
+--- tests/compress.py	(original)
++++ tests/compress.py	(refactored)
+@@ -13,7 +13,7 @@
+ # limitations under the License.
+ """Utilities to compress data in memory."""
+ import gzip
+-from StringIO import StringIO
++from io import StringIO
+ 
+ 
+ # use bz2.compress() to compress bz2 data
+--- tests/mockboto.py	(original)
++++ tests/mockboto.py	(refactored)
+@@ -236,7 +236,7 @@
+         self._pos += len(chunk)
+         return chunk
+ 
+-    def next(self):
++    def __next__(self):
+         chunk = self.read(SIMULATED_BUFFER_SIZE)
+         if chunk:
+             return chunk
+@@ -302,7 +302,7 @@
+ 
+         if self.parts:
+             num_parts = max(self.parts)
+-            for part_num in xrange(1, num_parts + 1):
++            for part_num in range(1, num_parts + 1):
+                 # S3 might be more graceful about missing parts. But we
+                 # certainly don't want this to slip past testing
+                 data += self.parts[part_num]
+@@ -740,7 +740,7 @@
+ 
+         if self.simulation_iterator:
+             try:
+-                self.simulation_iterator.next()
++                next(self.simulation_iterator)
+             except StopIteration:
+                 raise AssertionError(
+                     'Simulated progress too many times; bailing out')
+--- tests/mr_verbose_job.py	(original)
++++ tests/mr_verbose_job.py	(refactored)
+@@ -24,10 +24,10 @@
+     def mapper_final(self):
+         # the UNIX pipe buffer can hold 65536 bytes, so this should
+         # definitely exceed that
+-        for i in xrange(10000):
++        for i in range(10000):
+             self.increment_counter('Foo', 'Bar')
+ 
+-        for i in xrange(100):
++        for i in range(100):
+             self.set_status(str(i))
+ 
+         print('Qux', file=sys.stderr)
+--- tests/test_conf.py	(original)
++++ tests/test_conf.py	(refactored)
+@@ -290,7 +290,7 @@
+         self.assertEqual(combine_cmds('sort', ('grep', '-E')), ['grep', '-E'])
+ 
+     def test_unicode(self):
+-        self.assertEqual(combine_cmds(u'wunderbar!'), ['wunderbar!'])
++        self.assertEqual(combine_cmds('wunderbar!'), ['wunderbar!'])
+ 
+ 
+ class CombineCmdsListsCase(unittest.TestCase):
+--- tests/test_emr.py	(original)
++++ tests/test_emr.py	(refactored)
+@@ -25,7 +25,7 @@
+ import os.path
+ import posixpath
+ import shutil
+-from StringIO import StringIO
++from io import StringIO
+ import tempfile
+ import time
+ 
+@@ -333,7 +333,7 @@
+         # job should get terminated
+         emr_conn = runner.make_emr_conn()
+         job_flow_id = runner.get_emr_job_flow_id()
+-        for _ in xrange(10):
++        for _ in range(10):
+             emr_conn.simulate_progress(job_flow_id)
+ 
+         job_flow = emr_conn.describe_jobflow(job_flow_id)
+@@ -360,7 +360,7 @@
+ 
+                 emr_conn = runner.make_emr_conn()
+                 job_flow_id = runner.get_emr_job_flow_id()
+-                for _ in xrange(10):
++                for _ in range(10):
+                     emr_conn.simulate_progress(job_flow_id)
+ 
+                 job_flow = emr_conn.describe_jobflow(job_flow_id)
+@@ -369,7 +369,7 @@
+             # job should get terminated on cleanup
+             emr_conn = runner.make_emr_conn()
+             job_flow_id = runner.get_emr_job_flow_id()
+-            for _ in xrange(10):
++            for _ in range(10):
+                 emr_conn.simulate_progress(job_flow_id)
+ 
+         job_flow = emr_conn.describe_jobflow(job_flow_id)
+@@ -568,7 +568,7 @@
+ 
+             emr_conn = runner.make_emr_conn()
+             job_flow_id = runner.get_emr_job_flow_id()
+-            for _ in xrange(10):
++            for _ in range(10):
+                 emr_conn.simulate_progress(job_flow_id)
+ 
+             job_flow = emr_conn.describe_jobflow(job_flow_id)
+@@ -577,7 +577,7 @@
+         # job shouldn't get terminated by cleanup
+         emr_conn = runner.make_emr_conn()
+         job_flow_id = runner.get_emr_job_flow_id()
+-        for _ in xrange(10):
++        for _ in range(10):
+             emr_conn.simulate_progress(job_flow_id)
+ 
+         job_flow = emr_conn.describe_jobflow(job_flow_id)
+@@ -2719,7 +2719,7 @@
+ 
+             emr_conn = runner.make_emr_conn()
+             job_flow_id = runner.get_emr_job_flow_id()
+-            for _ in xrange(10):
++            for _ in range(10):
+                 emr_conn.simulate_progress(job_flow_id)
+ 
+             job_flow = emr_conn.describe_jobflow(job_flow_id)
+@@ -2728,7 +2728,7 @@
+         # job shouldn't get terminated by cleanup
+         emr_conn = runner.make_emr_conn()
+         job_flow_id = runner.get_emr_job_flow_id()
+-        for _ in xrange(10):
++        for _ in range(10):
+             emr_conn.simulate_progress(job_flow_id)
+ 
+         job_flow = emr_conn.describe_jobflow(job_flow_id)
+@@ -2755,7 +2755,7 @@
+             self.assertEqual(runner.get_emr_job_flow_id(), job_flow_id)
+ 
+             emr_conn = runner.make_emr_conn()
+-            for _ in xrange(10):
++            for _ in range(10):
+                 emr_conn.simulate_progress(job_flow_id)
+ 
+             job_flow = emr_conn.describe_jobflow(job_flow_id)
+@@ -2764,7 +2764,7 @@
+         # job shouldn't get terminated by cleanup
+         emr_conn = runner.make_emr_conn()
+         job_flow_id = runner.get_emr_job_flow_id()
+-        for _ in xrange(10):
++        for _ in range(10):
+             emr_conn.simulate_progress(job_flow_id)
+ 
+         job_flow = emr_conn.describe_jobflow(job_flow_id)
+--- tests/test_hadoop.py	(original)
++++ tests/test_hadoop.py	(refactored)
+@@ -13,7 +13,7 @@
+ # See the License for the specific language governing permissions and
+ # limitations under the License.
+ """Test the hadoop job runner."""
+-from StringIO import StringIO
++from io import StringIO
+ import getpass
+ import os
+ import pty
+--- tests/test_inline.py	(original)
++++ tests/test_inline.py	(refactored)
+@@ -15,7 +15,7 @@
+ # See the License for the specific language governing permissions and
+ # limitations under the License.
+ """Tests for InlineMRJobRunner"""
+-from StringIO import StringIO
++from io import StringIO
+ 
+ import gzip
+ import os
+--- tests/test_job.py	(original)
++++ tests/test_job.py	(refactored)
+@@ -16,7 +16,7 @@
+ import os
+ from subprocess import Popen
+ from subprocess import PIPE
+-from StringIO import StringIO
++from io import StringIO
+ import sys
+ import time
+ 
+@@ -159,12 +159,12 @@
+     def test_unicode_set_status(self):
+         mr_job = MRJob().sandbox()
+         # shouldn't raise an exception
+-        mr_job.set_status(u'💩')
++        mr_job.set_status('💩')
+ 
+     def test_unicode_counter(self):
+         mr_job = MRJob().sandbox()
+         # shouldn't raise an exception
+-        mr_job.increment_counter(u'💩', 'x', 1)
++        mr_job.increment_counter('💩', 'x', 1)
+ 
+     def test_negative_and_zero_counters(self):
+         mr_job = MRJob().sandbox()
+--- tests/test_launch.py	(original)
++++ tests/test_launch.py	(refactored)
+@@ -12,7 +12,7 @@
+ # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ # See the License for the specific language governing permissions and
+ # limitations under the License.
+-import cStringIO
++import io
+ import inspect
+ import logging
+ from optparse import OptionError
+@@ -288,7 +288,7 @@
+     """
+     def test_default_options(self):
+         with no_handlers_for_logger('__main__'):
+-            with patch.object(sys, 'stderr', cStringIO.StringIO()) as stderr:
++            with patch.object(sys, 'stderr', io.StringIO()) as stderr:
+                 MRJob.set_up_logging()
+                 log = logging.getLogger('__main__')
+                 log.info('INFO')
+@@ -297,7 +297,7 @@
+ 
+     def test_verbose(self):
+         with no_handlers_for_logger('__main__'):
+-            with patch.object(sys, 'stderr', cStringIO.StringIO()) as stderr:
++            with patch.object(sys, 'stderr', io.StringIO()) as stderr:
+                 MRJob.set_up_logging(verbose=True)
+                 log = logging.getLogger('__main__')
+                 log.info('INFO')
+--- tests/test_local.py	(original)
++++ tests/test_local.py	(refactored)
+@@ -13,7 +13,7 @@
+ # See the License for the specific language governing permissions and
+ # limitations under the License.
+ """Tests for LocalMRJobRunner"""
+-from StringIO import StringIO
++from io import StringIO
+ import gzip
+ import os
+ import shutil
+--- tests/test_option_store.py	(original)
++++ tests/test_option_store.py	(refactored)
+@@ -16,7 +16,7 @@
+ 
+ from tempfile import mkdtemp
+ from shutil import rmtree
+-from StringIO import StringIO
++from io import StringIO
+ 
+ try:
+     import unittest2 as unittest
+--- tests/test_parse.py	(original)
++++ tests/test_parse.py	(refactored)
+@@ -14,7 +14,7 @@
+ # limitations under the License.
+ import logging
+ import sys
+-from StringIO import StringIO
++from io import StringIO
+ from subprocess import PIPE
+ from subprocess import Popen
+ 
+--- tests/test_protocol.py	(original)
++++ tests/test_protocol.py	(refactored)
+@@ -55,7 +55,7 @@
+     ('foo', 'bar'),
+     ([1, 2, 3], []),
+     ({'apples': 5}, {'oranges': 20}),
+-    (u'Qu\xe9bec', u'Ph\u1ede'),
++    ('Qu\xe9bec', 'Ph\u1ede'),
+     ('\t', '\n'),
+ ]
+ 
+--- tests/test_runner.py	(original)
++++ tests/test_runner.py	(refactored)
+@@ -25,10 +25,10 @@
+ import tempfile
+ 
+ try:
+-    from cStringIO import StringIO
++    from io import StringIO
+     StringIO  # quiet "redefinition of unused ..." warning from pyflakes
+ except ImportError:
+-    from StringIO import StringIO
++    from io import StringIO
+ 
+ try:
+     import unittest2 as unittest
+--- tests/test_util.py	(original)
++++ tests/test_util.py	(refactored)
+@@ -20,7 +20,7 @@
+ import shutil
+ from subprocess import PIPE
+ from subprocess import Popen
+-from StringIO import StringIO
++from io import StringIO
+ import tarfile
+ import tempfile
+ 
+@@ -266,7 +266,7 @@
+ 
+     def test_simple_data_structure(self):
+         # try unrepr-ing a bunch of simple data structures
+-        for x in True, None, 1, range(5), {'foo': False, 'bar': 2}:
++        for x in True, None, 1, list(range(5)), {'foo': False, 'bar': 2}:
+             self.assertEqual(x, safeeval(repr(x)))
+ 
+     def test_no_mischief(self):
+@@ -511,7 +511,7 @@
+         # can't just repeat same value, because we need the file to be
+         # compressed! 50000 lines is too few to catch the bug.
+         random.seed(0)
+-        for _ in xrange(100000):
++        for _ in range(100000):
+             input_bz2.write('%016x\n' % random.randint(0, 2 ** 64 - 1))
+         input_bz2.close()
+ 
+--- tests/fs/__init__.py	(original)
++++ tests/fs/__init__.py	(refactored)
+@@ -11,7 +11,7 @@
+ # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ # See the License for the specific language governing permissions and
+ # limitations under the License.
+-from StringIO import StringIO
++from io import StringIO
+ 
+ from tests.sandbox import SandboxedTestCase
+ 
+--- tests/tools/emr/__init__.py	(original)
++++ tests/tools/emr/__init__.py	(refactored)
+@@ -11,7 +11,7 @@
+ # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ # See the License for the specific language governing permissions and
+ # limitations under the License.
+-from StringIO import StringIO
++from io import StringIO
+ import sys
+ 
+ from mrjob.emr import EMRJobRunner
+--- tests/tools/emr/test_audit_usage.py	(original)
++++ tests/tools/emr/test_audit_usage.py	(refactored)
+@@ -15,7 +15,7 @@
+ from datetime import date
+ from datetime import datetime
+ from datetime import timedelta
+-from StringIO import StringIO
++from io import StringIO
+ import sys
+ 
+ import boto.emr.connection
+--- tests/tools/emr/test_report_long_jobs.py	(original)
++++ tests/tools/emr/test_report_long_jobs.py	(refactored)
+@@ -14,7 +14,7 @@
+ """Very basic tests for the audit_usage script"""
+ from datetime import datetime
+ from datetime import timedelta
+-from StringIO import StringIO
++from io import StringIO
+ import sys
+ 
+ from mrjob.emr import EMRJobRunner
+--- tests/tools/emr/test_terminate_idle_job_flows.py	(original)
++++ tests/tools/emr/test_terminate_idle_job_flows.py	(refactored)
+@@ -13,7 +13,7 @@
+ # See the License for the specific language governing permissions and
+ # limitations under the License.
+ """Test the idle job flow terminator"""
+-from StringIO import StringIO
++from io import StringIO
+ from datetime import datetime
+ from datetime import timedelta
+ import sys
