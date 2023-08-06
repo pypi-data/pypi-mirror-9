@@ -1,0 +1,139 @@
+Environment
+===========
+
+Tatoo uses a central object called the runtime
+:class:`~tatoo.environment.Environment`.
+Instances of this class are used to store the configuration and
+global objects, for example, tasks.
+
+The simplest way to create an environment instance looks like this::
+
+    from tatoo import Environment
+    env = Environment()
+
+Environment instances are thread safe (they do not share any global state)
+so that multiple environments with different settings, tasks and extensions
+can co-exist in the same process space.
+
+Environment Name
+----------------
+
+To make it easier to identify which environment is currently used,
+you should specify names for environments::
+
+    env = Environment('myenv')
+
+Environment name will be included in logs like this::
+
+    [2015-01-29 00:42:23,206: INFO | env: myenv] Task add [...] succeeded in 0.000219s: 3
+    
+Settings
+--------
+
+Sometimes you will need to make your application configurable, which
+basically means that you will need a globally accessible configuration
+storage. There is one you can use::
+
+    env.settings['SOMEKEY'] = 'somevalue'
+
+Although it provides mapping interface, you can also use attribute access::
+
+    print(env.settings.SOMEKEY)  # somevalue
+
+Several keys may be updated at once using
+:meth:`~tatoo.settings.Settings.update` method::
+
+    env.settings.update(
+        ONEKEY=True,
+        TWOKEY=False,
+    )
+
+New default values can be added using
+:meth:`~.settings.Settings.add_defaults` method::
+
+    env.settings.add_defaults(OTHERKEY=False)
+
+Censored Settings
+-----------------
+
+If you ever want to print out the configuration, as debugging information
+or similar, you may also want to filter out sensitive information
+like passwords and API keys using
+:meth:`~tatoo.settings.Settings.humanize` method::
+
+    env.settings.humanize()
+
+If you want to get the humanized dictionary instead, consider using
+:meth:`~tatoo.settings.Settings.table` method::
+
+    env.setting.table()
+
+Please note that tatoo will not be able to remove all sensitive information,
+as it merely uses a regular expression to search for commonly named keys.
+If you add custom settings containing sensitive information you should name
+the keys using a name that Celery identifies as secret.
+
+A configuration setting will be censored if the name contains any of these 
+substrings:
+
+API, TOKEN, KEY, SECRET, PASS, SIGNATURE, DATABASE
+
+Breaking The Chain
+------------------
+
+This practice is named "object chain" or, specifically, "env chain".
+The idea is to pass env instance explicitly to every single object that needs
+it instead of having a global variable.
+
+To become a chain link, a class should conform to the following rules:
+
+#. One must be able to set ``env`` attribute directly, and
+#. ``__init__`` must accept ``env`` argument.
+
+Here is the example of class which follows the rules::
+
+    class EnvCompatibleClass(object):
+        env = None
+        def __init__(self, env=None):
+            self.env = env or self.env
+
+This approach makes possible to not have a shared global env registry,
+``env`` attribute should be accessed instead.
+
+Environment as Registry of Objects
+----------------------------------
+
+.. note::
+
+    This section requires understanding the
+    `ZCA <http://muthukadan.net/docs/zca.html>`_ concepts and is intended
+    for developers. If you're a end-user, you can freely skip
+    this part.
+
+Each environment maintains its own local component registry. In fact, it
+subclasses :class:`zope.interface.registry.Components`.
+
+You can register any custom interface provider using common methods
+like :meth:`~tatoo.environment.Environment.registerUtility`. For example,
+you can register custom tasks registry like this::
+
+    from tatoo import Environment
+    from zope.interface import implementer_only
+    from tatoo.interfaces import ITaskRegistry
+    from tatoo.tasks import TaskRegistry
+
+    @implementer_only(ITaskRegistry)
+    class MyTaskRegistry(TaskRegistry):
+        pass
+
+    myregistry = MyTaskRegistry()
+    env = Environment()
+    env.registerUtility(myregistry)
+
+To keep examples short, we subclass :class:`~tatoo.task.TaskRegistry`
+directly. However, it is only required to conform
+:class:`~tatoo.interfaces.ITaskRegistry` interface, so you may write
+your custom implementation from the scratch.
+
+This rule generally applies to every single object - you can find
+all interfaces that tatoo defines in :mod:`tatoo.interfaces`.

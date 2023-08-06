@@ -1,0 +1,249 @@
+Tasks
+=====
+
+Tasks are callables with some helper wrappers around them.
+
+To define a task, you need two things:
+
+- an environment instance
+- and a callable.
+
+Then you can easily create task from this callable using ``env.task``
+decorator::
+
+    from tatoo import Environment
+
+    env = Environment(__name__)
+
+    @env.task
+    def hello():
+        print('Hello, world!')
+
+Tatoo will create a specially formed class and instantiate it in place, and
+the callable will be swapped with this instance.
+
+.. _task-names:
+
+Names
+-----
+
+Every task must be associated with a unique name. You can specify one
+using ``name`` argument::
+
+    @env.task(name='world')
+    def hello():
+        print('Hello, world!')
+
+You can also specify a factory accepting two arguments:
+the environment instance and the wrapped callable::
+
+    @env.task(name=lambda env, fun: fun.__name__)
+    def hello():
+        print('Hello, world!')
+
+If you omit ``name``, it will be automatically generated.
+The current behavior is to simply take the callable's ``__name__``.
+
+You can tell the name of the task by investigating its ``name`` attribute::
+
+    >>> hello.name
+    'hello'
+
+Names can be used to get tasks from the task registry::
+
+    >>> env.tasks['hello']
+    <task.hello object at 0x7f863a5d2828>
+
+Parameters
+----------
+
+As normal python callables, tasks may have arguments. In the simplest case
+you can declare a parametrized task like this::
+
+    @env.task
+    def copy(src, dst, recursive=False):
+        print('Copying {src} to {dst}{postfix}'.format(
+              src=src, dst=dst, postfix=' recursively' if recursive else ''
+        ))
+
+However, there are problems with this approach. One of them is that you
+often want to somehow validate incoming values. Given the example above,
+
+* ``src`` must be a string representing a path, this path must exist,
+  it must be resolvable (i.e. symlinks must be resolved)
+  and it must be readable,
+
+* ``dst``, similarly to ``src``, must be a string representing a path,
+  it may not exist, but it must be writable,
+
+* ``recursive`` argument acts like a flag and must be bool,
+
+* finally, if ``recursive`` is :const:`False`, ``src`` must not be
+  a directory.
+
+Of course, you can manually validate arguments in the task body, but
+it will make your task a little harder to understand and to maintain.
+It will be difficult to say which rules must be followed for a valid
+argument.
+
+Another problem is that if you want to build a command-line interface,
+and call your tasks with it, there is no transparent rule to map arguments
+defined in the python code to the command-line arguments. Let's start
+with the obvious one::
+
+    cli copy -r/--recursive SRC DST
+
+However, there is no restriction to make this::
+
+    cli copy SRC DST [RECURSIVE]
+
+It become even more ambiguous when you have options with parameters, like::
+
+    @env.task
+    def copy(src, dst, recursive=False, backup=None):
+        if backup not None:
+            backup=' [backing up to {0}]'.format(backup)
+        print('Copying {src} to {dst}{postfix}{backup}'.format(
+              src=src, dst=dst, rec=' recursively' if recursive else '',
+              backup=backup or '',
+        ))
+
+Now it is completely impossible to *programmatically* say, should ``backup``
+be:
+
+* a boolean flag, or
+* an option accepting a path, or
+* an optional argument.
+
+There is one more argument which makes the idea to automatically generate
+command-line options and arguments from the task signature impracticable.
+Consider the following example::
+
+    @env.task
+    def echo(message, options=None, outfile=None):
+        file = sys.stderr if outfile is None else outfile
+        if options is not None:
+            if options['colored']:
+                message = colored(message)
+        print(message, file=file)
+
+For ``options`` argument we generate short flat ``-o``.
+For ``outfile`` we can't use ``-o`` because it is taken already, so we take
+the next letter - ``-u``. The software evolves, and after a while you decided
+to swap ``outfile`` and ``options`` in the task signature - and now all your
+scripts are broken because ``-o`` flag will now be used for ``outfile``,
+``options`` will use ``-p`` and ``-u`` flag is gone.
+
+
+Tatoo solves all these problems with :func:`~tatoo.task.parameter.parameter`
+decorator::
+
+    from tatoo import parameter
+    from tatoo.task import types
+
+    def validate_path(path, arguments):
+        if not arguments['recursive']:
+            path.dir_ok = False
+            path(arguments['src'])
+
+
+    @env.task
+    @parameter('SOURCE', 'src',
+               type=types.Path(exists=True, file_ok=True, dir_ok=True,
+                               readable=True, resolve_path=True,
+                               validator=validate_path))
+    @parameter('DEST', 'dst', type=types.Path(writable=True))
+    @parameter('-R', '-r', '--recursive',
+               help='Copy directories recursively', is_flag=True)
+    def copy(src, dst, recursive):
+        """Copy SOURCE to DEST."""
+
+Now you can unambiguously say that ``src`` can be mapped to ``SOURCE``
+command-line argument, ``dst`` - to ``DEST`` and that ``recursive``
+is a boolean flag that can be specified as short ``-R``, as another short
+``-r`` and as long ``--recursive`` options.
+All basic validation happens in :mod:`~tatoo.task.types` module, and you
+can specify additional validation using ``validator`` argument as shown
+in the example above.
+
+You can inspect all registered parameters via
+:attr:`~tatoo.task.base.Task.parameters` attribute.
+
+.. note::
+
+    Tatoo itself does not provide a command-line interface. But it can be
+    implemented as external package, and tatoo must provide *some* way
+    to unambiguously create command-line interfaces. It is also useful
+    without involving a cli - for example, tatoo performs type checks
+    before running tasks when ``TATOO_VALIDATE_PARAMS`` setting
+    is :const:`True`.
+
+Execution & Results
+-------------------
+
+To execute a task, method :meth:`~tatoo.task.base.Task.apply` should be used::
+
+    >>> from tatoo import Environment
+    >>> env = Environment('test')
+    >>> @env.task
+    ... def add(x, y):
+    ...     return x + y
+    ...
+    >>> res = add.apply(args=(1, 2))
+
+Note the returned value is instance of :class:`~tatoo.task.result.EagerResult`
+class::
+
+    >>> res
+    <EagerResult: 0cb535ad-5baf-4823-bf8c-2a54b7f91a0c>
+
+It is a convinient result wrapper allows you to inspect various metrics::
+
+    >>> res.result
+    3
+    >>> res.state
+    'SUCCESS'
+    >>> res.runtime
+    4.540802910923958e-05
+
+Let's make our task to raise :class:`TypeError` exception:
+
+    >>> res = add.apply(args=(1, '2'))
+    >>> res.failed()
+    True
+    >>> res.result
+    TypeError("unsupported operand type(s) for +: 'int' and 'str'",)
+    >>> print(res.traceback)
+    Traceback (most recent call last):
+      File "/home/<snip>/tatoo/task/trace.py", line 107, in trace_task
+        **request['kwargs'])
+      File "<stdin>", line 3, in add
+    TypeError: unsupported operand type(s) for +: 'int' and 'str'
+
+    >>> res.state
+    'FAILURE'
+
+You can also propagate exceptions like this::
+
+    >>> res = add.apply(args=(1, '2'))
+    >>> res.get()
+    Traceback (most recent call last):
+      File "<stdin>", line 1, in <module>
+      File "/home/<snip>/tatoo/task/result.py", line 41, in get
+        self.maybe_reraise()
+      File "/home/<snip>/tatoo/task/result.py", line 58, in maybe_reraise
+        raise self.result
+      File "/home/<snip>/tatoo/task/trace.py", line 107, in trace_task
+        **request['kwargs'])
+      File "/home/<snip>/test.py", line 8, in add
+        return x + y
+    TypeError: unsupported operand type(s) for +: 'int' and 'str'
+
+Also :meth:`~tatoo.task.base.Task.apply` accepts a number of extra
+parameters which form the execution request::
+
+    >>> res = add.apply(args=(1,), kwargs={'y': 2}, request_id='someid')
+    >>> res.result
+    3
+    >>> res.request_id
+    'someid'
