@@ -1,0 +1,125 @@
+{%  macro render_field_errors(field) %}
+    {% if field.errors %}
+        <p class="help-block">{{ field.errors|join(', ') }}</p>
+    {% endif %}
+{% endmacro %}
+
+{% macro render_field_label(field) %}
+    {% if field.label.text and field.type  != 'HiddenField' and kwargs.pop('use_label', True) %}
+        <label for="{{ field.id }}">{{ field.label }}</label>
+    {% endif %}
+{% endmacro %}
+
+{% macro render_field_description(field) %}
+{% if field.description or kwargs.get('description', '') %}
+    <p class="help-block">{{ field.description|safe or kwargs.get('description', '') }}</p>
+{% endif %}
+{% endmacro %}
+
+{# Render Field Macro for WTForms (Bootstrap Compat) #}
+{% macro render_field(field) %}
+    {% if field.type == 'SubmitField' %}
+        {{ field(class_='btn btn-default', **kwargs)|safe }}
+    {% else %}
+        <div class="form-group {% if field.errors %}has-error{% endif %}">
+            {% if field.type == 'FileField' %}
+                <div class="fileinput fileinput-new input-group" data-provides="fileinput" style="width: 100%;">
+                    <div class="form-control" data-trigger="fileinput">
+                        <span class="fileinput-filename"></span>
+                    </div>
+                    <span class="input-group-addon btn btn-default btn-file">
+                        <span class="fileinput-new">Select file</span>
+                        <span class="fileinput-exists">Change</span>
+                        {{ field(**kwargs) }}
+                    </span>
+                    <a href="#" class="input-group-addon btn btn-default fileinput-exists" data-dismiss="fileinput">Remove</a>
+                </div>
+            {% else %}
+                {% if field.type == 'BooleanField' %}
+                    <div class="checkbox">
+                        <label>
+                            {{ field(**kwargs)|safe }}
+                            {{ field.label }}
+                        </label>
+                    </div>
+                {% elif field.type in ('DateField', 'TextField', 'StringField', 'TextAreaField', 'PasswordField') %}
+                    {# Standard Text Fields #}
+                    {{ render_field_label(field, **kwargs)}}
+                    {% if 'prefix' in kwargs %} 
+                        <div class="input-group">
+                            <div class="input-group-addon">{{ kwargs['prefix'] }}</div>
+                            {{ field(**kwargs)|safe }}
+                        </div>
+                    {% else %}
+                        {{ field(**kwargs)|safe }}
+                    {% endif %}
+
+                {% elif field.type in ['SelectField', 'QuerySelectField', 'SelectMultipleField', 'QuerySelectMultipleField'] %}
+                    {{ render_field_label(field, **kwargs)}}
+                    {% if 'group_by' in kwargs %}
+                        {% set data =  group_by(field.iter_choices(), kwargs['group_by']) %}
+                        <select id="{{ field.id }}" class="form-control {{ kwargs['class'] }}{{ class_ }}" data-live-search="true" name="{{field.name}}"
+                        {% if field.type in ['SelectMultipleField', 'QuerySelectMultipleField'] %} multiple{% endif %}>
+                            {% for group in data  %}
+                                <optgroup label="{{group}}">
+                                    {% for item in data[group] %}
+                                        <option {{ "selected" if item[2] }} value="{{ item[0] }}">{{ item[1] }}</option>
+                                    {% endfor %}
+                                </optgroup>
+                            {% endfor %}
+                        </select>
+
+                    {% else %}
+                        <select id="{{ field.id }}" class="form-control {{kwargs['class'] }}{{ class_ }}" name='{{ field.name  }}'
+                        {% if field.type in ['SelectMultipleField', 'QuerySelectMultipleField'] %} multiple 
+                            {% if 'placeholder' in kwargs %}
+                                title="{{ kwargs['placeholder'] }}"
+                            {% endif %}
+                        {% endif %}
+                        {% for arg in kwargs -%}
+                            {{arg}}='{{kwargs[arg]}}' 
+                        {%- endfor %}
+                        >
+                            {% if 'placeholder' in kwargs and field.type in ['SelectField','QuerySelectField'] %}
+                                <option>{{kwargs['placeholder'] }}</option>                    
+                            {% endif %}
+                            {% for item in field.iter_choices() %}
+                                <option {{ "selected" if item[2] }} value="{{ item[0] }}">{{ item[1] }}</option>
+                            {% endfor %}
+                        </select>
+
+                         {# {{ field(class_=class_ + ' input-xlarge form-control', style="margin-top:0px;", **kwargs) }} #}
+                    {% endif %}
+
+                {% elif field.type == 'FileField' %}
+                    {{ render_field_label(field, **kwargs)}}
+                    {{ field(class_='form-control', **kwargs)|safe }}
+                {% else %}
+                    {{ render_field_label(field, **kwargs)}}
+                    {{ field(class_='form-control', **kwargs)|safe }}
+                {% endif %}
+            {% endif %}
+
+            {{ render_field_errors(field) }}
+            {{ render_field_description(field) }}
+
+        </div>
+    {% endif %}
+{% endmacro %}
+
+{% macro csrf_setup() %}
+    {% if config.CSRF_ENABLED %}
+    <script>
+    var csrftoken = "{{ csrf_token() }}"
+
+    $.ajaxSetup({
+        beforeSend: function(xhr, settings) {
+            if (!/^(GET|HEAD|OPTIONS|TRACE)$/i.test(settings.type) && !this.crossDomain) {
+                xhr.setRequestHeader("X-CSRFToken", csrftoken)
+            }
+        }
+    });
+    </script>
+    {% endif %}
+{% endmacro %}
+
