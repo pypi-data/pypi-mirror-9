@@ -1,0 +1,6 @@
+djeneralize
+===========
+
+Generalizations of specialized models for Django
+
+
