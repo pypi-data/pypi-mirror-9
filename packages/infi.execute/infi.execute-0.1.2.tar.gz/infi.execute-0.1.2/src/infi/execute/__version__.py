@@ -1,0 +1,10 @@
+__version__ = "0.1.2"
+__git_commiter_name__ = "Guy Rozendorn"
+__git_commiter_email__ = "guy@rzn.co.il"
+__git_branch__ = '(detached from v0.1.2)'
+__git_remote_tracking_branch__ = '(No remote tracking)'
+__git_remote_url__ = '(Not remote tracking)'
+__git_head_hash__ = '6b9f1541ca951a6279ca106e4da1d315710e27a9'
+__git_head_subject__ = 'Revert "workaround for gevent issue 191 on osx"'
+__git_head_message__ = 'This reverts commit 2e4531dff22317fc66dc0a0aa2cee7d9edebf4be.'
+__git_dirty_diff__ = ''
