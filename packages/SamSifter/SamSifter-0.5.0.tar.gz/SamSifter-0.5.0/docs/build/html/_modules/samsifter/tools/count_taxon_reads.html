@@ -1,0 +1,288 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>samsifter.tools.count_taxon_reads &mdash; SamSifter 0.5.0 documentation</title>
+    
+    <link rel="stylesheet" href="../../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../../',
+        VERSION:     '0.5.0',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../../_static/doctools.js"></script>
+    <link rel="top" title="SamSifter 0.5.0 documentation" href="../../../index.html" />
+    <link rel="up" title="Module code" href="../../index.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../../index.html">SamSifter 0.5.0 documentation</a> &raquo;</li>
+          <li><a href="../../index.html" accesskey="U">Module code</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <h1>Source code for samsifter.tools.count_taxon_reads</h1><div class="highlight"><pre>
+<span class="c">#!/usr/bin/env python3</span>
+<span class="c"># -*- coding: utf-8 -*-</span>
+<span class="sd">&quot;&quot;&quot;Analysing filter step to count reads per taxon.</span>
+
+<span class="sd">.. moduleauthor:: Florian Aldehoff &lt;faldehoff@student.uni-tuebingen.de&gt;</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">sys</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">version_info</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="mi">3</span><span class="p">):</span>
+    <span class="k">print</span><span class="p">(</span><span class="s">&quot;Error, I need python 3.x or newer&quot;</span><span class="p">)</span>
+    <span class="nb">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+
+<span class="kn">import</span> <span class="nn">argparse</span>
+<span class="kn">import</span> <span class="nn">logging</span> <span class="kn">as</span> <span class="nn">log</span>
+<span class="kn">import</span> <span class="nn">fileinput</span>
+<span class="kn">from</span> <span class="nn">os.path</span> <span class="kn">import</span> <span class="n">basename</span><span class="p">,</span> <span class="n">splitext</span><span class="p">,</span> <span class="n">isfile</span>
+
+<span class="sd">&quot;&quot;&quot; custom libraries &quot;&quot;&quot;</span>
+<span class="kn">from</span> <span class="nn">samsifter.models.filter</span> <span class="kn">import</span> <span class="n">FilterItem</span>
+<span class="kn">from</span> <span class="nn">samsifter.models.parameter</span> <span class="kn">import</span> <span class="n">FilterParameter</span><span class="p">,</span> <span class="n">FilterFilepath</span>
+<span class="kn">from</span> <span class="nn">samsifter.util.arg_sanitation</span> <span class="kn">import</span> <span class="n">check_sam</span>
+
+<span class="sd">&quot;&quot;&quot; global variables &quot;&quot;&quot;</span>
+<span class="n">TEXT</span> <span class="o">=</span> <span class="s">&quot;Count reads per taxon&quot;</span>
+<span class="n">DESC</span> <span class="o">=</span> <span class="p">(</span><span class="s">&quot;Counts reads per taxon ID and stores them in a separate statistics &quot;</span>
+        <span class="s">&quot;file.&quot;</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="item"><a class="viewcode-back" href="../../../samsifter.tools.html#samsifter.tools.count_taxon_reads.item">[docs]</a><span class="k">def</span> <span class="nf">item</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;Create item representing this tool in list and tree views.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    FilterItem</span>
+<span class="sd">        Item for use in item-based list and tree views.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">item</span> <span class="o">=</span> <span class="n">FilterItem</span><span class="p">(</span><span class="n">text</span><span class="o">=</span><span class="n">TEXT</span><span class="p">,</span> <span class="n">desc</span><span class="o">=</span><span class="n">DESC</span><span class="p">,</span> <span class="n">icon</span><span class="o">=</span><span class="n">FilterItem</span><span class="o">.</span><span class="n">ICON_ANALYZER</span><span class="p">)</span>
+    <span class="n">item</span><span class="o">.</span><span class="n">set_command</span><span class="p">(</span><span class="n">splitext</span><span class="p">(</span><span class="n">basename</span><span class="p">(</span><span class="n">__file__</span><span class="p">))[</span><span class="mi">0</span><span class="p">])</span>
+
+    <span class="n">item</span><span class="o">.</span><span class="n">add_parameter</span><span class="p">(</span><span class="n">FilterParameter</span><span class="p">(</span>
+        <span class="n">text</span><span class="o">=</span><span class="s">&quot;verbose&quot;</span><span class="p">,</span>
+        <span class="n">desc</span><span class="o">=</span><span class="s">&quot;print additional information to STDERR&quot;</span><span class="p">,</span>
+        <span class="n">cli_name</span><span class="o">=</span><span class="s">&quot;--verbose&quot;</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span>
+        <span class="n">active</span><span class="o">=</span><span class="bp">True</span>
+    <span class="p">))</span>
+
+    <span class="n">item</span><span class="o">.</span><span class="n">add_parameter</span><span class="p">(</span><span class="n">FilterParameter</span><span class="p">(</span>
+        <span class="n">text</span><span class="o">=</span><span class="s">&quot;debug&quot;</span><span class="p">,</span>
+        <span class="n">desc</span><span class="o">=</span><span class="s">&quot;print debug messages to STDERR&quot;</span><span class="p">,</span>
+        <span class="n">cli_name</span><span class="o">=</span><span class="s">&quot;--debug&quot;</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="bp">False</span>
+    <span class="p">))</span>
+
+    <span class="n">item</span><span class="o">.</span><span class="n">add_parameter</span><span class="p">(</span><span class="n">FilterFilepath</span><span class="p">(</span>
+        <span class="n">text</span><span class="o">=</span><span class="s">&quot;prefix&quot;</span><span class="p">,</span>
+        <span class="n">desc</span><span class="o">=</span><span class="s">&quot;prefix of temporary statistics files&quot;</span><span class="p">,</span>
+        <span class="n">cli_name</span><span class="o">=</span><span class="s">&quot;--prefix&quot;</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="s">&#39;${filename}&#39;</span><span class="p">,</span>  <span class="c"># crucial for clean batch processing!</span>
+        <span class="n">active</span><span class="o">=</span><span class="bp">True</span>
+    <span class="p">))</span>
+
+    <span class="c"># input/output requirements</span>
+    <span class="n">item</span><span class="o">.</span><span class="n">set_input_format</span><span class="p">(</span><span class="s">&#39;SAM&#39;</span><span class="p">)</span>
+    <span class="n">item</span><span class="o">.</span><span class="n">set_input_sorting</span><span class="p">(</span><span class="s">&#39;any&#39;</span><span class="p">)</span>
+    <span class="n">item</span><span class="o">.</span><span class="n">set_input_compression</span><span class="p">(</span><span class="s">&#39;uncompressed&#39;</span><span class="p">)</span>
+    <span class="n">item</span><span class="o">.</span><span class="n">set_output_format</span><span class="p">(</span><span class="s">&#39;SAM&#39;</span><span class="p">)</span>
+    <span class="n">item</span><span class="o">.</span><span class="n">set_output_sorting</span><span class="p">(</span><span class="s">&#39;as_input&#39;</span><span class="p">)</span>
+    <span class="n">item</span><span class="o">.</span><span class="n">set_output_compression</span><span class="p">(</span><span class="s">&#39;uncompressed&#39;</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">item</span>
+
+</div>
+<div class="viewcode-block" id="main"><a class="viewcode-back" href="../../../samsifter.tools.html#samsifter.tools.count_taxon_reads.main">[docs]</a><span class="k">def</span> <span class="nf">main</span><span class="p">():</span>
+    <span class="c"># parse arguments</span>
+    <span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">description</span><span class="o">=</span><span class="n">DESC</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&#39;-i&#39;</span><span class="p">,</span> <span class="s">&#39;--input&#39;</span><span class="p">,</span>
+                        <span class="nb">type</span><span class="o">=</span><span class="n">check_sam</span><span class="p">,</span>
+                        <span class="n">help</span><span class="o">=</span><span class="s">&quot;specify SAM file to be analysed (default: &quot;</span>
+                        <span class="s">&quot;STDIN)&quot;</span><span class="p">,</span>
+                        <span class="n">required</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&#39;-p&#39;</span><span class="p">,</span> <span class="s">&#39;--prefix&#39;</span><span class="p">,</span>
+                        <span class="n">required</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+                        <span class="n">default</span><span class="o">=</span><span class="s">&#39;reads_per_taxon&#39;</span><span class="p">,</span>
+                        <span class="n">help</span><span class="o">=</span><span class="s">&#39;prefix of temporary statistics files&#39;</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&#39;-v&#39;</span><span class="p">,</span> <span class="s">&#39;--verbose&#39;</span><span class="p">,</span>
+                        <span class="n">required</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+                        <span class="n">action</span><span class="o">=</span><span class="s">&#39;store_true&#39;</span><span class="p">,</span>
+                        <span class="n">help</span><span class="o">=</span><span class="s">&#39;print additional information to STDERR&#39;</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&#39;-d&#39;</span><span class="p">,</span> <span class="s">&#39;--debug&#39;</span><span class="p">,</span>
+                        <span class="n">required</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+                        <span class="n">action</span><span class="o">=</span><span class="s">&#39;store_true&#39;</span><span class="p">,</span>
+                        <span class="n">help</span><span class="o">=</span><span class="s">&#39;print debug messages to STDERR&#39;</span><span class="p">)</span>
+    <span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">remainArgs</span><span class="p">)</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">parse_known_args</span><span class="p">()</span>
+
+    <span class="c"># configure logging</span>
+    <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">verbose</span><span class="p">:</span>
+        <span class="n">log</span><span class="o">.</span><span class="n">basicConfig</span><span class="p">(</span><span class="n">format</span><span class="o">=</span><span class="s">&quot;</span><span class="si">%(levelname)s</span><span class="s">: </span><span class="si">%(message)s</span><span class="s">&quot;</span><span class="p">,</span> <span class="n">level</span><span class="o">=</span><span class="n">log</span><span class="o">.</span><span class="n">DEBUG</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">log</span><span class="o">.</span><span class="n">basicConfig</span><span class="p">(</span><span class="n">format</span><span class="o">=</span><span class="s">&quot;</span><span class="si">%(levelname)s</span><span class="s">: </span><span class="si">%(message)s</span><span class="s">&quot;</span><span class="p">)</span>
+
+    <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&quot;START of counting reads per taxon.&quot;</span><span class="p">)</span>
+
+    <span class="c"># initialize dict</span>
+    <span class="n">counts</span> <span class="o">=</span> <span class="p">{}</span>
+
+    <span class="c"># parse SAM file</span>
+    <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&quot;STEP 1: parsing SAM records.&quot;</span><span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="c"># open SAM file from either command line argument or STDIN</span>
+        <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">input</span><span class="p">:</span>
+            <span class="n">handle</span> <span class="o">=</span> <span class="nb">open</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">input</span><span class="p">,</span> <span class="s">&#39;r&#39;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">handle</span> <span class="o">=</span> <span class="n">fileinput</span><span class="o">.</span><span class="n">input</span><span class="p">(</span><span class="n">remainArgs</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">line_nr</span><span class="p">,</span> <span class="n">line</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">handle</span><span class="p">,</span> <span class="mi">1</span><span class="p">):</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">line</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s">&quot;@&quot;</span><span class="p">):</span>
+                <span class="n">fields</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s">&quot;</span><span class="se">\t</span><span class="s">&quot;</span><span class="p">)</span>
+                <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">                #   content     description</span>
+<span class="sd">                ===========================</span>
+<span class="sd">                0   QNAME</span>
+<span class="sd">                1   FLAG</span>
+<span class="sd">                2   RNAME</span>
+<span class="sd">                3   POS</span>
+<span class="sd">                4   MAPQ</span>
+<span class="sd">                5   CIGAR</span>
+<span class="sd">                6   RNEXT</span>
+<span class="sd">                7   PNEXT</span>
+<span class="sd">                8   TLEN</span>
+<span class="sd">                9   SEQ</span>
+<span class="sd">                10  QUAL</span>
+<span class="sd">                ...optional fields...</span>
+<span class="sd">                11  AS          alignment score</span>
+<span class="sd">                12  NM          edit distance to reference</span>
+<span class="sd">                13  ZL          reference length</span>
+<span class="sd">                14  ZR          &quot;raw score&quot;</span>
+<span class="sd">                15  ZE          &quot;expected&quot;</span>
+<span class="sd">                16  ZI          percent identify (incl. indels &amp; deaminated)</span>
+<span class="sd">                17  MD          mismatching positions</span>
+<span class="sd">                18  NS          PMD score</span>
+<span class="sd">                &quot;&quot;&quot;</span>
+
+                <span class="c"># extract taxon ID from required RNAME field</span>
+                <span class="c"># (as written by MALT 0.0.3)</span>
+                <span class="n">rname_parts</span> <span class="o">=</span> <span class="n">fields</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s">&quot;|&quot;</span><span class="p">)</span>
+                <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">                #   content</span>
+<span class="sd">                ===============</span>
+<span class="sd">                0   gi</span>
+<span class="sd">                1   GenBank ID</span>
+<span class="sd">                2   ref</span>
+<span class="sd">                3   accession</span>
+<span class="sd">                4   tax</span>
+<span class="sd">                5   taxonomy ID</span>
+<span class="sd">                &quot;&quot;&quot;</span>
+
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">taxon_id</span> <span class="o">=</span> <span class="n">rname_parts</span><span class="p">[</span><span class="mi">5</span><span class="p">]</span>
+                <span class="k">except</span> <span class="ne">IndexError</span><span class="p">:</span>
+                    <span class="n">taxon_id</span> <span class="o">=</span> <span class="s">&#39;unknown&#39;</span>
+                    <span class="n">log</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s">&quot;no taxon ID in line </span><span class="si">%s</span><span class="s">, assigning read to &quot;</span>
+                             <span class="s">&quot;taxon &#39;unknown&#39;&quot;</span> <span class="o">%</span> <span class="n">line_nr</span><span class="p">)</span>
+
+                <span class="c"># add to counts</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">counts</span><span class="p">[</span><span class="n">taxon_id</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+                <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
+                    <span class="n">counts</span><span class="p">[</span><span class="n">taxon_id</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1</span>
+
+            <span class="k">print</span><span class="p">(</span><span class="n">line</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(),</span> <span class="nb">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
+
+    <span class="k">finally</span><span class="p">:</span>
+        <span class="n">handle</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+
+    <span class="c"># check if previous statistic files exist and choose filename accordingly</span>
+    <span class="n">suffix</span> <span class="o">=</span> <span class="s">&#39;csv&#39;</span>
+    <span class="c"># assuming that 999 filter steps will suffice</span>
+    <span class="k">for</span> <span class="n">idx</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1000</span><span class="p">):</span>
+        <span class="n">stats_filename</span> <span class="o">=</span> <span class="s">&#39;</span><span class="si">%s</span><span class="s">.</span><span class="si">%03d</span><span class="s">.</span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">prefix</span><span class="p">,</span> <span class="n">idx</span><span class="p">,</span> <span class="n">suffix</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">isfile</span><span class="p">(</span><span class="n">stats_filename</span><span class="p">):</span>
+            <span class="k">break</span>
+
+    <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&quot;STEP 2: writing statistics to </span><span class="si">%s</span><span class="s">.&quot;</span> <span class="o">%</span> <span class="n">stats_filename</span><span class="p">)</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">stats_filename</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s">&#39;w&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">handle</span><span class="p">:</span>
+        <span class="k">print</span><span class="p">(</span><span class="s">&quot;&#39;taxon_id&#39;,&#39;read_count&#39;&quot;</span><span class="p">,</span> <span class="nb">file</span><span class="o">=</span><span class="n">handle</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">counts</span><span class="o">.</span><span class="n">items</span><span class="p">()):</span>
+            <span class="k">print</span><span class="p">(</span><span class="s">&quot;&#39;</span><span class="si">%s</span><span class="s">&#39;,</span><span class="si">%i</span><span class="s">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">),</span> <span class="nb">file</span><span class="o">=</span><span class="n">handle</span><span class="p">)</span>
+
+    <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&quot;END of counting reads per taxon.&quot;</span><span class="p">)</span>
+
+    <span class="nb">exit</span><span class="p">()</span>
+</div>
+<span class="k">if</span> <span class="n">__name__</span> <span class="o">==</span> <span class="s">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="n">main</span><span class="p">()</span>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../../index.html">SamSifter 0.5.0 documentation</a> &raquo;</li>
+          <li><a href="../../index.html" >Module code</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2015, Florian Aldehoff.
+      Last updated on Mar 01, 2015.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>
