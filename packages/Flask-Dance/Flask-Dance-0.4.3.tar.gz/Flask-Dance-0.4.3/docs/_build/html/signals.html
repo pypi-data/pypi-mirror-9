@@ -1,0 +1,165 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>Signals &mdash; Flask Dance 0.4.2 documentation</title>
+    
+    <link rel="stylesheet" href="_static/flasky.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    './',
+        VERSION:     '0.4.2',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="top" title="Flask Dance 0.4.2 documentation" href="index.html" />
+    <link rel="next" title="API" href="api.html" />
+    <link rel="prev" title="Token Storage" href="token-storage.html" />
+   
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9">
+
+  </head>
+  <body>
+  
+  
+
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="api.html" title="API"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="token-storage.html" title="Token Storage"
+             accesskey="P">previous</a> |</li>
+        <li><a href="index.html">Flask Dance 0.4.2 documentation</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <span class="target" id="module-flask_dance.consumer"></span><div class="section" id="signals">
+<h1>Signals<a class="headerlink" href="#signals" title="Permalink to this headline">¶</a></h1>
+<div class="versionadded">
+<p><span class="versionmodified">New in version 0.2.</span></p>
+</div>
+<p>Flask-Dance supports signals, <a class="reference external" href="http://flask.pocoo.org/docs/signals/#signals" title="(in Flask v1.0-dev)"><em class="xref std std-ref">just as Flask does</em></a>.
+Signals are perfect for custom processing code that you want to run at a certain
+point in the OAuth dance. For example, after the dance is complete, you might
+need to update the user&#8217;s profile, kick off a long-running task, or simply
+<a class="reference external" href="http://flask.pocoo.org/docs/patterns/flashing/#message-flashing-pattern" title="(in Flask v1.0-dev)"><em class="xref std std-ref">flash a message</em></a> to let the user know
+that the login was successful. It&#8217;s easy, just import the appropriate signal of
+the ones listed below, and connect your custom processing code to the signal.</p>
+<div class="section" id="core-signals">
+<h2>Core Signals<a class="headerlink" href="#core-signals" title="Permalink to this headline">¶</a></h2>
+<p>The following signals exist in Flask-Dance:</p>
+<dl class="data">
+<dt id="flask_dance.consumer.oauth_authorized">
+<tt class="descclassname">flask_dance.consumer.</tt><tt class="descname">oauth_authorized</tt><a class="headerlink" href="#flask_dance.consumer.oauth_authorized" title="Permalink to this definition">¶</a></dt>
+<dd><p>This signal is sent when a user completes the OAuth dance by receiving a
+response from the OAuth provider&#8217;s authorize URL. This signal is sent
+regardless of whether the authorization was successful: the user may
+have declined the authorization request, for example. The signal is invoked
+with the blueprint instance as the first argument (the <em>sender</em>), and with
+a dict of the OAuth provider&#8217;s response (the <em>token</em>).</p>
+<p>Example subscriber:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">flask</span> <span class="kn">import</span> <span class="n">flash</span>
+<span class="kn">from</span> <span class="nn">flask_dance.consumer</span> <span class="kn">import</span> <span class="n">oauth_authorized</span>
+
+<span class="nd">@oauth_authorized.connect</span>
+<span class="k">def</span> <span class="nf">logged_in</span><span class="p">(</span><span class="n">blueprint</span><span class="p">,</span> <span class="n">token</span><span class="p">):</span>
+    <span class="k">if</span> <span class="s">&quot;error&quot;</span> <span class="ow">in</span> <span class="n">token</span><span class="p">:</span>
+        <span class="n">flash</span><span class="p">(</span><span class="s">&quot;You denied the request to sign in. Please try again.&quot;</span><span class="p">)</span>
+        <span class="k">del</span> <span class="n">blueprint</span><span class="o">.</span><span class="n">token</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">flash</span><span class="p">(</span><span class="s">&quot;Signed in successfully with {name}!&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
+            <span class="n">name</span><span class="o">=</span><span class="n">blueprint</span><span class="o">.</span><span class="n">name</span><span class="o">.</span><span class="n">capitalize</span><span class="p">()</span>
+        <span class="p">))</span>
+</pre></div>
+</div>
+<p>If you&#8217;re using OAuth 2, the user may grant you different scopes from the
+ones you requested: check the <tt class="docutils literal"><span class="pre">scope</span></tt> key in the <em>token</em> dict to
+determine what scopes were actually granted. If you don&#8217;t want the <em>token</em>
+to be <a class="reference internal" href="token-storage.html"><em>stored</em></a>, simply return <tt class="docutils literal"><span class="pre">False</span></tt> from one of your
+signal receiver functions &#8211; this can be useful if the user has declined
+to authorize your OAuth request, has granted insufficient scopes, or in some
+other way has given you a token that you don&#8217;t want.</p>
+</dd></dl>
+
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h3><a href="index.html">Table Of Contents</a></h3>
+  <ul>
+<li><a class="reference internal" href="#">Signals</a><ul>
+<li><a class="reference internal" href="#core-signals">Core Signals</a></li>
+</ul>
+</li>
+</ul>
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="token-storage.html" title="previous chapter">Token Storage</a></li>
+      <li>Next: <a href="api.html" title="next chapter">API</a></li>
+  </ul></li>
+</ul>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="_sources/signals.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+  
+    <a href="http://github.com/singingwolfboy/flask-dance" class="github"><img src="http://s3.amazonaws.com/github/ribbons/forkme_right_darkblue_121621.png" alt="Fork me on GitHub" /></a>
+  
+
+  <div class="footer">
+    &copy; Copyright 2014, David Baumgold.
+    Created using <a href="http://sphinx.pocoo.org/">Sphinx</a>.
+  </div>
+  
+  </body>
+</html>
