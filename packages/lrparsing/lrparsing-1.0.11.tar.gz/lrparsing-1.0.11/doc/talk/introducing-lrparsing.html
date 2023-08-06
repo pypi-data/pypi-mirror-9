@@ -1,0 +1,1330 @@
+<!DOCTYPE html>
+
+<!--
+  Google HTML5 slide template
+
+  Authors: Luke Mahé (code)
+           Marcin Wichary (code and design)
+           
+           Dominic Mazzoni (browser compatibility)
+           Charles Chen (ChromeVox support)
+
+  URL: http://code.google.com/p/html5slides/
+-->
+
+<html>
+  <head>
+    <title>Presentation</title>
+    <meta charset='utf-8'>
+    
+    <style>
+
+      /* Your individual styles here, or just use inline styles if that's
+	what you want. */
+
+      .slides.template-lrparsing > article:not(.nobackground):not(.biglogo) {
+	background: white url(pig.png) 795px 0px no-repeat;  
+	background-size: 12%;
+      }
+
+      .slides.layout-m2400 > article {
+	height: 800px;
+	margin-left: -600px;
+	margin-top: -400px;
+	width: 1300px;
+	padding: 80px 60px;
+      }
+      .slides.layout-m2400 > article:not(.nobackground):not(.biglogo) {
+	background-position-x: 0, 840px;
+      }
+      .slides.layout-m2400 #prev-slide-area {
+	margin-left: -750px;
+      }
+      .slides.layout-m2400 #next-slide-area {
+	margin-left: 600px;
+      }
+      .slides.layout-m2400 > article.far-past {
+	display: block;
+	transform: translate(-2800px);
+	-o-transform: translate(-2800px);
+	-moz-transform: translate(-2800px);
+	-webkit-transform: translate3d(-2800px, 0, 0);
+      }
+      .slides.layout-m2400 > article.past {
+	display: block;
+	transform: translate(-1400px);
+	-o-transform: translate(-1400px);
+	-moz-transform: translate(-1400px);
+	-webkit-transform: translate3d(-1400px, 0, 0);
+      }
+      .slides.layout-m2400 > article.current {
+	display: block;
+	transform: translate(0);
+	-o-transform: translate(0);
+	-moz-transform: translate(0);
+	-webkit-transform: translate3d(0, 0, 0);
+      }
+      .slides.layout-m2400 > article.next {
+	display: block;
+	transform: translate(1400px);
+	-o-transform: translate(1400px);
+	-moz-transform: translate(1400px);
+	-webkit-transform: translate3d(1400px, 0, 0);
+      }
+      .slides.layout-m2400 > article.far-next {
+	display: block;
+	transform: translate(2800px);
+	-o-transform: translate(2800px);
+	-moz-transform: translate(2800px);
+	-webkit-transform: translate3d(2800px, 0, 0);
+      }
+
+      tt {
+	font-size: 80%;
+	font-family: 'Droid Sans Mono', 'Courier New', monospace;
+	color: brown;
+      }
+
+      samp {
+	font-size: 95%;
+	font-family: 'Droid Sans Mono', 'Courier New', monospace;
+	color: green;
+      }
+
+    </style>
+    <script src='google/slides.js'></script>
+  </head>
+
+  <body style='display: none'>
+
+    <section class='slides layout-regular template-lrparsing'>
+      
+      <!-- Your slides (<article>s) go here. Delete or comment out the
+           slides below. -->
+        
+        
+      
+      <!-- article class='biglogo'>
+      </article -->
+
+      <article>
+        <h1>
+          Introducing ...
+          <br>
+          lrparsing.py
+        </h1>
+        <p>
+	  Russell Stuart
+        </p>
+      </article>
+      
+      <article>
+        <h3>
+          Why?
+        </h3>
+        <ul>
+	  <li>I had a job to do - parse SQL.</li>
+	  <li>A pypi search for parser gets about 1000 hits.</li>
+	  <li>A google search for python parsing sql yields pyparsing.py</li>
+	  <li>Job done within in an hour!
+	</ul>
+	<p>
+	  <br/>
+        </p>
+        <p>
+	  <b>.....Surely?</b>
+        </p>
+      </article>
+
+      <article>
+        <h3>
+          pyparsing.py
+        </h3>
+	<p>Has an example grammar for Sqlite.<br>... and has nice syntax:</p>
+	<pre class="smaller">
+from pyparsing import *
+
+integer = Word(nums).setParseAction(lambda t:int(t[0]))
+variable = Word(alphas,exact=1)
+operand = integer | variable
+
+expop, signop, multop  = Literal('^'), oneOf('+ -'), oneOf('* /')
+plusop, factop = oneOf('+ -'), Literal('!')
+
+expr = operatorPrecedence( operand,
+    [("!", 1, opAssoc.LEFT), ("^", 2, opAssoc.RIGHT),
+     (signop, 1, opAssoc.RIGHT),
+     (multop, 2, opAssoc.LEFT), (plusop, 2, opAssoc.LEFT),]
+    )
+	</pre>
+      </article>
+
+      <article>
+        <h3>
+          pyparsing.py ... but
+        </h3>
+	<p>
+	  - Syntax for Sqlite buggy.<br/>
+	  - Poor free documentation - buy the book.<br/>
+	  - And its absurdly slow:<br>
+	</p>
+	<pre class="smaller">
+$ ./pyparsing-sqlite.py 
+select * from xyzzy where z &gt; 100
+parse time=0.389035
+
+select * from xyzzy where z &gt; 100 order by zz
+parse time=0.646955
+
+select * from xyzzy
+parse time=0.001180
+
+select a, b, c from t1 as A, t2 as B
+    where x1 &gt; x2 + 2 * 3 - 1 and x1 &lt; 3
+    order by 1 asc, 2 desc
+parse time=1.323233
+	</pre>
+      </article>
+
+      <article>
+        <h3>
+          Next .. hand written LL parser
+        </h3>
+	<ul>
+	  <li>Took me about two hours to write the tokeniser and parser.</li>
+	  <li>174 lines, including test code vs 101 lines for pyparsing.</li>
+	</ul>
+	<pre>
+select a, b, c from t1 as A, t2 as B
+    where t1.a &gt; t2.b + 2 * 3 - 1 and t1 &lt; ?
+    order by 1 asc, 2 desc, t1.a
+parse time= 0.001747
+	</pre>
+	<p>
+	  <br/>
+	  <br/>
+	  <br/>
+	  <br/>
+	  <br/>
+	  <i>A sane person probably would have stopped at this point</i>.
+	</p>
+      </article>
+
+      <article>
+        <h3>
+          Next ... parsing.py.
+        </h3>
+	<p>
+	  An LR(1) parser generator with LR(1) and GLR(1) parsers.
+	</p>
+	<ul>
+	  <li> It does <i>not</i> include a tokeniser.</li>
+	  <li>Re-writing grammar and porting the tokeniser took 3 hours.</li>
+	  <li>Documentation is large blocks of comments in the code.</li>
+	  <li>376 lines, including test code vs 101 lines for pyparsing.</li>
+	</ul>
+	<pre>
+select a, b, c from t1 as A, t2 as B
+    where t1.a &gt; t2.b + 2 * 3 - 1 and t1 &lt; ?
+    order by 1 asc, 2 desc, t1.a
+parse time= 0.004702
+	</pre>
+      </article>
+
+      <article class='smaller'>
+        <h3>
+          ... parsing.py - Sample Code - The Grammar
+        </h3>
+	<p>
+	  Grammar definition:
+	</p>
+	<pre>
+class NArithExpr(NonTerm):
+    @NonTerm.reduce
+    def reduceA(self, expr1):
+        "%reduce NUnaryExpr"
+        self.HIDDEN = True
+    @NonTerm.reduce
+    def reduceB(self, expr1, mult, expr2):
+      "%reduce NArithExpr SymbolMult NArithExpr [PrecMult]"
+    @NonTerm.reduce
+    def reduceC(self, expr1, div, expr2):
+      "%reduce NArithExpr SymbolDiv NArithExpr [PrecMult]"
+    @NonTerm.reduce
+    def reduceD(self, expr1, mod, expr2):
+      "%reduce NArithExpr SymbolMod NArithExpr [PrecMult]"
+    @NonTerm.reduce
+    def reduceE(self, expr1, plus, expr2):
+      "%reduce NArithExpr SymbolPlus NArithExpr [PrecAdd]"
+    @NonTerm.reduce
+    def reduceF(self, expr1, minus, expr2):
+      "%reduce NArithExpr SymbolMinus NArithExpr [PrecAdd]"
+    @NonTerm.reduce
+    def reduceG(self, atom):
+        "%reduce NAtom"
+        self.HIDDEN = True
+	</pre>
+      </article>
+
+      <article class='smaller'>
+        <h3>
+          ... parsing.py - Sample Code - Defining Tokens
+        </h3>
+	<p>
+	  Tokens have to be defined individually:
+	</p>
+	<pre>
+class Token(parsing.Token):
+    __metaclass__ = TokenMeta
+    #
+    # ... etc ...
+    #
+
+class Keyword(Token): SUPPRESS = True
+
+class KeywordAnd(Keyword): keyword = "and"
+class KeywordAs(Keyword): keyword = "as"
+class KeywordAsc(Token): keyword = "asc"
+class KeywordBetween(Keyword): keyword = "between"
+class KeywordBy(Keyword): keyword = "by"
+class KeywordDesc(Token): keyword = "desc"
+class KeywordFirst(Keyword): keyword = "first"
+class KeywordFrom(Keyword): keyword = "from"
+class SymbolPlus(Token): token = '+'
+class SymbolMinus(Token): token = '-'
+class SymbolParam(Token): token = '?'
+class SymbolMult(Token): token = '*'
+class SymbolDiv(Token): token = '/'
+class SymbolMod(Token): token = '%'
+# and on and on ...
+	</pre>
+      </article>
+
+      <article class='smaller'>
+        <h3>
+          ... parsing.py - Sample Code - Defining Precedences
+        </h3>
+	<p>
+	  Each precedence is a class too:
+	</p>
+	<pre>
+class Prec(parsing.Precedence):
+    pass
+class PrecUnary(Prec):
+    "%right"
+class PrecMult(Prec):
+    "%left &lt;PrecUnary"
+class PrecAdd(Prec):
+    "%left &lt;PrecMult"
+class PrecCompare(Prec):
+    "%left &lt;PrecAdd"
+class PrecEquivalence(Prec):
+    "%left &lt;PrecCompare"
+class PrecBetween(Prec):
+    "%left &lt;PrecEquivalence"
+class PrecAnd(Prec):
+    "%left &lt;PrecBetween"
+class PrecOr(Prec):
+    "%left &lt;PrecAnd"
+class PrecIdent(Prec):
+    "%left"
+class PrecExpr(Prec):
+    "%left &lt;PrecIdent"
+	</pre>
+      </article>
+
+      <article class>
+        <h3>
+          ... parsing.py - Summary
+        </h3>
+	<ul>
+	  <li>Twice the size of the hand written LL parser.</li>
+	  <li>Slower.</li>
+	  <li>Ordinary documentation doesn't help.</li>
+	</ul>
+	<br>
+	<br>
+	<br>
+	<br>
+	<br>
+	<p style="text-align: center; padding: 5px; margin: 20px 20px">
+	  <font size=+4 color=green>
+	    <b>Better than a hand written LL parser?</b>
+	  </font>
+	</p>
+      </article>
+
+      <article>
+        <h3>
+          Afterward ... ply
+        </h3>
+	<p>An LALR(1) parser with inbuilt tokeniser.</p>
+	<ul>
+	  <li>Documentation is good.</li>
+	  <li>Took me about an hour to write it.</li>
+	  <li>198 lines vs 101 lines for pyparsing.</li>
+	</ul>
+	<pre>
+select a, b, c from t1 as A, t2 as B
+    where x1 > x2 + 2 * 3 - 1 and x1 < 3
+    order by 1 asc, 2 desc
+parse time=0.001505
+	</pre>
+	<br><br>
+	<p>
+	  Had I found ply, I would have used it.
+	</p>
+      </article>
+
+      <article class=smaller>
+        <h3>
+          ply - Sample Code - The Tokeniser
+        </h3>
+	<pre>
+class Lexer(object):
+    reserved = {
+        "and": "KeywordAnd",
+        "as": "KeywordAs",
+        "asc": "KeywordAsc",
+        "by": "KeywordBy",
+	# and so on ...
+    tokens = (
+	# more lines like below ..
+        "SymbolEquals",
+        "SymbolStringCat",
+        "TokenString",
+        "TokenInteger",
+        "TokenDotIdent",
+        "TokenIdent",) + tuple(reserved.itervalues())
+    # more lines like below ..
+    t_SymbolEquals = '=|=='
+    t_SymbolStringCat = '\|\|'
+    t_TokenString = "(?:'(?:[^']*)')+"
+    t_TokenFloat = "[0-9]+[.][0-9]*|[.][0-9]+"
+    t_TokenInteger = "[0-9]+"
+    t_TokenDotIdent = '[a-zA-Z_][a-zA-Z_0-9]*(?:[.][a-zA-Z][a-zA-Z_0-9]*)+|"[a-zA-Z_][a-zA-Z_0-9]*(?:[.][a-zA-Z][a-zA-Z_0-9]*)+"'
+
+    def t_TokenIdent(self, t):
+        '[a-zA-Z_][a-zA-Z_0-9]*|"[a-zA-Z_][a-zA-Z_0-9]*"'
+        t.type = self.reserved.get(t.value.lower(), 'TokenIdent')
+        return t</pre>
+      </article>
+
+      <article class=smaller>
+        <h3>
+          ply - Sample Code - The Parser
+        </h3>
+	<pre>
+class Parser(object):
+    tokens = Lexer.tokens
+
+    def p_NWhere(self, p):
+        """NWhere : KeywordWhere NBoolExpr"""
+        p[0] = ("NWhere",) + tuple(p[i] for i in range(1,len(p)))
+
+    def p_NBoolExpr(self, p):
+        """NBoolExpr : KeywordNot NBoolExpr %prec KeywordNotU
+            | NBoolExpr KeywordAnd NBoolExpr 
+            | NBoolExpr KeywordOr NBoolExpr 
+            | NArithExpr SymbolLessThan NArithExpr 
+            | NArithExpr SymbolLessEqual NArithExpr 
+            | NArithExpr SymbolGreaterEqual NArithExpr 
+            | NArithExpr SymbolGreaterThan NArithExpr 
+            | NArithExpr SymbolEquals NArithExpr 
+            | NArithExpr SymbolNotEquals NArithExpr 
+            | SymbolLeftParen NBoolExpr SymbolRightParen"""
+        p[0] = ("NBoolExpr",) + tuple(p[i] for i in range(1,len(p)))
+        </pre>
+      </article>
+
+      <article>
+        <h3>
+          So where are we here?
+        </h3>
+	<p>
+	  <br>
+	  <br>
+	  <br>
+	</p>
+	<p align=center>Lots of choices ..</p>
+	<p align=center>Some acceptable.</p>
+	<p align=center>Probably more ...</p>
+	<br>
+	<br>
+	<br>
+	<p style="text-align: center; padding: 5px; margin: 20px 20px">
+	  <font size=+4 color=green>
+	    <b>So why a talk about lrparsing?</b>
+	  </font>
+	</p>
+      </article>
+
+      <article>
+        <h3>
+          Introducing ... lrparsing
+        </h3>
+	<p>An LR(1) parser with inbuilt tokeniser.</p>
+	<ul>
+	  <li>Documentation better than the others.</li>
+	  <li>Took me about 15 minutes to write the grammar.</li>
+	  <li>52 lines vs 101 lines for pyparsing.</li>
+	</ul>
+	<pre>
+select a, b, c from t1 as A, t2 as B
+    where x1 > x2 + 2 * 3 - 1 and x1 < 3
+    order by 1 asc, 2 desc
+parse time=0.000807
+	</pre>
+      </article>
+
+      <article class=smaller>
+        <h3>
+          lrparsing - Sample Code
+        </h3>
+	<pre>
+class Parser(Grammar):
+    class T(TokenRegistry):
+        float = Token(re="[0-9]+[.][0-9]*|[.][0-9]+")
+        integer = Token(re="[0-9]+")
+        ident = Token(re='[a-zA-Z_][a-zA-Z_0-9]*|"[a-zA-Z_][a-zA-Z_0-9]*')
+        dot_ident = Token(re='[a-zA-Z_][a-zA-Z_0-9]*(?:[.][a-zA-Z_][a-zA-Z_0-9]*)+|"[a-zA-Z_][a-zA-Z_0-9]*(?:[.][a-zA-Z][a-zA-Z_0-9]*)+"')
+        string = Token(re="(?:'(?:[^']*)')+")
+
+    NArithExpr = Ref("NArithExpr"); NBoolExpr = Ref("NBoolExpr")
+    NFuncCall = T.ident + '(' + List(NBoolExpr, ',') + ')'
+    NArithExpr = Prio(
+            T.ident | T.dot_ident | T.string | T.integer | T.float | '?' | NFuncCall,
+            Tk("+ -") + THIS,
+            THIS << Tk("* / %") << THIS, THIS << Tk("+ -") << THIS,)
+    NOrderByTerm = Prio(T.ident | T.integer, NArithExpr) + Opt * Tk("", "asc desc")
+    NOrderBy = K("order") + K("by") + List(NOrderByTerm, ',', 1)
+    NBoolExpr = Prio(
+        '(' + THIS + ')',
+        K("not") + THIS, NArithExpr + Tk("< <= >= > == = != <>") + NArithExpr,
+        THIS << K("or") << THIS, THIS << K("and") << THIS,)
+    NFrom = K("from") + List(T.ident + Opt(K("as") + T.ident), ",", 1)
+    NSelectColumn = Prio(
+            (T.ident | T.dot_ident) + Opt(K("as") + T.ident) | '*',
+            NArithExpr + Opt(K("as") + T.ident))
+    NSelect = K("select") + List(NSelectColumn, ",", 1)
+    NQuery = NSelect + NFrom + Opt(K("where") + NBoolExpr)
+    NUnion = List(NQuery, K("union"), 1) + Opt * NOrderBy
+    START = NUnion</pre>
+      </article>
+
+      <article>
+        <h3>
+          Back to the beginning ... What does a parser do?
+        </h3>
+	<br>
+	<div>
+	  <p>We start with a string like this:</p>
+	  <p align=center><samp>4 + -3 ** 2 / (1 ++ 2)</samp></p>
+	</div>
+        <div class="build">
+	  <div><br>And we assign meaning.</div>
+	  <div>We do that via a parse tree.</div>
+	  <div>The parse tree assigns names to things.</div>
+	  <div>
+	    <br>
+	    <div align=center>
+	      <samp><span style="border-bottom: 1px solid">4 + -3 ** 2 / (1 ++ 2)</span></samp><br>
+	    </div>
+	  </div>
+	  <div align=center>
+	    <code>expr</code>
+	  </div>
+	  <div>
+	    <br>
+	    <p>And we write that as:</p>
+	    <p align=center><tt>(expr ....)</tt></p>
+	  </div>
+	</div>
+      </article>
+
+      <article>
+        <h3>
+          What does a parser do? ... it breaks things up
+        </h3>
+	<br>
+	<div>
+	  <p>Next break down the <tt>...</tt> like this:</p>
+	  <div align=center>
+	    &nbsp;
+	    <samp><span style="border-bottom: 1px solid">4&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span> &nbsp; <span style="border-bottom: 1px solid">&nbsp;+&nbsp;</span> &nbsp; <span style="border-bottom: 1px solid">-3 ** 2 / (1 ++ 2)</span></samp><br>
+	  </div>
+	</div>
+        <div class="build">
+	  <div align=center>
+	    <code>number=4&nbsp;&nbsp; '+' &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;expr&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</code>
+	  </div>
+	  <div>
+	    <br/>
+	    <p>And we write that as:</p>
+	    <p align=center><tt>(expr number=4 '+' (expr ...))</tt></p>
+	  </div>
+	  <div>
+	    <br>
+	    <p>And we repeat:</p>
+	    <div align=center>
+	      &nbsp;
+	      <samp><span style="border-bottom: 1px solid">-3 ** 2</span> &nbsp; <span style="border-bottom: 1px solid">&nbsp;/&nbsp;</span> &nbsp; <span style="border-bottom: 1px solid">(1 ++ 2)</span></samp><br>
+	    </div>
+	  </div>
+	  <div align=center>
+	    <code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;expr&nbsp;&nbsp;&nbsp; '/' &nbsp;&nbsp;&nbsp;&nbsp;expr&nbsp;&nbsp;&nbsp;&nbsp;</code>
+	  </div>
+	  <p align=center><tt>(expr number=4 '+' (expr (expr ...) '/' (expr ...)))</tt></p>
+	  </div>
+	</div>
+      </article>
+
+      <article>
+        <h3>
+          What does a parser do? ... into their constituent bits
+        </h3>
+	<br>
+	<div>
+	  <p>So a <i><u>parser</u></i> is something that starts with a string:</p>
+	  <p align=center><samp>4 + -3 ** 2 / (1 ++ 2)</samp></p>
+	</div>
+	<div class="build">
+	  <div>
+	    &nbsp;
+	    <p>And turns it into a <i><u>parse tree</u></i>:</p>
+	    <pre>
+(expr
+  number=4
+  '+'
+  (expr
+    (expr '-' (expr number=3 '**' number=2)
+    '/'
+    (expr '(' (expr number=1 '+' (expr '+' number=2)) ')'))))</pre>
+	  </div>
+	  <p>
+	    And with that parse tree, we could evaluate the expression
+	    according to the rules of arithmetic.
+	  </p>
+	</div>
+      </article>
+
+      <article>
+        <h3>
+          What makes up a parser?
+        </h3>
+	<br>
+	<p>
+	The <u><i>tokeniser</i></u> (aka lexer) names the smallest chunks.<br/>
+	&nbsp;&nbsp;&nbsp;&raquo;&nbsp; <samp>*</samp> is a <tt>'*'</tt><br/>
+	&nbsp;&nbsp;&nbsp;&raquo;&nbsp; <samp>**</samp> is a <tt>'**'</tt><br/>
+	&nbsp;&nbsp;&nbsp;&raquo;&nbsp; <samp>++</samp> is two tokens:
+	    <tt>'+'</tt> followed by <tt>'+'</tt>.
+	</p>
+	<div class="build">
+	  <p><br>A <u><i>grammar</i></u> that says what the language looks like.</p>
+	  <p>
+	    <br>
+	    A <u><i>parser generator</i></u> that compiles the grammar.<br>
+	    &nbsp;&nbsp;&nbsp;&raquo;&nbsp; The compiled form is called a <u><i>parse table</i></u>.
+	  </p>
+	  <p>
+	    <br>
+	    A <u><i>parser</i></u>.  A small piece of code that:<br>
+	    &nbsp;&nbsp;&nbsp;&raquo;&nbsp; Process the tokenised input stream,<br/>
+	    &nbsp;&nbsp;&nbsp;&raquo;&nbsp; according to a parse table,<br/>
+	    &nbsp;&nbsp;&nbsp;&raquo;&nbsp; to produce a parse tree.
+	  </p>
+	</div>
+      </article>
+
+      <article>
+        <h3>
+          A Grammar
+        </h3>
+	<p>The parse tree:</p>
+	<div align=center>
+	  &nbsp;
+	  <samp><span style="border-bottom: 1px solid">-3 ** 2</span> &nbsp; <span style="border-bottom: 1px solid">&nbsp;/&nbsp;</span> &nbsp; <span style="border-bottom: 1px solid">(1 ++ 2)</span></samp><br>
+	  <code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;expr&nbsp;&nbsp;&nbsp; '/' &nbsp;&nbsp;&nbsp;&nbsp;expr&nbsp;&nbsp;&nbsp;&nbsp;</code>
+	</div>
+	<p>Suggests this pattern:</p>
+	<p align=center>
+	  <code>expr = expr '/' expr</code>
+	</p>
+	<div class="build">
+	  <div>
+	    &nbsp;
+	    <p>
+	      This is called a <u><i>production</i></u>.
+	      A grammar is just a collection of all productions
+	      making up the language:
+	    </p>
+	    <p style="margin-left: auto; margin-right: auto; width: 350px">
+	      <code>expr = expr '+' expr</code><br>
+	      <code>expr = expr '**' expr</code><br>
+	      <code>expr = '+' expr</code><br>
+	      <code>expr = '-' expr</code><br>
+	      <code>expr = '(' expr ')'</code><br>
+	      <code>expr = number</code>
+	    </p>
+	  </div>
+	</div>
+      </article>
+
+      <article>
+        <h3>
+          lrparsing's Grammar
+        </h3>
+	<p>lrparing uses Python expressions to represent it's grammar.</p>
+	<div style="margin-left: 20px">
+	  <ul>
+	    <li>Have to look be valid Python expressions.</li>
+	    <li>Assigning many things to a variable looses all but the last.</li>
+	    <li>Can't have refer to ourselves before defining ourselves.</li>
+	  </ul>
+	</div>
+	<div class="build">
+	  <pre>
+from lrparsing import Grammar, THIS, Token
+class Expr(Grammar):
+    expr = (
+	THIS + '/' + THIS |
+	THIS + '+' + THIS |
+	THIS + '**' + THIS |
+	'+' + THIS |
+	'-' + THIS |
+	'(' + THIS + ')' |
+	Token(re="[0-9]+"))
+    START = expr</pre>
+	</div>
+      </article>
+
+      <article>
+        <h3>
+          lrparsing's tokeniser
+        </h3>
+	<br>
+	<p>Internally tokens are recognised using a single large regular expression:</p>
+	<p align=center>
+	  <samp>token1_re|token2_re|...</samp>
+	</p>
+	<p>Token constructors:</p>
+	<div style="margin-left: 20px">
+	  &nbsp;
+	  <ul>
+	    <li><code>Token(literal="**", [case=True])</code>, <br>or <code>Token("**", [case=True])</code>, <br>or just <code>"**"</code>.</li>
+	    <li><code>Token(re="[a-zA-Z_][a-zA-Z0-9_]*")</code></li>
+	    <li><code>Keyword("and", [case=True])</code></li>
+	    <li><code>UnrecognisedToken()</code></li>
+	  </ul>
+	</div>
+      </article>
+
+      <article>
+        <h3>
+          OMG!  It's a pig in lipstick
+        </h3>
+	  <pre>
+from lrparsing import Grammar, THIS, Token
+class Expr(Grammar):
+    expr = (
+	THIS + '/' + THIS | THIS + '+' + THIS | THIS + '**' + THIS |
+	'+' + THIS | '-' + THIS | '(' + THIS + ')' |
+	Token(re="[0-9]+"))
+    START = expr
+print Expr.repr_parse_tree(Expr.parse("4 + -3 ** 2 / (1 ++ 2)"))</pre>
+	<pre class="noprettyprint">
+While trying to recognise state 11:
+  expr = '+' expr ^
+  expr = expr ^ '+' expr
+on seeing a '+' I could not decide between:
+  replace the sequence ['+' expr] with expr
+and
+  accept the '+' in the hope it will match:
+    expr = expr '+' ^ expr
+Please remove this ambiguity from your grammar</pre>
+      </article>
+
+      <article>
+        <h3>
+          Translating pig
+        </h3>
+	<pre class="noprettyprint">
+While trying to recognise state 11:
+  <samp><b>expr</b></samp> = '+' <tt><b>expr</b></tt> ^
+  <tt><b>expr</b></tt> = <samp><b>expr</b></samp> ^ '+' expr
+on seeing a '+' I could not decide</pre>
+	<div class=build>
+	  <div>
+	    &nbsp;
+	    <p>Substitute the Reduce into the Shift and we get:</p>
+	    <div align=center>
+	      <samp>expr = '+' expr ^ '+' expr</samp>
+	    </div>
+	  </div>
+	  <div>
+	    &nbsp;
+	    <p>The choice is between two parse trees:</p>
+	    <div align=center>
+	      <samp><span style="border-bottom: 1px solid">'+' expr</span> <span style="border-bottom: 1px solid">'+'</span> <span style="border-bottom: 1px solid">expr</span></samp><br>
+	      <code>&nbsp;&nbsp;expr&nbsp;&nbsp; '+' expr</code>
+	    </div>
+	    and:
+	    <div align=center>
+	      <samp><span style="border-bottom: 1px solid">'+'</span> <span style="border-bottom: 1px solid">expr '+' expr</span></samp><br>
+	      <code>'+' &nbsp;&nbsp;&nbsp;&nbsp;expr&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</code>
+	    </div>
+	</div>
+      </article>
+
+      <article>
+        <h3>
+          Prio() 
+        </h3>
+	<p>Rewrite the grammar to get rid of the ambiguity:</p>
+	<pre>
+class Expr(Grammar):
+    expr = Prio(
+	'(' + THIS + ')' | Token(re="[0-9]+"), THIS + '**' + THIS,
+	'+' + THIS | '-' + THIS,
+	THIS + '/' + THIS, THIS + '+' + THIS)
+    START = expr</pre>
+	<pre class="noprettyprint">
+lrparsing.GrammarError: Conflict: Shift/Reduce and no associativity
+While trying to recognise state 22:
+  expr.Prio.Prioritised4 = expr '+' expr ^
+  expr.Prio.Prioritised4 = expr ^ '+' expr
+on seeing a '+' I could not decide between:
+  replace the sequence [expr '+' expr] with expr.Prio.Prioritised4
+and
+  accept the '+' in the hope it will match:
+    expr.Prio.Prioritised4 = expr '+' ^ expr
+Please remove this ambiguity from your grammar
+      </article>
+
+      <article>
+        <h3>
+          Displaying the compiled productions - the code
+        </h3>
+	<p>Lrparsing has compiled your grammar into productions.</p>
+	<pre>
+#!/usr/bin/python
+from lrparsing import Grammar, Prio, THIS, Token
+
+class Expr(Grammar):
+    expr = Prio(
+	'(' + THIS + ')' | Token(re="[0-9]+"),
+	THIS + '**' + THIS,
+	'+' + THIS | '-' + THIS,
+	THIS + '/' + THIS,
+	THIS + '+' + THIS)
+    START = expr
+
+try:
+  Expr.compile_grammar()
+except:
+  print Expr.repr_productions()
+  raise
+print Expr.repr_parse_tree(Expr.parse("4 + -3 ** 2 / (1 ++ 2)"))</pre>
+      </article>
+
+      <article>
+        <h3>
+          Displaying the compiled productions - the result
+        </h3>
+	<pre>
+0     : <Expr> = START __end_of_input__
+1     : START = expr
+2     : expr = expr.Prio
+3     : expr.Prio = expr.Prio.Prioritised0
+        expr.Prio = expr.Prio.Prioritised1
+        expr.Prio = expr.Prio.Prioritised2
+        expr.Prio = expr.Prio.Prioritised3
+        expr.Prio = expr.Prio.Prioritised4
+4.1   : expr.Prio.Prioritised0 = '(' expr ')'
+        expr.Prio.Prioritised0 = /[0-9]+/
+5.1   : expr.Prio.Prioritised1 = expr '**' expr
+6.1   : expr.Prio.Prioritised2 = '+' expr
+        expr.Prio.Prioritised2 = '-' expr
+7.1   : expr.Prio.Prioritised3 = expr '/' expr
+8.1   : expr.Prio.Prioritised4 = expr '+' expr
+Traceback (most recent call last):
+  File "example-3.py", line 15, in <module>
+    Expr.compile_grammar()
+  ........</pre>
+      </article>
+
+      <article>
+        <h3>
+          Translating pig (again)
+        </h3>
+	<pre class="noprettyprint">
+While trying to recognise state 23:
+  <samp><b>expr.Prio.Prioritised3</b></samp> = <tt><b>expr</b></tt> ^ '/' expr
+  <tt><b>expr.Prio.Prioritised3</b></tt> = expr '/' <samp><b>expr</b></samp> ^
+on seeing a '/' I could not decide</pre>
+	<div class=build>
+	  <div>
+	    &nbsp;
+	    <p>Substitute the Reduce into the Shift and we get:</p>
+	    <div align=center>
+	      <samp>expr = expr '/' expr ^ '/' expr</samp>
+	    </div>
+	  </div>
+	  <div>
+	    &nbsp;
+	    <p>The choice is between two parse trees:</p>
+	    <div align=center>
+	      <samp><span style="border-bottom: 1px solid">expr '/' expr</span> <span style="border-bottom: 1px solid">'/'</span> <span style="border-bottom: 1px solid">expr</span></samp><br>
+	      <code>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;expr&nbsp;&nbsp;&nbsp;&nbsp; '/' expr</code>
+	    </div>
+	    and:
+	    <div align=center>
+	      <samp><span style="border-bottom: 1px solid">expr</span> <span style="border-bottom: 1px solid">'/'</span> <span style="border-bottom: 1px solid">expr '/' expr</span></samp><br>
+	      <code>expr '/' &nbsp;&nbsp;&nbsp;&nbsp;expr&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</code>
+	    </div>
+	</div>
+      </article>
+
+      <article>
+        <h3>
+	  Using '&lt;&lt;' and '&gt;&gt;'
+        </h3>
+	<p>Rewrite the grammar to get rid of the ambiguity:</p>
+	<pre>
+#!/usr/bin/python
+from lrparsing import Grammar, Prio, THIS, Token
+
+class Expr(Grammar):
+    expr = Prio(
+	'(' + THIS + ')' | Token(re="[0-9]+"),
+	THIS &gt;&gt; '**' &gt;&gt; THIS,
+	'+' + THIS | '-' + THIS,
+	THIS &lt;&lt; '/' &lt;&lt; THIS,
+	THIS &lt;&lt; '+' &lt;&lt; THIS)
+    START = expr
+    
+print Expr.repr_parse_tree(Expr.parse("4 + -3 ** 2 / (1 ++ 2)"))
+	</pre>
+      </article>
+
+      <article>
+        <h3>
+	  Finally, a parse tree.
+        </h3>
+	<pre class="noprettyprint">
+(START (expr
+  (expr '4') '+'
+  (expr
+    (expr '-' (expr
+      (expr '3') '**'
+      (expr '2')) '/'
+    (expr '('
+      (expr
+        (expr '1') '+'
+	(expr '+' (expr '2'))) ')'))))</pre>
+      </article>
+
+      <article>
+        <h3>
+	  Other grammar constructors
+        </h3>
+	<ul>
+	  <li>
+	    <code>List(sym, delim, min=0, max=None, opt=False)</code><br>
+	    <br>
+	  </li>
+	</ul>
+	<ul class=build>
+	  <li>
+	    <code>name = Ref("name")</code><br>
+	    <div style="margin-left: 50px">
+	      <pre>expr = Ref("expr")
+call = ident + '(' + List(expr, ',') + ')'
+expr = number | call</pre>
+	    </div><br>
+	  </li>
+	  <li>
+	    <code>Repeat(symbol, min=0, max=None)</code><br>
+	    <div style="margin-left: 50px">
+	      <pre>list = '[' + List(expr, ',') + Repeat(',', 0, 1) + ']'</pre>
+	  </li>
+	</ul>
+      </article>
+
+      <article>
+        <h3>
+	  Syntatic sugar for Repeat
+        </h3>
+	<p>
+	  &raquo;&nbsp; <tt>Opt(symbol)</tt> or <tt>Opt * symbol</tt><br>
+	  &raquo;&nbsp; <tt>Some(symbol)</tt> or <tt>Some * symbol</tt><br>
+	  &raquo;&nbsp; <tt>Many(symbol)</tt> or <tt>Many * symbol</tt><br>
+	  &raquo;&nbsp; <tt>symbol * N</tt><br>
+	  &nbsp;&nbsp;&raquo;&nbsp; <tt>THIS * 0</tt> &nbsp;&nbsp;&nbsp;&nbsp;(idiom for <tt>name = &nbsp;&nbsp;</tt>)<br>
+	  &nbsp;&nbsp;&raquo;&nbsp; <tt>symbol * 1</tt> &nbsp;&nbsp;&nbsp;&nbsp;(idiom for <tt>name2 = name1</tt>)
+	  <br>
+	  <br>
+	</p>
+	<div class="build">
+	  <div>
+	    <h3>
+	      Raw constructors
+	    </h3>
+	    <p>
+	      &raquo;&nbsp; <tt>Choice(s0, s1, ...)</tt> or <tt>s0 | s1 | ...</tt><br>
+	      &raquo;&nbsp; <tt>Left(s0 + s1 + ...)</tt> or <tt>s0 &lt;&lt; s2 &lt;&lt; ...</tt><br>
+	      &raquo;&nbsp; <tt>Right(s0 + s1 + ...)</tt> or <tt>s0 &gt;&gt; s2 &gt;&gt; ...</tt><br>
+	      &raquo;&nbsp; <tt>Sequence(s0, s1, ...)</tt> or <tt>s0 + s1 + ...</tt><br>
+	    </p>
+	</div>
+      </article>
+
+      <article>
+        <h3>
+	  And finally for the truly lazy
+        </h3>
+	<p>
+	  &raquo;&nbsp; <tt>Tokens(literals, keywords, case=True)</tt>
+	</p>
+	<pre>
+Tokens("== !=", "like in")</pre>
+	<p>Is the same as:</p>
+	<pre>
+Token("==") | Token("!=") | Keyword("like") | Keyword("in")</pre>
+      </article>
+
+      <article class=smaller>
+        <h3>
+          lrparsing - Sample Code
+        </h3>
+	<pre>
+class Parser(Grammar):
+    class T(TokenRegistry):
+        float = Token(re="[0-9]+[.][0-9]*|[.][0-9]+")
+        integer = Token(re="[0-9]+")
+        ident = Token(re='[a-zA-Z_][a-zA-Z_0-9]*|"[a-zA-Z_][a-zA-Z_0-9]*')
+        dot_ident = Token(re='[a-zA-Z_][a-zA-Z_0-9]*(?:[.][a-zA-Z_][a-zA-Z_0-9]*)+|"[a-zA-Z_][a-zA-Z_0-9]*(?:[.][a-zA-Z][a-zA-Z_0-9]*)+"')
+        string = Token(re="(?:'(?:[^']*)')+")
+    Tk = lambda s,k=None: Tokens(s, k, case=False); K = lambda k: Keyword(k, case=False)
+    NArithExpr = Ref("NArithExpr"); NBoolExpr = Ref("NBoolExpr")
+    NFuncCall = T.ident + '(' + List(NBoolExpr, ',') + ')'
+    NArithExpr = Prio(
+            T.ident | T.dot_ident | T.string | T.integer | T.float | '?' | NFuncCall,
+            Tk("+ -") + THIS,
+            THIS << Tk("* / %") << THIS, THIS << Tk("+ -") << THIS,)
+    NOrderByTerm = Prio(T.ident | T.integer, NArithExpr) + Opt * Tk("", "asc desc")
+    NOrderBy = K("order") + K("by") + List(NOrderByTerm, ',', 1)
+    NBoolExpr = Prio(
+        '(' + THIS + ')',
+        K("not") + THIS, NArithExpr + Tk("< <= >= > == = != <>") + NArithExpr,
+        THIS << K("or") << THIS, THIS << K("and") << THIS,)
+    NFrom = K("from") + List(T.ident + Opt(K("as") + T.ident), ",", 1)
+    NSelectColumn = Prio(
+            (T.ident | T.dot_ident) + Opt(K("as") + T.ident) | '*',
+            NArithExpr + Opt(K("as") + T.ident))
+    NSelect = K("select") + List(NSelectColumn, ",", 1)
+    NQuery = NSelect + NFrom + Opt(K("where") + NBoolExpr)
+    NUnion = List(NQuery, K("union"), 1) + Opt * NOrderBy
+    START = NUnion</pre>
+      </article>
+
+      <article>
+        <h3>
+          It's not that un-natural
+        </h3>
+	<pre>
+$ python
+Python 2.7.3 (default, Jan  2 2013, 13:56:14) 
+[GCC 4.7.2] on linux2
+Type "help", "copyright", "credits" or "license" for more information.
+&gt;&gt;&gt; class X(object):
+...     def x(self): pass
+...     y = [x]
+&gt;&gt;&gt; X.x == X.x
+True
+&gt;&gt;&gt; X.x == X.y[0]
+False
+&gt;&gt;&gt; from lrparsing import Grammar, Token
+>>> class G(Grammar):
+...   START = Token('x')
+...   y = [START]
+&gt;&gt;&gt; G.START == G.START
+True
+&gt;&gt;&gt; G.START == G.y[0]
+False
+&gt;&gt;&gt; </pre>
+      </article>
+
+      <article class=smaller>
+        <h3>
+          The internals of the parse tree
+        </h3>
+	<pre>
+&gt;&gt;&gt; from lrparsing import *
+&gt;&gt;&gt; class Expr(Grammar):
+...     class T(TokenRegistry):
+...         a = Token('a')
+...     A = T.a
+...     B = A + Token('b') + Token('b')
+...     START = A | B
+&gt;&gt;&gt; parse_tree = Expr.parse("a\n   b  b")
+&gt;&gt;&gt; print Expr.repr_parse_tree(parse_tree, False)
+(START (B (A 'a') 'b' 'b'))
+&gt;&gt;&gt; print repr(parse_tree)
+(START = A | B, (B = A + 'b' + 'b', (A = T.a='a', (T.a='a', 'a', 0, 1, 1)), \
+    ('b', 'b', 5, 2, 4), ('b', 'b', 8, 2, 7)))
+&gt;&gt;&gt; print str(Expr.START)
+START
+&gt;&gt;&gt; print repr(Expr.START)
+START = A | B
+&gt;&gt;&gt; print repr(Expr.T.a)
+T.a='a'
+&gt;&gt;&gt; parse_tree[0] is Expr.START
+True
+&gt;&gt;&gt; parse_tree[1][1][1][0] is Expr.T.a
+True
+&gt;&gt;&gt; isinstance(parse_tree[1][2][0], TokenSymbol)
+True
+&gt;&gt;&gt; </pre>
+      </article>
+
+      <article>
+        <h3>
+          The inbuilt tokeniser
+        </h3>
+	<pre>
+&gt;&gt;&gt; class E(Grammar):
+...     class T(TokenRegistry):
+...         u = UserToken()
+...         x = UnrecognisedToken()
+...     START = Repeat(T.u) + Repeat(Token('a') | T.x)
+...     COMMENTS = (
+...          Token(re='#[^\n]*\n?') |
+...          Token(re=r'/\*(?:[^*]|\*[^/])*\*/'))
+...     WHITESPACE = "."
+&gt;&gt;&gt; parse_tree = E.parse(
+...     ((E.T.u, 1), (E.T.u, 2, set()), "a.a.xxxa# some stuff"))
+&gt;&gt;&gt; print E.repr_parse_tree(parse_tree)
+(START T.u T.u 'a' 'a' '.xxx' 'a')
+&gt;&gt;&gt; print repr(parse_tree)
+(START = T.u * () + ('a' | T.x=UnrecognisedToken()) * (), (T.u, 1), \
+  (T.u, 2, set([])), ('a', 'a', 0, 1, 1), ('a', 'a', 2, 1, 3), \
+  (T.x=UnrecognisedToken(), '.xxx', 3, 1, 4), ('a', 'a', 7, 1, 8))
+&gt;&gt;&gt; </pre>
+      </article>
+
+      <article class=smaller>
+        <h3>
+          Abusing the parse tree
+        </h3>
+	<pre>
+#!/usr/bin/python
+import operator
+from lrparsing import *
+
+class E(Grammar):
+    e = Ref("e")
+    number = Token(re="[0-9]+")
+    binary_expr = Prio(e &lt;&lt; Token("/") &lt;&lt; e, e &lt;&lt; Token("+") &lt;&lt; e)
+    unary_expr = Token("-") + e
+    e = Prio(number, unary_expr, binary_expr)
+    START = e
+
+    @classmethod
+    def eval_node(cls, n):
+        return n[1] if not "eval" in n[0] else n[0]["eval"](n)
+
+    binary_ops = {'+': operator.add, '/': operator.floordiv}
+    unary_ops = {'-': operator.neg}
+    number["eval"] = lambda n: int(n[1], 10)
+    binary_expr["eval"] = lambda n: E.binary_ops[n[2]](n[1], n[3])
+    unary_expr["eval"] = lambda n: E.unary_ops[n[1]](n[2])
+
+print E.parse("2 + 3 / -1", tree_factory=E.eval_node)</pre>
+      </article>
+
+      <article class=smaller>
+        <h3>
+          Using the parse tree
+        </h3>
+	<pre style="overflow: scroll; height: 550px">
+#!/usr/bin/python
+import operator
+from lrparsing import *
+
+class E(Grammar):
+    e = Ref("e")
+    number = Token(re="[0-9]+")
+    binary_expr = Prio(e &lt;&lt; Token("/") &lt;&lt; e, e &lt;&lt; Token("+") &lt;&lt; e)
+    unary_expr = Token("-") + e
+    e = Prio(number, unary_expr, binary_expr)
+    START = e
+
+
+class Node(tuple):
+    value = None
+    def __new__(cls, n): return super(Node, cls).__new__(cls, n)
+    def __repr__(self): return E.repr_parse_tree(self, False)
+
+
+class Compiler(object):
+
+    def __call__(self, node):
+        node = Node(node)
+        name = node[0].name
+        if not isinstance(node[0], TokenSymbol):
+            node.value = node[1].value
+        else:
+            name = name.split(".")[-1]
+        if name in self.__class__.__dict__:
+            self.__class__.__dict__[name](self, node)
+        return node
+
+    def number(self, node):
+        node.value = int(node[1][1], 10)
+
+    binary_ops = {'+': operator.add, '/': operator.floordiv}
+    def binary_expr(self, node):
+        node.value = self.binary_ops[node[2][1]](node[1].value, node[3].value)
+
+    unary_ops = {'-': operator.neg}
+    def unary_expr(self, node):
+        node.value = self.unary_ops[node[1][1]](node[2].value)
+
+print E.parse("2 + 3 / -1", tree_factory=Compiler()).value</pre>
+      </article>
+
+      <article class=smaller>
+        <h3>
+          Error messages
+        </h3>
+	<pre>
+#!/usr/bin/python
+import sys
+from lrparsing import *
+
+class E(Grammar):
+    class T(TokenRegistry):
+        number = Token(re="[0-9]+")
+    e = Ref("e")
+    binary_expr = Prio(e &lt;&lt; Token("/") &lt;&lt; e, e &lt;&lt; Token("+") &lt;&lt; e)
+    unary_expr = Token("-") + e
+    e = Prio(T.number, unary_expr, binary_expr)
+    START = e
+
+try:
+    print E.repr_parse_tree(E.parse("""2 + 3 // -1"""))
+except ParseError, e:
+    sys.stderr.write("%s\n" % e)</pre>
+	</pre>
+	<pre>
+line 1 column 8: Got '/' when expecting '-' or T.number while trying
+    to match binary_expr in state 17
+	</pre>
+      </article>
+
+      <article>
+        <h3>
+          Pre-compiling
+        </h3>
+	<p>
+	  Parser generation can be eliminated by pre-compiling it.
+	</p>
+	<pre style="overflow: scroll">
+import sys
+from lrparsing import *
+
+class E(Grammar):
+    e = Ref("e")
+    binary_expr = Prio(e << Token("/") << e, e << Token("+") << e)
+    unary_expr = Token("-") + e
+    e = Prio(Token(re="[0-9]+"), unary_expr, binary_expr)
+    START = e
+    PRE_COMPILED = ('5709b73c7a329fb147636020987104248ebb2273bfb5d2153e30b452ba9645420e3e7e851f6288a663bb8445987692b5b020c5c1cfd863ef23587416bd0904b3', 0, ({'/[0-9]+/': 7, "'-'": 10}, {2: 1, 4: 2, 5: 3, 6: 4, 7: 5, 8: 6, 10: 8, 11: 9, 13: 11, 14: 12, 15: 13, 16: 14, 17: 15}, ['&lt;E>']), ({'__end_of_input__': 16}, {}, ['&lt;E>']), ({'__end_of_input__': (2, 1, 'START'), "'/'": 17, "'+'": 18}, {}, ['START', 'binary_expr']), ({'__end_of_input__': (4, 1, 'e'), "'/'": (4, 1, 'e'), "'+'": (4, 1, 'e')}, {}, ['e']), ({'__end_of_input__': (5, 1), "'/'": (5, 1), "'+'": (5, 1)}, {}, ['e']), ({'__end_of_input__': (5, 1), "'/'": (5, 1), "'+'": (5, 1)}, {}, ['e']), ({'__end_of_input__': (5, 1), "'/'": (5, 1), "'+'": (5, 1)}, {}, ['e']), ({'__end_of_input__': (6, 1), "'/'": (6, 1), "'+'": (6, 1)}, {}, ['e']), ({'__end_of_input__': (7, 1), "'/'": (7, 1), "'+'": (7, 1)}, {}, ['e']), ({'__end_of_input__': (8, 1), "'/'": (8, 1), "'+'": (8, 1)}, {}, ['e']), ({'/[0-9]+/': 7, "'-'": 10}, {4: 19, 5: 3, 6: 4, 7: 5, 8: 6, 10: 8, 11: 9, 13: 11, 14: 12, 15: 13, 16: 14, 17: 15}, ['unary_expr']), ({'__end_of_input__': (11, 1, 'binary_expr'), "'/'": (11, 1, 'binary_expr'), "'+'": (11, 1, 'binary_expr')}, {}, ['binary_expr']), ({'__end_of_input__': (13, 1), "'/'": (13, 1), "'+'": (13, 1)}, {}, ['binary_expr']), ({'__end_of_input__': (13, 1), "'/'": (13, 1), "'+'": (13, 1)}, {}, ['binary_expr']), ({'__end_of_input__': (14, 1), "'/'": (14, 1), "'+'": (14, 1)}, {}, ['binary_expr']), ({'__end_of_input__': (15, 1), "'/'": (15, 1), "'+'": (15, 1)}, {}, ['binary_expr']), ({'__empty__': (0, 2, '&lt;E>')}, {}, ['&lt;E>']), ({'/[0-9]+/': 7, "'-'": 10}, {4: 20, 5: 3, 6: 4, 7: 5, 8: 6, 10: 8, 11: 9, 13: 11, 14: 12, 15: 13, 16: 14, 17: 15}, ['binary_expr']), ({'/[0-9]+/': 7, "'-'": 10}, {4: 21, 5: 3, 6: 4, 7: 5, 8: 6, 10: 8, 11: 9, 13: 11, 14: 12, 15: 13, 16: 14, 17: 15}, ['binary_expr']), ({'__end_of_input__': (10, 2, 'unary_expr'), "'/'": (10, 2, 'unary_expr'), "'+'": (10, 2, 'unary_expr')}, {}, ['binary_expr', 'unary_expr']), ({'__end_of_input__': (16, 3), "'/'": (16, 3), "'+'": (16, 3)}, {}, ['binary_expr']), ({'__end_of_input__': (17, 3), "'/'": 17, "'+'": (17, 3)}, {}, ['binary_expr']))
+
+print E.pre_compile_grammar(E.PRE_COMPILED)</pre>
+	<p>
+	   Returns <code>None</code> if the passed string matches the grammar, 
+	   a string containing the parse table otherwise.
+	</p>
+      </article>
+
+      <article>
+        <h3>
+          Utility functions
+        </h3>
+	<p>
+	  Lrparsing offers a few other utilities for debugging grammars.<br>
+	  <br>
+	    &raquo;&nbsp; <tt>pre_compile_grammar(pre_compiled=None)</tt><br>
+	    &raquo;&nbsp; <tt>parse(input, tree_factory=None, on_error=None, log=None)</tt><br>
+	    &raquo;&nbsp; <tt>repr_grammar()</tt> - the grammar as entered.<br>
+	    &raquo;&nbsp; <tt>repr_productions()</tt> - compiled productions.<br>
+	    &raquo;&nbsp; <tt>repr_parse_table(state=None)</tt> - print an LR(1) ItemSet.<br>
+	    &raquo;&nbsp; <tt>repr_parse_tree(parse_tree)</tt> - pretty print a parse tree<br>
+	    &raquo;&nbsp; <tt>unused_rules()</tt> - frozenset() of unused rules<br>
+	</p>
+      </article>
+
+      <article>
+        <h3>
+          Error recovery - saving the worst for last
+        </h3>
+	<p>Only useful if you want to report on more than one error.
+	<code>parse()</code> calls <code>on_error</code> instead of raising an exception.</p>
+	<pre>
+lrparsing.on_error(iterator, input_tuple, stack)</pre>
+	<p>
+	  The stack is a partially constructed branch of the parse tree:
+	</p>
+	<pre>
+([<E>], (__empty__))
+([START,binary_expr], ((e '2')))
+([binary_expr], ('+'))
+([binary_expr], ((e '3')))
+([binary_expr], ('/'))
+
+(START (e (binary_expr
+  (e '2') '+'
+  (e (binary_expr
+    (e '3') '/'
+    (e (unary_expr '-' (e '1'))))))))</pre>
+      </article>
+
+      <article>
+        <h3>
+          Resources
+        </h3>
+	<p>
+	  Home page:<br>
+	  &nbsp;&nbsp;&nbsp;&nbsp;<a href="http://lrparsing.sourceforge.net/">http://lrparsing.sourceforge.net</a>.
+	</p>
+	<p>
+	  Pypi page:<br>
+	  &nbsp;&nbsp;&nbsp;&nbsp;<a href="https://pypi.python.org/pypi/lrparsing">https://pypi.python.org/pypi/lrparsing</a>.
+	</p>
+	<p>
+	  Online manual:<br>
+	  &nbsp;&nbsp;&nbsp;&nbsp;<a href="../html/index.html">http://lrparsing.sourceforge.net/doc</a>.
+	</p>
+	<p>
+	  And examples:<br>
+	  &raquo;&nbsp; Expression evaluator.<br>
+	  &raquo;&nbsp; Sqlite3 data manipulation statement grammar.<br>
+	  &raquo;&nbsp; Lua 5.2 to Python 2.7 compiler.
+	</p>
+      </article>
+
+      <article class="nobackground">
+        <h3>
+          The end
+        </h3>
+	<br>
+	<br>
+	<p align=center><img src="pig.png"/></p>
+      </article>
+    </section>
+
+  </body>
+</html>
