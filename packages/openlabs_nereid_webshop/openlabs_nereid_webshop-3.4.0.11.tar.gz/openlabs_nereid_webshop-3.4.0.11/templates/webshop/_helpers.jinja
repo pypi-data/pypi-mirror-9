@@ -1,0 +1,236 @@
+{% macro render_field(field, class_="form-control", show_label=True, input_prepend=None, label_text=None) %}
+  <div class="form-group {% if field.errors %}has-error{% endif %}">
+    {% if show_label %}
+    <label for="{{ field.name }}">{{ label_text or field.label.text }}
+      {% if field.flags.required %}<span>*</span>{% endif %}:
+    </label>
+    {% endif %}
+      {% if input_prepend %}
+      <div class="input-group">
+        <span class="input-group-addon"><i class="{{ input_prepend }}"></i></span>
+        {% endif %}
+        {% if field.flags.required %}
+          {% set class_ = class_ + " required" %}
+        {% endif %}
+        {% if field.flags.email %}
+          {% set class_ = class_ + " email" %}
+        {% endif %}
+        {{ field(class_=class_, **kwargs) }}
+        {% if input_prepend %}
+        {# close the input-prepend div if one exists #}
+      </div>
+      {% endif %}
+      {% if field.description %}
+      <span class="help-block"><small>{{ field.description }}</small></span>
+      {% endif %}
+      {% for error in field.errors %}
+      <span class="help-block"><small>{{ error|string }}</small></span>
+      {% endfor %}
+  </div>
+{% endmacro %}
+
+{% macro render_address(address, identifier, edit=True) -%}
+<div class="pull-right">
+  {% if edit %}
+  <a href="{{ url_for('party.address.edit_address', address=address.id) }}" ><i class="fa fa-pencil"></i>{% trans %}Edit {% endtrans %}</a>&nbsp;&nbsp;/&nbsp;&nbsp;<span class="remove-address" data-url="{{ url_for('party.address.remove_address', active_id=address.id) }}"><i class="fa fa-trash-o"></i> {% trans %} Remove {% endtrans %}</a>
+  {% endif %}
+</div>
+<address>
+  {% for line in address.full_address.split('\n') %}
+    {% if loop.first %}
+      <strong>{{ line }}</strong><br/>
+    {% else %}
+      {{ line }}<br/>
+    {% endif %}
+  {% endfor %}
+  {% if address.phone_number %}
+    <abbr title="Phone"><i class="fa fa-phone"></i></abbr>: {{ address.phone_number.value }}<br/>
+  {% endif %}
+</address>
+{%- endmacro %}
+
+{% macro render_product(product) -%}
+<div class="item">
+  <a href="{{ url_for('product.product.render', uri=product.uri) }}">
+    <img src="{{ CDN }}{{ product.default_image }}" alt="{{ product.name }}" title="{{ product.name }}"/>
+    <h4> {{ product.name }}
+      <span class="brand">Black Coffee</span>
+    </h4>
+    {% if product.is_gift_card %}
+      <span class="product-price">{{ product.gc_min|currencyformat(request.nereid_currency.code) }} - {{ product.gc_max|currencyformat(request.nereid_currency.code) }}</span>
+    {% else %}
+      <span class="product-price">{{ product.sale_price()|currencyformat(request.nereid_currency.code) }}</span>
+    {% endif %}
+  </a>
+</div>
+{%- endmacro %}
+
+{% macro render_search_filter_field(term, facet_checked, key) %}
+<input type="checkbox" name="{{ key }}" value="{{ term['term'] }}"
+  {% if term['term'] in facet_checked %} checked="checked" {% endif %} />
+{{ term['term'] }} {% if term['count'] > 0 %} ({{ term['count'] }}){% endif %}
+{% endmacro %}
+
+{% macro render_product_list(product, node=None, name=None, description=None, product_list_name=None) -%}
+{% set description = description or product.description %}
+{% if product.__name__ == 'product.template' %}
+  {% set product = product.products_displayed_on_eshop[0] %}
+{% endif %}
+{% if not name %}
+  {% if node and node.display == 'product.template' %}
+    {% set name = product.template.name %}
+  {% else %}
+    {% set name = product.name %}
+  {% endif %}
+{% endif %}
+{% set product_url = product.get_absolute_url(path=(node and node.slug or None), node=(node and node.id or None)) %}
+<div class="thumbnail">
+  <a href="{{ product_url }}" ga-product-link data-ga-product-list="{{ node and node.name or product_list_name }}" data-ga-event-label="Product Thumbnail" data-ga-product-id="{{ product.id }}" data-ga-product-name="{{ product.name }}" data-ga-product-category="{{ product.category and product.category.name or None }}">
+    <img src="{{ CDN }}{{ product.default_image.transform_command().thumbnail(300, 300, 'a') }}"
+          alt="{{ product.name }}"
+          title="{{ product.name }}"
+          class="img-responsive img-rounded">
+  </a>
+  <div class="caption">
+    <h5 class="center">
+      <a href="{{ product_url }}" ga-product-link data-ga-product-list="{{ node and node.name or product_list_name }}" data-ga-event-label="Product Name" data-ga-product-id="{{ product.id }}" data-ga-product-name="{{ product.name }}" data-ga-product-category="{{ product.category and product.category.name or None }}">{{ name|safe|truncate(50) }}</a>
+    </h5>
+    {% if product.brand %}<div class="brand">by {{ product.brand }}</div>{% endif %}
+    {% if product.is_gift_card %}
+      <h6 class="text-danger center">{{ product.gc_min|currencyformat(request.nereid_currency.code) }} - {{ product.gc_max|currencyformat(request.nereid_currency.code) }}</h6>
+    {% else %}
+      <h6 class="text-danger center">{{ product.sale_price()|currencyformat(request.nereid_currency.code) }}</h6>
+    {% endif %}
+  </div>
+</div>
+{% endmacro %}
+
+{% macro render_pagination(pagination, uri, endpoint) %}
+<ul class="pagination pull-right">
+  {% if pagination.has_prev -%}
+  <li>
+    <a href="{{ url_for(endpoint, uri=uri, page=pagination.prev_num, **kwargs) }}">
+      &laquo; {% trans %}Previous{% endtrans %}
+    </a>
+  </li>
+  {% else %}
+  <li class="disabled">
+    <a>
+    &laquo; {% trans %}Previous{% endtrans %}
+    </a>
+  </li>
+  {% endif %}
+
+  {%- for page in pagination.iter_pages(left_edge=0, left_current=5, right_current=5, right_edge=0) %}
+    {% if loop.first and page !=1 %}
+    <li class="disabled"><a>...</a></li>
+    {% endif %}
+
+    {% if page %}
+    <li {% if page == pagination.page %}class="active"{% endif %}>
+      <a href="{{ url_for(endpoint, uri=uri, page=page, **kwargs) }}">{{ page }}</a>
+    </li>
+    {% endif %}
+
+    {% if loop.last and page != pagination.pages %}
+    <li class="disabled"><a>...</a></li>
+    {% endif %}
+  {% endfor %}
+
+  {% if pagination.has_next -%}
+  <li>
+    <a class="" href="{{ url_for(endpoint, uri=uri, page=pagination.next_num, **kwargs) }}">
+      {% trans %}Next{% endtrans %} &raquo;
+    </a>
+  </li>
+  {% else %}
+  <li class="disabled">
+    <a>{% trans %}Next{% endtrans %} &raquo;</a>
+  </li>
+  {% endif %}
+
+</ul>
+{% endmacro %}
+
+{% macro render_es_pagination(pagination) %}
+<ul class="es_pagination pagination pull-right">
+  {% if pagination.has_prev -%}
+  <li>
+    <a href="#" data-page-no="{{pagination.prev_num}}">
+      &laquo; {% trans %}Previous{% endtrans %}
+    </a>
+  </li>
+  {% else %}
+  <li class="disabled">
+    <a>
+    &laquo; {% trans %}Previous{% endtrans %}
+    </a>
+  </li>
+  {% endif %}
+
+  {%- for page in pagination.iter_pages(left_edge=0, left_current=5, right_current=5, right_edge=0) %}
+    {% if loop.first and page !=1 %}
+    <li class="disabled"><a>...</a></li>
+    {% endif %}
+
+    {% if page %}
+    <li {% if page == pagination.page %}class="active"{% endif %}>
+      <a href="#" data-page-no="{{page}}">{{ page }}</a>
+    </li>
+    {% endif %}
+
+    {% if loop.last and page != pagination.pages %}
+    <li class="disabled"><a>...</a></li>
+    {% endif %}
+  {% endfor %}
+
+  {% if pagination.has_next -%}
+  <li>
+    <a href="#" data-page-no="{{pagination.next_num}}">
+      {% trans %}Next{% endtrans %} &raquo;
+    </a>
+  </li>
+  {% else %}
+  <li class="disabled">
+    <a>{% trans %}Next{% endtrans %} &raquo;</a>
+  </li>
+  {% endif %}
+
+</ul>
+{% endmacro %}
+
+{% macro render_cms_root_menu(root_menu) -%}
+  {# render the children of the given node as menu #}
+  {% for menuitem in root_menu.get_menu_item(max_depth=10).children %}
+    <li>
+      <a class="main-link" href="{{ menuitem.link }}" target="{{ menuitem.target }}">{{ menuitem.title }}</a>
+      {% if menuitem.children %}
+      <!-- Dropdown Menu Starts-->
+      <div class="container menbg">
+        <div class="row">
+          {% for child in menuitem.children %}
+            <div class="col-md-2">
+              <ul class="list-unstyled">
+                <li>
+                  <a href="{{ child.link }}"><strong>{{ child.title }}</strong></a>
+                </li>
+                {% for grandchild in child.children %}
+                  <li><a href="{{ grandchild.link }}" target="{{ grandchild.target }}">{{ grandchild.title }}</a></li>
+                {% endfor %}
+              </ul>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+    </li>
+  {% endfor %}
+{% endmacro %}
+
+{% macro render_payment_profile(card) -%}
+<div>
+  <h5>Card owner: {{ card.party.rec_name }} </h5>
+  <h5>Card number: XXXX XXXX XXXX {{ card.last_4_digits }}<h5>
+  <h5>Valid Till: {{ card.expiry_month }}/{{ card.expiry_year }} </h5>
+</div>
+{%- endmacro %}
