@@ -1,0 +1,113 @@
+========
+ Narval
+========
+
+Summary
+=======
+
+Narval is a CubicWeb based framework to run automated tests. It
+consists in 2 parts:
+
+- the narval cube which implements the schema and some web UIs to
+  create, configure and run test campaigns, and
+
+- the narval bot which waits for jobs to execute. It polls the
+  CubicWeb application for new tasks to run (called Plans in narval's
+  jargon), and executes them when some are waiting for exectution.
+
+The narval bot communicates with the web application by doing HTTP(S)
+requests.
+
+Recipe and Plan
+===============
+
+The schema of the cube defines 2 entities:
+
+:Recipe:
+   represents a Python script to be executed to run the tests,
+
+:Plan: represents the execution of a Recipe; it has a workflow (with
+   the following states: 'ready', 'running', 'done', 'error',
+   'killed'); when executed, the execution log file (stdout and
+   stderr) of the recipe is attached to the `Plan` (via the
+   `execution_log` relation).
+
+Execution process of a Recipe
+=============================
+
+In order to run a `Recipe`, one must create a `Plan` (an execution
+plan).
+
+In the web UI, this can be done via the `Start Plan` button on a `Recipe` main
+view. This creates a new `Plan` entity (which references the `Recipe`) in the
+`ready` state.
+
+Then, as soon as the narval bot asks the application for waiting jobs
+(i.e. `Plan` in the `ready` workflow state), it eventually gets the
+`Plan` eid.
+
+The narval daemon then spawns a new process to manage the execution of
+the plan in a separate process; the executed command is something like::
+
+  narval run-plan narval https://webapp.com/3071/ --uid narval --threads 1 --max-reprieve 1min --log-threshold DEBUG
+
+where `3071` is the eid of the `Plan` to be executed. The `options`
+attribute of the `Plan` (which is a string of the form:
+`"key1=value1\nkey2=value2n[...]"`) is converted into command line
+arguments (`--key1 value1 --key2 value2 [...]`) to be passed to the
+`run-plan` command.
+
+This `run-plan` narval command retrieves the parameters of the `Plan`
+(the Python code to be executed and some execution options), then:
+
+- it fires the `start` workflow transition (by means of a HTTP request),
+
+- it executes the `Recipe` Python script (by means of an `execfile`
+  call); the script is executed with a globals (and locals)
+  dictionary defining one variable, `plan`, which references a Python
+  object having the folowing attributes:
+
+  - `cnxh`: an HTTP connection handler allowing to make requests to the
+    web application from the executed script,
+
+  - `plandata`: a dictionary holding the executed `Plan` parameters,
+
+  - `options`: a dictionary with all defined options of the `Plan`,
+
+  - `name`: the name of the `Recipe` to be executed,
+
+  - `script`: a string with the Python script to run.
+
+  Warning: the Python script is executed in the context of the
+  `run-plan` Python process.
+
+- it fires the transition:
+
+  - `end` if the execution went fine (did not crash),
+  - `kill` if the execution exceeded some resource limits (memory, execution time),
+  - `fail` if some uncatched Exception has been raised.
+
+
+When the `narval run-plan` shell command returns, the `bot` checks for
+the return code, retrieves the `stdout` and `stderr` of the process and
+uploads them as the `execution_log` of the `Plan`, so the user can have
+access to the full execution log (print statements, logging messages,
+etc.).
+
+Plugins
+=======
+
+User can write plugins that will be importable from recipes when
+executed by ``narval run-plan``. The normal way is to write a cubicweb
+cube in which you add a ``_narval`` directory where you can add python
+modules and packages. When run from source directory, the ``_narval``
+directory of every available cube will be added in the PYTHONPATH of
+the ``narval`` command.
+
+Please refer to the apycot_ cube as an example.
+
+.. _apycot: http://www.cubiweb.org/project/apycot
+
+
+
+
