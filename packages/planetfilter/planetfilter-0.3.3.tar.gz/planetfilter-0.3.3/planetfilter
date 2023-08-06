@@ -1,0 +1,326 @@
+#!/usr/bin/python3
+#
+# PlanetFilter - filter for blog aggregators
+# Copyright (C) 2010, 2015  Francois Marier <francois@fmarier.org>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+rdfns = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#'
+
+VERSION = '0.3.3'
+
+import argparse
+import codecs
+import configparser as cp
+import defusedxml.minidom as minidom
+import gzip
+import http.client
+import io
+import os
+import os.path
+import sys
+import urllib.error
+from urllib.request import Request, urlopen
+from xml.dom.minidom import Node
+import xml.parsers.expat
+
+
+def delete_node(node):
+    parent = node.parentNode
+    parent.removeChild(node)
+
+
+def delete_rss1_item(item):
+    # Delete refernce to the item
+    rdfabout = item.getAttributeNS(rdfns, 'about')
+    rdfnode = item.parentNode
+    channel = rdfnode.getElementsByTagName('channel').item(0)
+    rdfseq = channel.getElementsByTagNameNS(rdfns, 'Seq').item(0)
+    rdflist = rdfseq.getElementsByTagNameNS(rdfns, 'li')
+    for li in rdflist:
+        if li.getAttributeNS(rdfns, 'resource') == rdfabout:
+            delete_node(li)
+
+    # Delete the item
+    delete_node(item)
+
+
+def is_rss2(xmldocument):
+    rsslist = xmldocument.getElementsByTagName('rss')
+    if rsslist.length != 1:
+        return False
+    else:
+        # Check the version
+        rss = rsslist.item(0)
+        if rss.getAttribute('version') != '2.0':
+            return False
+        else:
+            return True
+
+
+def is_rss1(xmldocument):
+    rdflist = xmldocument.getElementsByTagNameNS(rdfns, 'RDF')
+    if rdflist.length != 1:
+        return False
+    else:
+        # Check the namespace/version
+        rdf = rdflist.item(0)
+        if rdf.getAttribute('xmlns').find('purl.org/rss/1.0') > -1:
+            return True
+        else:
+            return False
+
+
+def is_atom(xmldocument):
+    feedlist = xmldocument.getElementsByTagName('feed')
+    if feedlist.length != 1:
+        return False
+    else:
+        # Check the namespace/version
+        feed = feedlist.item(0)
+        if feed.getAttribute('xmlns').find('w3.org/2005/Atom') > -1:
+            return True
+        else:
+            return False
+
+
+def filter_rss2(xmldocument, blacklist):
+    rss = xmldocument.getElementsByTagName('rss').item(0)
+    channel = rss.getElementsByTagName('channel').item(0)
+    items = channel.getElementsByTagName('item')
+    for item in items:
+        deleted = False
+        titles = item.getElementsByTagName('title')
+        for title in titles:
+            textnode = title.firstChild
+            if Node.TEXT_NODE == textnode.nodeType:
+                titlestring = textnode.nodeValue
+                if blacklist['authors']:
+                    for author in blacklist['authors']:
+                        if 0 == titlestring.find(author):
+                            delete_node(item)
+                            deleted = True
+                            break
+                if not deleted and blacklist['titles']:
+                    for title in blacklist['titles']:
+                        if titlestring.find(title) > -1:
+                            delete_node(item)
+                            deleted = True
+                            break
+    return True
+
+
+def filter_atom(xmldocument, blacklist):
+    feed = xmldocument.getElementsByTagName('feed').item(0)
+    entries = feed.getElementsByTagName('entry')
+    for entry in entries:
+        deleted = False
+        if blacklist['authors']:
+            authors = entry.getElementsByTagName('author')
+            for author in authors:
+                name = author.getElementsByTagName('name').item(0)
+                textnode = name.firstChild
+                if Node.TEXT_NODE == textnode.nodeType:
+                    authorstring = textnode.nodeValue
+                    for author in blacklist['authors']:
+                        if 0 == authorstring.find(author):
+                            delete_node(entry)
+                            deleted = True
+                            break
+                    if deleted:
+                        break
+        if not deleted and blacklist['titles']:
+            titles = entry.getElementsByTagName('title')
+            for title in titles:
+                textnode = title.firstChild
+                if Node.TEXT_NODE == textnode.nodeType:
+                    titlestring = textnode.nodeValue
+                    for title in blacklist['titles']:
+                        if 0 == titlestring.find(title):
+                            delete_node(entry)
+                            deleted = True
+                            break
+                    if deleted:
+                        break
+    return True
+
+
+def filter_rss1(xmldocument, blacklist):
+    rdf = xmldocument.getElementsByTagNameNS(rdfns, 'RDF').item(0)
+    items = rdf.getElementsByTagName('item')
+    for item in items:
+        deleted = False
+        titles = item.getElementsByTagName('title')
+        for title in titles:
+            textnode = title.firstChild
+            if Node.TEXT_NODE == textnode.nodeType:
+                titlestring = textnode.nodeValue
+                if blacklist['authors']:
+                    for author in blacklist['authors']:
+                        if 0 == titlestring.find(author):
+                            delete_rss1_item(item)
+                            deleted = True
+                            break
+                if not deleted and blacklist['titles']:
+                    for title in blacklist['titles']:
+                        if titlestring.find(title) > -1:
+                            delete_rss1_item(item)
+                            deleted = True
+                            break
+    return True
+
+
+def filter_feed(xmldocument, blacklist):
+    if is_rss2(xmldocument):
+        return filter_rss2(xmldocument, blacklist)
+    elif is_rss1(xmldocument):
+        return filter_rss1(xmldocument, blacklist)
+    elif is_atom(xmldocument):
+        return filter_atom(xmldocument, blacklist)
+    else:
+        print('Unsupported feed type', file=sys.stderr)
+        return False
+
+
+def prune_blacklist(blacklist):
+    '''
+    Remove empty elements from the blacklist
+    '''
+    for field in ['authors', 'titles']:
+        if blacklist[field]:
+            for i in reversed(range(len(blacklist[field]))):
+                if not blacklist[field][i]:
+                    del blacklist[field][i]
+
+
+def process_config(configfile, outfile, overwrite):
+    '''
+    Read a config file, fetch its feed and filter it.
+    '''
+    if outfile and os.path.isfile(outfile) and not overwrite:
+        print("Error: '%s' already exists, use --force to overwrite" % outfile,
+              file=sys.stderr)
+        return False
+
+    config = cp.SafeConfigParser()
+    with codecs.open(configfile, 'r', 'utf-8') as f:
+        config.read_file(f)
+    try:
+        url = config.get('feed', 'url')
+    except cp.NoSectionError:
+        print("Error: '%s' doesn't contain a [feed] section" % configfile,
+              file=sys.stderr)
+        return False
+    except cp.NoOptionError:
+        print("Error: '%s' doesn't contain a feed URL" % configfile,
+              file=sys.stderr)
+        return False
+    if not url:
+        print("Error: '%s' doesn't contain a feed URL" % configfile,
+              file=sys.stderr)
+        return False
+
+    blacklist = {'authors': None, 'titles': None}
+    try:
+        blacklist['authors'] = config.get('blacklist', 'authors').split("\n")
+    except cp.NoSectionError:
+        print("Warning: '%s' doesn't contain a [blacklist] section" %
+              configfile, file=sys.stderr)
+    except cp.NoOptionError:
+        pass  # let's not warn about missing authors blacklist
+    try:
+        blacklist['titles'] = config.get('blacklist', 'titles').split("\n")
+    except cp.NoSectionError:
+        pass  # we already warned about that
+    except cp.NoOptionError:
+        pass  # let's not warn about missing titles blacklist
+    prune_blacklist(blacklist)
+
+    request = Request(url, headers={'Accept-encoding': 'gzip'})
+    try:
+        response = urlopen(request)
+    except urllib.error.URLError as e:
+        print("Error: '%s' cannot be fetched: %s" % (url, e), file=sys.stderr)
+        if outfile and os.path.isfile(outfile):
+            os.remove(outfile)
+        return True  # non-fatal error
+    except urllib.error.HTTPError as e:
+        print("Error: '%s' cannot be fetched: %s" % (url, e), file=sys.stderr)
+        if outfile and os.path.isfile(outfile):
+            os.remove(outfile)
+        return True  # non-fatal error
+
+    if response.info().get('Content-Encoding') == 'gzip':
+        # print("Note: compressed response for '%s'" % url, file=sys.stderr)
+        try:
+            buf = io.BytesIO(response.read())
+        except http.client.IncompleteRead:
+            print("Error: cannot decompress gzipped response", file=sys.stderr)
+            if outfile and os.path.isfile(outfile):
+                os.remove(outfile)
+            return True  # non-fatal error
+        response = gzip.GzipFile(fileobj=buf)
+
+    try:
+        contents = response.read()
+    except http.client.IncompleteRead as e:
+        print("Warning: '%s' cannot be fully read: %s" % (url, e),
+              file=sys.stderr)
+
+    try:
+        document = minidom.parseString(contents)
+    except xml.parsers.expat.ExpatError:
+        print("Error: '%s' is not a valid feed" % url, file=sys.stderr)
+        if outfile and os.path.isfile(outfile):
+            os.remove(outfile)
+        return False
+
+    filter_feed(document, blacklist)
+
+    if outfile:
+        try:
+            with codecs.open(outfile, 'w', 'utf-8') as f:
+                f.write(document.toxml())
+        except PermissionError:
+            print("Error: no enough permissions to write to '%s'" % outfile,
+                  file=sys.stderr)
+            return False
+    else:
+        print(document.toxml())
+    return True
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description='Blacklist-based filter for blog aggregators.')
+    parser.add_argument('configfile', type=str,
+                        help='the config file to parse')
+    parser.add_argument('-o', '--output', metavar='file',
+                        required=False, type=str,
+                        help='the output filename (default: <STDOUT>)')
+    parser.add_argument('-f', '--force', dest='force', action='store_true',
+                        help='overwrite the destination file')
+    parser.add_argument('-V', '--version', action='version',
+                        version='planetfilter %s' % VERSION)
+    args = parser.parse_args()
+
+    if not os.path.isfile(args.configfile):
+        print("Error: '%s' not found" % args.configfile, file=sys.stderr)
+        return False
+    return process_config(args.configfile, args.output, args.force)
+
+if main():
+    exit(0)
+else:
+    exit(1)
