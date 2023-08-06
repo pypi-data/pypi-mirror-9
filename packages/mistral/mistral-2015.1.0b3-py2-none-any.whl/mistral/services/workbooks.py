@@ -1,0 +1,116 @@
+# -*- coding: utf-8 -*-
+#
+# Copyright 2015 - Mirantis, Inc.
+#
+#    Licensed under the Apache License, Version 2.0 (the "License");
+#    you may not use this file except in compliance with the License.
+#    You may obtain a copy of the License at
+#
+#        http://www.apache.org/licenses/LICENSE-2.0
+#
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an "AS IS" BASIS,
+#    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#    See the License for the specific language governing permissions and
+#    limitations under the License.
+
+from mistral.db.v1 import api as db_api_v1
+from mistral.db.v2 import api as db_api_v2
+from mistral.services import security
+from mistral.services import triggers
+from mistral.workbook import parser as spec_parser
+
+
+def create_workbook_v1(values, scope='private'):
+    return db_api_v1.workbook_create(values)
+
+
+def update_workbook_v1(workbook_name, values):
+    wb_db = db_api_v1.workbook_update(workbook_name, values)
+
+    if 'definition' in values:
+        triggers.create_associated_triggers(wb_db)
+
+    return wb_db
+
+
+def create_workbook_v2(definition, scope='private'):
+    wb_values = _get_workbook_values(
+        spec_parser.get_workbook_spec_from_yaml(definition),
+        definition,
+        scope
+    )
+
+    with db_api_v2.transaction():
+        wb_db = db_api_v2.create_workbook(wb_values)
+
+        _on_workbook_update(wb_db, wb_values)
+
+    return wb_db
+
+
+def update_workbook_v2(definition, scope='private'):
+    values = _get_workbook_values(
+        spec_parser.get_workbook_spec_from_yaml(definition),
+        definition,
+        scope
+    )
+
+    with db_api_v2.transaction():
+        wb_db = db_api_v2.update_workbook(values['name'], values)
+
+        _on_workbook_update(wb_db, values)
+
+    return wb_db
+
+
+def _on_workbook_update(wb_db, values):
+    wb_spec = spec_parser.get_workbook_spec(values['spec'])
+
+    _create_or_update_actions(wb_db, wb_spec.get_actions())
+    _create_or_update_workflows(wb_db, wb_spec.get_workflows())
+
+
+def _create_or_update_actions(wb_db, actions_spec):
+    if actions_spec:
+        for action_spec in actions_spec:
+            action_name = '%s.%s' % (wb_db.name, action_spec.get_name())
+
+            values = {
+                'name': action_name,
+                'spec': action_spec.to_dict(),
+                'is_system': False,
+                'scope': wb_db.scope,
+                'project_id': wb_db.project_id
+            }
+
+            db_api_v2.create_or_update_action_definition(action_name, values)
+
+
+def _create_or_update_workflows(wb_db, workflows_spec):
+    if workflows_spec:
+        for wf_spec in workflows_spec:
+            wf_name = '%s.%s' % (wb_db.name, wf_spec.get_name())
+
+            values = {
+                'name': wf_name,
+                'spec': wf_spec.to_dict(),
+                'scope': wb_db.scope,
+                'project_id': wb_db.project_id
+            }
+
+            security.add_trust_id(values)
+
+            db_api_v2.create_or_update_workflow_definition(wf_name, values)
+
+
+def _get_workbook_values(wb_spec, definition, scope):
+    values = {
+        'name': wb_spec.get_name(),
+        'tags': wb_spec.get_tags(),
+        'definition': definition,
+        'spec': wb_spec.to_dict(),
+        'scope': scope
+    }
+
+    return values
