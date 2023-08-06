@@ -1,0 +1,69 @@
+import os
+import sys
+import snakemake
+import platform
+
+# todo: mapping wrappers
+#  - commands in practise:
+#       - https://github.com/lh3/mem-paper/blob/master/eval/time.txt
+#       - http://lh3lh3.users.sourceforge.net/alnROC.shtml
+
+smbl_dir = os.path.join(os.path.expanduser("~"),".smbl")
+
+print("loading smbl")
+
+
+bin_dir  = os.path.join(smbl_dir,"bin")
+fa_dir   = os.path.join(smbl_dir,"fa")
+src_dir  = os.path.join(smbl_dir,"src")
+
+import smbl.fasta
+import smbl.prog
+
+def include():
+	return os.path.join(
+			os.path.dirname(__file__),
+			"include_all.snake"
+		)
+
+def all_programs():
+	return [
+			plugin.get_installation_files() for plugin in smbl.prog.plugins.get_registered_plugins()
+		]
+
+def all_compatible_programs():
+	return [
+			plugin.get_installation_files() for plugin in smbl.prog.plugins.get_registered_plugins()
+				if plugin.is_platform_supported()
+		]
+
+snakemake.shell(
+		"""
+			mkdir -p "{}" "{}" "{}"
+		""".format(bin_dir,fa_dir,src_dir)
+	)
+
+def is_linux():
+	return sys.platform.startswith('linux')
+
+def is_cygwin():
+	return sys.platform.startswith('cygwin')
+
+def is_windows():
+	return sys.platform.startswith('win')
+
+def is_mac():
+	return sys.platform.startswith('darwin')
+
+def is_os_64bit():
+	return platform.machine().endswith('64')
+
+def get_platform():
+	if is_linux():
+		return "linux"
+	if is_windows():
+		return "windows"
+	if is_mac():
+		return "macos"
+	if is_cygwin():
+		return "cygwin"
