@@ -1,0 +1,8 @@
+
+VERSION = '0.5.16'
+REPO_HASH = 'd6acb5c'
+BUILD_DATE = '2015.4.10'
+BUILD_TIME = '9.20.38'
+BUILD_HOST = 'route66'
+BUILD_USER = 'moertle'
+FULL_VERSION = '0.5.16+2015.4.10.d6acb5c'
