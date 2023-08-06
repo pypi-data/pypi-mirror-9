@@ -1,0 +1,144 @@
+#!/bin/bash
+
+app_code="/home/bae/app"
+langs="php java-jetty java-tomcat python nodejs"
+
+common_build()
+{
+	user_code=$1
+	domain=$2
+
+	code_link=$app_code"/$domain"
+	rm -rf $code_link
+	ln -s $user_code $code_link
+	chown bae:bae -R $code_link
+	gen_lua $code_link"/app.conf" $code_link"/bae_app_conf.lua"
+	chmod 777 $code_link"/bae_app_conf.lua"
+}
+
+python_build()
+{
+	user_code=$1
+	domain=$2
+
+	common_build $user_code $domain
+	depsfile="/home/bae/app/$domain/requirements.txt"
+	if [ -e $depsfile ]; then
+		btdir="/tmp/pip-bt-`date +%s`"
+		mkdir -p $btdir
+		rm -rf $btdir/*
+		pip install -r $depsfile  -b $btdir
+		rm -rf $btdir
+	fi
+}
+
+php_build()
+{
+	user_code=$1
+	domain=$2
+
+	common_build $user_code $domain
+	mkdir -p /var/run/bae
+	chown bae:bae -R /var/run/bae
+	chmod 777 /var/run/bae	
+}
+
+jetty_tomcat_build()
+{
+	user_code=$1
+	domain=$2
+
+	rsync -aq --partial --delete "$user_code/" "$app_code/"
+	chown bae:bae -R /home/bae/app/*
+}
+
+nodejs_build()
+{
+	user_code=$1
+	domain=$2
+
+	nodejs_code=$app_code"/nodejsapp"
+	rm -rf $nodejs_code
+	mkdir -p $nodejs_code
+	rsync -aq --partial --delete "$user_code/" "$nodejs_code/"
+	gen_lua $nodejs_code"/app.conf" $nodejs_code"/bae_app_conf.lua"
+	
+	rm -rf $nodejs_code"/node_modules"
+	cd $nodejs_code
+	/home/admin/runtime/node/bin/npm install
+	cd -
+	chown bae:bae -R $nodejs_code
+}
+
+gen_lua(){
+	conf_file=$1
+	lua_file=$2
+	if [ ! -f $conf_file ]; then
+		echo "can't find app.conf"
+		exit 1
+	fi
+	conf=`cat $conf_file`
+	json_conf=`php -r "echo json_encode(\"$conf\");"`
+	curl http://conf2lua.duapp.com/ --connect-timeout 5 -d "json_conf=$json_conf" -o $lua_file >/dev/null 2>&1
+	if [ $? -ne 0 -o ! -f $lua_file ]; then
+		echo "failed to generate lua"
+		exit 1
+	fi
+}
+
+check_version()
+{
+	local_version=$BAE_LOCALENV_VERSION
+	local_version=${local_version%.*}
+	online_version=`curl http://bcs.duapp.com/baev3runtime/version -s`
+	online_version=${online_version%.*}
+	if [ "$local_version" != "$online_version" ]; then
+		echo -e "\033[41;37;5m !!! please update your vagrant-bae !!! \033[0m"
+	fi
+}
+
+check_version
+
+usage()
+{
+	echo  -e "Usage: $0 <lang_type> <code_dir>\nNow lang_type supported: $langs\n"
+	exit 1
+}
+
+if [ $# -ne 3 ]; then
+	usage
+fi
+
+lang_type=$1
+user_code=$2
+domain=$3
+
+lsof -i :8080 | awk 'NR>1{print $2}' | xargs -n1 kill -9 >/dev/null 2>&1
+lsof -i :9000 | awk 'NR>1{print $2}' | xargs -n1 kill -9 >/dev/null 2>&1 
+lsof -i :18080 | awk 'NR>1{print $2}' | xargs -n1 kill -9 >/dev/null 2>&1 
+
+case "$lang_type" in
+	php)
+		php_build $user_code $domain
+		bae_run php start
+		;;
+	java-jetty)
+		jetty_tomcat_build $user_code $domain
+		bae_run java-jetty start
+		;;
+	java-tomcat)
+		jetty_tomcat_build $user_code $domain
+		bae_run java-tomcat start
+		;;
+	python)
+		python_build $user_code $domain
+		bae_run python start
+		;;
+	nodejs)
+		nodejs_build $user_code $domain
+		bae_run nodejs start
+		;;
+	*)
+		usage
+		;;
+esac
