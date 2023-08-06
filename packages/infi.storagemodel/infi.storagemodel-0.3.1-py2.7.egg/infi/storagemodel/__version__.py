@@ -1,0 +1,10 @@
+__version__ = "0.3.1"
+__git_commiter_name__ = "Guy Rozendorn"
+__git_commiter_email__ = "guy@rzn.co.il"
+__git_branch__ = '(detached from v0.3.1)'
+__git_remote_tracking_branch__ = '(No remote tracking)'
+__git_remote_url__ = '(Not remote tracking)'
+__git_head_hash__ = 'bd57b23f5ac205cf9f1392f3d11970af4929590a'
+__git_head_subject__ = 'Finished release v0.3.1.'
+__git_head_message__ = '* release/v0.3.1:\n  HIP-1448 VeritasMultipathClient: handling ERRNO 20\n  STORAGEMODEL-309 updating inq example with veritas'
+__git_dirty_diff__ = ''
