@@ -1,0 +1,716 @@
+#!/usr/bin/env python
+
+# Copyright 2010 Louis Paternault
+
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+"""
+Wrapper to getmail, which adds the following features.
+- encrypt passwords, so that no passwords are written in plain text, neither in
+  getmail configuration, nor in chval configuration
+- permit to run getmail as a daemon, i.e. run it every X minutes.
+"""
+ 
+# Third party modules
+import getpass
+import os
+import sys
+from threading import Thread, Semaphore
+
+# chval modules
+import chval_core as core
+import chval_core.crypto as crypto
+from chval_core import NameSpace
+from chval_core import check_chval_directories, check_getmail_directory
+from chval_core import command_line_parser
+from chval_core import write, warning, error
+from chval_core.config_file import read_global_config, getmail_config_files, \
+        check_getmail_config_files, \
+        getmailrc_has_password, write_passwords, read_passwords
+from chval_core.daemon import __daemon_state__, list_daemons, \
+        Communication, Daemon, thread_worker
+
+################################################################################
+### Misceallenous functions used in this module
+################################################################################
+def get_getmailrc_list(rundir, daemons = None):
+    """
+    Return a dictionary where the keys are the list of daemons, and each value
+    is the list of the names of getmailrc files handled by this daemon.
+
+    Arguments:
+    - rundir: directory containing fifos used by daemons and clients to
+      communicate
+    - daemons: if None, perform action on all available daemons. Else, expect a
+      list of daemons (as strings), and perform action on these.
+    """
+    all_daemons = list_daemons(rundir)
+    if (daemons == None):
+        daemons = all_daemons
+    dic = {}
+    for item in all_daemons:
+        if (not item in all_daemons):
+            continue
+        com = Communication(rundir, item)
+        com.open()
+        dic[item] = com.get_getmailrc()
+        com.close()
+    return dic
+
+################################################################################
+### Each of the following function execute a particular action, given by
+### command line arguments.
+################################################################################
+def do_add(crypt, passwords, files, options):
+    """Add (or change) a list of passwords
+    Arguments:
+    - crypt: object used to encrypt/decrypt strings
+    - passwords: dictionary of (encrypted) passwords
+    - files: list of getmail config files to change passwords for (they actually
+      are keys of dictionary 'passwords')
+    - options: a class having the following attributes:
+        - chvaldir: directory of chval configuration files
+    """
+    main_password = crypt.has_main()
+    if not main_password:
+        crypt.set_password("Main password: ")
+
+    if (files):
+        try:
+            crypt.ask_password("Main password: ")
+        except EOFError:
+            write("\n")
+            return
+        except crypto.PasswordFailed:
+            warning("Three wrong passwords. Aborting")
+            return
+
+    # True iff something changed in passwords
+    changed = (not main_password) and crypt.has_main()
+    try:
+        for item in files:
+            if (item in passwords):
+                write("Password already set for %s. Replace it? [y/n]" % item)
+                answer = core.read_letter(["y", "n"])
+                if (answer == "n"):
+                    continue
+            passwords[item] = crypt.encrypt(getpass.getpass(
+                "Password for getmailrc file \"%s\": " % item))
+            changed = True
+    except EOFError:
+        write("\n")
+    except KeyboardInterrupt:
+        write("\n")
+        return
+    if (changed):
+        write_passwords(
+                options.chvaldir, passwords, crypt.encrypt(crypt.checksum))
+
+def do_fill(crypt, passwords, options):
+    """
+    Ask user passwords for config files which have no stored password, neither
+    in getmail configuration, nor in chval configuration.
+    Arguments:
+    - crypt: object used to encrypt/decrypt strings
+    - passwords: dictionary of (encrypted) passwords
+    - options: a class having the following attributes:
+        - getmaildir: location of getmail configuration and data files.
+        - chvaldir: location of chval configuration and data files
+    """
+    getmail_files = getmail_config_files(options.getmaildir)
+    tofill = []
+    for item in getmail_files:
+    # Two things to check:
+    # Is password stored in chval configuration?
+    # Is password stored in getmail configuration?
+    # If answers to both these question is false, then we have to ask for a
+    # password
+        if (item in passwords):
+            continue
+        if (getmailrc_has_password(
+            os.path.join(options.getmaildir, "getmailrc-" + item))):
+            continue
+        # Right getmail config file could not be opened
+        tofill.append(item)
+    do_add(crypt, passwords, tofill, options)
+
+def do_kill(daemons, options):
+    """Connect to every daemons in list "daemons", and kill them.
+    
+    Arguments:
+    - daemons: a list of daemons on which to perform action.
+    - options: a class having the following attributes:
+        - rundir: directory containing fifos used by daemons and clients to
+          communicate
+    """
+    daemons_list = list_daemons(options.rundir)
+    if (not daemons):
+        # Perform action on all daemons
+        daemons = daemons_list
+
+    for item in daemons:
+        if (item in daemons_list):
+            com = Communication(options.rundir, item)
+            com.open()
+            com.kill()
+            com.close()
+            com.clean()
+        else:
+            warning("Daemon '%s' not available." % item)
+
+def do_list(passwords, files):
+    """
+    List getmail config files for which a password is stored
+    - passwords: dictionary of (encrypted) passwords
+    - list: files to list. Print a warning if some of them are not getmail
+      config files
+    """
+    if (not files):
+        files = passwords.keys()
+    for key in files:
+        if (passwords.has_key(key)):
+            write(key + "\n")
+        else:
+            warning("Warning: \"%s\" is not a getmail configuration file."
+                    % ("getmailrc-" + key))
+
+def do_passwords(crypt, passwords, files):
+    """
+    List getmail config files for which a password is stored, with plain
+    password printed.
+    Arguments:
+    - crypt: object used to encrypt/decrypt strings
+    - passwords: dictionary of (encrypted) passwords
+    - files: list of getmail config files to list passwords for (they actually
+      are keys of dictionary 'passwords')
+    """
+    try:
+        write("Are you sure you want to display passwords? [y/n]")
+        answer = core.read_letter(["y", "n"])
+    except EOFError:
+        write("\n")
+        return
+    except KeyboardInterrupt:
+        write("\n")
+        return
+
+    if (answer == "n"):
+        return
+    if (not files):
+        files = passwords.keys()
+    if (not set(files).isdisjoint(passwords.keys())):
+        try:
+            crypt.ask_password("Main password: ")
+        except EOFError:
+            write("\n")
+            return
+        except crypto.PasswordFailed:
+            warning("Three wrong passwords. Aborting")
+            return
+
+    for key in files:
+        if (passwords.has_key(key)):
+            write("%s: %s\n" % (key, crypt.decrypt(passwords[key])))
+        else:
+            warning("No password stored for \"%s\"." % key)
+
+def do_remove(crypt, passwords, files, options):
+    """ Remove (forget) passwords
+    Arguments:
+    - crypt: object used to encrypt/decrypt strings
+    - passwords: dictionary of (encrypted) passwords
+    - files: list of getmail config files to list passwords for (they actually
+      are keys of dictionary 'passwords')
+    - options: a class having the following attributes:
+        - chvaldir: directory of chval configuration files
+    """
+    if (not files):
+        error('You must provide at least one config file for action '
+            '"remove".')
+
+    if (not set(files).isdisjoint(passwords.keys())):
+        try:
+            crypt.ask_password("Main password: ")
+        except EOFError:
+            write("\n")
+        except crypto.PasswordFailed:
+            warning("Three wrong passwords. Aborting")
+            return
+
+    # True iff something changed in passwords
+    changed = False
+
+    for item in files:
+        if (item in passwords):
+            del passwords[item]
+            changed = True
+        else:
+            warning("No password stored for \"%s\"." % item)
+
+    if (changed):
+        write_passwords(
+                options.chvaldir, passwords, crypt.encrypt(crypt.checksum))
+
+def do_getmail(crypt, passwords, files, options):
+    """
+    Perform the call(s) to getmail, once
+    Arguments:
+    - crypt: object used to encrypt/decrypt strings
+    - passwords: dictionary of (encrypted) passwords
+    - files: list of getmail config files to perform getmail on (they actually
+      are keys of dictionary 'passwords')
+    - options: a class that is supposed to have the following attributes:
+        - options: options to be passed to getmail
+        - parallel: True iff system calls to getmail are to be done in parallel
+        - chvaldir: directory of chval configuration files
+        - gap: time between two successive calls of getmail
+        - getmaildir: location of getmail configuration and data files
+        - interface: the interface to use when writing user feedback
+    """
+    if (not files):
+        files = getmail_config_files(options.getmaildir)
+    (files, ignored) = check_getmail_config_files(options.getmaildir, files)
+    if (ignored):
+        warning("Ignoring non-existent files %s." %
+                reduce(lambda x, y: str(x) + " " + str(y), ignored))
+    files_with_password = []
+    for i in files:
+        if (getmailrc_has_password(os.path.join(
+            options.getmaildir, "getmailrc-" + i)) or (passwords.has_key(i))):
+            files_with_password.append(i)
+        else:
+            warning("No password stored for getmailrc file %s. Use "
+                    "\"chval add\" or \"chval fill\" to set one."
+                    % os.path.join(options.getmaildir, "getmailrc-" + i))
+    files = files_with_password
+
+    if (not files):
+        error('No getmailrc file.')
+
+    if (not set(files).isdisjoint(set(passwords))):
+        # Main password needed to decypher some getmailrc password
+        try:
+            crypt.ask_password("Main password: ")
+        except EOFError:
+            write("\n")
+            return
+        except crypto.PasswordFailed:
+            warning("Three wrong passwords. Aborting")
+            return
+
+    # Creating the Interface object
+    fifo = options.interface({None: files})
+    # Launching thread
+    Thread(
+            target = thread_worker, args=(),
+            kwargs={
+                'crypt' : crypt, 'passwords' : passwords, 'files' : files,
+                'options' : options, 'feedback' : fifo.get_fifo(),
+                'daemon' : None},
+            name = "getmail"
+            ).start()
+    # Printing fifo content
+    fifo.start()
+    # Waiting the end of the interface, and clean fifo
+    fifo.wait_and_clean()
+
+def do_daemon(crypt, passwords, files, options):
+    """
+    Perform the call(s) to getmail, each "delay" minutes.
+    Arguments:
+    - crypt: object used to encrypt/decrypt strings
+    - passwords: dictionary of (encrypted) passwords
+    - files: list of getmail config files to perform getmail on (they actually
+      are keys of dictionary 'passwords')
+    - options: a class having the following attributes:
+        - delay: time before two successive calls to getmail. Value 0 means: do
+          not perform automatic calls (wait for client to ask for one)
+        - options: options to be passed to getmail
+        - name: name of the daemon instance
+        - parallel: True iff system calls to getmail are to be launched in
+          parallel
+        - auth: True iff passwords are asked as soon as daemon is started. If
+          False, daemon has to wait for a client to provide its password.
+        - gap: time between two successive calls of getmail.
+        - getmaildir: location of getmail configuration and data files.
+        - rundir: directory containing fifos used by daemons and clients to
+          communicate.
+    """
+    if (not files):
+        # We take as getmailrc files for this daemon:
+        # - the getmailrc files that are not handled yet by another daemon
+        # - for which a password is known, either by chval, or by getmail
+        files = passwords.keys()
+        # Add files for which password is stored in plain text in getmailrc
+        # file.
+        getmail_files = getmail_config_files(options.getmaildir)
+        for item in getmail_files:
+            if (item in passwords):
+                continue
+            if (getmailrc_has_password(os.path.join(
+                options.getmaildir, "getmailrc-" + item))):
+                files.append(item)
+        # Remove getmailrc files already handled by another daemon
+        handled_getmailrc = reduce(
+                lambda x, y:x+y,
+                get_getmailrc_list(options.rundir).values(), [])
+        files = list(set(files) - set(handled_getmailrc))
+    else:
+        (files, ignored) = check_getmail_config_files(options.getmaildir, files)
+        if (ignored):
+            warning("Ignoring non-existent files %s." %
+                    reduce(lambda x, y: str(x) + " " + str(y), ignored))
+    if (not files):
+        error('No getmailrc file to get mail from.')
+
+    # Starting daemon
+    daemon = Daemon(crypt, passwords, files, options)
+    prepared = daemon.prepare()
+    if (not prepared):
+        # Some errors occured
+        return
+
+    reader = Thread(target = daemon.launch_reader, name = "reader")
+    if (hasattr(reader, "daemon")):
+        reader.daemon = True
+    else:
+        reader.setDaemon(True)
+    reader.start()
+    # If relevant, request password
+    if (options.auth):
+        com = Communication(options.rundir, options.name)
+        com.open()
+        state = com.get_state()
+        try:
+            fail = 0
+            while (state == __daemon_state__.password):
+                public = com.get_key()
+                com.send_password(public.encrypt(
+                    getpass.getpass("Password for daemon %s: " % options.name),
+                    crypto.get_random()))
+                state = com.get_state()
+                fail += 1
+                if (fail == 3):
+                    raise crypto.PasswordFailed
+        except EOFError:
+            write("\n")
+            warning("No password given. Use a client to provide a password.")
+        except crypto.PasswordFailed:
+            warning("Three wrong passwords. Aborting")
+            warning("No password given. Use a client to provide a password.")
+        except KeyboardInterrupt:
+            write("\n")
+            com.kill()
+        com.close()
+    try:
+        reader.join()
+    except KeyboardInterrupt:
+        pass
+
+def do_scan(options):
+    """
+    Print the list of available daemons.
+    Arguments:
+    - options: options to be passed to getmail
+        - rundir: directory containing fifos used by daemons and clients to
+          communicate
+        - daemons_only: boolean. Is True if this function should print the list
+          of daemons. Is False if it should print the list of getmailrc files
+          handled by daemons in options.daemons.
+        - daemons: list of daemons to scan, if daemons_only is True. Irrelevant
+          otherwise.
+        - only: boolean. If True, print a list of getmailrc files handled by
+          the given daemons. If False, print the getmailrc files together with
+          the name of the daemon that handles them.
+    """
+    # Looking for available daemons
+    daemons = list_daemons(options.rundir)
+    if (not daemons):
+        warning("No daemons available.")
+        return
+
+    if (options.daemons_only):
+        for item in daemons:
+            write(item + "\n")
+    else:
+        # Building the list of asked daemons that do exist
+        if (not options.daemons):
+            options.daemons = daemons
+        getmailrc = get_getmailrc_list(options.rundir, options.daemons)
+
+        for item in options.daemons:
+            if (not getmailrc.has_key(item)):
+                warning("Non-existent daemon \"%s\" ignored." % item)
+            else:
+                if (options.only):
+                    write("%s\n" % "\n".join(getmailrc[item]))
+                else:
+                    write("%s: %s\n" % (item, " ".join(getmailrc[item])))
+
+def do_clean(options):
+    """
+    Remove files related to dead daemons
+    Arguments:
+    - options: options to be passed to getmail
+        - rundir: directory containing fifos used by daemons and clients to
+          communicate
+    """
+    list_daemons(options.rundir, True)
+
+def do_client(daemons, options):
+    """
+    Arguments:
+    - daemons: a list of daemons or getmailrc file on which to perform action
+      (see explanations of DAEMON in "chval client --help")
+    - options: a class having at least the following attributes:
+        - parallel: True iff calls to daemons have to be done in parallel
+        - auth: explained above.
+        - interface: the interface to use when writing user feedback
+        - rundir: directory containing fifos used by daemons and clients to
+          communicate
+
+    If "options.auth" is False, connect to every daemons in list "daemons", and:
+    - ask for password if necessary;
+    - send daemon the order to get mails now.
+    If "options.auth" is True, connect to every daemons in list "daemons", and
+    ask for password if necessary.
+    """
+    def get_mail_from_daemon(com, getmailrc, fifo):
+        """
+        Get mail from daemon handled by 'com', for getmailrc files 'getmailrc'.
+
+        Arguments:
+        - com: a Communication object, already opened.
+        - getmailrc: a list of getmailrc file names handled by the daemon
+          handled by 'com'.
+        - fifo: the fifo to use when writing user feedback
+        """
+        if (com.get_state() == __daemon_state__.running):
+            # Launching thread
+            com.get_mail(fifo, getmailrc)
+        com.close()
+
+    # We are going to check arguments, and build the valid list of daemons
+    # on which to perform action
+
+    # List of living daemons
+    daemons_list = list_daemons(options.rundir)
+    # Dictionary of Communication (classes allowing to chat with the daemon),
+    # for each of the living daemons.
+    communications = dict(
+            [[daem, Communication(options.rundir, daem)]
+                for daem in daemons_list])
+    for com in communications.values():
+        com.open()
+
+    # to_perform is a dictionary, in which keys are daemons, and values are
+    # sets of getmailrc files handled by this daemon. For example,
+    # to_perform["main"]=set(["work", "private"]) means "from daemon 'main', get
+    # mails for getmailrc files 'work' and 'private'".
+    to_perform = dict([[daem, set([])] for daem in daemons_list])
+
+    # Analysing command line list of daemons, and filling to_perform accordingly
+    if (not daemons):
+        daemons = daemons_list
+    for daem in daemons:
+        (daemon, __ignored__, getmailrc) = daem.partition("/")
+        if (daemon == ""):
+            for i in daemons_list:
+                if (getmailrc in communications[i].get_getmailrc()):
+                    to_perform[i] |= set([getmailrc])
+            continue
+        if (daemon not in daemons_list):
+            warning("Ignoring non-existent daemon \"%s\"." % daemon)
+            continue
+        rc_list = communications[daemon].get_getmailrc()
+        if (getmailrc == ""):
+            # No getmailrc file given: add all getmailrc files of this daemon
+            to_perform[daemon] |= set(rc_list)
+            continue
+        if (getmailrc not in rc_list):
+            warning("Getmailrc file \"%s\" is not handled by daemon \"%s\"." %
+                    (getmailrc, daemon))
+            continue
+        to_perform[daemon] |= set([getmailrc])
+
+    # Deleting daemons for which there is no mail to get, from to_perform
+    for key in to_perform.keys():
+        if (not to_perform[key]):
+            communications[key].close()
+            del communications[key]
+            del to_perform[key]
+    if (not to_perform.values()):
+        warning("Error: no daemons to connect to.")
+
+    # Ensuring all passwords are known
+    for daemon in to_perform.keys():
+        com = communications[daemon]
+        state = com.get_state()
+        try:
+            fail = 0
+            while (state == __daemon_state__.password):
+                public = com.get_key()
+                com.send_password(public.encrypt(
+                    getpass.getpass("Password for daemon %s: " % daemon),
+                    crypto.get_random()))
+                state = com.get_state()
+                if (state == __daemon_state__.password):
+                    fail += 1
+                    write("Wrong password. Try again.\n")
+                    if (fail == 3):
+                        raise crypto.PasswordFailed
+        except EOFError:
+            write("\n")
+            com.close()
+            del communications[daemon]
+            del to_perform[daemon]
+            break
+        except crypto.PasswordFailed:
+            warning("Three wrong passwords. Aborting")
+            com.close()
+            del communications[daemon]
+            del to_perform[daemon]
+            continue
+
+    # Calling daemons
+    if (not options.auth):
+        if (options.parallel):
+            sem = None
+        else:
+            sem = Semaphore(0)
+        interface = options.interface(to_perform, sem)
+        interface.start()
+        if (options.parallel):
+            # Creating threads
+            threads = [Thread(
+                target = get_mail_from_daemon,
+                kwargs={'com' : communications[daemon],
+                    'getmailrc' : list(to_perform[daemon]),
+                    'fifo' : interface.get_fifo()},
+                name = "daemon %s" % daemon
+                ) for daemon in to_perform.keys()]
+            # Launching threads
+            for item in threads:
+                item.start()
+            # Waiting for threads
+            for item in threads:
+                item.join()
+        else:
+            for daemon in to_perform.keys():
+                get_mail_from_daemon(communications[daemon], to_perform[daemon],
+                        interface.get_fifo())
+                sem.acquire()
+        interface.wait_and_clean()
+
+################################################################################
+### Main function
+################################################################################
+def main():
+    """
+    Main function: read options, and call the right function (do_list, do_add,
+    etc.)
+    """
+    chvaldir = command_line_parser.search_chvaldir(sys.argv[1:])
+
+    # Reading settings from .chval/config
+    check_chval_directories(chvaldir)
+    read_global_config(chvaldir)
+
+    # Parsing command line
+    options = command_line_parser.parse(
+            core.__run_dir__(chvaldir),
+            sys.argv[1:]
+            )
+
+    # Check that .getmail directory exists
+    if (options.command in ["fill", "getmail", "daemon"]):
+        check_getmail_directory(options.getmaildir)
+
+    # Command line have been parsed. We can call the relevant function.
+    checksum, passwords = read_passwords(chvaldir)
+    crypt = crypto.Crypt(checksum)
+    if options.command == "add":
+        add_options = NameSpace()
+        add_options.chvaldir = options.chvaldir
+        do_add(crypt, passwords, options.getmail_files, add_options)
+    elif options.command == "clean":
+        clean_options = NameSpace()
+        clean_options.rundir = core.__run_dir__(chvaldir)
+        do_clean(clean_options)
+    elif options.command == "client":
+        client_options = NameSpace()
+        client_options.parallel = core.__parallel__.daemons in options.parallel
+        client_options.auth = options.auth
+        client_options.interface = options.interface
+        client_options.rundir = core.__run_dir__(chvaldir)
+        do_client(options.daemons, client_options)
+    elif options.command == "daemon":
+        if (not options.daemon_name):
+            options.daemon_name = str(os.getpid())
+        elif (
+                not (options.daemon_name.isalnum() 
+                    and options.daemon_name[0].isalpha())):
+            error("Error: Daemon name can only contain letters and numbers, "
+            "and must begin with a letter.")
+        daemon_options = NameSpace()
+        daemon_options.delay = options.daemon_delay
+        daemon_options.options = options.getmail_options
+        daemon_options.name = options.daemon_name
+        daemon_options.parallel = core.__parallel__.getmail in options.parallel
+        daemon_options.auth = options.auth
+        daemon_options.gap = options.gap
+        daemon_options.getmaildir = options.getmaildir
+        daemon_options.rundir = core.__run_dir__(chvaldir)
+        do_daemon(crypt, passwords, options.getmail_files, daemon_options)
+    elif options.command == "fill":
+        fill_options = NameSpace()
+        fill_options.getmaildir = options.getmaildir
+        fill_options.chvaldir = options.chvaldir
+        do_fill(crypt, passwords, fill_options)
+    elif options.command == "getmail":
+        getmail_options = NameSpace()
+        getmail_options.options = options.getmail_options
+        getmail_options.parallel = core.__parallel__.getmail in options.parallel
+        getmail_options.gap = options.gap
+        getmail_options.getmaildir = options.getmaildir
+        getmail_options.chvaldir = options.chvaldir
+        getmail_options.interface = options.interface
+        do_getmail(crypt, passwords, options.getmail_files, getmail_options)
+    elif options.command == "kill":
+        kill_options = NameSpace()
+        kill_options.rundir = core.__run_dir__(chvaldir)
+        do_kill(options.daemons, kill_options)
+    elif options.command == "list":
+        do_list(passwords, options.getmail_files)
+    elif options.command == "passwords":
+        do_passwords(crypt, passwords, options.getmail_files)
+    elif options.command == "remove":
+        remove_options = NameSpace()
+        remove_options.chvaldir = options.chvaldir
+        do_remove(crypt, passwords, options.getmail_files, options)
+    elif options.command == "scan":
+        scan_options = NameSpace()
+        scan_options.rundir = core.__run_dir__(chvaldir)
+        scan_options.only = options.only
+        if (options.scan_daemons == None):
+            scan_options.daemons_only = True
+            scan_options.daemons = []
+        else:
+            scan_options.daemons_only = False
+            scan_options.daemons = options.scan_daemons
+        do_scan(scan_options)
+
+################################################################################
+if __name__ == '__main__':
+    main()
