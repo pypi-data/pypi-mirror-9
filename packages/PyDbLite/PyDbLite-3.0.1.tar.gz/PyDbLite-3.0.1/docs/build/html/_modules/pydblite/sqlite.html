@@ -1,0 +1,717 @@
+
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>pydblite.sqlite &mdash; PyDbLite 3.0 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/cloud.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    <link rel="stylesheet" href="//fonts.googleapis.com/css?family=Noticia+Text|Open+Sans|Droid+Sans+Mono" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '3.0',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <script type="text/javascript" src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    <script type="text/javascript" src="../../_static/jquery.cookie.js"></script>
+    <script type="text/javascript" src="../../_static/cloud.js"></script>
+    <link rel="top" title="PyDbLite 3.0 documentation" href="../../index.html" />
+    <link rel="up" title="Module code" href="../index.html" /> 
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+  </head>
+  <body>
+    <div class="relbar-top">
+        
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> &nbsp; &nbsp;</li>
+        <li class="right" >
+          <a href="../../contents.html" title="Table Of Contents"
+             accesskey="C">toc</a> &nbsp; &nbsp;</li>
+    <li><a href="../../index.html">PyDbLite 3.0 documentation</a> &raquo;</li>
+
+          <li><a href="../index.html" accesskey="U">Module code</a> &raquo;</li> 
+      </ul>
+    </div>
+    </div>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <h1>Source code for pydblite.sqlite</h1><div class="highlight"><pre>
+<span class="c">#</span>
+<span class="c"># BSD licence</span>
+<span class="c">#</span>
+<span class="c"># Author : Pierre Quentel (pierre.quentel@gmail.com)</span>
+<span class="c">#</span>
+
+
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Main differences from :mod:`pydblite.pydblite`:</span>
+
+<span class="sd">- pass the connection to the :class:`SQLite db &lt;pydblite.sqlite.Database&gt;` as argument to</span>
+<span class="sd">  :class:`Table &lt;pydblite.sqlite.Table&gt;`</span>
+<span class="sd">- in :func:`create() &lt;pydblite.sqlite.Table.create&gt;` field definitions must specify a type.</span>
+<span class="sd">- no `drop_field` (not supported by SQLite)</span>
+<span class="sd">- the :class:`Table &lt;pydblite.sqlite.Table&gt;` instance has a</span>
+<span class="sd">  :attr:`cursor &lt;pydblite.sqlite.Database.cursor&gt;` attribute, so that raw SQL requests can</span>
+<span class="sd">  be executed.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">import</span> <span class="nn">cStringIO</span> <span class="kn">as</span> <span class="nn">io</span>
+
+    <span class="k">def</span> <span class="nf">to_str</span><span class="p">(</span><span class="n">val</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s">&quot;utf-8&quot;</span><span class="p">):</span>  <span class="c"># encode a Unicode string to a Python 2 str</span>
+        <span class="k">return</span> <span class="n">val</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="n">encoding</span><span class="p">)</span>
+<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+    <span class="kn">import</span> <span class="nn">io</span>
+    <span class="nb">unicode</span> <span class="o">=</span> <span class="nb">str</span>  <span class="c"># used in tests</span>
+
+    <span class="k">def</span> <span class="nf">to_str</span><span class="p">(</span><span class="n">val</span><span class="p">):</span>  <span class="c"># leaves a Unicode unchanged</span>
+        <span class="k">return</span> <span class="n">val</span>
+
+<span class="kn">import</span> <span class="nn">datetime</span>
+<span class="kn">import</span> <span class="nn">re</span>
+<span class="kn">import</span> <span class="nn">traceback</span>
+
+<span class="kn">from</span> <span class="nn">.common</span> <span class="kn">import</span> <span class="n">ExpressionGroup</span><span class="p">,</span> <span class="n">Filter</span>
+
+<span class="c"># test if sqlite is installed or raise exception</span>
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">from</span> <span class="nn">sqlite3</span> <span class="kn">import</span> <span class="n">dbapi2</span> <span class="k">as</span> <span class="n">sqlite</span>
+    <span class="kn">from</span> <span class="nn">sqlite3</span> <span class="kn">import</span> <span class="n">OperationalError</span>
+<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="kn">from</span> <span class="nn">pysqlite2</span> <span class="kn">import</span> <span class="n">dbapi2</span> <span class="k">as</span> <span class="n">sqlite</span>
+        <span class="kn">from</span> <span class="nn">pysqlite2._sqlite</span> <span class="kn">import</span> <span class="n">OperationalError</span>
+    <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+        <span class="k">print</span><span class="p">(</span><span class="s">&quot;SQLite is not installed&quot;</span><span class="p">)</span>
+        <span class="k">raise</span>
+
+<span class="c"># compatibility with Python 2.3</span>
+<span class="k">try</span><span class="p">:</span>
+    <span class="nb">set</span><span class="p">([])</span>
+<span class="k">except</span> <span class="ne">NameError</span><span class="p">:</span>
+    <span class="kn">from</span> <span class="nn">sets</span> <span class="kn">import</span> <span class="n">Set</span> <span class="k">as</span> <span class="nb">set</span>  <span class="c"># NOQA</span>
+
+
+<span class="c"># classes for CURRENT_DATE, CURRENT_TIME, CURRENT_TIMESTAMP</span>
+<span class="k">class</span> <span class="nc">CurrentDate</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">datetime</span><span class="o">.</span><span class="n">date</span><span class="o">.</span><span class="n">today</span><span class="p">()</span><span class="o">.</span><span class="n">strftime</span><span class="p">(</span><span class="s">&#39;%Y-%M-%D&#39;</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">CurrentTime</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">()</span><span class="o">.</span><span class="n">strftime</span><span class="p">(</span><span class="s">&#39;%h:%m:</span><span class="si">%s</span><span class="s">&#39;</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">CurrentTimestamp</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">()</span><span class="o">.</span><span class="n">strftime</span><span class="p">(</span><span class="s">&#39;%Y-%M-%D %h:%m:</span><span class="si">%s</span><span class="s">&#39;</span><span class="p">)</span>
+
+<span class="n">DEFAULT_CLASSES</span> <span class="o">=</span> <span class="p">[</span><span class="n">CurrentDate</span><span class="p">,</span> <span class="n">CurrentTime</span><span class="p">,</span> <span class="n">CurrentTimestamp</span><span class="p">]</span>
+
+<span class="c"># functions to convert a value returned by a SQLite SELECT</span>
+
+<span class="c"># CURRENT_TIME format is HH:MM:SS</span>
+<span class="c"># CURRENT_DATE : YYYY-MM-DD</span>
+<span class="c"># CURRENT_TIMESTAMP : YYYY-MM-DD HH:MM:SS</span>
+
+<span class="n">c_time_fmt</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="s">&#39;^(\d{2}):(\d{2}):(\d{2})$&#39;</span><span class="p">)</span>
+<span class="n">c_date_fmt</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="s">&#39;^(\d{4})-(\d{2})-(\d{2})$&#39;</span><span class="p">)</span>
+<span class="n">c_tmsp_fmt</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="s">&#39;^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})&#39;</span><span class="p">)</span>
+
+
+<span class="c"># DATE : convert YYYY-MM-DD to datetime.date instance</span>
+<span class="k">def</span> <span class="nf">to_date</span><span class="p">(</span><span class="n">date</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">date</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">None</span>
+    <span class="n">mo</span> <span class="o">=</span> <span class="n">c_date_fmt</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">date</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">mo</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&quot;Bad value </span><span class="si">%s</span><span class="s"> for DATE format&quot;</span> <span class="o">%</span> <span class="n">date</span><span class="p">)</span>
+    <span class="n">year</span><span class="p">,</span> <span class="n">month</span><span class="p">,</span> <span class="n">day</span> <span class="o">=</span> <span class="p">[</span><span class="nb">int</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">mo</span><span class="o">.</span><span class="n">groups</span><span class="p">()]</span>
+    <span class="k">return</span> <span class="n">datetime</span><span class="o">.</span><span class="n">date</span><span class="p">(</span><span class="n">year</span><span class="p">,</span> <span class="n">month</span><span class="p">,</span> <span class="n">day</span><span class="p">)</span>
+
+
+<span class="c"># TIME : convert HH-MM-SS to datetime.time instance</span>
+<span class="k">def</span> <span class="nf">to_time</span><span class="p">(</span><span class="n">_time</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">_time</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">None</span>
+    <span class="n">mo</span> <span class="o">=</span> <span class="n">c_time_fmt</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">_time</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">mo</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&quot;Bad value </span><span class="si">%s</span><span class="s"> for TIME format&quot;</span> <span class="o">%</span> <span class="n">_time</span><span class="p">)</span>
+    <span class="n">hour</span><span class="p">,</span> <span class="n">minute</span><span class="p">,</span> <span class="n">second</span> <span class="o">=</span> <span class="p">[</span><span class="nb">int</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">mo</span><span class="o">.</span><span class="n">groups</span><span class="p">()]</span>
+    <span class="k">return</span> <span class="n">datetime</span><span class="o">.</span><span class="n">time</span><span class="p">(</span><span class="n">hour</span><span class="p">,</span> <span class="n">minute</span><span class="p">,</span> <span class="n">second</span><span class="p">)</span>
+
+
+<span class="c"># DATETIME or TIMESTAMP : convert %YYYY-MM-DD HH:MM:SS</span>
+<span class="c"># to datetime.datetime instance</span>
+<span class="k">def</span> <span class="nf">to_datetime</span><span class="p">(</span><span class="n">timestamp</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">timestamp</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">None</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">timestamp</span><span class="p">,</span> <span class="nb">unicode</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&quot;Bad value </span><span class="si">%s</span><span class="s"> for TIMESTAMP format&quot;</span> <span class="o">%</span> <span class="n">timestamp</span><span class="p">)</span>
+    <span class="n">mo</span> <span class="o">=</span> <span class="n">c_tmsp_fmt</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">timestamp</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">mo</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&quot;Bad value </span><span class="si">%s</span><span class="s"> for TIMESTAMP format&quot;</span> <span class="o">%</span> <span class="n">timestamp</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="p">(</span><span class="o">*</span><span class="p">[</span><span class="nb">int</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">mo</span><span class="o">.</span><span class="n">groups</span><span class="p">()])</span>
+
+
+<span class="c"># if default value is CURRENT_DATE etc. SQLite doesn&#39;t</span>
+<span class="c"># give the information, default is the value of the</span>
+<span class="c"># variable as a string. We have to guess...</span>
+<span class="c">#</span>
+<span class="k">def</span> <span class="nf">guess_default_fmt</span><span class="p">(</span><span class="n">value</span><span class="p">):</span>
+    <span class="n">mo</span> <span class="o">=</span> <span class="n">c_time_fmt</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">mo</span><span class="p">:</span>
+        <span class="n">h</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">s</span> <span class="o">=</span> <span class="p">[</span><span class="nb">int</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">mo</span><span class="o">.</span><span class="n">groups</span><span class="p">()]</span>
+        <span class="k">if</span> <span class="p">(</span><span class="mi">0</span> <span class="o">&lt;=</span> <span class="n">h</span> <span class="o">&lt;=</span> <span class="mi">23</span><span class="p">)</span> <span class="ow">and</span> <span class="p">(</span><span class="mi">0</span> <span class="o">&lt;=</span> <span class="n">m</span> <span class="o">&lt;=</span> <span class="mi">59</span><span class="p">)</span> <span class="ow">and</span> <span class="p">(</span><span class="mi">0</span> <span class="o">&lt;=</span> <span class="n">s</span> <span class="o">&lt;=</span> <span class="mi">59</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">CurrentTime</span>
+    <span class="n">mo</span> <span class="o">=</span> <span class="n">c_date_fmt</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">mo</span><span class="p">:</span>
+        <span class="n">y</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">d</span> <span class="o">=</span> <span class="p">[</span><span class="nb">int</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">mo</span><span class="o">.</span><span class="n">groups</span><span class="p">()]</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">datetime</span><span class="o">.</span><span class="n">date</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">d</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">CurrentDate</span>
+        <span class="k">except</span><span class="p">:</span>
+            <span class="k">pass</span>
+    <span class="n">mo</span> <span class="o">=</span> <span class="n">c_tmsp_fmt</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">mo</span><span class="p">:</span>
+        <span class="n">y</span><span class="p">,</span> <span class="n">mth</span><span class="p">,</span> <span class="n">d</span><span class="p">,</span> <span class="n">h</span><span class="p">,</span> <span class="n">mn</span><span class="p">,</span> <span class="n">s</span> <span class="o">=</span> <span class="p">[</span><span class="nb">int</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">mo</span><span class="o">.</span><span class="n">groups</span><span class="p">()]</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">mth</span><span class="p">,</span> <span class="n">d</span><span class="p">,</span> <span class="n">h</span><span class="p">,</span> <span class="n">mn</span><span class="p">,</span> <span class="n">s</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">CurrentTimestamp</span>
+        <span class="k">except</span><span class="p">:</span>
+            <span class="k">pass</span>
+    <span class="k">return</span> <span class="n">value</span>
+
+
+<div class="viewcode-block" id="SQLiteError"><a class="viewcode-back" href="../../api.html#pydblite.sqlite.SQLiteError">[docs]</a><span class="k">class</span> <span class="nc">SQLiteError</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;SQLiteError&quot;&quot;&quot;</span>
+    <span class="k">pass</span>
+
+</div>
+<div class="viewcode-block" id="Database"><a class="viewcode-back" href="../../api.html#pydblite.sqlite.Database">[docs]</a><span class="k">class</span> <span class="nc">Database</span><span class="p">(</span><span class="nb">dict</span><span class="p">):</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">filename</span><span class="p">,</span> <span class="o">**</span><span class="n">kw</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        To create an in-memory database provide &#39;:memory:&#39; as filename</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            - filename (str): The name of the database file, or &#39;:memory:&#39;</span>
+<span class="sd">            - kw (dict): Arguments forwarded to sqlite3.connect</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nb">dict</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">conn</span> <span class="o">=</span> <span class="n">sqlite</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">filename</span><span class="p">,</span> <span class="o">**</span><span class="n">kw</span><span class="p">)</span>
+        <span class="sd">&quot;&quot;&quot;The SQLite connection&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">conn</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="sd">&quot;&quot;&quot;The SQLite connections cursor&quot;&quot;&quot;</span>
+        <span class="k">for</span> <span class="n">table_name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tables</span><span class="p">():</span>
+            <span class="bp">self</span><span class="p">[</span><span class="n">table_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">Table</span><span class="p">(</span><span class="n">table_name</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_tables</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Return the list of table names in the database&quot;&quot;&quot;</span>
+        <span class="n">tables</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&quot;SELECT name FROM sqlite_master WHERE type=&#39;table&#39;&quot;</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">table_info</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">fetchall</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">table_info</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">!=</span> <span class="s">&#39;sqlite_sequence&#39;</span><span class="p">:</span>
+                <span class="n">tables</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">table_info</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="k">return</span> <span class="n">tables</span>
+
+    <span class="k">def</span> <span class="nf">create</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">table_name</span><span class="p">,</span> <span class="o">*</span><span class="n">fields</span><span class="p">,</span> <span class="o">**</span><span class="n">kw</span><span class="p">):</span>
+        <span class="bp">self</span><span class="p">[</span><span class="n">table_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">Table</span><span class="p">(</span><span class="n">table_name</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="o">*</span><span class="n">fields</span><span class="p">,</span> <span class="o">**</span><span class="n">kw</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="p">[</span><span class="n">table_name</span><span class="p">]</span>
+
+<div class="viewcode-block" id="Database.commit"><a class="viewcode-back" href="../../api.html#pydblite.sqlite.Database.commit">[docs]</a>    <span class="k">def</span> <span class="nf">commit</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Save any changes to the database&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">conn</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+</div>
+    <span class="k">def</span> <span class="nf">__delitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">table</span><span class="p">):</span>
+        <span class="c"># drop table</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">table</span><span class="p">,</span> <span class="n">Table</span><span class="p">):</span>
+            <span class="n">table</span> <span class="o">=</span> <span class="n">table</span><span class="o">.</span><span class="n">name</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&#39;DROP TABLE </span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">table</span><span class="p">)</span>
+        <span class="nb">dict</span><span class="o">.</span><span class="n">__delitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">table</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="Table"><a class="viewcode-back" href="../../api.html#pydblite.sqlite.Table">[docs]</a><span class="k">class</span> <span class="nc">Table</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+
+<div class="viewcode-block" id="Table.__init__"><a class="viewcode-back" href="../../api.html#pydblite.sqlite.Table.__init__">[docs]</a>    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">table_name</span><span class="p">,</span> <span class="n">db</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Args:</span>
+
+<span class="sd">           - table_name (str): The name of the SQLite table.</span>
+<span class="sd">           - db (:class:`Database &lt;pydblite.sqlite.Database&gt;`): The database.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="n">table_name</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">db</span> <span class="o">=</span> <span class="n">db</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">cursor</span>
+        <span class="sd">&quot;&quot;&quot;The SQLite connections cursor&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">conv_func</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">mode</span> <span class="o">=</span> <span class="s">&quot;open&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_get_table_info</span><span class="p">()</span>
+</div>
+<div class="viewcode-block" id="Table.create"><a class="viewcode-back" href="../../api.html#pydblite.sqlite.Table.create">[docs]</a>    <span class="k">def</span> <span class="nf">create</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">fields</span><span class="p">,</span> <span class="o">**</span><span class="n">kw</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Create a new table.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">           - fields (list of tuples): The fields names/types to create.</span>
+<span class="sd">             For each field, a 2-element tuple must be provided:</span>
+
+<span class="sd">             - the field name</span>
+<span class="sd">             - a string with additional information like field type +</span>
+<span class="sd">               other information using the SQLite syntax</span>
+<span class="sd">               eg  (&#39;name&#39;, &#39;TEXT NOT NULL&#39;), (&#39;date&#39;, &#39;BLOB DEFAULT CURRENT_DATE&#39;)</span>
+
+<span class="sd">           - mode (str): The mode used when creating the database.</span>
+<span class="sd">                  mode is only used if a database file already exists.</span>
+
+<span class="sd">             - if mode = &#39;open&#39; : open the existing base, ignore the fields</span>
+<span class="sd">             - if mode = &#39;override&#39; : erase the existing base and create a</span>
+<span class="sd">               new one with the specified fields</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            - the database (self).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">mode</span> <span class="o">=</span> <span class="n">mode</span> <span class="o">=</span> <span class="n">kw</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&quot;mode&quot;</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_table_exists</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">mode</span> <span class="o">==</span> <span class="s">&quot;override&quot;</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&quot;DROP TABLE </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">mode</span> <span class="o">==</span> <span class="s">&quot;open&quot;</span><span class="p">:</span>
+                <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">open</span><span class="p">()</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">IOError</span><span class="p">(</span><span class="s">&quot;Base &#39;</span><span class="si">%s</span><span class="s">&#39; already exists&quot;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+
+        <span class="n">sql</span> <span class="o">=</span> <span class="s">&quot;CREATE TABLE </span><span class="si">%s</span><span class="s"> (&quot;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span>
+        <span class="k">for</span> <span class="n">field</span> <span class="ow">in</span> <span class="n">fields</span><span class="p">:</span>
+            <span class="n">sql</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_field</span><span class="p">(</span><span class="n">field</span><span class="p">)</span> <span class="o">+</span> <span class="s">&#39;,&#39;</span>
+        <span class="n">sql</span> <span class="o">=</span> <span class="n">sql</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="s">&#39;)&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">sql</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_get_table_info</span><span class="p">()</span>
+        <span class="k">return</span> <span class="bp">self</span>
+</div>
+<div class="viewcode-block" id="Table.open"><a class="viewcode-back" href="../../api.html#pydblite.sqlite.Table.open">[docs]</a>    <span class="k">def</span> <span class="nf">open</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Open an existing database.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span>
+</div>
+<div class="viewcode-block" id="Table.commit"><a class="viewcode-back" href="../../api.html#pydblite.sqlite.Table.commit">[docs]</a>    <span class="k">def</span> <span class="nf">commit</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Save any changes to the database&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+</div>
+    <span class="k">def</span> <span class="nf">_table_exists</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">db</span>
+
+    <span class="k">def</span> <span class="nf">_get_table_info</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Inspect the base to get field names.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fields</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">field_info</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&#39;PRAGMA table_info (</span><span class="si">%s</span><span class="s">)&#39;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">field_info</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">fetchall</span><span class="p">():</span>
+            <span class="n">fname</span> <span class="o">=</span> <span class="n">to_str</span><span class="p">(</span><span class="n">field_info</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">fields</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">fname</span><span class="p">)</span>
+            <span class="n">ftype</span> <span class="o">=</span> <span class="n">to_str</span><span class="p">(</span><span class="n">field_info</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+            <span class="n">info</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;type&#39;</span><span class="p">:</span> <span class="n">ftype</span><span class="p">}</span>
+            <span class="c"># can be null ?</span>
+            <span class="n">info</span><span class="p">[</span><span class="s">&#39;NOT NULL&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">field_info</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span> <span class="o">!=</span> <span class="mi">0</span>
+            <span class="c"># default value</span>
+            <span class="n">default</span> <span class="o">=</span> <span class="n">field_info</span><span class="p">[</span><span class="mi">4</span><span class="p">]</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">default</span><span class="p">,</span> <span class="nb">unicode</span><span class="p">):</span>
+                <span class="n">default</span> <span class="o">=</span> <span class="n">guess_default_fmt</span><span class="p">(</span><span class="n">default</span><span class="p">)</span>
+            <span class="n">info</span><span class="p">[</span><span class="s">&#39;DEFAULT&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">default</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">field_info</span><span class="p">[</span><span class="n">fname</span><span class="p">]</span> <span class="o">=</span> <span class="n">info</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fields_with_id</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;__id__&#39;</span><span class="p">]</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">fields</span>
+
+    <span class="k">def</span> <span class="nf">info</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="c"># returns information about the table</span>
+        <span class="k">return</span> <span class="p">[(</span><span class="n">field</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">field_info</span><span class="p">[</span><span class="n">field</span><span class="p">])</span> <span class="k">for</span> <span class="n">field</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">fields</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">_validate_field</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">field</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">field</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">2</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">field</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">3</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Error in field definition </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="n">field</span>
+            <span class="n">msg</span> <span class="o">+=</span> <span class="s">&quot;: should be a tuple with field_name, field_info, and optionally a default value&quot;</span>
+            <span class="k">raise</span> <span class="n">SQLiteError</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+        <span class="n">field_sql</span> <span class="o">=</span> <span class="s">&#39;</span><span class="si">%s</span><span class="s"> </span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">field</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">field</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">field</span><span class="p">)</span> <span class="o">==</span> <span class="mi">3</span> <span class="ow">and</span> <span class="n">field</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">field_sql</span> <span class="o">+=</span> <span class="s">&quot; DEFAULT {0}&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">field</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+        <span class="k">return</span> <span class="n">field_sql</span>
+
+<div class="viewcode-block" id="Table.conv"><a class="viewcode-back" href="../../api.html#pydblite.sqlite.Table.conv">[docs]</a>    <span class="k">def</span> <span class="nf">conv</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">field_name</span><span class="p">,</span> <span class="n">conv_func</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;When a record is returned by a SELECT, ask conversion of</span>
+<span class="sd">        specified field value with the specified function.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">field_name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">fields</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NameError</span><span class="p">(</span><span class="s">&quot;Unknown field </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="n">field_name</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">conv_func</span><span class="p">[</span><span class="n">field_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">conv_func</span>
+</div>
+<div class="viewcode-block" id="Table.is_date"><a class="viewcode-back" href="../../api.html#pydblite.sqlite.Table.is_date">[docs]</a>    <span class="k">def</span> <span class="nf">is_date</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">field_name</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Ask conversion of field to an instance of datetime.date&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">conv</span><span class="p">(</span><span class="n">field_name</span><span class="p">,</span> <span class="n">to_date</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Table.is_time"><a class="viewcode-back" href="../../api.html#pydblite.sqlite.Table.is_time">[docs]</a>    <span class="k">def</span> <span class="nf">is_time</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">field_name</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Ask conversion of field to an instance of datetime.date&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">conv</span><span class="p">(</span><span class="n">field_name</span><span class="p">,</span> <span class="n">to_time</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Table.is_datetime"><a class="viewcode-back" href="../../api.html#pydblite.sqlite.Table.is_datetime">[docs]</a>    <span class="k">def</span> <span class="nf">is_datetime</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">field_name</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Ask conversion of field to an instance of datetime.date&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">conv</span><span class="p">(</span><span class="n">field_name</span><span class="p">,</span> <span class="n">to_datetime</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Table.insert"><a class="viewcode-back" href="../../api.html#pydblite.sqlite.Table.insert">[docs]</a>    <span class="k">def</span> <span class="nf">insert</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kw</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Insert a record in the database.</span>
+
+<span class="sd">        Parameters can be positional or keyword arguments. If positional</span>
+<span class="sd">        they must be in the same order as in the :func:`create` method.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            - The record identifier</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">args</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="p">(</span><span class="nb">list</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">)):</span>
+                <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_insert_many</span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+            <span class="n">kw</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">([(</span><span class="n">f</span><span class="p">,</span> <span class="n">arg</span><span class="p">)</span> <span class="k">for</span> <span class="n">f</span><span class="p">,</span> <span class="n">arg</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fields</span><span class="p">,</span> <span class="n">args</span><span class="p">)])</span>
+
+        <span class="n">ks</span> <span class="o">=</span> <span class="n">kw</span><span class="o">.</span><span class="n">keys</span><span class="p">()</span>
+        <span class="n">s1</span> <span class="o">=</span> <span class="s">&quot;,&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">ks</span><span class="p">)</span>
+        <span class="n">qm</span> <span class="o">=</span> <span class="s">&#39;,&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">([</span><span class="s">&#39;?&#39;</span><span class="p">]</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">ks</span><span class="p">))</span>
+        <span class="n">sql</span> <span class="o">=</span> <span class="s">&quot;INSERT INTO </span><span class="si">%s</span><span class="s"> (</span><span class="si">%s</span><span class="s">) VALUES (</span><span class="si">%s</span><span class="s">)&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">s1</span><span class="p">,</span> <span class="n">qm</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">sql</span><span class="p">,</span> <span class="nb">list</span><span class="p">(</span><span class="n">kw</span><span class="o">.</span><span class="n">values</span><span class="p">()))</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">lastrowid</span>
+</div>
+    <span class="k">def</span> <span class="nf">_insert_many</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">args</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Insert a list or tuple of records</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            - The last row id</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">sql</span> <span class="o">=</span> <span class="s">&quot;INSERT INTO </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span>
+        <span class="n">sql</span> <span class="o">+=</span> <span class="s">&quot;(</span><span class="si">%s</span><span class="s">) VALUES (</span><span class="si">%s</span><span class="s">)&quot;</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="n">ks</span> <span class="o">=</span> <span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">keys</span><span class="p">()</span>
+            <span class="n">sql</span> <span class="o">=</span> <span class="n">sql</span> <span class="o">%</span> <span class="p">(</span><span class="s">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">ks</span><span class="p">),</span> <span class="s">&#39;,&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">([</span><span class="s">&#39;?&#39;</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">ks</span><span class="p">]))</span>
+            <span class="n">args</span> <span class="o">=</span> <span class="p">[[</span><span class="n">arg</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">ks</span><span class="p">]</span> <span class="k">for</span> <span class="n">arg</span> <span class="ow">in</span> <span class="n">args</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">sql</span> <span class="o">=</span> <span class="n">sql</span> <span class="o">%</span> <span class="p">(</span><span class="s">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fields</span><span class="p">),</span>
+                         <span class="s">&#39;,&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">([</span><span class="s">&#39;?&#39;</span> <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">fields</span><span class="p">]))</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">executemany</span><span class="p">(</span><span class="n">sql</span><span class="p">,</span> <span class="n">args</span><span class="p">)</span>
+        <span class="k">except</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_err_msg</span><span class="p">(</span><span class="n">sql</span><span class="p">,</span> <span class="n">args</span><span class="p">))</span>
+        <span class="c"># return last row id</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">lastrowid</span>
+
+<div class="viewcode-block" id="Table.delete"><a class="viewcode-back" href="../../api.html#pydblite.sqlite.Table.delete">[docs]</a>    <span class="k">def</span> <span class="nf">delete</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">removed</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Remove a single record, or the records in an iterable.</span>
+
+<span class="sd">        Before starting deletion, test if all records are in the base</span>
+<span class="sd">        and don&#39;t have twice the same __id__.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">             - int: the number of deleted items</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">sql</span> <span class="o">=</span> <span class="s">&quot;DELETE FROM </span><span class="si">%s</span><span class="s"> &quot;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">removed</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="c"># remove a single record</span>
+            <span class="n">_id</span> <span class="o">=</span> <span class="n">removed</span><span class="p">[</span><span class="s">&#39;__id__&#39;</span><span class="p">]</span>
+            <span class="n">sql</span> <span class="o">+=</span> <span class="s">&quot;WHERE rowid = ?&quot;</span>
+            <span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="n">_id</span><span class="p">,)</span>
+            <span class="n">removed</span> <span class="o">=</span> <span class="p">[</span><span class="n">removed</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c"># convert iterable into a list</span>
+            <span class="n">removed</span> <span class="o">=</span> <span class="p">[</span><span class="n">r</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">removed</span><span class="p">]</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">removed</span><span class="p">:</span>
+                <span class="k">return</span> <span class="mi">0</span>
+            <span class="n">args</span> <span class="o">=</span> <span class="p">[</span><span class="n">r</span><span class="p">[</span><span class="s">&#39;__id__&#39;</span><span class="p">]</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">removed</span><span class="p">]</span>
+            <span class="n">sql</span> <span class="o">+=</span> <span class="s">&quot;WHERE rowid IN (</span><span class="si">%s</span><span class="s">)&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="s">&#39;,&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">([</span><span class="s">&#39;?&#39;</span><span class="p">]</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="p">)))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">sql</span><span class="p">,</span> <span class="n">args</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="n">removed</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Table.update"><a class="viewcode-back" href="../../api.html#pydblite.sqlite.Table.update">[docs]</a>    <span class="k">def</span> <span class="nf">update</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">record</span><span class="p">,</span> <span class="o">**</span><span class="n">kw</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Update the record with new keys and values.&quot;&quot;&quot;</span>
+        <span class="n">vals</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_make_sql_params</span><span class="p">(</span><span class="n">kw</span><span class="p">)</span>
+        <span class="n">sql</span> <span class="o">=</span> <span class="s">&quot;UPDATE </span><span class="si">%s</span><span class="s"> SET </span><span class="si">%s</span><span class="s"> WHERE rowid=?&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+                                                  <span class="s">&quot;,&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">vals</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">sql</span><span class="p">,</span> <span class="nb">list</span><span class="p">(</span><span class="n">kw</span><span class="o">.</span><span class="n">values</span><span class="p">())</span> <span class="o">+</span> <span class="p">[</span><span class="n">record</span><span class="p">[</span><span class="s">&#39;__id__&#39;</span><span class="p">]])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+</div>
+    <span class="k">def</span> <span class="nf">_make_sql_params</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">kw</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Make a list of strings to pass to an SQL statement</span>
+<span class="sd">        from the dictionary kw with Python types.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">[</span><span class="s">&#39;</span><span class="si">%s</span><span class="s">=?&#39;</span> <span class="o">%</span> <span class="n">k</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">kw</span><span class="o">.</span><span class="n">keys</span><span class="p">()]</span>
+
+    <span class="k">def</span> <span class="nf">_make_record</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">row</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Make a record dictionary from the result of a fetch_&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">fields</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">fields</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">fields_with_id</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">fields</span><span class="p">,</span> <span class="n">row</span><span class="p">))</span>
+        <span class="k">for</span> <span class="n">field_name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">conv_func</span><span class="p">:</span>
+            <span class="n">res</span><span class="p">[</span><span class="n">field_name</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">conv_func</span><span class="p">[</span><span class="n">field_name</span><span class="p">](</span><span class="n">res</span><span class="p">[</span><span class="n">field_name</span><span class="p">])</span>
+        <span class="k">return</span> <span class="n">res</span>
+
+<div class="viewcode-block" id="Table.add_field"><a class="viewcode-back" href="../../api.html#pydblite.sqlite.Table.add_field">[docs]</a>    <span class="k">def</span> <span class="nf">add_field</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">column_type</span><span class="o">=</span><span class="s">&quot;TEXT&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Add a new column to the table.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">           - name (string): The name of the field</span>
+<span class="sd">           - column_type (string): The data type of the column (Defaults to TEXT)</span>
+<span class="sd">           - default (datatype): The default value for this field (if any)</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">sql</span> <span class="o">=</span> <span class="s">&quot;ALTER TABLE </span><span class="si">%s</span><span class="s"> ADD &quot;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span>
+        <span class="n">sql</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_field</span><span class="p">((</span><span class="n">name</span><span class="p">,</span> <span class="n">column_type</span><span class="p">,</span> <span class="n">default</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">sql</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_get_table_info</span><span class="p">()</span>
+</div>
+    <span class="k">def</span> <span class="nf">drop_field</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">field</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="n">SQLiteError</span><span class="p">(</span><span class="s">&quot;Dropping fields is not supported by SQLite&quot;</span><span class="p">)</span>
+
+<div class="viewcode-block" id="Table.__call__"><a class="viewcode-back" href="../../api.html#pydblite.sqlite.Table.__call__">[docs]</a>    <span class="k">def</span> <span class="nf">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kw</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Selection by field values.</span>
+
+<span class="sd">        db(key=value) returns the list of records where r[key] = value</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">           - args (list): A field to filter on.</span>
+<span class="sd">           - kw (dict): pairs of field and value to filter on.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">           - When args supplied, return a :class:`Filter &lt;pydblite.common.Filter&gt;`</span>
+<span class="sd">             object that filters on the specified field.</span>
+<span class="sd">           - When kw supplied, return all the records where field values matches</span>
+<span class="sd">             the key/values in kw.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">args</span> <span class="ow">and</span> <span class="n">kw</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">SyntaxError</span><span class="p">(</span><span class="s">&quot;Can&#39;t specify positional AND keyword arguments&quot;</span><span class="p">)</span>
+
+        <span class="n">use_expression</span> <span class="o">=</span> <span class="bp">False</span>
+        <span class="k">if</span> <span class="n">args</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">SyntaxError</span><span class="p">(</span><span class="s">&quot;Only one field can be specified&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="ow">is</span> <span class="n">ExpressionGroup</span> <span class="ow">or</span> <span class="nb">type</span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="ow">is</span> <span class="n">Filter</span><span class="p">:</span>
+                <span class="n">use_expression</span> <span class="o">=</span> <span class="bp">True</span>
+            <span class="k">elif</span> <span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">fields</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&quot;</span><span class="si">%s</span><span class="s"> is not a field&quot;</span> <span class="o">%</span> <span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+
+        <span class="k">if</span> <span class="n">use_expression</span><span class="p">:</span>
+            <span class="n">sql</span> <span class="o">=</span> <span class="s">&quot;SELECT rowid,* FROM </span><span class="si">%s</span><span class="s"> WHERE </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">sql</span><span class="p">)</span>
+            <span class="k">return</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_make_record</span><span class="p">(</span><span class="n">row</span><span class="p">)</span> <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">fetchall</span><span class="p">()]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">kw</span><span class="p">:</span>
+                <span class="n">undef</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">kw</span><span class="p">)</span> <span class="o">-</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fields</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">undef</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&quot;Fields </span><span class="si">%s</span><span class="s"> not in the database&quot;</span> <span class="o">%</span> <span class="n">undef</span><span class="p">)</span>
+                <span class="n">vals</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_make_sql_params</span><span class="p">(</span><span class="n">kw</span><span class="p">)</span>
+                <span class="n">sql</span> <span class="o">=</span> <span class="s">&quot;SELECT rowid,* FROM </span><span class="si">%s</span><span class="s"> WHERE </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="s">&quot; AND &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">vals</span><span class="p">))</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">sql</span><span class="p">,</span> <span class="nb">list</span><span class="p">(</span><span class="n">kw</span><span class="o">.</span><span class="n">values</span><span class="p">()))</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&quot;SELECT rowid,* FROM </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+            <span class="n">records</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">fetchall</span><span class="p">()</span>
+            <span class="k">return</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_make_record</span><span class="p">(</span><span class="n">row</span><span class="p">)</span> <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">records</span><span class="p">]</span>
+</div>
+<div class="viewcode-block" id="Table.__getitem__"><a class="viewcode-back" href="../../api.html#pydblite.sqlite.Table.__getitem__">[docs]</a>    <span class="k">def</span> <span class="nf">__getitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">record_id</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Direct access by record id.&quot;&quot;&quot;</span>
+        <span class="n">sql</span> <span class="o">=</span> <span class="s">&quot;SELECT rowid,* FROM </span><span class="si">%s</span><span class="s"> WHERE rowid=</span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">record_id</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">sql</span><span class="p">)</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">res</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">IndexError</span><span class="p">(</span><span class="s">&quot;No record at index </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="n">record_id</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_make_record</span><span class="p">(</span><span class="n">res</span><span class="p">)</span>
+</div>
+    <span class="k">def</span> <span class="nf">filter</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">Filter</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_len</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">db_filter</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">db_filter</span> <span class="ow">and</span> <span class="nb">str</span><span class="p">(</span><span class="n">db_filter</span><span class="p">):</span>
+            <span class="n">sql</span> <span class="o">=</span> <span class="s">&quot;SELECT COUNT(*) AS count FROM </span><span class="si">%s</span><span class="s"> WHERE </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">db_filter</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">sql</span> <span class="o">=</span> <span class="s">&quot;SELECT COUNT(*) AS count FROM </span><span class="si">%s</span><span class="s">;&quot;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">sql</span><span class="p">)</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">res</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">__len__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_len</span><span class="p">()</span>
+
+<div class="viewcode-block" id="Table.__delitem__"><a class="viewcode-back" href="../../api.html#pydblite.sqlite.Table.__delitem__">[docs]</a>    <span class="k">def</span> <span class="nf">__delitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">record_id</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Delete by record id&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">delete</span><span class="p">(</span><span class="bp">self</span><span class="p">[</span><span class="n">record_id</span><span class="p">])</span>
+</div>
+<div class="viewcode-block" id="Table.__iter__"><a class="viewcode-back" href="../../api.html#pydblite.sqlite.Table.__iter__">[docs]</a>    <span class="k">def</span> <span class="nf">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Iteration on the records&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&quot;SELECT rowid,* FROM </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+        <span class="n">results</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_make_record</span><span class="p">(</span><span class="n">r</span><span class="p">)</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">fetchall</span><span class="p">()]</span>
+        <span class="k">return</span> <span class="nb">iter</span><span class="p">(</span><span class="n">results</span><span class="p">)</span>
+</div>
+    <span class="k">def</span> <span class="nf">_err_msg</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sql</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Exception for table </span><span class="si">%s</span><span class="s">.</span><span class="si">%s</span><span class="se">\n</span><span class="s">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+        <span class="n">msg</span> <span class="o">+=</span> <span class="s">&#39;SQL request </span><span class="si">%s</span><span class="se">\n</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">sql</span>
+        <span class="k">if</span> <span class="n">args</span><span class="p">:</span>
+            <span class="kn">import</span> <span class="nn">pprint</span>
+            <span class="n">msg</span> <span class="o">+=</span> <span class="s">&#39;Arguments : </span><span class="si">%s</span><span class="se">\n</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">pprint</span><span class="o">.</span><span class="n">saferepr</span><span class="p">(</span><span class="n">args</span><span class="p">)</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">StringIO</span><span class="p">()</span>
+        <span class="n">traceback</span><span class="o">.</span><span class="n">print_exc</span><span class="p">(</span><span class="nb">file</span><span class="o">=</span><span class="n">out</span><span class="p">)</span>
+        <span class="n">msg</span> <span class="o">+=</span> <span class="n">out</span><span class="o">.</span><span class="n">getvalue</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">msg</span>
+
+    <span class="k">def</span> <span class="nf">get_group_count</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">group_by</span><span class="p">,</span> <span class="n">db_filter</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">db_filter</span> <span class="ow">and</span> <span class="nb">str</span><span class="p">(</span><span class="n">db_filter</span><span class="p">):</span>
+            <span class="n">sql</span> <span class="o">=</span> <span class="s">&quot;SELECT </span><span class="si">%s</span><span class="s">, COUNT(*) FROM </span><span class="si">%s</span><span class="s"> GROUP BY </span><span class="si">%s</span><span class="s"> WHERE </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">group_by</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+                                                                        <span class="n">group_by</span><span class="p">,</span> <span class="n">db_filter</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">sql</span> <span class="o">=</span> <span class="s">&quot;SELECT </span><span class="si">%s</span><span class="s">, COUNT(*) FROM </span><span class="si">%s</span><span class="s"> GROUP BY </span><span class="si">%s</span><span class="s">;&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">group_by</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">group_by</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">sql</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">fetchall</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">get_unique_ids</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">unique_id</span><span class="p">,</span> <span class="n">db_filter</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="n">sql</span> <span class="o">=</span> <span class="s">&quot;SELECT rowid,</span><span class="si">%s</span><span class="s"> FROM </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">unique_id</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">db_filter</span> <span class="ow">and</span> <span class="nb">str</span><span class="p">(</span><span class="n">db_filter</span><span class="p">):</span>
+            <span class="n">sql</span> <span class="o">+=</span> <span class="s">&quot; WHERE </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="n">db_filter</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">sql</span><span class="p">)</span>
+        <span class="n">records</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">fetchall</span><span class="p">()</span>
+        <span class="k">return</span> <span class="nb">set</span><span class="p">([</span><span class="n">row</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">records</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">create_index</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">index_columns</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">ic</span> <span class="ow">in</span> <span class="n">index_columns</span><span class="p">:</span>
+            <span class="n">sql</span> <span class="o">=</span> <span class="s">&quot;CREATE INDEX index_</span><span class="si">%s</span><span class="s"> on </span><span class="si">%s</span><span class="s"> (</span><span class="si">%s</span><span class="s">);&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">ic</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">ic</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">sql</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">delete_index</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">index_columns</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">ic</span> <span class="ow">in</span> <span class="n">index_columns</span><span class="p">:</span>
+            <span class="n">sql</span> <span class="o">=</span> <span class="s">&quot;DROP INDEX index_</span><span class="si">%s</span><span class="s">;&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">ic</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">sql</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">get_indices</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">indices</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">sql</span> <span class="o">=</span> <span class="s">&quot;SELECT * FROM sqlite_master WHERE type = &#39;index&#39;;&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">sql</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">OperationalError</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">indices</span>
+
+        <span class="n">records</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">fetchall</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">records</span><span class="p">:</span>
+            <span class="n">indices</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">r</span><span class="p">[</span><span class="mi">1</span><span class="p">][</span><span class="nb">len</span><span class="p">(</span><span class="s">&quot;index_&quot;</span><span class="p">):])</span>
+        <span class="k">return</span> <span class="n">indices</span>
+</div>
+<span class="n">Base</span> <span class="o">=</span> <span class="n">Table</span>  <span class="c"># compatibility with previous versions</span>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+        <p class="logo"><a href="../../index.html" title="index">
+          <img class="logo" src="../../_static/banniere.jpg" alt="Logo"/>
+        </a></p>
+<div class="sphinxglobaltoc">
+<h3><a href="../../index.html">Table Of Contents</a></h3>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../pythonengine.html">Pure-Python engine</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../sqliteengine.html">SQLite adapter</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../api.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../examples.html">Example code</a></li>
+</ul>
+</div><h4>Code</h4>
+<p class="topless">
+  <ul class="this-page-menu">
+	<li><a href="http://sourceforge.net/project/platformdownload.php?group_id=210258" title="Download">Download</a></li>
+	<li><a href="https://github.com/PierreQuentel/PyDbLite" title="Browse source">Browse source on Github</a></li>
+	<li><a href="changelog.html" title="Changelog">Changelog</a></li>
+	<li><a href="license.html" title="License">License</a></li>
+  </ul>
+</p><h4>Tests and Documentation</h4>
+<p class="topless">
+  <ul class="this-page-menu">
+	<li><a href="unittests.html" title="Unit tests">Unit tests</a></li>
+	<li><a href="http://PierreQuentel.github.io/PyDbLite/" title="Unit tests coverage">Unit tests coverage</a></li>
+	<li><a href="benchmarks.html" title="Benchmarks">Benchmarks</a></li>
+	<li><a href="doccoverage.html" title="Documentation coverage">Documentation coverage</a></li>
+	<li><a href="https://media.readthedocs.org/pdf/pydblite/latest/pydblite.pdf" title="Documention as PDF">Documention as PDF</a></li>
+  </ul>
+</p><h4>Contact</h4>
+<p class="topless">
+  <ul class="this-page-menu">
+	<li><a href="http://groups.google.com/group/pydblite" title="Mailing list">Mailing list</a></li>
+	<li><a href="contact.html" title="Authors">Authors</a></li>
+  </ul>
+</p>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="relbar-bottom">
+        
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> &nbsp; &nbsp;</li>
+        <li class="right" >
+          <a href="../../contents.html" title="Table Of Contents"
+             >toc</a> &nbsp; &nbsp;</li>
+    <li><a href="../../index.html">PyDbLite 3.0 documentation</a> &raquo;</li>
+
+          <li><a href="../index.html" >Module code</a> &raquo;</li> 
+      </ul>
+    </div>
+    </div>
+
+    <div class="footer">
+        &copy; Copyright 2014, Pierre Quentel, Bendik Rønning Opstad.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+    <!-- cloud_sptheme 1.4 -->
+  </body>
+</html>

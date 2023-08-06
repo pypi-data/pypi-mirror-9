@@ -1,0 +1,691 @@
+
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>pydblite.pydblite &mdash; PyDbLite 3.0 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/cloud.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    <link rel="stylesheet" href="//fonts.googleapis.com/css?family=Noticia+Text|Open+Sans|Droid+Sans+Mono" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '3.0',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <script type="text/javascript" src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    <script type="text/javascript" src="../../_static/jquery.cookie.js"></script>
+    <script type="text/javascript" src="../../_static/cloud.js"></script>
+    <link rel="top" title="PyDbLite 3.0 documentation" href="../../index.html" />
+    <link rel="up" title="Module code" href="../index.html" /> 
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+  </head>
+  <body>
+    <div class="relbar-top">
+        
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> &nbsp; &nbsp;</li>
+        <li class="right" >
+          <a href="../../contents.html" title="Table Of Contents"
+             accesskey="C">toc</a> &nbsp; &nbsp;</li>
+    <li><a href="../../index.html">PyDbLite 3.0 documentation</a> &raquo;</li>
+
+          <li><a href="../index.html" accesskey="U">Module code</a> &raquo;</li> 
+      </ul>
+    </div>
+    </div>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <h1>Source code for pydblite.pydblite</h1><div class="highlight"><pre>
+<span class="c">#</span>
+<span class="c"># BSD licence</span>
+<span class="c">#</span>
+<span class="c"># Author : Pierre Quentel (pierre.quentel@gmail.com)</span>
+<span class="c">#</span>
+
+<span class="kn">import</span> <span class="nn">bisect</span>
+<span class="kn">import</span> <span class="nn">operator</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">sys</span>
+<span class="kn">from</span> <span class="nn">itertools</span> <span class="kn">import</span> <span class="n">groupby</span>
+
+<span class="kn">from</span> <span class="nn">.common</span> <span class="kn">import</span> <span class="n">Expression</span><span class="p">,</span> <span class="n">ExpressionGroup</span><span class="p">,</span> <span class="n">Filter</span>
+
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">import</span> <span class="nn">cPickle</span> <span class="kn">as</span> <span class="nn">pickle</span>
+<span class="k">except</span><span class="p">:</span>
+    <span class="kn">import</span> <span class="nn">pickle</span>
+
+<span class="n">version</span> <span class="o">=</span> <span class="s">&quot;3.0.1&quot;</span>
+
+
+<span class="k">def</span> <span class="nf">_in</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">operator</span><span class="o">.</span><span class="n">contains</span><span class="p">(</span><span class="n">b</span><span class="p">,</span> <span class="n">a</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">like</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">operator</span><span class="o">.</span><span class="n">contains</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">lower</span><span class="p">(),</span> <span class="n">b</span><span class="o">.</span><span class="n">lower</span><span class="p">())</span>
+
+
+<span class="k">class</span> <span class="nc">PyDbExpression</span><span class="p">(</span><span class="n">Expression</span><span class="p">):</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">PyDbExpression</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">operations</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;AND&#39;</span><span class="p">:</span> <span class="s">&#39;AND&#39;</span><span class="p">,</span> <span class="s">&#39;OR&#39;</span><span class="p">:</span> <span class="s">&#39;OR&#39;</span><span class="p">,</span>
+                           <span class="s">&#39;LIKE&#39;</span><span class="p">:</span> <span class="n">like</span><span class="p">,</span>
+                           <span class="s">&#39;GLOB&#39;</span><span class="p">:</span> <span class="n">operator</span><span class="o">.</span><span class="n">contains</span><span class="p">,</span>
+                           <span class="s">&quot;IN&quot;</span><span class="p">:</span> <span class="n">_in</span><span class="p">,</span>
+                           <span class="s">&#39;=&#39;</span><span class="p">:</span> <span class="n">operator</span><span class="o">.</span><span class="n">eq</span><span class="p">,</span> <span class="s">&#39;!=&#39;</span><span class="p">:</span> <span class="n">operator</span><span class="o">.</span><span class="n">ne</span><span class="p">,</span> <span class="s">&#39;&lt;&#39;</span><span class="p">:</span> <span class="n">operator</span><span class="o">.</span><span class="n">lt</span><span class="p">,</span>
+                           <span class="s">&#39;&lt;=&#39;</span><span class="p">:</span> <span class="n">operator</span><span class="o">.</span><span class="n">le</span><span class="p">,</span> <span class="s">&#39;&gt;&#39;</span><span class="p">:</span> <span class="n">operator</span><span class="o">.</span><span class="n">gt</span><span class="p">,</span> <span class="s">&#39;&gt;=&#39;</span><span class="p">:</span> <span class="n">operator</span><span class="o">.</span><span class="n">ge</span><span class="p">}</span>
+
+    <span class="k">def</span> <span class="nf">apply</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">records</span><span class="p">):</span>
+        <span class="n">operation</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">operations</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">operator</span><span class="p">]</span>
+        <span class="n">records</span> <span class="o">=</span> <span class="p">[</span><span class="n">r</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">records</span> <span class="k">if</span> <span class="n">operation</span><span class="p">(</span><span class="n">r</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">key</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">value</span><span class="p">)]</span>
+        <span class="k">return</span> <span class="n">records</span>
+
+
+<span class="k">class</span> <span class="nc">PyDbExpressionGroup</span><span class="p">(</span><span class="n">ExpressionGroup</span><span class="p">):</span>
+
+    <span class="k">def</span> <span class="nf">apply_filter</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">records</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_dummy</span><span class="p">():</span>
+            <span class="k">return</span> <span class="s">&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">expression</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">expression</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="n">records</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c"># Parent of two expressions</span>
+            <span class="n">records1</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">exp_group1</span><span class="o">.</span><span class="n">apply_filter</span><span class="p">(</span><span class="n">records</span><span class="p">)</span>
+            <span class="n">records2</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">exp_group2</span><span class="o">.</span><span class="n">apply_filter</span><span class="p">(</span><span class="n">records</span><span class="p">)</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">exp_operator</span> <span class="o">==</span> <span class="n">Filter</span><span class="o">.</span><span class="n">operations</span><span class="o">.</span><span class="n">AND</span><span class="p">:</span>
+                <span class="n">ids1</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">([(</span><span class="nb">id</span><span class="p">(</span><span class="n">r</span><span class="p">),</span> <span class="n">r</span><span class="p">)</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">records1</span><span class="p">])</span>
+                <span class="n">ids2</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">([(</span><span class="nb">id</span><span class="p">(</span><span class="n">r</span><span class="p">),</span> <span class="n">r</span><span class="p">)</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">records2</span><span class="p">])</span>
+                <span class="n">ids</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">ids1</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span> <span class="o">&amp;</span> <span class="nb">set</span><span class="p">(</span><span class="n">ids2</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
+                <span class="n">records</span> <span class="o">=</span> <span class="p">[</span><span class="n">ids1</span><span class="p">[</span><span class="n">_id</span><span class="p">]</span> <span class="k">for</span> <span class="n">_id</span> <span class="ow">in</span> <span class="n">ids</span><span class="p">]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">ids</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">([(</span><span class="nb">id</span><span class="p">(</span><span class="n">r</span><span class="p">),</span> <span class="n">r</span><span class="p">)</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">records1</span><span class="p">])</span>
+                <span class="n">ids</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="nb">dict</span><span class="p">([(</span><span class="nb">id</span><span class="p">(</span><span class="n">r</span><span class="p">),</span> <span class="n">r</span><span class="p">)</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">records2</span><span class="p">]))</span>
+                <span class="n">records</span> <span class="o">=</span> <span class="n">ids</span><span class="o">.</span><span class="n">values</span><span class="p">()</span>
+            <span class="k">return</span> <span class="n">records</span>
+
+
+<span class="k">class</span> <span class="nc">PyDbFilter</span><span class="p">(</span><span class="n">Filter</span><span class="p">):</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">db</span><span class="p">,</span> <span class="n">key</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">db</span> <span class="o">=</span> <span class="n">db</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">key</span> <span class="o">=</span> <span class="n">key</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">expression_group</span> <span class="o">=</span> <span class="n">PyDbExpressionGroup</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">expression_t</span> <span class="o">=</span> <span class="n">PyDbExpression</span>
+
+    <span class="k">def</span> <span class="nf">apply_filter</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">records</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">expression_group</span><span class="o">.</span><span class="n">apply_filter</span><span class="p">(</span><span class="n">records</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="Index"><a class="viewcode-back" href="../../api.html#pydblite.pydblite.Index">[docs]</a><span class="k">class</span> <span class="nc">Index</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Class used for indexing a base on a field.</span>
+<span class="sd">    The instance of Index is an attribute of the Base instance&quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">db</span><span class="p">,</span> <span class="n">field</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">db</span> <span class="o">=</span> <span class="n">db</span>  <span class="c"># database object (instance of Base)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">field</span> <span class="o">=</span> <span class="n">field</span>  <span class="c"># field name</span>
+
+    <span class="k">def</span> <span class="nf">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">iter</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">indices</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">field</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">keys</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">indices</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">field</span><span class="p">]</span><span class="o">.</span><span class="n">keys</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">__getitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Lookup by key : return the list of records where</span>
+<span class="sd">        field value is equal to this key, or an empty list&quot;&quot;&quot;</span>
+        <span class="n">ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">indices</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">field</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="p">[])</span>
+        <span class="k">return</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">records</span><span class="p">[</span><span class="n">_id</span><span class="p">]</span> <span class="k">for</span> <span class="n">_id</span> <span class="ow">in</span> <span class="n">ids</span><span class="p">]</span>
+
+</div>
+<div class="viewcode-block" id="_Base"><a class="viewcode-back" href="../../api.html#pydblite.pydblite._Base">[docs]</a><span class="k">class</span> <span class="nc">_Base</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+
+<div class="viewcode-block" id="_Base.__init__"><a class="viewcode-back" href="../../api.html#pydblite.pydblite._Base.__init__">[docs]</a>    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">protocol</span><span class="o">=</span><span class="n">pickle</span><span class="o">.</span><span class="n">HIGHEST_PROTOCOL</span><span class="p">,</span> <span class="n">save_to_file</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span>
+                 <span class="n">sqlite_compat</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;protocol as defined in pickle / pickle.</span>
+<span class="sd">        Defaults to the highest protocol available.</span>
+<span class="sd">        For maximum compatibility use protocol = 0</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">path</span> <span class="o">=</span> <span class="n">path</span>
+        <span class="sd">&quot;&quot;&quot;The path of the database in the file system&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">splitext</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">basename</span><span class="p">(</span><span class="n">path</span><span class="p">))[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="sd">&quot;&quot;&quot;The basename of the path, stripped of its extension&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">protocol</span> <span class="o">=</span> <span class="n">protocol</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">mode</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="k">if</span> <span class="n">path</span> <span class="o">==</span> <span class="s">&quot;:memory:&quot;</span><span class="p">:</span>
+            <span class="n">save_to_file</span> <span class="o">=</span> <span class="bp">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">save_to_file</span> <span class="o">=</span> <span class="n">save_to_file</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sqlite_compat</span> <span class="o">=</span> <span class="n">sqlite_compat</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fields</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="sd">&quot;&quot;&quot;The list of the fields (does not include the internal</span>
+<span class="sd">        fields __id__ and __version__)&quot;&quot;&quot;</span>
+        <span class="c"># if base exists, get field names</span>
+        <span class="k">if</span> <span class="n">save_to_file</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">protocol</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">_in</span> <span class="o">=</span> <span class="nb">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">path</span><span class="p">)</span>  <span class="c"># don&#39;t specify binary mode !</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">_in</span> <span class="o">=</span> <span class="nb">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">path</span><span class="p">,</span> <span class="s">&#39;rb&#39;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">fields</span> <span class="o">=</span> <span class="n">pickle</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">_in</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="_Base.exists"><a class="viewcode-back" href="../../api.html#pydblite.pydblite._Base.exists">[docs]</a>    <span class="k">def</span> <span class="nf">exists</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns:</span>
+<span class="sd">            - bool: if the database file exists</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isfile</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">path</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="_Base.create"><a class="viewcode-back" href="../../api.html#pydblite.pydblite._Base.create">[docs]</a>    <span class="k">def</span> <span class="nf">create</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">fields</span><span class="p">,</span> <span class="o">**</span><span class="n">kw</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Create a new base with specified field names.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            - \*fields (str): The field names to create.</span>
+<span class="sd">            - mode (str): the mode used when creating the database.</span>
+
+<span class="sd">        - if mode = &#39;open&#39; : open the existing base, ignore the fields</span>
+<span class="sd">        - if mode = &#39;override&#39; : erase the existing base and create a</span>
+<span class="sd">          new one with the specified fields</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            - Returns the database (self).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">mode</span> <span class="o">=</span> <span class="n">mode</span> <span class="o">=</span> <span class="n">kw</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&quot;mode&quot;</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">save_to_file</span> <span class="ow">and</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">path</span><span class="p">):</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isfile</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">path</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">IOError</span><span class="p">(</span><span class="s">&quot;</span><span class="si">%s</span><span class="s"> exists and is not a file&quot;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">path</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">mode</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">IOError</span><span class="p">(</span><span class="s">&quot;Base </span><span class="si">%s</span><span class="s"> already exists&quot;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">path</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">mode</span> <span class="o">==</span> <span class="s">&quot;open&quot;</span><span class="p">:</span>
+                <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">open</span><span class="p">()</span>
+            <span class="k">elif</span> <span class="n">mode</span> <span class="o">==</span> <span class="s">&quot;override&quot;</span><span class="p">:</span>
+                <span class="n">os</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">path</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&quot;Invalid value given for &#39;open&#39;: &#39;</span><span class="si">%s</span><span class="s">&#39;&quot;</span> <span class="o">%</span> <span class="nb">open</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">fields</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">default_values</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">field</span> <span class="ow">in</span> <span class="n">fields</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">field</span><span class="p">)</span> <span class="ow">is</span> <span class="nb">dict</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">fields</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">field</span><span class="p">[</span><span class="s">&quot;name&quot;</span><span class="p">])</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">default_values</span><span class="p">[</span><span class="n">field</span><span class="p">[</span><span class="s">&quot;name&quot;</span><span class="p">]]</span> <span class="o">=</span> <span class="n">field</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&quot;default&quot;</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="nb">type</span><span class="p">(</span><span class="n">field</span><span class="p">)</span> <span class="ow">is</span> <span class="nb">tuple</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">fields</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">field</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">default_values</span><span class="p">[</span><span class="n">field</span><span class="p">[</span><span class="mi">0</span><span class="p">]]</span> <span class="o">=</span> <span class="n">field</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">fields</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">field</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">default_values</span><span class="p">[</span><span class="n">field</span><span class="p">]</span> <span class="o">=</span> <span class="bp">None</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">records</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">next_id</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">indices</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+        <span class="k">return</span> <span class="bp">self</span>
+</div>
+<div class="viewcode-block" id="_Base.create_index"><a class="viewcode-back" href="../../api.html#pydblite.pydblite._Base.create_index">[docs]</a>    <span class="k">def</span> <span class="nf">create_index</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">fields</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Create an index on the specified field names</span>
+
+<span class="sd">        An index on a field is a mapping between the values taken by the field</span>
+<span class="sd">        and the sorted list of the ids of the records whose field is equal to</span>
+<span class="sd">        this value</span>
+
+<span class="sd">        For each indexed field, an attribute of self is created, an instance</span>
+<span class="sd">        of the class Index (see above). Its name it the field name, with the</span>
+<span class="sd">        prefix _ to avoid name conflicts</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            - fields (list): the fields to index</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">reset</span> <span class="o">=</span> <span class="bp">False</span>
+        <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">fields</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">f</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">fields</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">NameError</span><span class="p">(</span><span class="s">&quot;</span><span class="si">%s</span><span class="s"> is not a field name </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">fields</span><span class="p">))</span>
+            <span class="c"># initialize the indices</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">mode</span> <span class="o">==</span> <span class="s">&quot;open&quot;</span> <span class="ow">and</span> <span class="n">f</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">indices</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">reset</span> <span class="o">=</span> <span class="bp">True</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">indices</span><span class="p">[</span><span class="n">f</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+            <span class="k">for</span> <span class="n">_id</span><span class="p">,</span> <span class="n">record</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">records</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="c"># use bisect to quickly insert the id in the list</span>
+                <span class="n">bisect</span><span class="o">.</span><span class="n">insort</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">indices</span><span class="p">[</span><span class="n">f</span><span class="p">]</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">record</span><span class="p">[</span><span class="n">f</span><span class="p">],</span> <span class="p">[]),</span> <span class="n">_id</span><span class="p">)</span>
+            <span class="c"># create a new attribute of self, used to find the records</span>
+            <span class="c"># by this index</span>
+            <span class="nb">setattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s">&#39;_&#39;</span> <span class="o">+</span> <span class="n">f</span><span class="p">,</span> <span class="n">Index</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">f</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">reset</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+</div>
+<div class="viewcode-block" id="_Base.delete_index"><a class="viewcode-back" href="../../api.html#pydblite.pydblite._Base.delete_index">[docs]</a>    <span class="k">def</span> <span class="nf">delete_index</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">fields</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Delete the index on the specified fields&quot;&quot;&quot;</span>
+        <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">fields</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">f</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">indices</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&quot;No index on field </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="n">f</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">fields</span><span class="p">:</span>
+            <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">indices</span><span class="p">[</span><span class="n">f</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+</div>
+<div class="viewcode-block" id="_Base.open"><a class="viewcode-back" href="../../api.html#pydblite.pydblite._Base.open">[docs]</a>    <span class="k">def</span> <span class="nf">open</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Open an existing database and load its content into memory&quot;&quot;&quot;</span>
+        <span class="c"># guess protocol</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">protocol</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">_in</span> <span class="o">=</span> <span class="nb">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">path</span><span class="p">)</span>  <span class="c"># don&#39;t specify binary mode !</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">_in</span> <span class="o">=</span> <span class="nb">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">path</span><span class="p">,</span> <span class="s">&#39;rb&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fields</span> <span class="o">=</span> <span class="n">pickle</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">_in</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">next_id</span> <span class="o">=</span> <span class="n">pickle</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">_in</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">records</span> <span class="o">=</span> <span class="n">pickle</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">_in</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">indices</span> <span class="o">=</span> <span class="n">pickle</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">_in</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="c"># If loading an old database, the default values do not exist</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">default_values</span> <span class="o">=</span> <span class="n">pickle</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">_in</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">EOFError</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">default_values</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">indices</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+            <span class="nb">setattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s">&#39;_&#39;</span> <span class="o">+</span> <span class="n">f</span><span class="p">,</span> <span class="n">Index</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">f</span><span class="p">))</span>
+        <span class="n">_in</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">mode</span> <span class="o">=</span> <span class="s">&quot;open&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span>
+</div>
+<div class="viewcode-block" id="_Base.commit"><a class="viewcode-back" href="../../api.html#pydblite.pydblite._Base.commit">[docs]</a>    <span class="k">def</span> <span class="nf">commit</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Write the database to a file&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">save_to_file</span> <span class="ow">is</span> <span class="bp">False</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="nb">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">path</span><span class="p">,</span> <span class="s">&#39;wb&#39;</span><span class="p">)</span>
+        <span class="n">pickle</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fields</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">protocol</span><span class="p">)</span>
+        <span class="n">pickle</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">next_id</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">protocol</span><span class="p">)</span>
+        <span class="n">pickle</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">records</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">protocol</span><span class="p">)</span>
+        <span class="n">pickle</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">indices</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">protocol</span><span class="p">)</span>
+        <span class="n">pickle</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">default_values</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">protocol</span><span class="p">)</span>
+        <span class="n">out</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+</div>
+<div class="viewcode-block" id="_Base.insert"><a class="viewcode-back" href="../../api.html#pydblite.pydblite._Base.insert">[docs]</a>    <span class="k">def</span> <span class="nf">insert</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kw</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Insert one or more records in the database.</span>
+
+<span class="sd">        Parameters can be positional or keyword arguments. If positional</span>
+<span class="sd">        they must be in the same order as in the create() method</span>
+<span class="sd">        If some of the fields are missing the value is set to None</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            - args (values, or a list/tuple of values): The record(s) to insert.</span>
+<span class="sd">            - kw (dict): The field/values to insert</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            - Returns the record identifier if inserting one item, else None.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">mode</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s">&quot;Database columns have not been setup!&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">args</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">sqlite_compat</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="p">(</span><span class="nb">list</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">)):</span>
+                <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]:</span>
+                    <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">e</span><span class="p">)</span> <span class="ow">is</span> <span class="nb">dict</span><span class="p">:</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="o">**</span><span class="n">e</span><span class="p">)</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="o">*</span><span class="n">e</span><span class="p">)</span>
+                <span class="k">return</span> <span class="bp">None</span>
+            <span class="n">kw</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">([(</span><span class="n">f</span><span class="p">,</span> <span class="n">arg</span><span class="p">)</span> <span class="k">for</span> <span class="n">f</span><span class="p">,</span> <span class="n">arg</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fields</span><span class="p">,</span> <span class="n">args</span><span class="p">)])</span>
+        <span class="c"># initialize all fields to the default values</span>
+        <span class="kn">import</span> <span class="nn">copy</span>
+        <span class="n">record</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">default_values</span><span class="p">)</span>
+        <span class="c"># raise exception if unknown field</span>
+        <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">kw</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">key</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">fields</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">NameError</span><span class="p">(</span><span class="s">&quot;Invalid field name : </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="n">key</span><span class="p">)</span>
+        <span class="c"># set keys and values</span>
+        <span class="k">for</span> <span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span> <span class="ow">in</span> <span class="n">kw</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">record</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="n">v</span>
+        <span class="c"># add the key __id__ : record identifier</span>
+        <span class="n">record</span><span class="p">[</span><span class="s">&#39;__id__&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">next_id</span>
+        <span class="c"># add the key __version__ : version number</span>
+        <span class="n">record</span><span class="p">[</span><span class="s">&#39;__version__&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="c"># create an entry in the dictionary self.records, indexed by __id__</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">records</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">next_id</span><span class="p">]</span> <span class="o">=</span> <span class="n">record</span>
+        <span class="c"># update index</span>
+        <span class="k">for</span> <span class="n">ix</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">indices</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+            <span class="n">bisect</span><span class="o">.</span><span class="n">insort</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">indices</span><span class="p">[</span><span class="n">ix</span><span class="p">]</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">record</span><span class="p">[</span><span class="n">ix</span><span class="p">],</span> <span class="p">[]),</span> <span class="bp">self</span><span class="o">.</span><span class="n">next_id</span><span class="p">)</span>
+        <span class="c"># increment the next __id__</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">next_id</span> <span class="o">+=</span> <span class="mi">1</span>
+        <span class="k">return</span> <span class="n">record</span><span class="p">[</span><span class="s">&#39;__id__&#39;</span><span class="p">]</span>
+</div>
+<div class="viewcode-block" id="_Base.delete"><a class="viewcode-back" href="../../api.html#pydblite.pydblite._Base.delete">[docs]</a>    <span class="k">def</span> <span class="nf">delete</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">remove</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Remove a single record, or the records in an iterable</span>
+
+<span class="sd">        Before starting deletion, test if all records are in the base</span>
+<span class="sd">        and don&#39;t have twice the same __id__</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            - remove (record or list of records): The record(s) to delete.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            - Return the number of deleted items</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">remove</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="n">remove</span> <span class="o">=</span> <span class="p">[</span><span class="n">remove</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c"># convert iterable into a list (to be able to sort it)</span>
+            <span class="n">remove</span> <span class="o">=</span> <span class="p">[</span><span class="n">r</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">remove</span><span class="p">]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">remove</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mi">0</span>
+        <span class="n">_ids</span> <span class="o">=</span> <span class="p">[</span><span class="n">r</span><span class="p">[</span><span class="s">&#39;__id__&#39;</span><span class="p">]</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">remove</span><span class="p">]</span>
+        <span class="n">_ids</span><span class="o">.</span><span class="n">sort</span><span class="p">()</span>
+        <span class="n">keys</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">records</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
+        <span class="c"># check if the records are in the base</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">set</span><span class="p">(</span><span class="n">_ids</span><span class="p">)</span><span class="o">.</span><span class="n">issubset</span><span class="p">(</span><span class="n">keys</span><span class="p">):</span>
+            <span class="n">missing</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">_ids</span><span class="p">)</span><span class="o">.</span><span class="n">difference</span><span class="p">(</span><span class="n">keys</span><span class="p">))</span>
+            <span class="k">raise</span> <span class="ne">IndexError</span><span class="p">(</span><span class="s">&#39;Delete aborted. Records with these ids&#39;</span>
+                             <span class="s">&#39; not found in the base : </span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="nb">str</span><span class="p">(</span><span class="n">missing</span><span class="p">))</span>
+        <span class="c"># raise exception if duplicate ids</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">_ids</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">_ids</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">==</span> <span class="n">_ids</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]:</span>
+                <span class="k">raise</span> <span class="ne">IndexError</span><span class="p">(</span><span class="s">&quot;Delete aborted. Duplicate id : </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="n">_ids</span><span class="p">[</span><span class="n">i</span><span class="p">])</span>
+        <span class="n">deleted</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">remove</span><span class="p">)</span>
+        <span class="k">while</span> <span class="n">remove</span><span class="p">:</span>
+            <span class="n">r</span> <span class="o">=</span> <span class="n">remove</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span>
+            <span class="n">_id</span> <span class="o">=</span> <span class="n">r</span><span class="p">[</span><span class="s">&#39;__id__&#39;</span><span class="p">]</span>
+            <span class="c"># remove id from indices</span>
+            <span class="k">for</span> <span class="n">indx</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">indices</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+                <span class="n">pos</span> <span class="o">=</span> <span class="n">bisect</span><span class="o">.</span><span class="n">bisect</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">indices</span><span class="p">[</span><span class="n">indx</span><span class="p">][</span><span class="n">r</span><span class="p">[</span><span class="n">indx</span><span class="p">]],</span> <span class="n">_id</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span>
+                <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">indices</span><span class="p">[</span><span class="n">indx</span><span class="p">][</span><span class="n">r</span><span class="p">[</span><span class="n">indx</span><span class="p">]][</span><span class="n">pos</span><span class="p">]</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">indices</span><span class="p">[</span><span class="n">indx</span><span class="p">][</span><span class="n">r</span><span class="p">[</span><span class="n">indx</span><span class="p">]]:</span>
+                    <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">indices</span><span class="p">[</span><span class="n">indx</span><span class="p">][</span><span class="n">r</span><span class="p">[</span><span class="n">indx</span><span class="p">]]</span>
+            <span class="c"># remove record from self.records</span>
+            <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">records</span><span class="p">[</span><span class="n">_id</span><span class="p">]</span>
+        <span class="k">return</span> <span class="n">deleted</span>
+</div>
+<div class="viewcode-block" id="_Base.update"><a class="viewcode-back" href="../../api.html#pydblite.pydblite._Base.update">[docs]</a>    <span class="k">def</span> <span class="nf">update</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">records</span><span class="p">,</span> <span class="o">**</span><span class="n">kw</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Update one record or a list of records</span>
+<span class="sd">        with new keys and values and update indices</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">           - records (record or list of records): The record(s) to update.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c"># ignore unknown fields</span>
+        <span class="n">kw</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">([(</span><span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span> <span class="k">for</span> <span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span> <span class="ow">in</span> <span class="n">kw</span><span class="o">.</span><span class="n">items</span><span class="p">()</span> <span class="k">if</span> <span class="n">k</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">fields</span><span class="p">])</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">records</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="n">records</span> <span class="o">=</span> <span class="p">[</span><span class="n">records</span><span class="p">]</span>
+        <span class="c"># update indices</span>
+        <span class="k">for</span> <span class="n">indx</span> <span class="ow">in</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">indices</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span> <span class="o">&amp;</span> <span class="nb">set</span><span class="p">(</span><span class="n">kw</span><span class="o">.</span><span class="n">keys</span><span class="p">()):</span>
+            <span class="k">for</span> <span class="n">record</span> <span class="ow">in</span> <span class="n">records</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">record</span><span class="p">[</span><span class="n">indx</span><span class="p">]</span> <span class="o">==</span> <span class="n">kw</span><span class="p">[</span><span class="n">indx</span><span class="p">]:</span>
+                    <span class="k">continue</span>
+                <span class="n">_id</span> <span class="o">=</span> <span class="n">record</span><span class="p">[</span><span class="s">&quot;__id__&quot;</span><span class="p">]</span>
+                <span class="c"># remove id for the old value</span>
+                <span class="n">old_pos</span> <span class="o">=</span> <span class="n">bisect</span><span class="o">.</span><span class="n">bisect</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">indices</span><span class="p">[</span><span class="n">indx</span><span class="p">][</span><span class="n">record</span><span class="p">[</span><span class="n">indx</span><span class="p">]],</span> <span class="n">_id</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span>
+                <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">indices</span><span class="p">[</span><span class="n">indx</span><span class="p">][</span><span class="n">record</span><span class="p">[</span><span class="n">indx</span><span class="p">]][</span><span class="n">old_pos</span><span class="p">]</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">indices</span><span class="p">[</span><span class="n">indx</span><span class="p">][</span><span class="n">record</span><span class="p">[</span><span class="n">indx</span><span class="p">]]:</span>
+                    <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">indices</span><span class="p">[</span><span class="n">indx</span><span class="p">][</span><span class="n">record</span><span class="p">[</span><span class="n">indx</span><span class="p">]]</span>
+                <span class="c"># insert new value</span>
+                <span class="n">bisect</span><span class="o">.</span><span class="n">insort</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">indices</span><span class="p">[</span><span class="n">indx</span><span class="p">]</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">kw</span><span class="p">[</span><span class="n">indx</span><span class="p">],</span> <span class="p">[]),</span> <span class="n">_id</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">record</span> <span class="ow">in</span> <span class="n">records</span><span class="p">:</span>
+            <span class="c"># update record values</span>
+            <span class="n">record</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">kw</span><span class="p">)</span>
+            <span class="c"># increment version number</span>
+            <span class="n">record</span><span class="p">[</span><span class="s">&quot;__version__&quot;</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+</div>
+<div class="viewcode-block" id="_Base.add_field"><a class="viewcode-back" href="../../api.html#pydblite.pydblite._Base.add_field">[docs]</a>    <span class="k">def</span> <span class="nf">add_field</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="n">column_type</span><span class="o">=</span><span class="s">&quot;ignored&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Adds a field to the database&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">field</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">fields</span> <span class="o">+</span> <span class="p">[</span><span class="s">&quot;__id__&quot;</span><span class="p">,</span> <span class="s">&quot;__version__&quot;</span><span class="p">]:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&quot;Field </span><span class="si">%s</span><span class="s"> already defined&quot;</span> <span class="o">%</span> <span class="n">field</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s">&#39;records&#39;</span><span class="p">):</span>  <span class="c"># base not open yet</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">open</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="bp">self</span><span class="p">:</span>
+            <span class="n">r</span><span class="p">[</span><span class="n">field</span><span class="p">]</span> <span class="o">=</span> <span class="n">default</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fields</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">field</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">default_values</span><span class="p">[</span><span class="n">field</span><span class="p">]</span> <span class="o">=</span> <span class="n">default</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+</div>
+<div class="viewcode-block" id="_Base.drop_field"><a class="viewcode-back" href="../../api.html#pydblite.pydblite._Base.drop_field">[docs]</a>    <span class="k">def</span> <span class="nf">drop_field</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">field</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Removes a field from the database&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">field</span> <span class="ow">in</span> <span class="p">[</span><span class="s">&quot;__id__&quot;</span><span class="p">,</span> <span class="s">&quot;__version__&quot;</span><span class="p">]:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&quot;Can&#39;t delete field </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="n">field</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fields</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">field</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="bp">self</span><span class="p">:</span>
+            <span class="k">del</span> <span class="n">r</span><span class="p">[</span><span class="n">field</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">field</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">indices</span><span class="p">:</span>
+            <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">indices</span><span class="p">[</span><span class="n">field</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+</div>
+    <span class="k">def</span> <span class="nf">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kw</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Selection by field values</span>
+
+<span class="sd">        db(key=value) returns the list of records where r[key] = value</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            - args (list): A field to filter on.</span>
+<span class="sd">            - kw (dict): pairs of field and value to filter on.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            - When args supplied, return a Filter object that filters on</span>
+<span class="sd">              the specified field.</span>
+<span class="sd">            - When kw supplied, return all the records where field values matches the</span>
+<span class="sd">              key/values in kw.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">args</span> <span class="ow">and</span> <span class="n">kw</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">SyntaxError</span><span class="p">(</span><span class="s">&quot;Can&#39;t specify positional AND keyword arguments&quot;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">args</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">SyntaxError</span><span class="p">(</span><span class="s">&quot;Only one field can be specified&quot;</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="ow">is</span> <span class="n">PyDbExpressionGroup</span> <span class="ow">or</span> <span class="nb">type</span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="ow">is</span> <span class="n">PyDbFilter</span><span class="p">):</span>
+                <span class="k">return</span> <span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">apply_filter</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">records</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">fields</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&quot;</span><span class="si">%s</span><span class="s"> is not a field&quot;</span> <span class="o">%</span> <span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">PyDbFilter</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">kw</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">records</span><span class="o">.</span><span class="n">values</span><span class="p">()</span>  <span class="c"># db() returns all the values</span>
+
+        <span class="c"># indices and non-indices</span>
+        <span class="n">keys</span> <span class="o">=</span> <span class="n">kw</span><span class="o">.</span><span class="n">keys</span><span class="p">()</span>
+        <span class="n">ixs</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">keys</span><span class="p">)</span> <span class="o">&amp;</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">indices</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
+        <span class="n">no_ix</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">keys</span><span class="p">)</span> <span class="o">-</span> <span class="n">ixs</span>
+        <span class="k">if</span> <span class="n">ixs</span><span class="p">:</span>
+            <span class="c"># fast selection on indices</span>
+            <span class="n">ix</span> <span class="o">=</span> <span class="n">ixs</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span>
+            <span class="n">res</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">indices</span><span class="p">[</span><span class="n">ix</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">kw</span><span class="p">[</span><span class="n">ix</span><span class="p">],</span> <span class="p">[]))</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">res</span><span class="p">:</span>
+                <span class="k">return</span> <span class="p">[]</span>
+            <span class="k">while</span> <span class="n">ixs</span><span class="p">:</span>
+                <span class="n">ix</span> <span class="o">=</span> <span class="n">ixs</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span>
+                <span class="n">res</span> <span class="o">=</span> <span class="n">res</span> <span class="o">&amp;</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">indices</span><span class="p">[</span><span class="n">ix</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">kw</span><span class="p">[</span><span class="n">ix</span><span class="p">],</span> <span class="p">[]))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c"># if no index, initialize result with test on first field</span>
+            <span class="n">field</span> <span class="o">=</span> <span class="n">no_ix</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span>
+            <span class="n">res</span> <span class="o">=</span> <span class="nb">set</span><span class="p">([</span><span class="n">r</span><span class="p">[</span><span class="s">&quot;__id__&quot;</span><span class="p">]</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="bp">self</span> <span class="k">if</span> <span class="n">r</span><span class="p">[</span><span class="n">field</span><span class="p">]</span> <span class="o">==</span> <span class="n">kw</span><span class="p">[</span><span class="n">field</span><span class="p">]])</span>
+        <span class="c"># selection on non-index fields</span>
+        <span class="k">for</span> <span class="n">field</span> <span class="ow">in</span> <span class="n">no_ix</span><span class="p">:</span>
+            <span class="n">res</span> <span class="o">=</span> <span class="n">res</span> <span class="o">&amp;</span> <span class="nb">set</span><span class="p">([</span><span class="n">_id</span> <span class="k">for</span> <span class="n">_id</span> <span class="ow">in</span> <span class="n">res</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">records</span><span class="p">[</span><span class="n">_id</span><span class="p">][</span><span class="n">field</span><span class="p">]</span> <span class="o">==</span> <span class="n">kw</span><span class="p">[</span><span class="n">field</span><span class="p">]])</span>
+        <span class="k">return</span> <span class="p">[</span><span class="bp">self</span><span class="p">[</span><span class="n">_id</span><span class="p">]</span> <span class="k">for</span> <span class="n">_id</span> <span class="ow">in</span> <span class="n">res</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">__getitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">):</span>
+        <span class="c"># direct access by record id</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">records</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">_len</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">db_filter</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">db_filter</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">type</span><span class="p">(</span><span class="n">db_filter</span><span class="p">)</span> <span class="ow">is</span> <span class="n">PyDbExpressionGroup</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&quot;Filter argument is not of type &quot;</span>
+                                 <span class="s">&quot;&#39;PyDbExpressionGroup&#39;: </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="nb">type</span><span class="p">(</span><span class="n">db_filter</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">db_filter</span><span class="o">.</span><span class="n">is_filtered</span><span class="p">():</span>
+                <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="n">db_filter</span><span class="o">.</span><span class="n">apply_filter</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">records</span><span class="p">))</span>
+        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">records</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__len__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_len</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">__delitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">record_id</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Delete by record id&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">delete</span><span class="p">(</span><span class="bp">self</span><span class="p">[</span><span class="n">record_id</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">__contains__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">record_id</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">record_id</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">records</span>
+
+<div class="viewcode-block" id="_Base.group_by"><a class="viewcode-back" href="../../api.html#pydblite.pydblite._Base.group_by">[docs]</a>    <span class="k">def</span> <span class="nf">group_by</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">column</span><span class="p">,</span> <span class="n">torrents_filter</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Returns the records grouped by column&quot;&quot;&quot;</span>
+        <span class="n">gropus</span> <span class="o">=</span> <span class="p">[(</span><span class="n">k</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">g</span><span class="p">)))</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">groupby</span><span class="p">(</span><span class="n">torrents_filter</span><span class="p">,</span>
+                                                        <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="p">[</span><span class="n">column</span><span class="p">])]</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">column</span><span class="p">,</span> <span class="n">count</span> <span class="ow">in</span> <span class="n">gropus</span><span class="p">:</span>
+            <span class="n">result</span><span class="p">[</span><span class="n">column</span><span class="p">]</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">column</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">+</span> <span class="n">count</span>
+        <span class="k">return</span> <span class="p">[(</span><span class="n">c</span><span class="p">,</span> <span class="n">result</span><span class="p">[</span><span class="n">c</span><span class="p">])</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">result</span><span class="p">]</span>
+</div>
+    <span class="k">def</span> <span class="nf">filter</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">PyDbFilter</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">get_group_count</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">group_by_field</span><span class="p">,</span> <span class="n">db_filter</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">db_filter</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">db_filter</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">filter</span><span class="p">()</span>
+
+        <span class="n">gropus</span> <span class="o">=</span> <span class="p">[(</span><span class="n">k</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">g</span><span class="p">)))</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">groupby</span><span class="p">(</span><span class="n">db_filter</span><span class="p">,</span>
+                                                        <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="p">[</span><span class="n">group_by_field</span><span class="p">])]</span>
+        <span class="n">groups_dict</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">group</span><span class="p">,</span> <span class="n">count</span> <span class="ow">in</span> <span class="n">gropus</span><span class="p">:</span>
+            <span class="n">groups_dict</span><span class="p">[</span><span class="n">group</span><span class="p">]</span> <span class="o">=</span> <span class="n">groups_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">group</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">+</span> <span class="n">count</span>
+        <span class="k">return</span> <span class="p">[(</span><span class="n">k</span><span class="p">,</span> <span class="n">groups_dict</span><span class="p">[</span><span class="n">k</span><span class="p">])</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">groups_dict</span><span class="p">]</span>
+
+<div class="viewcode-block" id="_Base.get_unique_ids"><a class="viewcode-back" href="../../api.html#pydblite.pydblite._Base.get_unique_ids">[docs]</a>    <span class="k">def</span> <span class="nf">get_unique_ids</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">id_value</span><span class="p">,</span> <span class="n">db_filter</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Returns a set of unique values from column&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">db_filter</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span> <span class="ow">and</span> <span class="n">db_filter</span><span class="o">.</span><span class="n">is_filtered</span><span class="p">():</span>
+            <span class="n">records</span> <span class="o">=</span> <span class="bp">self</span><span class="p">(</span><span class="n">db_filter</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">records</span> <span class="o">=</span> <span class="bp">self</span><span class="p">()</span>
+        <span class="k">return</span> <span class="nb">set</span><span class="p">([</span><span class="n">row</span><span class="p">[</span><span class="n">id_value</span><span class="p">]</span> <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">records</span><span class="p">])</span>
+</div>
+<div class="viewcode-block" id="_Base.get_indices"><a class="viewcode-back" href="../../api.html#pydblite.pydblite._Base.get_indices">[docs]</a>    <span class="k">def</span> <span class="nf">get_indices</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Returns the indices&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">indices</span><span class="p">)</span>
+
+</div></div>
+<span class="k">class</span> <span class="nc">_BasePy2</span><span class="p">(</span><span class="n">_Base</span><span class="p">):</span>
+
+    <span class="k">def</span> <span class="nf">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Iteration on the records&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">iter</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">records</span><span class="o">.</span><span class="n">itervalues</span><span class="p">())</span>
+
+
+<span class="k">class</span> <span class="nc">_BasePy3</span><span class="p">(</span><span class="n">_Base</span><span class="p">):</span>
+
+    <span class="k">def</span> <span class="nf">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Iteration on the records&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">iter</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">records</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
+
+<span class="k">if</span> <span class="n">sys</span><span class="o">.</span><span class="n">version_info</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
+    <span class="n">Base</span> <span class="o">=</span> <span class="n">_BasePy2</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="n">Base</span> <span class="o">=</span> <span class="n">_BasePy3</span>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+        <p class="logo"><a href="../../index.html" title="index">
+          <img class="logo" src="../../_static/banniere.jpg" alt="Logo"/>
+        </a></p>
+<div class="sphinxglobaltoc">
+<h3><a href="../../index.html">Table Of Contents</a></h3>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../pythonengine.html">Pure-Python engine</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../sqliteengine.html">SQLite adapter</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../api.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../examples.html">Example code</a></li>
+</ul>
+</div><h4>Code</h4>
+<p class="topless">
+  <ul class="this-page-menu">
+	<li><a href="http://sourceforge.net/project/platformdownload.php?group_id=210258" title="Download">Download</a></li>
+	<li><a href="https://github.com/PierreQuentel/PyDbLite" title="Browse source">Browse source on Github</a></li>
+	<li><a href="changelog.html" title="Changelog">Changelog</a></li>
+	<li><a href="license.html" title="License">License</a></li>
+  </ul>
+</p><h4>Tests and Documentation</h4>
+<p class="topless">
+  <ul class="this-page-menu">
+	<li><a href="unittests.html" title="Unit tests">Unit tests</a></li>
+	<li><a href="http://PierreQuentel.github.io/PyDbLite/" title="Unit tests coverage">Unit tests coverage</a></li>
+	<li><a href="benchmarks.html" title="Benchmarks">Benchmarks</a></li>
+	<li><a href="doccoverage.html" title="Documentation coverage">Documentation coverage</a></li>
+	<li><a href="https://media.readthedocs.org/pdf/pydblite/latest/pydblite.pdf" title="Documention as PDF">Documention as PDF</a></li>
+  </ul>
+</p><h4>Contact</h4>
+<p class="topless">
+  <ul class="this-page-menu">
+	<li><a href="http://groups.google.com/group/pydblite" title="Mailing list">Mailing list</a></li>
+	<li><a href="contact.html" title="Authors">Authors</a></li>
+  </ul>
+</p>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="relbar-bottom">
+        
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> &nbsp; &nbsp;</li>
+        <li class="right" >
+          <a href="../../contents.html" title="Table Of Contents"
+             >toc</a> &nbsp; &nbsp;</li>
+    <li><a href="../../index.html">PyDbLite 3.0 documentation</a> &raquo;</li>
+
+          <li><a href="../index.html" >Module code</a> &raquo;</li> 
+      </ul>
+    </div>
+    </div>
+
+    <div class="footer">
+        &copy; Copyright 2014, Pierre Quentel, Bendik Rønning Opstad.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+    <!-- cloud_sptheme 1.4 -->
+  </body>
+</html>
