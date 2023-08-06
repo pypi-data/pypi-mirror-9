@@ -1,0 +1,235 @@
+.. image:: https://drone.io/bitbucket.org/saaj/qooxdoo-cherrypy-json-rpc/status.png
+   :target: https://drone.io/bitbucket.org/saaj/qooxdoo-cherrypy-json-rpc/latest
+.. image:: https://pypip.in/v/qooxdoocherrypyjsonrpc/badge.png
+   :target: https://pypi.python.org/pypi/QooxdooCherrypyJsonRpc
+
+***********************************************
+Qooxdoo-specific CherryPy-based JSON RPC-server
+***********************************************
+
+Overview
+========
+*Python* RPC-server for a `Qooxdoo <http://qooxdoo.org>`_ application. Implemented on top of 
+`CherryPy <http://cherrypy.org>`_. Supports file upload and download. Controller code example: 
+
+.. code-block:: python
+
+   import cherrypy
+   import qxcpjsonrpc as rpc
+
+   class Service:
+   
+     _server = rpc.Server()
+     '''Server instance can be shared between threads'''
+    
+     @cherrypy.expose
+     def index(self, *args, **kwargs):
+       return self._server.run()
+
+Alternatively ``rpc.ServerTool`` can used in *CherryPy* configuration as follows (or 
+`any of other ways <http://cherrypy.readthedocs.org/en/3.2.6/concepts/tools.html>`_ to 
+activate a *CherryPy* tool because of its great flexibility):
+
+.. code-block:: python
+
+  import cherrypy
+  import qxcpjsonrpc as rpc
+
+  config = {
+    '/service' : {
+      'tools.jsonrpc.on' : True
+    }
+  }
+  
+  cherrypy.tools.jsonrpc = rpc.ServerTool()
+  
+  cherrypy.tree.mount(None, config = config)
+
+
+Service code example:
+
+.. code-block:: python
+
+   import qxcpjsonrpc as rpc
+
+   class Test(rpc.Service):
+
+     @rpc.public
+     def add(self, x, y):
+       return x + y
+
+*Qooxdoo* code example:
+
+.. code-block:: javascript
+
+   var rpc = new qx.io.remote.Rpc();
+   rpc.setServiceName('modulename.Test');
+   rpc.setUrl('http://127.0.0.1:8080/service');
+   rpc.addListener("completed", function(event)
+   {
+     console.log(event.getData());
+   });
+   rpc.callAsyncListeners(this, 'add', 5, 7);
+
+
+Serialization
+=============
+Serialization is provided by ``json`` package. However it doesn't work out-of-the-box for some 
+practically important types.
+
+No special deserialization but ``json.loads`` is performed. Additional parsing is intended to be
+in user code.
+  
+
+Date
+----
+
+Dates are serialized to `UTC <http://en.wikipedia.org/wiki/Coordinated_Universal_Time>`_ 
+`ISO 8601 <http://www.w3.org/TR/NOTE-datetime>`_ strings, close to what *Javascript* 
+`JSON.stringify(new Date())` produces. `datetime.datetime` objects look like 
+`2012-03-17T19:09:12.217000Z`, `datetime.date` like `2012-03-17T00:00:00Z`.
+
+As far as I know, there's no reliable and cross-browser way to parse *ISO 8601* strings using *Javascript* 
+`Date` object. The following code can help (usually I put it to `Date.fromISOString`, as a counterpart to
+`Date.prototype.toISOString`), which converts *ISO 8601* to cross-browser representation 
+`2011/10/09 07:06:05 +0000` and passes it to `Date` constructor.
+
+.. code-block:: javascript
+  
+  function fromISOString(value)
+  {
+    if(!value)
+    {
+      return null;
+    }
+    
+    return new Date(value
+      .split(".")[0]
+      .split("Z")[0]
+      .split("-").join("/")
+      .replace("T", " ")
+      + " +0000"
+    );
+  }
+  
+For dealing with *ISO 8601* strings in service user code there's a helper, which can be used as follows. 
+Note that `datetime.datetime` objects it produces are timezone-aware. Timezone is *UTC*. 
+
+.. code-block:: python
+  
+  import qxcpjsonrpc as rpc
+  
+  rpc.fromJsonDate('2012-03-17T19:09:12.217Z')
+
+Decimal
+-------
+
+Serialized as strings.
+
+
+Access control
+==============
+By default all methods are protected and need to be explicitly marked with ``rpc.access`` decorator 
+to become accessible. The decorator expects a callable that returns a ``bool``. It is possible to use 
+the decorator multiple times. 
+
+The package doesn't use manual service bookkeeping, rather than doing imports programmatically 
+through ``importlib``. In case you operate modules that have import side-effects, which are 
+in general a good idea to eliminate, you can subclass ``rpc.ServiceLocator`` and pass it (class) 
+to initializer of ``rpc.Server`` or ``rpc.ServerTool``. This way arbitrary method lookup can be 
+implemented.  
+
+.. code-block:: python
+  
+  import qxcpjsonrpc as rpc
+  
+  def isAdmin(method, request):
+    '''Access is granted only to administrator'''
+    return cherrypy.request.login == 'admin'
+    
+  class Restricted(rpc.Service):
+
+     @rpc.access(isAdmin)
+     def entertainme(self):
+       return '1/0 === Infinity'
+
+
+Protocol
+========
+Below are some examples of typical payloads.
+
+GET
+---
+It's usually a case of source mode *Qooxdoo* application under development. Especially when the
+application is loaded from *file://* and requires *JSONP* communication to circumvent Same Origin Policy.
+
+Request's query parameters, like in 
+``http://localhost/service?_ScriptTransport_id=...&nocache=...&_ScriptTransport_data=...``:
+
+.. code-block:: javascript
+
+  // _ScriptTransport_data  
+  {
+    "id"          : 5,
+    "service"     : "modulename.Test",
+    "method"      : "anotherMethod",
+    "params"      : ["JavaScript", {"is": ["doable with Qooxdoo"]}],
+    "server_data" : {"token": "a58666196537fdf3e5bf63cd740928gf"}
+  }
+  
+  // _ScriptTransport_id  
+  5
+  
+  // nocache  
+  1297107012377
+
+Response:
+
+.. code-block:: javascript
+
+  qx.io.remote.transport.Script._requestFinished(
+    5, // id
+    {
+      "id"    : 5, 
+      "error" : {
+        "origin"  : 2, 
+        "message" : "[ApplicationError] Wild statement!", 
+        "code"    : 0
+      }, 
+      "result" : null
+    }
+  );
+
+
+POST
+----
+It's usually a case of built and deployed *Qooxdoo* application.
+
+Request to ``http://localhost/service?nocache=1234500999666``:
+
+.. code-block:: javascript
+
+  {
+    "id"          : 12,
+    "service"     : "modulename.Test",
+    "method"      : "anotherMethod",
+    "params"      : ["Python", true, {"ly": ["rocks"]}],
+    "server_data" : {"token": "a58666196537fdf3e5bf63cd740928gf"}
+  }
+  
+Response:
+
+.. code-block:: javascript
+
+  {
+    "id"     : 12, 
+    "error"  : null, 
+    "result" : {"arbitrary": {"here": ["a", 5, " well"]}}
+  }
+
+
+Examples
+========
+For examples look in 
+`test suite <https://bitbucket.org/saaj/qooxdoo-cherrypy-json-rpc/src/tip/qxcpjsonrpc/test/>`_. 
+More examples could be found in `this <http://code.google.com/p/cherrypy-webapp-skeleton/>`_ project. 
