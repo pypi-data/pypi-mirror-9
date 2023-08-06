@@ -1,0 +1,79 @@
+===================
+rst2html5 Changelog
+===================
+
+Here you can see the full list of changes between each rst2html5 releases.
+
+1.6 - 2015-03-09
+================
+
+* code-block's :literal:`:class:` value should go to <pre> instead of <code>
+* Fix problem with no files uploaded to Pypi in 1.5 version
+
+
+1.5 - 2015-23-02
+================
+
+* rst2html5 generates html5 comments
+* A few documentation improvementss
+
+1.4 - 2014-09-21
+================
+
+* Improved packaging
+* Using tox for testing management
+* Improved compatibility to Python3
+* Respect initial_header_level_setting
+* Container and compound directives map to div
+* rst2html5 now process field_list nodes
+* Additional tests
+* Multiple-time options should be specified multiple times, not with commas
+* Metatags are declared at the top of head
+* Only one link to mathjax script is generated
+
+
+1.3 - 2014-04-21
+================
+
+* Fixes #16 | New --template option
+* runtests.sh without parameter should keep current virtualenv
+
+
+1.2 - 2014-02-16
+================
+
+* Fix doc version
+
+
+1.1 - 2014-02-16
+================
+
+* rst2html5 works with docutils 0.11 and Genshi 0.7
+
+
+1.0 - 2013-06-17
+================
+
+* Documentation improvement
+* Added html-tag-attr, script-defer and script-async options
+* Dropped option-limit option
+* Fix bug with caption generation within table
+* Footer should be at the bottom of the page
+* Indent raw html
+* field-limit and option-limit are set to 0 (no limit)
+
+
+0.10 - 2013-05-11
+=================
+
+* Support docutils 0.10
+* Force syntax_hightlight to 'short'
+* Conforming to PEP8 and PyFlakes
+* Testing structure simplified
+* rst2html5.py refactored
+* Some bugfixes
+
+0.9 - 2012-08-03
+================
+
+* First public preview release
