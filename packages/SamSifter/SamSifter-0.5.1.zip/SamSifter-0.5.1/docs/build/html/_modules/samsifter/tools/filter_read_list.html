@@ -1,0 +1,246 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>samsifter.tools.filter_read_list &mdash; SamSifter 0.5.0 documentation</title>
+    
+    <link rel="stylesheet" href="../../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../../',
+        VERSION:     '0.5.0',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../../_static/doctools.js"></script>
+    <link rel="top" title="SamSifter 0.5.0 documentation" href="../../../index.html" />
+    <link rel="up" title="Module code" href="../../index.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../../index.html">SamSifter 0.5.0 documentation</a> &raquo;</li>
+          <li><a href="../../index.html" accesskey="U">Module code</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <h1>Source code for samsifter.tools.filter_read_list</h1><div class="highlight"><pre>
+<span class="c">#!/usr/bin/env python3</span>
+<span class="c"># -*- coding: utf-8 -*-</span>
+<span class="sd">&quot;&quot;&quot;Filters reads by list of QNAMES.</span>
+
+<span class="sd">Filtering reads by a list of QNAMES (read identifiers) given in a tab-separated</span>
+<span class="sd">CSV file.</span>
+
+<span class="sd">.. moduleauthor:: Florian Aldehoff &lt;faldehoff@student.uni-tuebingen.de&gt;</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">sys</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">version_info</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="mi">3</span><span class="p">):</span>
+    <span class="k">print</span><span class="p">(</span><span class="s">&quot;Error, I need python 3.x or newer&quot;</span><span class="p">)</span>
+    <span class="nb">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+
+<span class="kn">import</span> <span class="nn">argparse</span>
+<span class="kn">import</span> <span class="nn">logging</span> <span class="kn">as</span> <span class="nn">log</span>
+<span class="kn">import</span> <span class="nn">fileinput</span>
+<span class="kn">import</span> <span class="nn">csv</span>
+<span class="kn">from</span> <span class="nn">os.path</span> <span class="kn">import</span> <span class="n">basename</span><span class="p">,</span> <span class="n">splitext</span>
+
+<span class="sd">&quot;&quot;&quot; custom libraries &quot;&quot;&quot;</span>
+<span class="kn">from</span> <span class="nn">samsifter.models.filter</span> <span class="kn">import</span> <span class="n">FilterItem</span>
+<span class="kn">from</span> <span class="nn">samsifter.models.parameter</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">FilterParameter</span><span class="p">,</span> <span class="n">FilterSwitch</span><span class="p">,</span> <span class="n">FilterFilepath</span>
+<span class="p">)</span>
+<span class="kn">from</span> <span class="nn">samsifter.util.arg_sanitation</span> <span class="kn">import</span> <span class="n">check_sam</span><span class="p">,</span> <span class="n">check_csv</span>
+<span class="kn">from</span> <span class="nn">samsifter.util.filters</span> <span class="kn">import</span> <span class="n">pattern_filter</span>
+
+<span class="sd">&quot;&quot;&quot; global variables &quot;&quot;&quot;</span>
+<span class="n">TEXT</span> <span class="o">=</span> <span class="s">&quot;Filter reads by list of QNAMES&quot;</span>
+<span class="n">DESC</span> <span class="o">=</span> <span class="p">(</span><span class="s">&quot;Filtering reads by a list of QNAMES (read identifiers) given in a &quot;</span>
+        <span class="s">&quot;tab-separated CSV file.&quot;</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="item"><a class="viewcode-back" href="../../../samsifter.tools.html#samsifter.tools.filter_read_list.item">[docs]</a><span class="k">def</span> <span class="nf">item</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;Create item representing this tool in list and tree views.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    FilterItem</span>
+<span class="sd">        Item for use in item-based list and tree views.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">item</span> <span class="o">=</span> <span class="n">FilterItem</span><span class="p">(</span><span class="n">text</span><span class="o">=</span><span class="n">TEXT</span><span class="p">,</span> <span class="n">desc</span><span class="o">=</span><span class="n">DESC</span><span class="p">)</span>
+    <span class="n">item</span><span class="o">.</span><span class="n">set_command</span><span class="p">(</span><span class="n">splitext</span><span class="p">(</span><span class="n">basename</span><span class="p">(</span><span class="n">__file__</span><span class="p">))[</span><span class="mi">0</span><span class="p">])</span>
+
+    <span class="n">item</span><span class="o">.</span><span class="n">add_parameter</span><span class="p">(</span><span class="n">FilterFilepath</span><span class="p">(</span>
+        <span class="n">text</span><span class="o">=</span><span class="s">&quot;read list file&quot;</span><span class="p">,</span>
+        <span class="n">desc</span><span class="o">=</span><span class="s">&quot;tab-separated CSV file with QNAMES in first column&quot;</span><span class="p">,</span>
+        <span class="n">cli_name</span><span class="o">=</span><span class="s">&quot;--list&quot;</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="s">&quot;reads.csv&quot;</span><span class="p">,</span>
+        <span class="n">extensions</span><span class="o">=</span><span class="p">[</span><span class="s">&#39;csv&#39;</span><span class="p">],</span>
+        <span class="n">required</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span>
+        <span class="n">active</span><span class="o">=</span><span class="bp">True</span>
+    <span class="p">))</span>
+
+    <span class="n">item</span><span class="o">.</span><span class="n">add_parameter</span><span class="p">(</span><span class="n">FilterSwitch</span><span class="p">(</span>
+        <span class="s">&quot;filter direction&quot;</span><span class="p">,</span>
+        <span class="s">&quot;Keep or discard entries passing the filter &quot;</span>
+        <span class="s">&quot;criteria?&quot;</span><span class="p">,</span>
+        <span class="s">&quot;--discard&quot;</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+        <span class="n">options</span><span class="o">=</span><span class="p">[</span><span class="s">&quot;discard&quot;</span><span class="p">,</span> <span class="s">&quot;keep&quot;</span><span class="p">]</span>
+    <span class="p">))</span>
+
+    <span class="n">item</span><span class="o">.</span><span class="n">add_parameter</span><span class="p">(</span><span class="n">FilterParameter</span><span class="p">(</span>
+        <span class="n">text</span><span class="o">=</span><span class="s">&quot;verbose&quot;</span><span class="p">,</span>
+        <span class="n">desc</span><span class="o">=</span><span class="s">&quot;print additional information to STDERR&quot;</span><span class="p">,</span>
+        <span class="n">cli_name</span><span class="o">=</span><span class="s">&quot;--verbose&quot;</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span>
+        <span class="n">active</span><span class="o">=</span><span class="bp">True</span>
+    <span class="p">))</span>
+
+    <span class="n">item</span><span class="o">.</span><span class="n">add_parameter</span><span class="p">(</span><span class="n">FilterParameter</span><span class="p">(</span>
+        <span class="n">text</span><span class="o">=</span><span class="s">&quot;debug&quot;</span><span class="p">,</span>
+        <span class="n">desc</span><span class="o">=</span><span class="s">&quot;print debug messages to STDERR&quot;</span><span class="p">,</span>
+        <span class="n">cli_name</span><span class="o">=</span><span class="s">&quot;--debug&quot;</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="bp">False</span>
+    <span class="p">))</span>
+
+    <span class="k">return</span> <span class="n">item</span>
+
+</div>
+<div class="viewcode-block" id="main"><a class="viewcode-back" href="../../../samsifter.tools.html#samsifter.tools.filter_read_list.main">[docs]</a><span class="k">def</span> <span class="nf">main</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;Executable to filter SAM files for a list of reads.</span>
+
+<span class="sd">    See ``--help`` for details on expected arguments. Takes input from</span>
+<span class="sd">    either STDIN, or optional, or positional arguments. Logs messages to</span>
+<span class="sd">    STDERR and writes processed SAM files to STDOUT.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c"># parse arguments</span>
+    <span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">description</span><span class="o">=</span><span class="n">DESC</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&#39;-i&#39;</span><span class="p">,</span> <span class="s">&#39;--input&#39;</span><span class="p">,</span>
+                        <span class="nb">type</span><span class="o">=</span><span class="n">check_sam</span><span class="p">,</span>
+                        <span class="n">help</span><span class="o">=</span><span class="s">&quot;specify SAM file to be analysed (default: &quot;</span>
+                        <span class="s">&quot;STDIN)&quot;</span><span class="p">,</span>
+                        <span class="n">required</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&#39;-l&#39;</span><span class="p">,</span> <span class="s">&#39;--list&#39;</span><span class="p">,</span>
+                        <span class="nb">type</span><span class="o">=</span><span class="n">check_csv</span><span class="p">,</span>
+                        <span class="n">help</span><span class="o">=</span><span class="s">&quot;tab-separated CSV file with accession numbers &quot;</span>
+                        <span class="s">&quot;in first column&quot;</span><span class="p">,</span>
+                        <span class="n">required</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&#39;--discard&#39;</span><span class="p">,</span>
+                        <span class="nb">type</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span>
+                        <span class="n">help</span><span class="o">=</span><span class="s">&quot;keep or discard entries passing the filter &quot;</span>
+                             <span class="s">&quot;criteria?&quot;</span><span class="p">,</span>
+                        <span class="n">required</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+                        <span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&#39;-v&#39;</span><span class="p">,</span> <span class="s">&#39;--verbose&#39;</span><span class="p">,</span>
+                        <span class="n">required</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+                        <span class="n">action</span><span class="o">=</span><span class="s">&#39;store_true&#39;</span><span class="p">,</span>
+                        <span class="n">help</span><span class="o">=</span><span class="s">&#39;print additional information to STDERR&#39;</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&#39;-d&#39;</span><span class="p">,</span> <span class="s">&#39;--debug&#39;</span><span class="p">,</span>
+                        <span class="n">required</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+                        <span class="n">action</span><span class="o">=</span><span class="s">&#39;store_true&#39;</span><span class="p">,</span>
+                        <span class="n">help</span><span class="o">=</span><span class="s">&#39;print debug messages to STDERR&#39;</span><span class="p">)</span>
+    <span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">remainArgs</span><span class="p">)</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">parse_known_args</span><span class="p">()</span>
+
+    <span class="c"># configure logging</span>
+    <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">verbose</span><span class="p">:</span>
+        <span class="n">log</span><span class="o">.</span><span class="n">basicConfig</span><span class="p">(</span><span class="n">format</span><span class="o">=</span><span class="s">&quot;</span><span class="si">%(levelname)s</span><span class="s">: </span><span class="si">%(message)s</span><span class="s">&quot;</span><span class="p">,</span> <span class="n">level</span><span class="o">=</span><span class="n">log</span><span class="o">.</span><span class="n">DEBUG</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">log</span><span class="o">.</span><span class="n">basicConfig</span><span class="p">(</span><span class="n">format</span><span class="o">=</span><span class="s">&quot;</span><span class="si">%(levelname)s</span><span class="s">: </span><span class="si">%(message)s</span><span class="s">&quot;</span><span class="p">)</span>
+
+    <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&quot;START of filtering reads by list.&quot;</span><span class="p">)</span>
+
+    <span class="c"># generate pattern list from CSV file</span>
+    <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&quot;STEP 1: generating search pattern from CSV file.&quot;</span><span class="p">)</span>
+    <span class="n">patterns</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">list</span><span class="p">,</span> <span class="n">newline</span><span class="o">=</span><span class="s">&#39;&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">csvfile</span><span class="p">:</span>
+        <span class="n">reader</span> <span class="o">=</span> <span class="n">csv</span><span class="o">.</span><span class="n">reader</span><span class="p">(</span><span class="n">csvfile</span><span class="p">,</span> <span class="n">delimiter</span><span class="o">=</span><span class="s">&#39;</span><span class="se">\t</span><span class="s">&#39;</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">reader</span><span class="p">:</span>
+            <span class="n">patterns</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+
+    <span class="c"># keep or remove patterns from SAM file</span>
+    <span class="n">alt</span> <span class="o">=</span> <span class="p">[</span><span class="s">&quot;discarding&quot;</span><span class="p">,</span> <span class="s">&quot;keeping&quot;</span><span class="p">]</span>
+    <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&quot;STEP 2: </span><span class="si">%s</span><span class="s"> </span><span class="si">%i</span><span class="s"> reads from SAM file.&quot;</span> <span class="o">%</span>
+             <span class="p">(</span><span class="n">alt</span><span class="p">[</span><span class="n">args</span><span class="o">.</span><span class="n">discard</span><span class="p">],</span> <span class="nb">len</span><span class="p">(</span><span class="n">patterns</span><span class="p">)))</span>
+    <span class="c"># open SAM file from either command line argument or STDIN</span>
+    <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">input</span><span class="p">:</span>
+        <span class="n">handle</span> <span class="o">=</span> <span class="nb">open</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">input</span><span class="p">,</span> <span class="s">&#39;r&#39;</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">handle</span> <span class="o">=</span> <span class="n">fileinput</span><span class="o">.</span><span class="n">input</span><span class="p">(</span><span class="n">remainArgs</span><span class="p">)</span>
+
+    <span class="n">pattern_filter</span><span class="p">(</span><span class="n">patterns</span><span class="p">,</span> <span class="n">handle</span><span class="p">,</span> <span class="n">discard</span><span class="o">=</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">discard</span> <span class="o">==</span> <span class="mi">0</span><span class="p">))</span>
+    <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&quot;END of filtering reads by list.&quot;</span><span class="p">)</span>
+
+    <span class="n">handle</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+
+    <span class="nb">exit</span><span class="p">()</span>
+</div>
+<span class="k">if</span> <span class="n">__name__</span> <span class="o">==</span> <span class="s">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="n">main</span><span class="p">()</span>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../../index.html">SamSifter 0.5.0 documentation</a> &raquo;</li>
+          <li><a href="../../index.html" >Module code</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2015, Florian Aldehoff.
+      Last updated on Mar 01, 2015.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>
