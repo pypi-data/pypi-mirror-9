@@ -1,0 +1,17 @@
+__author__ = 'ivan'
+
+from django.conf import settings
+import platform
+
+DEFAULT_UID = getattr(settings, 'FTPUSERS_DEFAULT_UID', -1)
+DEFAULT_GID = getattr(settings, 'FTPUSERS_DEFAULT_GID', -1)
+DEFAULT_UPLOAD_BANDWIDTH = getattr(settings, 'FTPUSERS_DEFAULT_UPLOAD_BANDWIDTH', 0)
+DEFAULT_DOWNLOAD_BANDWIDTH = getattr(settings, 'FTPUSERS_DEFAULT_DOWNLOAD_BANDWIDTH', 0)
+DEFAULT_UPLOAD_RATIO = getattr(settings, 'FTPUSERS_DEFAULT_UPLOAD_RATIO', 0)
+DEFAULT_DOWNLOAD_RATIO = getattr(settings, 'FTPUSERS_DEFAULT_DOWNLOAD_RATIO', 0)
+DEFAULT_QUOTA_SIZE = getattr(settings, 'FTPUSERS_DEFAULT_QUOTA_SIZE', 0)
+DEFAULT_QUOTA_FILES = getattr(settings, 'FTPUSERS_DEFAULT_QUOTA_FILES', 0)
+DEFAULT_IPACCESS = getattr(settings, 'FTPUSERS_DEFAULT_IPACCESS', "*")
+DEFAULT_HOSTNAME = getattr(settings, 'FTPUSERS_DEFAULT_HOSTNAME', platform.node())
+
+ROOT_PATH = getattr(settings, 'FTPUSERS_ROOT_PATH', '/')
