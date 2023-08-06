@@ -1,0 +1,278 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>4. Agent-oriented programming &mdash; Turberfield utilities guide 0.011.0</title>
+    
+    <link rel="stylesheet" href="_static/haiku.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    './',
+        VERSION:     '0.011.0',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="top" title="Turberfield utilities guide 0.011.0" href="index.html" />
+    <link rel="prev" title="3. Calculating motion" href="travel.html" /> 
+  </head>
+  <body role="document">
+      <div class="header" role="banner"><h1 class="heading"><a href="index.html">
+          <span>Turberfield utilities guide 0.011.0</span></a></h1>
+        <h2 class="heading"><span>4. Agent-oriented programming</span></h2>
+      </div>
+      <div class="topnav" role="navigation" aria-label="top navigation">
+      
+        <p>
+        «&#160;&#160;<a href="travel.html">3. Calculating motion</a>
+        &#160;&#160;::&#160;&#160;
+        <a class="uplink" href="index.html">Contents</a>
+        </p>
+
+      </div>
+      <div class="content">
+        
+        
+  <div class="section" id="agent-oriented-programming">
+<h1>4. Agent-oriented programming<a class="headerlink" href="#agent-oriented-programming" title="Permalink to this headline">¶</a></h1>
+<p>A Turberfield application is made up of cohesive programs called
+<cite>Controllers</cite>. Each controller contains specialised objects which
+run on their own as autonomous agents.</p>
+<p>When an agent has to share the data it creates, it&#8217;s known as an
+<cite>Expert</cite>. In Turberfield, experts:</p>
+<blockquote>
+<div><ul class="simple">
+<li>can be configured with global settings like file paths
+and host names</li>
+<li>listen on a queue for messages from another expert</li>
+<li>listen on a queue for messages from another controller</li>
+<li>operate autonomously within an event loop</li>
+<li>publish certain attributes to other experts within the same
+controller</li>
+<li>publish certain attributes to other controllers via <a class="reference external" href="https://code.google.com/p/rson/">RSON</a></li>
+</ul>
+</div></blockquote>
+<p>Turberfield provides the <a class="reference internal" href="#module-turberfield.utils.expert" title="turberfield.utils.expert"><code class="xref py py-mod docutils literal"><span class="pre">expert</span></code></a>
+module to standardise this pattern. Subclasses of
+<a class="reference internal" href="#turberfield.utils.expert.Expert" title="turberfield.utils.expert.Expert"><code class="xref py py-class docutils literal"><span class="pre">Expert</span></code></a> inherit these
+behaviours.</p>
+<div class="section" id="using-an-expert-subclass">
+<h2>4.1. Using an Expert subclass<a class="headerlink" href="#using-an-expert-subclass" title="Permalink to this headline">¶</a></h2>
+<p>Turberfield defines a four-stage process for setting up Expert objects,
+running them, and checking their results. There are conventions for each
+of these interactions:</p>
+<ul class="simple">
+<li><a class="reference internal" href="#configuration">Configuration</a>, where the class helps you build options for
+your new object.</li>
+<li><a class="reference internal" href="#instantiation">Instantiation</a>, where you connect the object to its inputs.</li>
+<li><a class="reference internal" href="#invocation">Invocation</a>, which is compatible with the <a class="reference external" href="https://docs.python.org/3/library/asyncio-eventloop.html">asyncio event loop</a>.</li>
+<li><a class="reference internal" href="#inspection">Inspection</a>, the mechanism whereby your code can see the outputs
+of Experts in operation.</li>
+</ul>
+<span class="target" id="module-turberfield.utils.expert"></span><div class="section" id="configuration">
+<h3>4.1.1. Configuration<a class="headerlink" href="#configuration" title="Permalink to this headline">¶</a></h3>
+<p>Suppose for example that a certain Expert subclass requires an <cite>output</cite>
+argument to tell it where to save application data files. Typically that would
+be known to the controller process as a command line argument or configuration
+file setting.</p>
+<p>To configure a new object of this Expert class, you would first call the
+<a class="reference internal" href="#turberfield.utils.expert.Expert.options" title="turberfield.utils.expert.Expert.options"><code class="xref py py-meth docutils literal"><span class="pre">options</span></code></a> method of
+the class:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="n">options</span> <span class="o">=</span> <span class="n">SomeExpertSubclass</span><span class="o">.</span><span class="n">options</span><span class="p">(</span><span class="n">output</span><span class="o">=</span><span class="s">&quot;/var/experts&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The return value of the
+<a class="reference internal" href="#turberfield.utils.expert.Expert.options" title="turberfield.utils.expert.Expert.options"><code class="xref py py-meth docutils literal"><span class="pre">options</span></code></a> call
+is a Python dictionary compatible with the keyword argument parameters
+of the Expert subclass. The keys of this dictionary are the names of
+attributes which your object will publish publicly.  The corresponding
+value of a key shows the way the attribute will be published, as follows:</p>
+<dl class="attribute">
+<dt id="turberfield.utils.expert.Expert.Attribute">
+<code class="descclassname">Expert.</code><code class="descname">Attribute</code><em class="property"> (name). A regular public attribute.</em><a class="headerlink" href="#turberfield.utils.expert.Expert.Attribute" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="attribute">
+<dt id="turberfield.utils.expert.Expert.Event">
+<code class="descclassname">Expert.</code><code class="descname">Event</code><em class="property"> (name). A public attribute which is an asyncio.Event.</em><a class="headerlink" href="#turberfield.utils.expert.Expert.Event" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="attribute">
+<dt id="turberfield.utils.expert.Expert.HATEOAS">
+<code class="descclassname">Expert.</code><code class="descname">HATEOAS</code><em class="property"> (name, attr, dst). A sequence of items in a
+JSON-formatted web page, publicly readable as a local file.</em><a class="headerlink" href="#turberfield.utils.expert.Expert.HATEOAS" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="attribute">
+<dt id="turberfield.utils.expert.Expert.RSON">
+<code class="descclassname">Expert.</code><code class="descname">RSON</code><em class="property"> (name, attr, dst). A sequence of items in
+RSON format, publicly readable as a local file.</em><a class="headerlink" href="#turberfield.utils.expert.Expert.RSON" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</div>
+<div class="section" id="instantiation">
+<h3>4.1.2. Instantiation<a class="headerlink" href="#instantiation" title="Permalink to this headline">¶</a></h3>
+<p>Some Experts will define positional parameters specific to their
+operation. Aside from those, you can also pass unnamed positional
+arguments and the keyword arguments you got from the <a class="reference internal" href="#configuration">configuration</a>
+step.</p>
+<p>Unnamed positional arguments must be objects compatible with the
+<a class="reference external" href="https://docs.python.org/3/library/asyncio-queue.html">asyncio.Queue</a> interface. The Expert will
+<a class="reference internal" href="#turberfield.utils.expert.Expert.watch" title="turberfield.utils.expert.Expert.watch"><code class="xref py py-meth docutils literal"><span class="pre">watch</span></code></a>
+for messages you pass into them.</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="n">wiring</span> <span class="o">=</span> <span class="p">(</span><span class="n">asyncio</span><span class="o">.</span><span class="n">Queue</span><span class="p">(),</span> <span class="n">PipeQueue</span><span class="o">.</span><span class="n">pipequeue</span><span class="p">(</span><span class="s">&quot;/tmp/pq.fifo&quot;</span><span class="p">))</span>
+<span class="n">expert</span> <span class="o">=</span> <span class="n">SomeExpertSubclass</span><span class="p">(</span><span class="o">*</span><span class="n">wiring</span><span class="p">,</span> <span class="o">**</span><span class="n">options</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="invocation">
+<h3>4.1.3. Invocation<a class="headerlink" href="#invocation" title="Permalink to this headline">¶</a></h3>
+<p>Experts are active objects which run in an event loop. They support
+Python call semantics. The result of calling an Expert is a
+coroutine you can pass to <cite>asyncio</cite> for use as a <a class="reference external" href="https://docs.python.org/3/library/asyncio-task.html">Task</a>:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="n">loop</span> <span class="o">=</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">get_event_loop</span><span class="p">()</span>
+<span class="hll"><span class="n">task</span> <span class="o">=</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">Task</span><span class="p">(</span><span class="n">expert</span><span class="p">(</span><span class="n">loop</span><span class="o">=</span><span class="n">loop</span><span class="p">))</span>
+</span><span class="n">loop</span><span class="o">.</span><span class="n">run_until_complete</span><span class="p">(</span><span class="n">asyncio</span><span class="o">.</span><span class="n">wait</span><span class="p">(</span><span class="n">asyncio</span><span class="o">.</span><span class="n">Task</span><span class="o">.</span><span class="n">all_tasks</span><span class="p">(</span><span class="n">loop</span><span class="p">)))</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="inspection">
+<h3>4.1.4. Inspection<a class="headerlink" href="#inspection" title="Permalink to this headline">¶</a></h3>
+<p>Experts either publish the data they generate to a local file, or to the
+<em>public</em> attribute of their class. Exactly what goes where will
+depend on the class and can be discovered from the
+<a class="reference internal" href="#turberfield.utils.expert.Expert.options" title="turberfield.utils.expert.Expert.options"><code class="xref py py-meth docutils literal"><span class="pre">options</span></code></a> call.</p>
+<p>For example, should <cite>SomeExpertSubclass</cite> define an
+<a class="reference internal" href="#turberfield.utils.expert.Expert.Event" title="turberfield.utils.expert.Expert.Event"><code class="xref py py-class docutils literal"><span class="pre">Event</span></code></a> called
+<cite>someEvent</cite>, you&#8217;d use it like this:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="k">yield from</span> <span class="n">SomeExpertSubclass</span><span class="o">.</span><span class="n">public</span><span class="o">.</span><span class="n">someEvent</span><span class="o">.</span><span class="n">wait</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="subclassing-expert">
+<h2>4.2. Subclassing Expert<a class="headerlink" href="#subclassing-expert" title="Permalink to this headline">¶</a></h2>
+<dl class="class">
+<dt id="turberfield.utils.expert.Expert">
+<em class="property">class </em><code class="descclassname">turberfield.utils.expert.</code><code class="descname">Expert</code><span class="sig-paren">(</span><em>*args</em>, <em>**kwargs</em><span class="sig-paren">)</span><a class="headerlink" href="#turberfield.utils.expert.Expert" title="Permalink to this definition">¶</a></dt>
+<dd><p>A base class for <em>Information Experts</em>.</p>
+<dl class="staticmethod">
+<dt id="turberfield.utils.expert.Expert.options">
+<em class="property">static </em><code class="descname">options</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#turberfield.utils.expert.Expert.options" title="Permalink to this definition">¶</a></dt>
+<dd><p>Subclasses must override the base class implementation.</p>
+<p>The method returns an <a class="reference external" href="https://docs.python.org/3/library/collections.html#collections.OrderedDict">ordered dictionary</a>. Each key is the
+name of a piece of public data to be managed by the Expert
+class. The object mapped to that key configures how the data
+is to be published. See the
+<a class="reference internal" href="#turberfield.utils.expert.Expert.declare" title="turberfield.utils.expert.Expert.declare"><code class="xref py py-meth docutils literal"><span class="pre">declare</span></code></a>
+method for details.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="turberfield.utils.expert.Expert.__init__">
+<code class="descname">__init__</code><span class="sig-paren">(</span><em>*args</em>, <em>**kwargs</em><span class="sig-paren">)</span><a class="headerlink" href="#turberfield.utils.expert.Expert.__init__" title="Permalink to this definition">¶</a></dt>
+<dd><p>Subclasses must begin by invoking the superclass initialiser:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Unnamed positional arguments must be compatible with
+<a class="reference external" href="https://docs.python.org/3/library/asyncio-queue.html">asyncio.Queue</a>. Keyword arguments should have been generated
+by the <a class="reference internal" href="#turberfield.utils.expert.Expert.options" title="turberfield.utils.expert.Expert.options"><code class="xref py py-meth docutils literal"><span class="pre">options</span></code></a>
+method.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="turberfield.utils.expert.Expert.__call__">
+<code class="descname">__call__</code><span class="sig-paren">(</span><em>loop=None</em><span class="sig-paren">)</span><a class="headerlink" href="#turberfield.utils.expert.Expert.__call__" title="Permalink to this definition">¶</a></dt>
+<dd><p>Subclasses must override the base class implementation.</p>
+<p>This method makes the object callable. It is a coroutine
+to be launched as an <a class="reference external" href="https://docs.python.org/3/library/asyncio-task.html">asyncio.Task</a>.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="turberfield.utils.expert.Expert.declare">
+<code class="descname">declare</code><span class="sig-paren">(</span><em>data</em>, <em>loop=None</em><span class="sig-paren">)</span><a class="headerlink" href="#turberfield.utils.expert.Expert.declare" title="Permalink to this definition">¶</a></dt>
+<dd><table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>data</strong> (<em>a dictionary</em>) &#8211; data to be published</td>
+</tr>
+</tbody>
+</table>
+<p>Invoke this method from within
+<a class="reference internal" href="#turberfield.utils.expert.Expert.__call__" title="turberfield.utils.expert.Expert.__call__"><code class="xref py py-meth docutils literal"><span class="pre">__call__</span></code></a>
+to publish data via the class-defined interface.</p>
+<p>The keyword arguments previously supplied to
+<a class="reference internal" href="#turberfield.utils.expert.Expert.__init__" title="turberfield.utils.expert.Expert.__init__"><code class="xref py py-meth docutils literal"><span class="pre">__init__</span></code></a>
+determine what attributes are published, according to the following
+mechanisms:</p>
+<table border="1" class="docutils">
+<colgroup>
+<col width="50%" />
+<col width="50%" />
+</colgroup>
+<thead valign="bottom">
+<tr class="row-odd"><th class="head">Interface type</th>
+<th class="head">Publishing mechanism</th>
+</tr>
+</thead>
+<tbody valign="top">
+<tr class="row-even"><td><a class="reference internal" href="#turberfield.utils.expert.Expert.Attribute" title="turberfield.utils.expert.Expert.Attribute"><code class="xref py py-class docutils literal"><span class="pre">Attribute</span></code></a></td>
+<td><code class="docutils literal"><span class="pre">&lt;Subclass&gt;.public.&lt;name&gt;</span></code> mirrors the data value.</td>
+</tr>
+<tr class="row-odd"><td><a class="reference internal" href="#turberfield.utils.expert.Expert.Event" title="turberfield.utils.expert.Expert.Event"><code class="xref py py-class docutils literal"><span class="pre">Event</span></code></a></td>
+<td><code class="docutils literal"><span class="pre">&lt;Subclass&gt;.public.&lt;name&gt;</span></code> is set or cleared by the data value.</td>
+</tr>
+<tr class="row-even"><td><a class="reference internal" href="#turberfield.utils.expert.Expert.RSON" title="turberfield.utils.expert.Expert.RSON"><code class="xref py py-class docutils literal"><span class="pre">RSON</span></code></a></td>
+<td><code class="docutils literal"><span class="pre">RSON.dst</span></code> is the file path to the data in RSON format.</td>
+</tr>
+<tr class="row-odd"><td><a class="reference internal" href="#turberfield.utils.expert.Expert.HATEOAS" title="turberfield.utils.expert.Expert.HATEOAS"><code class="xref py py-class docutils literal"><span class="pre">HATEOAS</span></code></a></td>
+<td><code class="docutils literal"><span class="pre">HATEOAS.dst</span></code> is the file path to the data as a JSON web page.</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="turberfield.utils.expert.Expert.watch">
+<code class="descname">watch</code><span class="sig-paren">(</span><em>q</em>, <em>**kwargs</em><span class="sig-paren">)</span><a class="headerlink" href="#turberfield.utils.expert.Expert.watch" title="Permalink to this definition">¶</a></dt>
+<dd><p>Subclasses may override the base class implementation.</p>
+<p>This method is used to create one coroutine for each queue of
+input. The job of the method is to watch the queue for messages
+and dispatch them appropriately.</p>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+</div>
+
+
+      </div>
+      <div class="bottomnav" role="navigation" aria-label="bottom navigation">
+      
+        <p>
+        «&#160;&#160;<a href="travel.html">3. Calculating motion</a>
+        &#160;&#160;::&#160;&#160;
+        <a class="uplink" href="index.html">Contents</a>
+        </p>
+
+      </div>
+
+    <div class="footer" role="contentinfo">
+        &copy; Copyright 2015, D Haynes.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.3.1.
+    </div>
+  </body>
+</html>
