@@ -1,0 +1,298 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+<html>
+<head>
+<title>11. How to use AOP (Aspect Oriented Programing) with CherryPy</title>
+<META NAME="description" CONTENT="11. How to use AOP (Aspect Oriented Programing) with CherryPy">
+<META NAME="keywords" CONTENT="howto">
+<META NAME="resource-type" CONTENT="document">
+<META NAME="distribution" CONTENT="global">
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<link rel="STYLESHEET" href="howto.css" type='text/css'>
+<link rel="first" href="howto.html">
+<link rel="contents" href="contents.html" title="Contents">
+
+<LINK REL="next" HREF="node13.html">
+<LINK REL="previous" HREF="node11.html">
+<LINK REL="up" HREF="howto.html">
+<LINK REL="next" HREF="node13.html">
+<meta name='aesop' content='information'>
+</head>
+<body>
+<DIV CLASS="navigation">
+<table align="center" width="100%" cellpadding="0" cellspacing="2">
+<tr>
+<td><A HREF="node11.html"><img src="../icons/previous.gif"
+  border="0" height="32"
+  alt="Previous Page" width="32"></A></td>
+<td><A HREF="howto.html"><img src="../icons/up.gif"
+  border="0" height="32"
+  alt="Up One Level" width="32"></A></td>
+<td><A HREF="node13.html"><img src="../icons/next.gif"
+  border="0" height="32"
+  alt="Next Page" width="32"></A></td>
+<td align="center" width="100%">CherryPy HowTo</td>
+<td><A HREF="node1.html"><img src="../icons/contents.gif"
+  border="0" height="32"
+  alt="Contents" width="32"></A></td>
+<td><img src="../icons/blank.gif"
+  border="0" height="32"
+  alt="" width="32"></td>
+<td><img src="../icons/blank.gif"
+  border="0" height="32"
+  alt="" width="32"></td>
+</tr></table>
+<b class="navlabel">Previous:</b> <a class="sectref" HREF="node11.html">10. How to use</A>
+<b class="navlabel">Up:</b> <a class="sectref" HREF="howto.html">CherryPy HowTo</A>
+<b class="navlabel">Next:</b> <a class="sectref" HREF="node13.html">12. How to create</A>
+<br><hr>
+</DIV>
+<!--End of Navigation Panel-->
+<!--Table of Child-Links-->
+<A NAME="CHILD_LINKS"><STRONG>Subsections</STRONG></a>
+
+<UL CLASS="ChildLinks">
+<LI><A href="node12.html#SECTION0012100000000000000000">11.1 Introduction</a>
+<LI><A href="node12.html#SECTION0012200000000000000000">11.2 Basic example</a>
+<LI><A href="node12.html#SECTION0012300000000000000000">11.3 How is it used in CookieAuthenticate and HttpAuthenticate</a>
+</ul>
+<!--End of Table of Child-Links-->
+<HR>
+
+<H1><A NAME="SECTION0012000000000000000000">
+11. How to use AOP (Aspect Oriented Programing) with CherryPy</A>
+</H1>
+
+<P>
+
+<H1><A NAME="SECTION0012100000000000000000">
+11.1 Introduction</A>
+</H1>
+This HowTo is intended to people who are already familiar with OOP, but who are not necessarily familiar with AOP.
+If this is your case, check out <a class="url" href="http://aosd.net">http://aosd.net</a> for an introduction to AOP.
+
+<P>
+CherryPy only implements a few of AOP concepts. I don't have a PHD in AOP and it is not my goal to make
+CherryPy an AOP reference :-)
+
+<P>
+Instead, I implemented a few features that I thought might be useful (and they already are, since both
+HttpAuthenticate and CookieAuthenticate modules use AOP features).
+
+<P>
+
+<H1><A NAME="SECTION0012200000000000000000">
+11.2 Basic example</A>
+</H1>
+On most websites a common header and footer is used for all (or most) pages of the site. In CherryPy, you
+can easily implement that using a "classic" object oriented approach: first you define a class that contains
+the header and the footer that you want to use for all your pages.
+
+<P>
+<div class="verbatim"><pre>
+CherryClass NormalHeaderAndFooter:
+mask:
+    def header(self):
+        &lt;html&gt;&lt;body&gt;I'm the header&lt;br&gt;&lt;br&gt;
+    def footer(self):
+        &lt;br&gt;&lt;br&gt;I'm the footer&lt;/body&gt;&lt;/html&gt;
+</pre></div>
+
+<P>
+Then, all you have to do is derive your CherryClasses from <var>NormalHeaderAndFooter</var> and call <var>header</var>
+and <var>footer</var> in each of your masks or views:
+
+<P>
+<div class="verbatim"><pre>
+CherryClass Root(NormalHeaderAndFooter):
+mask:
+    def index(self):
+        &lt;py-eval="self.header()"&gt;
+            Hello, world !
+        &lt;py-eval="self.footer()"&gt;
+    def otherPage(self):
+        &lt;py-eval="self.header()"&gt;
+            I love cherry pie !
+        &lt;py-eval="self.footer()"&gt;
+</pre></div>
+
+<P>
+That's the "classic" object oriented approach. It's pretty good, but if we look at it, we'll realize that we
+have to repeat <var>&lt;py-eval="self.header()"&gt;</var> and <var>&lt;py-eval="self.footer()"&gt;</var> for each mask and view, and this
+has several drawbacks:
+
+<P>
+
+<UL>
+<LI>First of all, I <b>never</b> like to repeat code. Whenever I do it, I feel like there must be something
+I'm doing wrong and my code could certainly be improved !
+</LI>
+<LI>For a real life website, we probably would have many CherryClasses that inherit from <var>NormalHeaderAndFooter</var>, and all these
+CherryClasses would have many masks that all make the same call to <var>header</var> and <var>footer</var>. What if we want to change
+the name of the <var>header</var> method ? In that case, we would have to go through all the masks of all the CherryClasses to
+change the line !
+</LI>
+<LI>In this trivial example, we only have 2 lines of code to repeat, but what if we had other things to do for each page
+(like log the request in a database or check that the user is authenticated) ? We could end up repeating tens of lines
+of code for each method !
+</LI>
+</UL>
+
+<P>
+That's where AOP comes in ... Instead of just declaring "normal" <var>header</var> and <var>footer</var> methods, we'll declare
+"aspect" methods. This basically adds another information which is: "include my code at the beginning or at the end
+of each of the methods of all derived classes".
+
+<P>
+Therefore, the implementation of our simple example using AOP would be:
+
+<P>
+<div class="verbatim"><pre>
+CherryClass NormalHeaderAndFooter:
+aspect:
+    (1) start:
+        _page.append("&lt;html&gt;&lt;body&gt;I'm the header&lt;br&gt;&lt;br&gt;")
+    (1) end:
+        _page.append("&lt;br&gt;&lt;br&gt;I'm the footer&lt;/body&gt;&lt;/html&gt;")
+
+CherryClass Root(NormalHeaderAndFooter):
+mask:
+    def index(self):
+            Hello, world !
+    def otherPage(self):
+            I love cherry pie !
+</pre></div>
+<A NAME="tex2html1"
+  HREF="#foot239"><SUP>11.1</SUP></A>
+<P>
+See ... we got rid of the <var>&lt;py-eval="self.header()"&gt;</var> and <var>&lt;py-eval="self.footer()"&gt;</var> lines ...
+
+<P>
+Let's see what we can notice from looking at the code:
+
+<UL>
+<LI>In CherryClass <var>NormalHeaderAndFooter</var>, the "mask" section has disappeared and has been replaced by a new "aspect" section.
+</LI>
+<LI>In this "aspect" section, the line where we normally declare methods (using the "def" keyword) has been replaced by a special
+line that contains "start" or "end" (we'll explain the syntax later).
+</LI>
+<LI>The lines that normally contain the body of the function are still there, and they're written using regular Python.
+</LI>
+<LI><var>&lt;py-eval="self.header()"&gt;</var> and <var>&lt;py-eval="self.footer()"&gt;</var> have disappeared from the methods of <var>Root</var>.
+<var>Root</var> is still derived from <var>NormalHeaderAndFooter</var>.
+</LI>
+</UL>
+
+<P>
+Here is how it works:
+
+<P>
+The header for an aspect method has two parts:
+<div class="verbatim"><pre>
+(condition) startOrEnd:
+</pre></div>
+<var>startOrEnd</var> can be either the "start" or the "end" keyword. This indicates whether the code should be appended at
+the start or at the end of the methods.
+
+<P>
+<var>condition</var> is a python expression used to indicated which method the aspect should apply to. If the condition
+is always true (as in "1"), then it means that the aspect will apply to all methods of the derived CherryClasses. The
+python expression can use a special variable called <var>method</var> that contains the following member variables:
+
+<UL>
+<LI><var>name</var>: contains the name of the method
+</LI>
+<LI><var>type</var>: contains the type of the method ("mask", "view", "variable", ...)
+</LI>
+<LI><var>isHidden</var>: is true if the mask or view is hidden (false otherwise)
+</LI>
+<LI><var>className</var>: name of the CherryClass the method belongs to
+</LI>
+</UL>
+
+<P>
+Let's go back to our example: let's imagine that we want to use the regular header and footer for both
+pages <var>index</var> and <var>otherPage</var>, but we want a third page called <var>yetAnotherPage</var> that has its own header
+and footer.
+Here is what the code would look like:
+<div class="verbatim"><pre>
+CherryClass NormalHeaderAndFooter:
+aspect:
+    (method.type=='mask' and method.name!='yetAnotherPage') start:
+        _page.append("&lt;html&gt;&lt;body&gt;I'm the header&lt;br&gt;&lt;br&gt;")
+    (method.type=='mask' and method.name!='yetAnotherPage') end:
+        _page.append("&lt;br&gt;&lt;br&gt;I'm the footer&lt;/body&gt;&lt;/html&gt;")
+
+CherryClass Root(NormalHeaderAndFooter):
+mask:
+    def index(self):
+            Hello, world !
+    def otherPage(self):
+            I love cherry pie !
+    def yetAnotherPage(self):
+        &lt;html&gt;&lt;body bgcolor=red&gt;
+            I love cherry pie !
+        &lt;/body&gt;&lt;/html&gt;
+</pre></div>
+As we can see, we use the aspect condition to indicate which method the aspect will apply to. Note that
+the "method.type='mask'" condition is useless, since all methods of <var>Root</var> are masks. So it is
+only there to show you an example of an aspect condition.
+
+<P>
+
+<H1><A NAME="SECTION0012300000000000000000">
+11.3 How is it used in CookieAuthenticate and HttpAuthenticate</A>
+</H1>
+Now that you know how it works, you can look at the source code for these two modules and you should be able to
+understand it.
+
+<P>
+Basically, when you declare a CherryClass that inherits from CookieAuthenticate or HttpAuthenticate, some code is
+automatically added at the beginning of each of your masks and views. This code checks if the user is authenticated
+or not. If not, it returns the login page instead of the regular page ...
+
+<P>
+<BR><HR><H4>Footnotes</H4>
+<DL>
+<DT><A NAME="foot239">...
+</A><A
+ HREF="node12.html#tex2html1"><SUP>11.1</SUP></A></DT>
+<DD>This sample code requires CherryPy-0.7 or later to work
+
+</DD>
+</DL>
+<DIV CLASS="navigation">
+<p><hr>
+<table align="center" width="100%" cellpadding="0" cellspacing="2">
+<tr>
+<td><A HREF="node11.html"><img src="../icons/previous.gif"
+  border="0" height="32"
+  alt="Previous Page" width="32"></A></td>
+<td><A HREF="howto.html"><img src="../icons/up.gif"
+  border="0" height="32"
+  alt="Up One Level" width="32"></A></td>
+<td><A HREF="node13.html"><img src="../icons/next.gif"
+  border="0" height="32"
+  alt="Next Page" width="32"></A></td>
+<td align="center" width="100%">CherryPy HowTo</td>
+<td><A HREF="node1.html"><img src="../icons/contents.gif"
+  border="0" height="32"
+  alt="Contents" width="32"></A></td>
+<td><img src="../icons/blank.gif"
+  border="0" height="32"
+  alt="" width="32"></td>
+<td><img src="../icons/blank.gif"
+  border="0" height="32"
+  alt="" width="32"></td>
+</tr></table>
+<b class="navlabel">Previous:</b> <a class="sectref" HREF="node11.html">10. How to use</A>
+<b class="navlabel">Up:</b> <a class="sectref" HREF="howto.html">CherryPy HowTo</A>
+<b class="navlabel">Next:</b> <a class="sectref" HREF="node13.html">12. How to create</A>
+<hr>
+<span class="release-info">Release 0.10, documentation updated on 19 March 2004.</span>
+</DIV>
+<!--End of Navigation Panel-->
+<ADDRESS>
+See <i><a href="about.html">About this document...</a></i> for information on suggesting changes.
+</ADDRESS>
+</BODY>
+</HTML>

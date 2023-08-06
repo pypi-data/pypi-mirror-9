@@ -1,0 +1,184 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+<html>
+<head>
+<title>1.5.4 Putting it together</title>
+<META NAME="description" CONTENT="1.5.4 Putting it together">
+<META NAME="keywords" CONTENT="lib">
+<META NAME="resource-type" CONTENT="document">
+<META NAME="distribution" CONTENT="global">
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<link rel="STYLESHEET" href="lib.css" type='text/css'>
+<link rel="first" href="lib.html">
+<link rel="contents" href="contents.html" title="Contents">
+
+<LINK REL="previous" HREF="node21.html">
+<LINK REL="up" href="module-Form.html">
+<LINK REL="next" href="module-MySql.html">
+<meta name='aesop' content='information'>
+</head>
+<body>
+<DIV CLASS="navigation">
+<table align="center" width="100%" cellpadding="0" cellspacing="2">
+<tr>
+<td><A HREF="node21.html"><img src="../icons/previous.gif"
+  border="0" height="32"
+  alt="Previous Page" width="32"></A></td>
+<td><A href="module-Form.html"><img src="../icons/up.gif"
+  border="0" height="32"
+  alt="Up One Level" width="32"></A></td>
+<td><A href="module-MySql.html"><img src="../icons/next.gif"
+  border="0" height="32"
+  alt="Next Page" width="32"></A></td>
+<td align="center" width="100%">CherryPy Standard Library Reference</td>
+<td><A href="contents.html"><img src="../icons/contents.gif"
+  border="0" height="32"
+  alt="Contents" width="32"></A></td>
+<td><img src="../icons/blank.gif"
+  border="0" height="32"
+  alt="" width="32"></td>
+<td><img src="../icons/blank.gif"
+  border="0" height="32"
+  alt="" width="32"></td>
+</tr></table>
+<b class="navlabel">Previous:</b> <a class="sectref" HREF="node21.html">1.5.3 Writing a form</A>
+<b class="navlabel">Up:</b> <a class="sectref" href="module-Form.html">1.5 Form  </A>
+<b class="navlabel">Next:</b> <a class="sectref" href="module-MySql.html">1.6 MySql  </A>
+<br><hr>
+</DIV>
+<!--End of Navigation Panel-->
+
+<H2><A NAME="SECTION003540000000000000000">
+1.5.4 Putting it together</A>
+</H2>
+
+<P>
+Let's see how we use all these CherryClasses, variables and methods to build a nice form.
+
+<P>
+We are going to build a form where users choose a login and a password, enter their e-mail, their country and their
+hobbies.
+
+<P>
+We need 6 fields:
+
+<UL>
+<LI>One text field for the login (this field is mandatory)
+</LI>
+<LI>Two password fields for the password (which they must enter twice)
+</LI>
+<LI>One text field for their e-mail (this field is optional)
+</LI>
+<LI>One select field for their country (the default value is USA)
+</LI>
+<LI>One checkbox list for their hobbies (this field is optional)
+</LI>
+</UL>
+
+<P>
+Plus we'll add one line between the e-mail field and the country field.
+
+<P>
+Here is what the code could be:
+<div class="verbatim"><pre>
+use Form, MaskTools
+
+# We start by creating a CherryClass that inherits from Form
+# This CherryClass will hold all the informations about the form we want to create
+CherryClass MyForm(Form):
+function:
+    def __init__(self):
+        # Instantiate all fields plus 3 separators (one at the beginning, one for the line and one at the end)
+        headerSep=FormSeparator('', defaultFormMask.defaultHeader)
+        login=FormField(label='Login:', name='login', mandatory=1, typ='text')
+        password=FormField(label='Password:', name='password', mandatory=1, typ='password')
+        password2=FormField(label='Confirm password:', name='password2', mandatory=1, typ='password')
+        email=FormField(label='E-mail:', name='email', typ='text', validate=self.validateEmail)
+        lineSep=FormSeparator('', self.lineSeparator)
+        country=FormField(label='Country:', name='country', typ='select', optionList=['USA', 'Andorra', 'Lichtenstein', 'CherryPyLand'], defaultValue='USA')
+        hobbies=FormField(label='Hobbies:', name='hobbies', typ='checkbox', optionList=['Using CherryPy', 'Eating Cherry Pie'])
+        submit=FormField(label='', name='Submit', typ='submit')
+        footerSep=FormSeparator('', defaultFormMask.defaultFooter)
+        self.fieldList=[headerSep, login, password, password2, email, lineSep, country, hobbies, submit, footerSep]
+
+    # Function that checks if an e-mail is correct or not
+    def validateEmail(self, email):
+        try:
+            before, after=email.split('@')
+            if not before or after.find('.')==-1: raise 'Error'
+        except: return "Wrong email"
+
+    # Function that performs general validation of the form. In our case, we need to check
+    # that the passwords match
+    def validateFields(self):
+        # Warning: paramMap could have no "password" or "password2" key if the user didn't fill out the fields
+        if request.paramMap.get('password','')!=request.paramMap.get('password2',''):
+            # Set errorMessage for password fields
+            self.setFieldErrorMessage('password', 'Not matching')
+            self.setFieldErrorMessage('password2', 'Not matching')
+
+mask:
+    # Line separator used to draw a line between the email field and the country field
+    def lineSeparator(self, label):
+        &lt;tr&gt;&lt;td colspan=3 height=1 bgColor=black py-eval="maskTools.x()"&gt;&lt;/td&gt;&lt;/tr&gt;
+
+view:
+    def postForm(self, **kw):
+        if self.validateForm():
+            return root.formOk()
+        else:
+            return "&lt;html&gt;&lt;body&gt;&lt;font color=red&gt;Please correct the errors (fields in red)&lt;/font&gt;"+self.formView(1)+"&lt;/body&gt;&lt;/html&gt;"
+
+
+# Now we just have to create a regular Root CherryClass, that will call some of MyForm's methods
+CherryClass Root:
+mask:
+    def index(self):
+        &lt;html&gt;&lt;body&gt;
+            Welcome, please fill out the form below:
+            &lt;py-eval="myForm.formView()"&gt;
+        &lt;/body&gt;&lt;/html&gt;
+    def formOk(self):
+        &lt;html&gt;&lt;body&gt;
+            Thank you for filling out the form.&lt;br&gt;
+            All values were correct
+        &lt;/body&gt;&lt;/html&gt;
+</pre></div>
+
+<P>
+
+<DIV CLASS="navigation">
+<p><hr>
+<table align="center" width="100%" cellpadding="0" cellspacing="2">
+<tr>
+<td><A HREF="node21.html"><img src="../icons/previous.gif"
+  border="0" height="32"
+  alt="Previous Page" width="32"></A></td>
+<td><A href="module-Form.html"><img src="../icons/up.gif"
+  border="0" height="32"
+  alt="Up One Level" width="32"></A></td>
+<td><A href="module-MySql.html"><img src="../icons/next.gif"
+  border="0" height="32"
+  alt="Next Page" width="32"></A></td>
+<td align="center" width="100%">CherryPy Standard Library Reference</td>
+<td><A href="contents.html"><img src="../icons/contents.gif"
+  border="0" height="32"
+  alt="Contents" width="32"></A></td>
+<td><img src="../icons/blank.gif"
+  border="0" height="32"
+  alt="" width="32"></td>
+<td><img src="../icons/blank.gif"
+  border="0" height="32"
+  alt="" width="32"></td>
+</tr></table>
+<b class="navlabel">Previous:</b> <a class="sectref" HREF="node21.html">1.5.3 Writing a form</A>
+<b class="navlabel">Up:</b> <a class="sectref" href="module-Form.html">1.5 Form  </A>
+<b class="navlabel">Next:</b> <a class="sectref" href="module-MySql.html">1.6 MySql  </A>
+<hr>
+<span class="release-info">Release 0.10, documentation updated on 19 March 2004.</span>
+</DIV>
+<!--End of Navigation Panel-->
+<ADDRESS>
+See <i><a href="about.html">About this document...</a></i> for information on suggesting changes.
+</ADDRESS>
+</BODY>
+</HTML>

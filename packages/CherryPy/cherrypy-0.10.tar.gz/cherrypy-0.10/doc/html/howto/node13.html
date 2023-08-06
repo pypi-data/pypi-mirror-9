@@ -1,0 +1,218 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+<html>
+<head>
+<title>12. How to create a spinning server and then debug it</title>
+<META NAME="description" CONTENT="12. How to create a spinning server and then debug it">
+<META NAME="keywords" CONTENT="howto">
+<META NAME="resource-type" CONTENT="document">
+<META NAME="distribution" CONTENT="global">
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<link rel="STYLESHEET" href="howto.css" type='text/css'>
+<link rel="first" href="howto.html">
+<link rel="contents" href="contents.html" title="Contents">
+
+<LINK REL="next" HREF="node14.html">
+<LINK REL="previous" HREF="node12.html">
+<LINK REL="up" HREF="howto.html">
+<LINK REL="next" HREF="node14.html">
+<meta name='aesop' content='information'>
+</head>
+<body>
+<DIV CLASS="navigation">
+<table align="center" width="100%" cellpadding="0" cellspacing="2">
+<tr>
+<td><A HREF="node12.html"><img src="../icons/previous.gif"
+  border="0" height="32"
+  alt="Previous Page" width="32"></A></td>
+<td><A HREF="howto.html"><img src="../icons/up.gif"
+  border="0" height="32"
+  alt="Up One Level" width="32"></A></td>
+<td><A HREF="node14.html"><img src="../icons/next.gif"
+  border="0" height="32"
+  alt="Next Page" width="32"></A></td>
+<td align="center" width="100%">CherryPy HowTo</td>
+<td><A HREF="node1.html"><img src="../icons/contents.gif"
+  border="0" height="32"
+  alt="Contents" width="32"></A></td>
+<td><img src="../icons/blank.gif"
+  border="0" height="32"
+  alt="" width="32"></td>
+<td><img src="../icons/blank.gif"
+  border="0" height="32"
+  alt="" width="32"></td>
+</tr></table>
+<b class="navlabel">Previous:</b> <a class="sectref" HREF="node12.html">11. How to use</A>
+<b class="navlabel">Up:</b> <a class="sectref" HREF="howto.html">CherryPy HowTo</A>
+<b class="navlabel">Next:</b> <a class="sectref" HREF="node14.html">13. How to create</A>
+<br><hr>
+</DIV>
+<!--End of Navigation Panel-->
+<!--Table of Child-Links-->
+<A NAME="CHILD_LINKS"><STRONG>Subsections</STRONG></a>
+
+<UL CLASS="ChildLinks">
+<LI><A href="node13.html#SECTION0013100000000000000000">12.1 Creating a spinning server</a>
+<LI><A href="node13.html#SECTION0013200000000000000000">12.2 Debugging a spinning server</a>
+</ul>
+<!--End of Table of Child-Links-->
+<HR>
+
+<H1><A NAME="SECTION0013000000000000000000">
+12. How to create a spinning server and then debug it</A>
+</H1>
+
+<P>
+
+<H1><A NAME="SECTION0013100000000000000000">
+12.1 Creating a spinning server</A>
+</H1>
+By "spinning" server, I mean a server that's stuck in a loop while trying to build a page.
+
+<P>
+The easiest way to achieve that is:
+<div class="verbatim"><pre>
+CherryClass Root:
+view:
+    def index(self):
+        while 1: pass
+</pre></div>
+Compile that, start the server and try to request the home page ... :-) There you have it: a nice "spinning" server. Of course,
+the page will never be rendered, and if you try to load the same page from another browser, your browser won't even be able to
+connect to the CherryPy server because it's still busy trying to serve the first page (unless you have multiple server
+processes running).
+
+<P>
+The way you can tell that your server is spinning is very easy: you're no longer able to connect to it, and the cpu time used
+by the process (which is displayed when you do a <var>ps</var> on Unix for instance) keeps growing, meaning that the
+process is not stalled, but it's actually doing something.
+
+<P>
+You might be thinking "I'm not that stupid ! I will never write such an obvious loop !".
+
+<P>
+But here is another less trivial case that actually happened to me (and that's the reason why I wrote this HowTo):
+<div class="verbatim"><pre>
+CherryClass Root:
+function:
+    def extractText(self, code):
+        # Remove text between &lt; and &gt;
+        while 1:
+            i=code.find('&lt;')
+            if i==-1: break
+            j=code.find('&gt;', i)
+            if j!=-1: code=code[:i]+' '+code[j+1:]
+        return code
+mask:
+    def index(self, code=''):
+        &lt;html&gt;&lt;body&gt;
+            Extracted text: &lt;py-eval="self.extractText(code)"&gt;
+            &lt;form action="index"&gt;
+            New text: &lt;textarea name="code"&gt;&lt;/textarea&gt;
+            &lt;input type=submit&gt;
+            &lt;/form&gt;
+        &lt;/body&gt;&lt;/html&gt;
+</pre></div>
+The <var>extractText</var> function takes some HTML code as an input and strips out the HTML tags. The output is the text
+that's extracted from the HTML code. The <var>index</var> mask just provides a textarea-based interface to test the function.
+
+<P>
+If you compile this code, run it and test it with some HTML code, it might run fine for a while, but in some cases it will
+start "spinning" ! The reason is that the <var>extractText</var> function is buggy in some cases: if the code is not proper
+HTML (for instance, a tag is opened with a "&lt;" but never closed with a "&gt;"), the function will enter an infinite loop.
+Correcting that is very easy once you know what's happening (just add "else: break" after the second "if" of
+the function).
+
+<P>
+But when this is happening on your production server, all you see is that your CherryPy server sometimes start spinning.
+Besides, the server might run fine for days, and start spinning all the sudden, making it very hard to reproduce it
+in your development environment and thus almost impossible to find out where it comes from !
+
+<P>
+The next section explain how to easily debug that to track down the culprit ...
+
+<P>
+
+<H1><A NAME="SECTION0013200000000000000000">
+12.2 Debugging a spinning server</A>
+</H1>
+The following method only works on Unix because it uses the <var>gdb</var> debugger.
+
+<P>
+All you have to do is wait for your CherryPy server to start spinning. Once it happens, fire up <var>gdb</var> using the
+name of the Python program that's running your CherryPy server (with the correct version). This might be for instance:
+<div class="verbatim"><pre>
+gdb python2.1
+or
+gdb python2.2
+</pre></div>
+Once you're in <var>gdb</var>, just attach to the CherryPy process (you can get the process number with the <var>ps</var> command):
+<div class="verbatim"><pre>
+attach 7457
+</pre></div>
+At this point, <var>gdb</var> will display a bunch of messages saying that it's reading and loading some symbols.
+
+<P>
+Now comes the clever trick: run the following command in gdb:
+<div class="verbatim"><pre>
+call PyRun_SimpleString("import sys, traceback; sys.stderr=open('/tmp/tb','w',0); traceback.print_stack()")
+</pre></div>
+
+<P>
+This will save the traceback in the <span class="file">/tmp/tb</span> file. Just exit gdb and look at this file ... It should be obvious where
+the server was stuck. In our example, the file contained the following lines:
+<div class="verbatim"><pre>
+  File "TestServer.py", line 454, in ?
+    try: _serveForever(_masterSocket)
+  File "TestServer.py", line 215, in _serveForever
+    _handleRequest(_wfile)
+  File "TestServer.py", line 363, in _handleRequest
+    response.body=eval("%s.%s(%s)"%(_myClass,_function, _paramStr))
+  File "&lt;string&gt;", line 0, in ?
+  File "TestServer.py", line 61, in index
+    _page.append(str(self.extractText(code)))
+  File "TestServer.py", line 55, in extractText
+    if j!=-1: code=code[:i]+' '+code[j+1:]
+  File "&lt;string&gt;", line 1, in ?
+</pre></div>
+
+<P>
+PS: Thanks to Barry Warsaw for this trick (which was originally posted to a Zope mailing list).
+
+<P>
+
+<DIV CLASS="navigation">
+<p><hr>
+<table align="center" width="100%" cellpadding="0" cellspacing="2">
+<tr>
+<td><A HREF="node12.html"><img src="../icons/previous.gif"
+  border="0" height="32"
+  alt="Previous Page" width="32"></A></td>
+<td><A HREF="howto.html"><img src="../icons/up.gif"
+  border="0" height="32"
+  alt="Up One Level" width="32"></A></td>
+<td><A HREF="node14.html"><img src="../icons/next.gif"
+  border="0" height="32"
+  alt="Next Page" width="32"></A></td>
+<td align="center" width="100%">CherryPy HowTo</td>
+<td><A HREF="node1.html"><img src="../icons/contents.gif"
+  border="0" height="32"
+  alt="Contents" width="32"></A></td>
+<td><img src="../icons/blank.gif"
+  border="0" height="32"
+  alt="" width="32"></td>
+<td><img src="../icons/blank.gif"
+  border="0" height="32"
+  alt="" width="32"></td>
+</tr></table>
+<b class="navlabel">Previous:</b> <a class="sectref" HREF="node12.html">11. How to use</A>
+<b class="navlabel">Up:</b> <a class="sectref" HREF="howto.html">CherryPy HowTo</A>
+<b class="navlabel">Next:</b> <a class="sectref" HREF="node14.html">13. How to create</A>
+<hr>
+<span class="release-info">Release 0.10, documentation updated on 19 March 2004.</span>
+</DIV>
+<!--End of Navigation Panel-->
+<ADDRESS>
+See <i><a href="about.html">About this document...</a></i> for information on suggesting changes.
+</ADDRESS>
+</BODY>
+</HTML>

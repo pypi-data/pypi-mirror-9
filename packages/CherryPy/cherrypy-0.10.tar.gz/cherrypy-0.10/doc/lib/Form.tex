@@ -1,0 +1,296 @@
+\section{\module{Form} --- Form handling.}
+\declaremodule{standard}{Form}
+
+\subsection{Introduction}
+Handling complicated forms can really be a pain sometimes, especially if you want to handle user errors.
+
+The Form module can save you a lot of time and trouble, once you've learned how to use it.
+
+Most of the time, you'll want this:
+\begin{itemize}
+\item
+Your form has all sorts of fields: text fields, textareas, checkboxes, radio buttons, ...
+\item
+By default, some fields are empty, and some have default values.
+\item
+Some fields are mandatory, some aren't. Some fields can only have certain values (ex: birthdate, price, ...)
+\end{itemize}
+
+And you'll probably want your form to behave like this:
+\begin{itemize}
+\item
+When the form is first displayed, all fields are either empty or they have a default value
+\item
+The user fills the form in and hit the submit button
+\item
+(At this point, you may want to use a few lines of javascript to catch trivial errors. But if your
+form is really big, you'll probably want to catch these errors on the server side ...)
+\item
+The data is sent to the server, which analyzes it
+\item
+If the data is correct (no missing field, no wrong value, ...), everything continues normally
+\item
+In case some fields have incorrect values, you'll probably want the following:
+\begin{itemize}
+\item
+Redisplay the form, but keep all values that the user entered (that's the painful part ...)
+\item
+Display a message that stands out at the top of the form to notify the user that some fields need to be changed
+\item
+Display a message next to each field that has an error
+\end{itemize}
+\end{itemize}
+
+We'll see how the Form module can help you do that ...
+
+\subsection{Module}
+
+This module defines 4 CherryClasses:
+
+\subsubsection{FormField}
+A FormField instance is used for each of the form fields.
+
+\begin{funcdesc}{function: __init__}{label, name, typ, mask=None, mandatory=0, size=15, optionList=[], defaultValue='', validate=None}
+
+\var{label} is a string that will be displayed next to the field.
+
+\var{name} is a string containing the name of the field.
+
+\var{typ} is a string containing the type of the field. It can be one of the following:
+text, password, file, hidden, submit, image, select, textarea, radio, checkbox
+
+\var{mask} is a mask used to render the field. The default value is \var{defaultFormMask.defaultMask}. The mask will receive
+the FormField instance as an argument and it should return some HTML to render the field.
+
+\var{mandatory} is an integer that indicates whether the field is mandatory or not.
+
+\var{size} is an integer that indicates the size of the field.
+
+\var{mandatory} is an integer that indicates whether the field is mandatory or not (it is only used for some of the fields
+like text or password).
+
+\var{optionList} is a list of strings containing the different options for a fied (is is only used for
+radio and checkbox fields).
+
+\var{defaultValue} is a string containing the default value for the field.
+
+\var{validate} is a function used to validate the field. The function will receive the value of the field as an argument,
+and it should return \var{None} if the value is correct, or a string containing the error message if the value is not.
+
+\end{funcdesc}
+
+\subsubsection{FormSeparator}
+A FormSeparator instance is used to display some text or images between the different fields of the form.
+
+\begin{funcdesc}{function: __init__}{label, mask}
+
+\var{label} is a string that will be used by the mask to know what to display.
+
+\var{mask} is a mask used to render the field. The mask will receive
+the FormSeparator instance as an argument and it should return some HTML to render the separator.
+\end{funcdesc}
+
+\subsubsection{DefaultFormMask}
+This CherryClass contains a default implementation of a mask for the fields. You'll probably want to use
+your own masks for your own design. The next section explains how to write your own field masks.
+
+\subsubsection{Form}
+
+The is the main CherryClass of the module. To create a form, you should declare a CherryClass that inherits from Form.
+
+You may use the following variables and methods:
+
+\begin{memberdesc}{variable: method}
+String containing the \var{method} attribute of the form tag. It may be \var{send} or \var{post}. The default value
+is \var{post}
+\end{memberdesc}
+\begin{memberdesc}{variable: enctype}
+String containing the \var{enctype} attribute of the form tag. For instance, for a form that allows the user to upload
+files, you would use \var{multipart/form-data} The default value is an empty string, which means that the \var{enctype}
+attribute wile be omitted.
+\end{memberdesc}
+\begin{memberdesc}{variable: fieldList}
+List containing instances of the FormField and FormInstance CherryClasses. This list determines which fields and
+separators will be displayed, and in which order. \var{fieldList} should be set in the \var{__init__} method of the
+CherryClass.
+\end{memberdesc}
+
+\begin{funcdesc}{function: formView}{leaveValues=0}
+This function returns the HTML code for the form. if \var{leaveValues} is false, it will use the default value
+for each of the fields. If \var{leaveValues} is true, it will use the values that are in \var{request.paramMap} (in other
+words, the values that were entered by the user)
+\end{funcdesc}
+
+\begin{funcdesc}{function: validateFields}{}
+This function should be overwritten if you need to perform some validation that involves several fields at the
+same time (for instance, checking that 2 passwords match).
+
+If a field has an error, the function should set the \var{errorMessage} member variable of the FormField instance.
+\end{funcdesc}
+
+\begin{funcdesc}{function: setFieldErrorMessage}{fieldName, errorMessage}
+Sets the \var{errorMessage} member variable of the FormField instance whose name is \var{fieldName}.
+\end{funcdesc}
+
+\begin{funcdesc}{function: getFieldOptionList}{fieldName}
+Returns the \var{optionList} member variable of the FormField instance whose name is \var{fieldName}.
+\end{funcdesc}
+
+\begin{funcdesc}{function: getFieldDefaultValue}{fieldName}
+Returns the \var{defaultValue} member variable of the FormField instance whose name is \var{fieldName}.
+\end{funcdesc}
+
+\begin{funcdesc}{function: setFieldDefaultValue}{fieldName, defaultValue}
+Sets the \var{defaultValue} member variable of the FormField instance whose name is \var{fieldName}.
+\end{funcdesc}
+
+\begin{funcdesc}{function: getFieldNameList}{exceptList=[]}
+Returns the list of field names, based on the \var{fieldList} member variable. Names that are in \var{exceptList} are omitted.
+\end{funcdesc}
+
+\begin{funcdesc}{function: validateForm}{}
+This function checks if the data that the user entered is correct or not. It returns 1 if it is, 0 otherwise.
+\end{funcdesc}
+
+\begin{funcdesc}{view: postForm}{**kw}
+This view is automatically called when the user submits the form. You should overwrite this view and add your own
+code to handle the form data. Typical code for this view looks like this:
+\begin{verbatim}
+def postForm(self, **kw):
+    if self.validateForm():
+        # Yes, the data is correct
+        # Do what you want here
+        pass
+    else:
+        # No, the data is incorrect
+        # Redisplay the form and tell the user to fix the errors:
+        return "<html><body><font color=red>Fill out missing fields</font>"+self.formView(1)+"</body></html>"
+\end{verbatim}
+\end{funcdesc}
+
+\subsection{Writing a form mask}
+The module comes with a default mask for forms, but you'll probably want to change it to use your own design.
+All you have to do is write your own form mask.
+
+A form mask takes a FormField instance as an input and returns some HTML code as output. Don't forget that your
+mask should be setting the value of the field according the the \var{currentValue} member variable. Moreover,
+it should handle the field differently if the \var{errorMessage} is set.
+
+For instance, a mask for a text field could look like this:
+\begin{verbatim}
+if field.typ=='text':
+    result='%s: <input type=text name="%s" value="%s" size="%s">'%(
+        field.label, field.name, field.currentValue, field.size)
+    if field.errorMessage:
+        result+=' <font color=red>%s</font>'%field.errorMessage
+return result+'<br>'
+\end{verbatim}
+
+Things are a bit trickier for select boxes, radio buttons or checkboxes because you have to loop over
+the \var{optionList} member variable and match each value against \var{currentValue}.
+
+For instance, for a select box, the mask could look like this:
+\begin{verbatim}
+if field.typ=='select':
+    result='%s: <select name="%s" size="%s">'%(field.label, field.name, field.size)
+    for optionValue in optionList:
+        if optionValue==field.currentValue: checked=' checked'
+        else: checked=''
+        result+='<option%s>%s</option>'%(checked,optionValue)
+    result+='</select>
+    if field.errorMessage:
+        result+=' <font color=red>%s</font>'%field.errorMessage
+return result+'<br>'
+\end{verbatim}
+
+
+\subsection{Putting it together}
+
+Let's see how we use all these CherryClasses, variables and methods to build a nice form.
+
+We are going to build a form where users choose a login and a password, enter their e-mail, their country and their
+hobbies.
+
+We need 6 fields:
+\begin{itemize}
+\item
+One text field for the login (this field is mandatory)
+\item
+Two password fields for the password (which they must enter twice)
+\item
+One text field for their e-mail (this field is optional)
+\item
+One select field for their country (the default value is USA)
+\item
+One checkbox list for their hobbies (this field is optional)
+\end{itemize}
+
+Plus we'll add one line between the e-mail field and the country field.
+
+Here is what the code could be:
+\begin{verbatim}
+use Form, MaskTools
+
+# We start by creating a CherryClass that inherits from Form
+# This CherryClass will hold all the informations about the form we want to create
+CherryClass MyForm(Form):
+function:
+    def __init__(self):
+        # Instantiate all fields plus 3 separators (one at the beginning, one for the line and one at the end)
+        headerSep=FormSeparator('', defaultFormMask.defaultHeader)
+        login=FormField(label='Login:', name='login', mandatory=1, typ='text')
+        password=FormField(label='Password:', name='password', mandatory=1, typ='password')
+        password2=FormField(label='Confirm password:', name='password2', mandatory=1, typ='password')
+        email=FormField(label='E-mail:', name='email', typ='text', validate=self.validateEmail)
+        lineSep=FormSeparator('', self.lineSeparator)
+        country=FormField(label='Country:', name='country', typ='select', optionList=['USA', 'Andorra', 'Lichtenstein', 'CherryPyLand'], defaultValue='USA')
+        hobbies=FormField(label='Hobbies:', name='hobbies', typ='checkbox', optionList=['Using CherryPy', 'Eating Cherry Pie'])
+        submit=FormField(label='', name='Submit', typ='submit')
+        footerSep=FormSeparator('', defaultFormMask.defaultFooter)
+        self.fieldList=[headerSep, login, password, password2, email, lineSep, country, hobbies, submit, footerSep]
+
+    # Function that checks if an e-mail is correct or not
+    def validateEmail(self, email):
+        try:
+            before, after=email.split('@')
+            if not before or after.find('.')==-1: raise 'Error'
+        except: return "Wrong email"
+
+    # Function that performs general validation of the form. In our case, we need to check
+    # that the passwords match
+    def validateFields(self):
+        # Warning: paramMap could have no "password" or "password2" key if the user didn't fill out the fields
+        if request.paramMap.get('password','')!=request.paramMap.get('password2',''):
+            # Set errorMessage for password fields
+            self.setFieldErrorMessage('password', 'Not matching')
+            self.setFieldErrorMessage('password2', 'Not matching')
+
+mask:
+    # Line separator used to draw a line between the email field and the country field
+    def lineSeparator(self, label):
+        <tr><td colspan=3 height=1 bgColor=black py-eval="maskTools.x()"></td></tr>
+
+view:
+    def postForm(self, **kw):
+        if self.validateForm():
+            return root.formOk()
+        else:
+            return "<html><body><font color=red>Please correct the errors (fields in red)</font>"+self.formView(1)+"</body></html>"
+
+
+# Now we just have to create a regular Root CherryClass, that will call some of MyForm's methods
+CherryClass Root:
+mask:
+    def index(self):
+        <html><body>
+            Welcome, please fill out the form below:
+            <py-eval="myForm.formView()">
+        </body></html>
+    def formOk(self):
+        <html><body>
+            Thank you for filling out the form.<br>
+            All values were correct
+        </body></html>
+\end{verbatim}
+
+

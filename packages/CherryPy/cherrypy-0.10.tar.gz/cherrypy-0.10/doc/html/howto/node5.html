@@ -1,0 +1,225 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+<html>
+<head>
+<title>4. How to use load-balancing for your web site</title>
+<META NAME="description" CONTENT="4. How to use load-balancing for your web site">
+<META NAME="keywords" CONTENT="howto">
+<META NAME="resource-type" CONTENT="document">
+<META NAME="distribution" CONTENT="global">
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<link rel="STYLESHEET" href="howto.css" type='text/css'>
+<link rel="first" href="howto.html">
+<link rel="contents" href="contents.html" title="Contents">
+
+<LINK REL="next" HREF="node6.html">
+<LINK REL="previous" HREF="node4.html">
+<LINK REL="up" HREF="howto.html">
+<LINK REL="next" HREF="node6.html">
+<meta name='aesop' content='information'>
+</head>
+<body>
+<DIV CLASS="navigation">
+<table align="center" width="100%" cellpadding="0" cellspacing="2">
+<tr>
+<td><A HREF="node4.html"><img src="../icons/previous.gif"
+  border="0" height="32"
+  alt="Previous Page" width="32"></A></td>
+<td><A HREF="howto.html"><img src="../icons/up.gif"
+  border="0" height="32"
+  alt="Up One Level" width="32"></A></td>
+<td><A HREF="node6.html"><img src="../icons/next.gif"
+  border="0" height="32"
+  alt="Next Page" width="32"></A></td>
+<td align="center" width="100%">CherryPy HowTo</td>
+<td><A HREF="node1.html"><img src="../icons/contents.gif"
+  border="0" height="32"
+  alt="Contents" width="32"></A></td>
+<td><img src="../icons/blank.gif"
+  border="0" height="32"
+  alt="" width="32"></td>
+<td><img src="../icons/blank.gif"
+  border="0" height="32"
+  alt="" width="32"></td>
+</tr></table>
+<b class="navlabel">Previous:</b> <a class="sectref" HREF="node4.html">3. How to connect</A>
+<b class="navlabel">Up:</b> <a class="sectref" HREF="howto.html">CherryPy HowTo</A>
+<b class="navlabel">Next:</b> <a class="sectref" HREF="node6.html">5. How to compile</A>
+<br><hr>
+</DIV>
+<!--End of Navigation Panel-->
+<!--Table of Child-Links-->
+<A NAME="CHILD_LINKS"><STRONG>Subsections</STRONG></a>
+
+<UL CLASS="ChildLinks">
+<LI><A href="node5.html#SECTION005100000000000000000">4.1 Introduction</a>
+<LI><A href="node5.html#SECTION005200000000000000000">4.2 Generic load-balancing method</a>
+<LI><A href="node5.html#SECTION005300000000000000000">4.3 Multi-processor, unix-based machine</a>
+</ul>
+<!--End of Table of Child-Links-->
+<HR>
+
+<H1><A NAME="SECTION005000000000000000000">
+4. How to use load-balancing for your web site</A>
+</H1>
+
+<H1><A NAME="SECTION005100000000000000000">
+4.1 Introduction</A>
+</H1>
+Having a lot of traffic on their web site is what most webmasters dream about ...
+
+<P>
+Unfortunately, it also comes with its share of problems.
+Basically, if requests come in faster than your server can handle them, you're screwed :-)
+
+<P>
+One way to deal with that is to use load-balancing. This basically means that several threads or processes will
+be serving the pages. It is only efficient if you have several machines or if your machine has several processors.
+(otherwise, the same processor will just run several threads or processes, but the overall speed will be the same).
+
+<P>
+Of course, this means that you have to take care of the data sharing between the threads/processes. One way to
+do that is to use a database where you store all the data that needs to be shared amongst the processes. All processes
+read and write to the same database, insuring that they all have the same informations.
+
+<P>
+There are two ways to do load-balancing with CherryPy. One of them is easier to set up, but only applies to
+multi-processor machines running a Unix-based OS.
+
+<P>
+
+<H1><A NAME="SECTION005200000000000000000">
+4.2 Generic load-balancing method</A>
+</H1>
+Since a CherryPy server is a self-contained process that includes everything to run the web site, it is easy to
+start as many processes as you want (on the same machine or on different machines). If you start several
+processes on the same machine, you just have to use a different configuration file for each of them to specify
+a different port each time.
+
+<P>
+Then all you have to do is use a simple load-balancer (there are many of those out there) to redirect the requests
+to your CherryPy servers.
+
+<P>
+Let's take an example:
+
+<UL>
+<LI>You have 3 machines, called host1, host2 and host3
+</LI>
+<LI>host2 and host3 are single-proc, and host1 is dual-proc.
+</LI>
+<LI>For the load-balancer, we'll use <b>balance</b>, an easy to use, lightweight, open source load balancer available from
+<a class="url" href="http://balance.sourceforge.net">http://balance.sourceforge.net</a>.
+</LI>
+<LI>On host1, we'll run 2 CherryPy servers (since it's dual-proc) plus the load-balancer
+</LI>
+<LI>On host2 and host3, we'll only run one CherryPy server.
+</LI>
+<LI><b>balance</b> will listen on port 80. The CherryPy servers on host1 will listen on ports 8080 and 8081. The CherryPy servers on
+host2 and host3 will listen on port 8080.
+</LI>
+<LI>Let's assume that your CherryPy server file is called <span class="file">MyServer.py</span>
+</LI>
+</UL>
+
+<P>
+Here is what we have to do:
+
+<UL>
+<LI>Copy <span class="file">MyServer.py</span> on host1, host2 and host3. (alternatively, you can export the file system from one machine to the others, to deal with only one copy of the file)
+</LI>
+<LI>On host1, host2 and host3, create a configuration file called <span class="file">MyServer8080.cfg</span> containing the following:
+<div class="verbatim"><pre>
+[server]
+socketPort=8080
+</pre></div>
+On host1, create another configuration file called <span class="file">MyServer8081.cfg</span> containing the following:
+<div class="verbatim"><pre>
+[server]
+socketPort=8081
+</pre></div>
+</LI>
+<LI>On host1, host2 and host3, start the servers that listen on port 8080:
+<div class="verbatim"><pre>
+[host1] %  python MyServer.py -C MyServer8080.cfg
+[host2] %  python MyServer.py -C MyServer8080.cfg
+[host3] %  python MyServer.py -C MyServer8080.cfg
+</pre></div>
+</LI>
+<LI>On host1, start the second server that listens on port 8081:
+<div class="verbatim"><pre>
+[host1] %  python MyServer.py -C MyServer8081.cfg
+</pre></div>
+</LI>
+<LI>Now all you have to do is start the load balancer and indicate what the available CherryPy servers are:
+<div class="verbatim"><pre>
+[host1] % /usr/sbin/balance 80 host1:8080 host1:8081 host2:8080 host3:8080
+</pre></div>
+</LI>
+</UL>
+And voila !
+
+<P>
+
+<H1><A NAME="SECTION005300000000000000000">
+4.3 Multi-processor, unix-based machine</A>
+</H1>
+The method described in the previous section works in all cases, but if you have a unix-based machine with multiple
+processors, there is another method for load-balancing with CherryPy.
+
+<P>
+The trick is to create the socket where the CherryPy server will listen, and then do a <b>fork()</b>. This way, we'll
+have multiple processes listening on the same socket. When one process is busy building a page, the next one will be
+listening on the socket and thus serving a request that might come in.
+
+<P>
+This feature is built in. All you have to do to use it is to use the <b>fixedNumberOfProcesses</b> option in
+the configuration file (in the <var>[server]</var> section):
+<div class="verbatim"><pre>
+[server]
+socketPort=80
+fixedNumberOfProcesses=3
+</pre></div>
+And that's it.
+
+<P>
+Note: This method is only useful if your machine has several processors. If not, then the processor will run multiple
+CherryPy processes, but the overall speed won't be improved.
+
+<P>
+
+<DIV CLASS="navigation">
+<p><hr>
+<table align="center" width="100%" cellpadding="0" cellspacing="2">
+<tr>
+<td><A HREF="node4.html"><img src="../icons/previous.gif"
+  border="0" height="32"
+  alt="Previous Page" width="32"></A></td>
+<td><A HREF="howto.html"><img src="../icons/up.gif"
+  border="0" height="32"
+  alt="Up One Level" width="32"></A></td>
+<td><A HREF="node6.html"><img src="../icons/next.gif"
+  border="0" height="32"
+  alt="Next Page" width="32"></A></td>
+<td align="center" width="100%">CherryPy HowTo</td>
+<td><A HREF="node1.html"><img src="../icons/contents.gif"
+  border="0" height="32"
+  alt="Contents" width="32"></A></td>
+<td><img src="../icons/blank.gif"
+  border="0" height="32"
+  alt="" width="32"></td>
+<td><img src="../icons/blank.gif"
+  border="0" height="32"
+  alt="" width="32"></td>
+</tr></table>
+<b class="navlabel">Previous:</b> <a class="sectref" HREF="node4.html">3. How to connect</A>
+<b class="navlabel">Up:</b> <a class="sectref" HREF="howto.html">CherryPy HowTo</A>
+<b class="navlabel">Next:</b> <a class="sectref" HREF="node6.html">5. How to compile</A>
+<hr>
+<span class="release-info">Release 0.10, documentation updated on 19 March 2004.</span>
+</DIV>
+<!--End of Navigation Panel-->
+<ADDRESS>
+See <i><a href="about.html">About this document...</a></i> for information on suggesting changes.
+</ADDRESS>
+</BODY>
+</HTML>

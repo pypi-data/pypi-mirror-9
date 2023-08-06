@@ -1,0 +1,443 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+<html>
+<head>
+<title>16. How to use sessions</title>
+<META NAME="description" CONTENT="16. How to use sessions">
+<META NAME="keywords" CONTENT="howto">
+<META NAME="resource-type" CONTENT="document">
+<META NAME="distribution" CONTENT="global">
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<link rel="STYLESHEET" href="howto.css" type='text/css'>
+<link rel="first" href="howto.html">
+<link rel="contents" href="contents.html" title="Contents">
+
+<LINK REL="next" HREF="node18.html">
+<LINK REL="previous" HREF="node16.html">
+<LINK REL="up" HREF="howto.html">
+<LINK REL="next" HREF="node18.html">
+<meta name='aesop' content='information'>
+</head>
+<body>
+<DIV CLASS="navigation">
+<table align="center" width="100%" cellpadding="0" cellspacing="2">
+<tr>
+<td><A HREF="node16.html"><img src="../icons/previous.gif"
+  border="0" height="32"
+  alt="Previous Page" width="32"></A></td>
+<td><A HREF="howto.html"><img src="../icons/up.gif"
+  border="0" height="32"
+  alt="Up One Level" width="32"></A></td>
+<td><A HREF="node18.html"><img src="../icons/next.gif"
+  border="0" height="32"
+  alt="Next Page" width="32"></A></td>
+<td align="center" width="100%">CherryPy HowTo</td>
+<td><A HREF="node1.html"><img src="../icons/contents.gif"
+  border="0" height="32"
+  alt="Contents" width="32"></A></td>
+<td><img src="../icons/blank.gif"
+  border="0" height="32"
+  alt="" width="32"></td>
+<td><img src="../icons/blank.gif"
+  border="0" height="32"
+  alt="" width="32"></td>
+</tr></table>
+<b class="navlabel">Previous:</b> <a class="sectref" HREF="node16.html">15. How to control</A>
+<b class="navlabel">Up:</b> <a class="sectref" HREF="howto.html">CherryPy HowTo</A>
+<b class="navlabel">Next:</b> <a class="sectref" HREF="node18.html">17. How to use</A>
+<br><hr>
+</DIV>
+<!--End of Navigation Panel-->
+<!--Table of Child-Links-->
+<A NAME="CHILD_LINKS"><STRONG>Subsections</STRONG></a>
+
+<UL CLASS="ChildLinks">
+<LI><A href="node17.html#SECTION0017100000000000000000">16.1 Introduction to sessions</a>
+<LI><A href="node17.html#SECTION0017200000000000000000">16.2 Possible implementations for sessions</a>
+<LI><A href="node17.html#SECTION0017300000000000000000">16.3 Sessions implementation in CherryPy</a>
+<LI><A href="node17.html#SECTION0017400000000000000000">16.4 Configuration variables used to control sessions</a>
+<LI><A href="node17.html#SECTION0017500000000000000000">16.5 Cleaning up old sessions</a>
+<LI><A href="node17.html#SECTION0017600000000000000000">16.6 Using sessions in your code</a>
+<LI><A href="node17.html#SECTION0017700000000000000000">16.7 Example</a>
+<LI><A href="node17.html#SECTION0017800000000000000000">16.8 Storing session data in a database (or anywhere else)</a>
+</ul>
+<!--End of Table of Child-Links-->
+<HR>
+
+<H1><A NAME="SECTION0017000000000000000000">
+16. How to use sessions</A>
+</H1>
+
+<H1><A NAME="SECTION0017100000000000000000">
+16.1 Introduction to sessions</A>
+</H1>
+The main difference between a web application and a regular application is that in a web application, each page requested by
+a client is independant from the other pages requested by the same client. In other words, we have to start from
+scratch for each page.
+
+<P>
+Of course, for any serious application, this is not acceptable and we need to keep some data about a given user across
+several pages.
+
+<P>
+Let's assume for example that we want to keep the first name and the last name of the user across several pages. We ask the
+user for his first name and last name on the first page of the website (using a form) and we need to use that data in other
+pages of the site.
+
+<P>
+First of all, we have basically two options:
+
+<UL>
+<LI>keep the first name and the last name from one page to the next on the client side
+</LI>
+<LI>store the first name and the last name somewhere on the server side, and only keep
+a pointer to that data on the client side: <b>this is what sessions do</b>
+</LI>
+</UL>
+
+<P>
+If we choose the first option, we have several ways to do this:
+
+<UL>
+<LI>Keep the first name and the first name in the URL: each time there is a link to another page, we could add the
+    following arguments to the URL: "firstName=....&amp;lastName=..."
+</LI>
+<LI>Keep the data in hidden fields of a form: in each page, we could have a form with two hidden fields like this:
+<div class="verbatim"><pre>
+&lt;form method="post" name="myForm" action="dummy"&gt;
+    &lt;hidden name="firstName" value="..."&gt;
+    &lt;hidden name="lastName" value="..."&gt;
+&lt;/form&gt;
+</pre></div>
+Everytime there is a link to another page, we have to submit the form to get the data. We can use something like this:
+<div class="verbatim"><pre>
+&lt;a href="#"
+   onClick="
+      document.myForm.action='...put link here...';
+      document.myForm.submit();
+      return false;"&gt;...&lt;/a&gt;
+</pre></div>
+</LI>
+<LI>Store the first name and the last name in a cookie
+</LI>
+</UL>
+
+<P>
+The first two options are not really handy as they force you to use extra code for each link. The third option is better but
+it is not very handy if we have lots of data to keep about a user.
+
+<P>
+So another option is to store the data on the server side and to just keep a pointer to that data on the client side. This
+is what sessions do ...
+
+<P>
+
+<H1><A NAME="SECTION0017200000000000000000">
+16.2 Possible implementations for sessions</A>
+</H1>
+The pointer to the data is usually called a <b>sessionId</b>. Since we need to keep the sessionId from one page
+to the next on the client side, we still have the same options as described in the previous section:
+
+<P>
+
+<UL>
+<LI>Store the sessionId in the URL (this is why you sometimes see long URLs for some sites like <a class="url" href="http://domain/page?sessionId=dsqlkjsqlkdsklsjsk7987987987987dqkshsqjkhsq798798">http://domain/page?sessionId=dsqlkjsqlkdsklsjsk7987987987987dqkshsqjkhsq798798</a>)
+</LI>
+<LI>Store the sessionId in the hidden field of a form
+future.
+</LI>
+<LI>Store the sessionId in a cookie
+</LI>
+</UL>
+
+<P>
+The session data itself (in our example: the first name and the last name) is stored on the server side.
+Again, there are many options to store it:
+
+<UL>
+<LI>Store it in RAM
+    
+<UL>
+<LI>Advantage: very fast; can store any python object
+</LI>
+<LI>Disavantage: doesn't work in in a multi-process environment; we lose the data when the server is stopped
+    
+</LI>
+</UL>
+</LI>
+<LI>Store it in the filesystem
+    
+<UL>
+<LI>Advantage: never lose data; works in a multi-process environment
+</LI>
+<LI>Disavantage: slow; lots of reads/writes to disk; can only store pickable python objects
+    
+</LI>
+</UL>
+</LI>
+<LI>Store it in a cookie in the client's browser
+    
+<UL>
+<LI>Advantage: works in multi-thread or multi-process environments. Server is not vulnerable to attacks that consist in artificially starting thousands of sessions on the server to bring it to its knees.
+</LI>
+<LI>Disavantage: can only store pickable python objects. Session data <b>must</b> be quite small (some browsers limit the size of cookie data to 4KB)
+    
+</LI>
+</UL>
+</LI>
+<LI>Store it in a database
+    
+<UL>
+<LI>Advantage: never lose data; works in a multi-process environment
+</LI>
+<LI>Disavantage: slower than RAM; lots of reads/writes to database; can only store pickable python objects
+    
+</LI>
+</UL>
+</LI>
+<LI>Store it anywhere you can think of ...
+</LI>
+</UL>
+
+<P>
+Some systems can also mix some of these options: for instance, session data can be stored in RAM and saved to disk or 
+to a database once in a while.
+
+<P>
+Another option is to store everything in RAM and save it to disk when the server shutsdown (although this might be dangerous
+because we might not have time to save it if the server crashes or is killed badly).
+
+<P>
+Also, session data might not change too often so another option is to store it in RAM and save it to disk or to a
+database only when it changes.
+
+<P>
+
+<H1><A NAME="SECTION0017300000000000000000">
+16.3 Sessions implementation in CherryPy</A>
+</H1>
+The following options are supported in CherryPy:
+
+<P>
+
+<UL>
+<LI>sessionId: for now, the sessionId is always stored in a cookie
+</LI>
+<LI>session data: three options are build in and you can implement very easily any storage method you want ...
+    
+<UL>
+<LI>Store everything in RAM; never save it to disk or to a database
+</LI>
+<LI>Store everything in the filesystem; read and save the data for each request
+</LI>
+<LI>Store the session data in the client browser, as a cookie
+</LI>
+<LI>Write your own storage functions so you can store the data wherever you want
+    
+</LI>
+</UL>
+</LI>
+</UL>
+You should use the first option (RAM) if you don't use multiple processes (using multiple threads is fine) and if you don't care about losing session data when the server is stopped/restarted.
+
+<P>
+You should use the second option (filesystem) if you don't have a database and don't want to lose data.
+
+<P>
+The third option is quite interesting but only works if the session data for each user is quite small (some browsers limit the size of cookies to 4KB).
+
+<P>
+The fourth option (storing your session data in a database) is the recommended option for most "real-world" websites.
+
+<P>
+
+<H1><A NAME="SECTION0017400000000000000000">
+16.4 Configuration variables used to control sessions</A>
+</H1>
+In order to use sessions, you must first enable sessions by setting a few configuration variables on the config file, under
+the <var>[session]</var> scope.
+The new configuration options are:
+
+<UL>
+<LI><var>storageType</var>: Can be either "ram", "file", "cookie" or "custom": this tells whether you want to store session data in RAM, to disk, in a cookie, or write your own storage functions.
+</LI>
+<LI><var>storageFileDir</var>: This must be set if you set <var>storageType</var> to "file". Set it to the directory where the session
+data will be stored
+</LI>
+<LI><var>timeout</var>: Number of minutes after which a session expires if there was no activity. The default is 60 minutes.
+</LI>
+<LI><var>cleanUpDelay</var>: If cleanUpDelay is set to N minutes, then the CherryPy server will check every N minutes if there are old/expired sessions that need to be cleaned up. The default is 60 minutes.
+</LI>
+<LI><var>cookieName</var>: Name of the cookie that stores the sessionId: The default is "CherryPySession"
+</LI>
+</UL>
+
+<P>
+
+<H1><A NAME="SECTION0017500000000000000000">
+16.5 Cleaning up old sessions</A>
+</H1>
+If <var>storageType</var> is either "ram", "file" or "cookie", then CherryPy will automatically clean up expired sessions for you. If <var>storageType</var> is set to "custom", then you have to write your own code to clean up old sessions in a special function called <var>cleanUpOldSessions</var>.
+
+<P>
+
+<H1><A NAME="SECTION0017600000000000000000">
+16.6 Using sessions in your code</A>
+</H1>
+Once you have enabled sessions in the config file, the way it works is very easy: CherryPy just makes available for you
+a dictionary that can be accessed through <var>request.sessionMap</var>. You can use this dictionary to store the data that you want to keep about a perticular client.
+
+<P>
+The reason why <var>sessionMap</var> is a member variable of <var>request</var> is because this makes it thread-safe.
+
+<P>
+
+<H1><A NAME="SECTION0017700000000000000000">
+16.7 Example</A>
+</H1>
+For instance, if you want to store session data in RAM, if you want sessions to expire after 2 hours, and if you want CherryPy to clean up expired
+sessions every hour, use the following config file (<span class="file">RootServer.cfg</span>):
+<div class="verbatim"><pre>
+[session]
+storageType=ram
+timeout=120
+cleanUpDelay=60
+</pre></div>
+If you want to store session data to disk (in a directory called <span class="file">/home/user/sessionData</span>), use the following
+config file:
+<div class="verbatim"><pre>
+[session]
+storageType=file
+storageFileDir=/home/user/sessionData
+</pre></div>
+
+<P>
+The following example is a trivial page view counter:
+<div class="verbatim"><pre>
+CherryClass Root:
+mask:
+    def index(self):
+        &lt;py-code="
+            count=sessionMap.get('pageViews', 0)+1
+            sessionMap['pageViews']=count
+        "&gt;
+        &lt;html&gt;&lt;body&gt;
+            Hello, you've been here &lt;py-eval="count"&gt; time(s)
+        &lt;/body&gt;&lt;/html&gt;
+</pre></div>
+
+<P>
+
+<H1><A NAME="SECTION0017800000000000000000">
+16.8 Storing session data in a database (or anywhere else)</A>
+</H1>
+From CherryPy-0.9-gamma and later, you can now write your own custom functions to save/load session data. This allows you to store them wherever you want.
+In order to do so, all you have to do is declare the three following special functions somewhere in your code:
+
+<UL>
+<LI><var>saveSessionData(sessionId, sessionData, expirationTime)</var>: Store the sessionData and expiration time for this sessionId somewhere. <var>expirationTime</var> is a <var>float</var> as returned by the <var>time.time()</var> function.
+</LI>
+<LI><var>loadSessionData(sessionId)</var>: Retrieve the sessionData and expiration time for this sessionId and returns them as a tuple
+</LI>
+<LI><var>cleanUpOldSessions()</var>: Delete expired sessions
+</LI>
+</UL>
+
+<P>
+The following example shows how to store the session data in a MySql database. It assumes that there is a table called "session_data":
+<div class="verbatim"><pre>
+mysql&gt; create table session_data(sessionId varchar(50), sessionData text, expirationTime int unsigned);
+Query OK, 0 rows affected (0.00 sec)
+
+mysql&gt; describe session_data;
++----------------+------------------+------+-----+---------+-------+
+| Field          | Type             | Null | Key | Default | Extra |
++----------------+------------------+------+-----+---------+-------+
+| sessionId      | varchar(50)      | YES  |     | NULL    |       |
+| sessionData    | text             | YES  |     | NULL    |       |
+| expirationTime | int(10) unsigned | YES  |     | NULL    |       |
++----------------+------------------+------+-----+---------+-------+
+3 rows in set (0.01 sec)
+</pre></div>
+Note that we've chosen to use an <var>int</var> column to store the expiration time, which is easier because that's how this variable is passed to the <var>saveSessionData</var> function. We could have chosen to use a <var>datetime</var> column but then we would have to convert <var>expiration</var> time into a suitable format to insert it into the table (and convert it back in <var>loadSessionData</var>).
+
+<P>
+Here is an example code that uses the <var>session_data</var> MySql table to store session data:
+<div class="verbatim"><pre>
+use MySql
+import pickle, base64, StringIO, time
+CherryClass MyDb(MySql):
+function:
+    def __init__(self):
+        self.openConnection('localhost', 'test', '', 'test')
+
+def saveSessionData(sessionId, sessionData, expirationTime):
+    # Pickle sessionData and base64 encode it
+    f = StringIO.StringIO()
+    pickle.dump(sessionData, f, 1)
+    dumpStr = f.getvalue()
+    f.close()
+    dumpStr = base64.encodestring(dumpStr)
+    myDb.query("delete from session_data where sessionId='%s'" % sessionId)
+    myDb.query("insert into session_data values('%s', '%s', %s)" % (
+        sessionId, dumpStr, int(expirationTime)))
+
+def loadSessionData(sessionId):
+    sessionList = myDb.query("select sessionData, expirationTime from session_data where sessionId='%s'" % sessionId)
+    if not sessionList:
+        return None
+    dumpStr = base64.decodestring(sessionList[0][0])
+    f = StringIO.StringIO(dumpStr)
+    sessionData = pickle.load(f)
+    f.close()
+    return (sessionData, sessionList[0][1])
+
+def cleanUpOldSessions():
+    now = time.time()
+    myDb.query("delete from session_data where expirationTime &lt; %s" % int(now))
+
+CherryClass Root:
+view:
+    def index(self):
+        i = request.sessionMap.get('counter', 0) + 1
+        request.sessionMap['counter'] = i
+        return str(i)
+</pre></div>
+
+<P>
+
+<DIV CLASS="navigation">
+<p><hr>
+<table align="center" width="100%" cellpadding="0" cellspacing="2">
+<tr>
+<td><A HREF="node16.html"><img src="../icons/previous.gif"
+  border="0" height="32"
+  alt="Previous Page" width="32"></A></td>
+<td><A HREF="howto.html"><img src="../icons/up.gif"
+  border="0" height="32"
+  alt="Up One Level" width="32"></A></td>
+<td><A HREF="node18.html"><img src="../icons/next.gif"
+  border="0" height="32"
+  alt="Next Page" width="32"></A></td>
+<td align="center" width="100%">CherryPy HowTo</td>
+<td><A HREF="node1.html"><img src="../icons/contents.gif"
+  border="0" height="32"
+  alt="Contents" width="32"></A></td>
+<td><img src="../icons/blank.gif"
+  border="0" height="32"
+  alt="" width="32"></td>
+<td><img src="../icons/blank.gif"
+  border="0" height="32"
+  alt="" width="32"></td>
+</tr></table>
+<b class="navlabel">Previous:</b> <a class="sectref" HREF="node16.html">15. How to control</A>
+<b class="navlabel">Up:</b> <a class="sectref" HREF="howto.html">CherryPy HowTo</A>
+<b class="navlabel">Next:</b> <a class="sectref" HREF="node18.html">17. How to use</A>
+<hr>
+<span class="release-info">Release 0.10, documentation updated on 19 March 2004.</span>
+</DIV>
+<!--End of Navigation Panel-->
+<ADDRESS>
+See <i><a href="about.html">About this document...</a></i> for information on suggesting changes.
+</ADDRESS>
+</BODY>
+</HTML>

@@ -1,0 +1,163 @@
+\section{\module{CookieAuthenticate} --- Cookie-based authentication.}
+\declaremodule{standard}{CookieAuthenticate}
+
+\subsection{Module}
+A cookie-based authentication allows website users to login/logout using a username and a password.
+
+While they are logged in, their session information is stored on their computer via a cookie.
+
+If they are inactive for too long, they are automatically logged out.
+
+This module provides an easy to use implementation of a cookie-based authentication.
+
+Unlike many cookie-based authentication methods, it doesn't require any database on the server side to
+store session informations. It uses three cookies to store the session information:
+\begin{itemize}
+\item
+One cookie called \var{CherryLogin} that contains the login of the user
+\item
+One cookie called \var{CherryDate} that contains the time of the last action
+\item
+One cookie called \var{CherryPassword} that contains the password of the user, encrypted with the login and the
+time of the last action. This is to prevent someone from manually changing the last action time.
+\end{itemize}
+
+To use this module, you have to declare a CherryClass that inherits from \var{CookieAuthenticate}, and all your masks
+and views will be automatically protected.
+
+To perform this magic, \var{CookieAuthenticate} uses AOP (aspect oriented programming). This basically means
+that it will add some extra code at the beginning of each of your masks and views.
+
+You may use the following variables and methods:
+
+\begin{memberdesc}{variable: loginCookieName}
+String containing the name of the cookie where the \var{login} is stored. (default value is \var{CherryLogin})
+\end{memberdesc}
+\begin{memberdesc}{variable: dateCookieName}
+String containing the name of the cookie where the \var{last action time} is stored. (default value is \var{CherryDate})
+\end{memberdesc}
+\begin{memberdesc}{variable: passwordCookieName}
+String containing the name of the cookie where the \var{password} is stored. (default value is \var{CherryPassword})
+\end{memberdesc}
+\begin{memberdesc}{variable: timeout}
+Integers containing the timeout in minutes. If the user is inactive for that time, it will
+automatically be logged out. Default value ie 60. Set it to 0 if you want no timeout.
+\end{memberdesc}
+
+\begin{funcdesc}{function: getPasswordListForLogin}{login}
+This is where you specify what the valid login/password combinations are. The input value is the login that the
+user entered. The method should return a list of all valid passwords for this login. If the login is incorrect, just
+return an empty list.
+
+Note: Being able to return several matching passwords for a login allows you to keep a "master key" password that works 
+with all logins.
+\end{funcdesc}
+
+\begin{funcdesc}{mask or view: loginScreen}{message, fromPage, login=''}
+This is the page that is displayed when the user tries to access a protected page without being logged in.
+
+\var{message} is a string containing the reason why no user is logged in. Possible values are:
+\begin{itemize}
+\item
+\strong{timeoutMessage}: This means that someone was logged in, but they remained inactive for too long
+\item
+\strong{wrongLoginPasswordMessage}: This means that someone is trying to log in, but the login and password they
+entered are incorrect
+\item
+\strong{noCookieMessage}: This means that no informations are available: this is probably the first time the
+user is coming here
+\end{itemize}
+
+\var{fromPage} is a string containing the URL of the page the user was trying to access.
+
+\var{login} is a string containing the login of the user if any. If the string is not empty, it means that
+ the user already entered a login, but the password was incorrect, or that the user had a cookie with the login in it.
+This allows to display the login in the form so the user doesn't have to enter it each time.
+
+The CherryClass comes with a default \var{loginScreen} mask. You'll probably want to overwrite it to customize it for
+your needs. All you have to do is define a form that calls the \var{doLogin} method with 3 parameters:
+\var{login}, \var{password} and \var{fromPage}. The first two are entered by the user. The third one should be a hidden
+field with the value that's passed to the function.
+
+The following code is the default implementation of the \var{loginScreen} mask:
+\begin{verbatim}
+<html><body>
+    Message: <div py-eval="message">message</div>
+    <form method="post" action="doLogin">
+        Login: <input type=text name=login py-attr="login" value="" length=10><br>
+        Password: <input type=password name=password length=10><br>
+        <input type=hidden name=fromPage py-attr="fromPage" value=""><br>
+        <input type=submit>
+    </form>
+</body></html>
+\end{verbatim}
+\end{funcdesc}
+
+\begin{funcdesc}{mask or view: logoutScreen}{}
+This page is displayed after the user logged out. This method is called by the \var{doLogout} method.
+You may overwrite it to suit your needs.
+\end{funcdesc}
+
+\begin{funcdesc}{view: doLogout}{}
+This is the mask or view you should call to perform a logout. This method performs the logout, and then calls
+the \var{logoutScreen} method to display the logout screen.
+\end{funcdesc}
+
+\begin{memberdesc}{variable: login}
+String containing the login of the user that is logged in. The string is empty if no-one is logged in.
+\end{memberdesc}
+
+\begin{seealso}
+  \seemodule{CookieSessionAuthenticate}{Cookie/session-based authentication.}
+  \seemodule{HttpAuthenticate}{Basic HTTP authentication.}
+\end{seealso}
+
+
+\subsection{Example}
+The following code is an exemple that uses the CookieAuthenticate module:
+
+\begin{verbatim}
+use CookieAuthenticate
+
+CherryClass MemberArea(CookieAuthenticate):
+mask:
+    def index(self):
+        <html><body>
+        Welcome to the member area, <py-eval="self.login"><br>
+        If you want to log out, just click <a py-attr="self.getPath()+'/doLogout'" href="">here</a>.<br>
+        Otherwise, just click <a py-attr="request.base" href="">here</a> to go back to the home page.
+        </body></html>
+    def loginScreen(self, message, fromPage, login=''):
+        <html><body>
+            Welcome to the login page. Please enter your login and password below:
+            <py-if="message==self.wrongLoginPasswordMessage">
+                <br><font color=red>Sorry, the login or password was incorrect</font>
+            </py-if>
+            <form method="post" action="doLogin">
+                Login: <input type=text name=login py-attr="login" value="" length=10><br>
+                Password: <input type=password name=password length=10><br>
+                <input type=hidden name=fromPage py-attr="fromPage" value=""><br>
+                <input type=submit value="Login">
+            </form>
+        </body></html>
+    def logoutScreen(self):
+        <html><body>
+            You have been logged out.<br>
+            Click <a py-attr="request.base" href="">here</a> to go back to the home page.
+        </body></html>
+function:
+    def getPasswordListForLogin(self, login):
+        if login=="login": return ["password"]
+        return []
+
+CherryClass Root:
+mask:
+    def index(self):
+        <html><body>
+            Welcome to the site.<br>
+            Click <a href='memberArea/index'>here</a> to access the
+            member area.
+        </body></html>
+\end{verbatim}
+
+

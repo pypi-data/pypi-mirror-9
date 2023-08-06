@@ -1,0 +1,159 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+<html>
+<head>
+<title>22. How to stream uploaded files directly to disk</title>
+<META NAME="description" CONTENT="22. How to stream uploaded files directly to disk">
+<META NAME="keywords" CONTENT="howto">
+<META NAME="resource-type" CONTENT="document">
+<META NAME="distribution" CONTENT="global">
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<link rel="STYLESHEET" href="howto.css" type='text/css'>
+<link rel="first" href="howto.html">
+<link rel="contents" href="contents.html" title="Contents">
+
+<LINK REL="next" HREF="node24.html">
+<LINK REL="previous" HREF="node22.html">
+<LINK REL="up" HREF="howto.html">
+<LINK REL="next" HREF="node24.html">
+<meta name='aesop' content='information'>
+</head>
+<body>
+<DIV CLASS="navigation">
+<table align="center" width="100%" cellpadding="0" cellspacing="2">
+<tr>
+<td><A HREF="node22.html"><img src="../icons/previous.gif"
+  border="0" height="32"
+  alt="Previous Page" width="32"></A></td>
+<td><A HREF="howto.html"><img src="../icons/up.gif"
+  border="0" height="32"
+  alt="Up One Level" width="32"></A></td>
+<td><A HREF="node24.html"><img src="../icons/next.gif"
+  border="0" height="32"
+  alt="Next Page" width="32"></A></td>
+<td align="center" width="100%">CherryPy HowTo</td>
+<td><A HREF="node1.html"><img src="../icons/contents.gif"
+  border="0" height="32"
+  alt="Contents" width="32"></A></td>
+<td><img src="../icons/blank.gif"
+  border="0" height="32"
+  alt="" width="32"></td>
+<td><img src="../icons/blank.gif"
+  border="0" height="32"
+  alt="" width="32"></td>
+</tr></table>
+<b class="navlabel">Previous:</b> <a class="sectref" HREF="node22.html">21. Sample deployment configuration</A>
+<b class="navlabel">Up:</b> <a class="sectref" HREF="howto.html">CherryPy HowTo</A>
+<b class="navlabel">Next:</b> <a class="sectref" HREF="node24.html">About this document ...</A>
+<br><hr>
+</DIV>
+<!--End of Navigation Panel-->
+
+<H1><A NAME="SECTION0023000000000000000000">
+22. How to stream uploaded files directly to disk</A>
+</H1>
+
+<P>
+By default, CherryPy handles in the same way all data posted to the server through a form. In all cases, CherryPy
+converts that data to a string or a list of strings. This data can be a short string or a big file that's being uploaded.
+
+<P>
+In most cases, this is very convenient and it works very well. However, if your application requires users to upload very
+big files, then converting them to a string and having this string in memory can be a problem ...
+
+<P>
+In that case, you may want to write these files directly to a file instead of having them in memory.
+
+<P>
+Here is how this can be done:
+
+<UL>
+<LI>Use the <var>initRequestBeforeParse</var> special function to tell CherryPy not to parse the POST data itself (by setting <var>request.parsePostData</var> to 0).
+</LI>
+<LI>Use the <var>FieldStorage</var> class of the <var>cgi</var> module to parse the POST data (by reading <var>request.rfile</var>) and stream the uploaded file to disk.
+</LI>
+</UL>
+
+<P>
+Here is an example code that does this:
+
+<P>
+<div class="verbatim"><pre>
+import cgi
+
+def initRequestBeforeParse():
+    if request.path == 'postFile':
+        request.parsePostData = 0
+
+CherryClass Root:
+mask:
+    def index(self):
+        &lt;html&gt;&lt;body&gt;
+        &lt;form method=post action=postFile enctype="multipart/form-data"&gt;
+            Upload a file: &lt;input type=file name=myFile&gt;&lt;br&gt;
+            &lt;input type=submit&gt;
+        &lt;/form&gt;
+        &lt;/body&gt;&lt;/html&gt;
+
+view:
+    def postFile(self):
+        # Use cgi.FieldStorage to parse the POST data
+        dataDict = cgi.FieldStorage(fp=request.rfile, headers=request.headerMap, environ={'REQUEST_METHOD':'POST'}, keep_blank_values=1)
+
+        value = dataDict['myFile']
+
+        # Value has 2 attributes:
+        #    - filename contains the name of the uploaded file
+        #    - file is an input stream opened for reading
+
+        f = open('/tmp/myFile', 'wb')
+        while 1:
+            data = value.file.read(1024 * 8) # Read blocks of 8KB at a time
+            if not data: break
+            f.write(data)
+        f.close()
+
+        return "&lt;html&gt;&lt;body&gt;The file has been saved in /tmp/myFile&lt;/body&gt;&lt;/html&gt;"
+</pre></div>
+
+<P>
+Note that the file is not streamed directly from the browser to <span class="file">/tmp/myFile</span>. Instead, it is saved in a <var>tempfile</var>
+by the <var>cgi</var> module and then streamed from this <var>tempfile</var> to <span class="file">/tmp/myFile</span>.
+
+<P>
+
+<DIV CLASS="navigation">
+<p><hr>
+<table align="center" width="100%" cellpadding="0" cellspacing="2">
+<tr>
+<td><A HREF="node22.html"><img src="../icons/previous.gif"
+  border="0" height="32"
+  alt="Previous Page" width="32"></A></td>
+<td><A HREF="howto.html"><img src="../icons/up.gif"
+  border="0" height="32"
+  alt="Up One Level" width="32"></A></td>
+<td><A HREF="node24.html"><img src="../icons/next.gif"
+  border="0" height="32"
+  alt="Next Page" width="32"></A></td>
+<td align="center" width="100%">CherryPy HowTo</td>
+<td><A HREF="node1.html"><img src="../icons/contents.gif"
+  border="0" height="32"
+  alt="Contents" width="32"></A></td>
+<td><img src="../icons/blank.gif"
+  border="0" height="32"
+  alt="" width="32"></td>
+<td><img src="../icons/blank.gif"
+  border="0" height="32"
+  alt="" width="32"></td>
+</tr></table>
+<b class="navlabel">Previous:</b> <a class="sectref" HREF="node22.html">21. Sample deployment configuration</A>
+<b class="navlabel">Up:</b> <a class="sectref" HREF="howto.html">CherryPy HowTo</A>
+<b class="navlabel">Next:</b> <a class="sectref" HREF="node24.html">About this document ...</A>
+<hr>
+<span class="release-info">Release 0.10, documentation updated on 19 March 2004.</span>
+</DIV>
+<!--End of Navigation Panel-->
+<ADDRESS>
+See <i><a href="about.html">About this document...</a></i> for information on suggesting changes.
+</ADDRESS>
+</BODY>
+</HTML>
