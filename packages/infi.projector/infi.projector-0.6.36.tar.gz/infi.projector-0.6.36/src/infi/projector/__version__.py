@@ -1,0 +1,10 @@
+__version__ = "0.6.36"
+__git_commiter_name__ = "Guy Rozendorn"
+__git_commiter_email__ = "guy@rzn.co.il"
+__git_branch__ = '(detached from v0.6.36)'
+__git_remote_tracking_branch__ = '(No remote tracking)'
+__git_remote_url__ = '(Not remote tracking)'
+__git_head_hash__ = '293174ea2babd12cd98920b8f65eb6b6120a471c'
+__git_head_subject__ = 'Finished release v0.6.36.'
+__git_head_message__ = '* release/v0.6.36:\n  HOSTDEV-1992 freeze: fixing post-release regex sub\n  HOSTDEV-1992 freeze: fixing passing --newest'
+__git_dirty_diff__ = ''
