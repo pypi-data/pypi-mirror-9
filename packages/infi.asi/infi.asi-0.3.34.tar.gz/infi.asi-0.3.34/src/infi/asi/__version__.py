@@ -1,0 +1,10 @@
+__version__ = "0.3.34"
+__git_commiter_name__ = "Guy Rozendorn"
+__git_commiter_email__ = "guy@rzn.co.il"
+__git_branch__ = '(detached from v0.3.34)'
+__git_remote_tracking_branch__ = '(No remote tracking)'
+__git_remote_url__ = '(Not remote tracking)'
+__git_head_hash__ = 'fbc38b89cd7319af675a7f9d0e36c2bcfb016030'
+__git_head_subject__ = 'STORAGEMODEL-320 dont pack vendor_specific_2 if it does not exist'
+__git_head_message__ = ''
+__git_dirty_diff__ = ''
