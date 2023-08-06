@@ -1,0 +1,192 @@
+# Copyright: 2011-2012 Brian Harring <ferringb@gmail.com>
+# license GPL2/BSD 3
+
+# while these echo statements are ugly, written this way to ensure bash does it as a single write-
+# aka, keep it within the size of atomic writes for pipes.  Relevant for threaded output straight to term
+use() {
+	echo "WARNING: 'use' function invoked by ${CATEGORY}/${PF} during metadata regeneration."$'\nWARNING: Please ensure upstream is aware of it and working to remove it.\n' >&2
+	return 1
+}
+
+usev() {
+	echo "WARNING: 'usev' function invoked by ${CATEGORY}/${PF} during metadata regeneration."$'\nWARNING: Please ensure upstream is aware of it and working to remove it.\n' >&2
+	return 1
+}
+
+use_with() {
+	echo "WARNING: 'use_with' function invoked by ${CATEGORY}/${PF} during metadata regeneration."$'\nWARNING: Please ensure upstream is aware of it and working to remove it.\n' >&2
+	return 1
+}
+
+use_enable() {
+	echo "WARNING: 'use_enable' function invoked by ${CATEGORY}/${PF} during metadata regeneration."$'\nWARNING: Please ensure upstream is aware of it and working to remove it.\n' >&2
+	return 1
+}
+
+has() {
+	local needle=$1
+	shift
+
+	local IFS=$'\001'
+
+	# try fast mode first; no IFS match is guaranteed that the needle isn't there.
+	[[ "${IFS}${*}${IFS}" != *"${IFS}${needle}${IFS}"* ]] && return 1
+
+	# If we have a match, ensure it's not due to $@ already having \001 in it.
+	# unlikely, but better safe than sorry.
+	IFS=' '
+	[[ *$'\001'* != $* ]] && return 0
+
+	# \001 for some insane reason was in $@; fallback to the slow for loop.
+	# Suppress debug outut for this part however.
+	__shopt_push +x
+	local x
+	for x in "$@"; do
+		if [[ ${x} == ${needle} ]]; then
+			__shopt_pop
+			return 0
+		fi
+	done
+	__shopt_pop
+	return 1
+}
+
+hasq() {
+	has ${EBUILD_PHASE} prerm postrm || eqawarn \
+		"QA Notice: The 'hasq' function is deprecated (replaced by 'has')"
+	has "$@"
+}
+
+hasv() {
+	if has "$@"; then
+		echo "$1"
+	fi
+}
+
+debug-print() {
+	:
+}
+
+debug-print-function() {
+	:
+}
+
+debug-print-section() {
+	:
+}
+
+eqawarn() {
+	__elog_base QA "$*"
+	echo -e " ${PKGCORE_RC_WARN}*${PKGCORE_RC_NORMAL} $*" >&2
+	PKGCORE_RC_LAST_CMD="eqawarn"
+	return 0
+}
+
+elog() {
+	__elog_base LOG "$*"
+	echo -e " ${PKGCORE_RC_GOOD}*${PKGCORE_RC_NORMAL} $*"
+	PKGCORE_RC_LAST_CMD="elog"
+	return 0
+}
+
+einfo() {
+	einfon "$*\n"
+	PKGCORE_RC_LAST_CMD="einfo"
+	return 0
+}
+
+einfon() {
+	__elog_base INFO "$*"
+	echo -ne " ${PKGCORE_RC_GOOD}*${PKGCORE_RC_NORMAL} $*"
+	PKGCORE_RC_LAST_CMD="einfon"
+	return 0
+}
+
+ewarn() {
+	__elog_base WARN "$*"
+	echo -e " ${PKGCORE_RC_WARN}*${PKGCORE_RC_NORMAL} $*" >&2
+	PKGCORE_RC_LAST_CMD="ewarn"
+	return 0
+}
+
+eerror() {
+	__elog_base ERROR "$*"
+	echo -e " ${PKGCORE_RC_BAD}*${PKGCORE_RC_NORMAL} $*" >&2
+	PKGCORE_RC_LAST_CMD="eerror"
+	return 0
+}
+
+ebegin() {
+	local msg="$* ..."
+	einfon "${msg}"
+	echo
+	PKGCORE_RC_LAST_CMD="ebegin"
+	return 0
+}
+
+eend() {
+	local retval=${1:-0}
+	shift
+
+	local msg
+
+	if [[ ${retval} == 0 ]]; then
+		msg="${PKGCORE_RC_BRACKET}[ ${PKGCORE_RC_GOOD}ok${PKGCORE_RC_BRACKET} ]${PKGCORE_RC_NORMAL}"
+	else
+		if [[ $# -ne 0 ]]; then
+			eerror "$*"
+		fi
+		msg="${PKGCORE_RC_BRACKET}[ ${PKGCORE_RC_BAD}!!${PKGCORE_RC_BRACKET} ]${PKGCORE_RC_NORMAL}"
+	fi
+
+	echo -e "${PKGCORE_RC_ENDCOL} ${msg}"
+
+	return ${retval}
+}
+
+KV_major() {
+	[[ -z $1 ]] && return 1
+
+	local KV=$@
+	echo "${KV%%.*}"
+}
+
+KV_minor() {
+	[[ -z $1 ]] && return 1
+
+	local KV=$@
+	KV=${KV#*.}
+	echo "${KV%%.*}"
+}
+
+KV_micro() {
+	[[ -z $1 ]] && return 1
+
+	local KV=$@
+	KV=${KV#*.*.}
+	echo "${KV%%[^[:digit:]]*}"
+}
+
+KV_to_int() {
+	[[ -z $1 ]] && return 1
+
+	local KV_MAJOR=$(KV_major "$1")
+	local KV_MINOR=$(KV_minor "$1")
+	local KV_MICRO=$(KV_micro "$1")
+	local KV_int=$(( KV_MAJOR * 65536 + KV_MINOR * 256 + KV_MICRO ))
+
+	# We make version 2.2.0 the minimum version we will handle as
+	# a sanity check ... if its less, we fail ...
+	if [[ ${KV_int} -ge 131584 ]]; then
+		echo "${KV_int}"
+		return 0
+	fi
+
+	return 1
+}
+
+get_KV() {
+	echo $(KV_to_int "$(uname -r)")
+}
+
+:

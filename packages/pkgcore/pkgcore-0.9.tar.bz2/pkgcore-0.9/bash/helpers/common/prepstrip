@@ -1,0 +1,75 @@
+#!/bin/bash
+# Copyright 2008-2011 Brian Harring <ferringb@gmail.com>: BSD/GPL2
+# Copyright 1999-2007 Gentoo Foundation: GPL2
+# Distributed under the terms of the GNU General Public License v2
+
+shopt -s extdebug
+source "${PKGCORE_BIN_PATH}"/exit-handling.lib || { echo "failed loading libs"; exit -127; }
+
+source "${PKGCORE_BIN_PATH}"/isolated-functions.lib || {
+	echo "failed sourcing isolated-functions.lib"
+	exit -1
+}
+
+# exit if the feature isn't requested, or the restrict isn't there.
+__feature_is_enabled installsources || exit 0
+__safe_has installsources ${RESTRICT} && exit 0
+
+if ! ${PKGCORE_PREFIX_SUPPORT:=false}; then
+	ED=${D}
+elif [[ ${ED:-unset} == "unset" ]]; then
+	echo "The variable ED is missing from the environment, but is required for prefix mode; failing."
+	exit -1
+fi
+
+for x in debugedit scanelf rsync; do
+	if ! type -P ${x} >/dev/null; then
+		ewarn "FEATURES=installsources is enabled but the ${x} binary could not"
+		ewarn "be found. This feature will not work unless ${x} is installed!"
+		exit 0
+	fi
+done
+
+save_elf_sources() {
+	local x=$1
+	local sources_dir=/usr/src/debug/${CATEGORY}/${PF}
+	debugedit -b "${WORKDIR}" -d "${sources_dir}" \
+		-l "${T}"/debug.sources "${x}"
+	if [[ -s ${T}/debug.sources ]]; then
+		[[ -d ${ED}${sources_dir} ]] || mkdir -p "${ED}${sources_dir}"
+		grep -zv '/<built-in>$' "${T}"/debug.sources | \
+			(cd "${WORKDIR}"; LANG=C sort -z -u | \
+			rsync -rtL0 --files-from=- "${WORKDIR}/" "${ED}${sources_dir}/" )
+	fi
+}
+
+# The existence of the section .symtab tells us that a binary is stripped.
+# We want to log already stripped binaries, as this may be a QA violation.
+# They prevent us from getting the splitdebug data.
+if ! __safe_has binchecks ${RESTRICT} && ! __safe_has strip ${RESTRICT}; then
+	f=$(scanelf -yqRBF '#k%F' -k '!.symtab' "$@")
+	if [[ -n ${f} ]]; then
+		echo -e "\a\n"
+		ewarn "QA Notice: Pre-stripped files found:"
+		ewarn "${f}"
+		echo "${f}" > "${T}"/scanelf-already-stripped.log
+	fi
+fi
+
+# Now we look for unstripped binaries.
+for x in $(scanelf -yqRBF '#k%F' -k '.symtab' "$@"); do
+	f=$(file "${x}") || continue
+	[[ -z ${f} ]] && continue
+
+	# only split debug info for final linked objects
+	# or kernel modules as debuginfo for intermediatary
+	# files (think crt*.o from gcc/glibc) is useless and
+	# actually causes problems.  install sources for all
+	# elf types though cause that stuff is good.
+
+	if [[ ${f} == *"SB executable"* || ${f} == *"SB shared object"* ]]; then
+		save_elf_sources "${x}"
+	elif [[ ${f} == *"SB relocatable"* ]]; then
+		save_elf_sources "${x}"
+	fi
+done
