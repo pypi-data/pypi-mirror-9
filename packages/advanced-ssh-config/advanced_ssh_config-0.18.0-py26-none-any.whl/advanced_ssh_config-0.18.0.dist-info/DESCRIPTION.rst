@@ -1,0 +1,223 @@
+Advanced SSH config
+===================
+
+|PyPI version| |Build Status| |authors| |library users| |Total views|
+|Views in the last 24 hours| |PyPi downloads| |Bitdeli Badge| |Gitter
+chat|
+
+Enhances ``ssh_config`` file capabilities
+
+**NOTE**: This program is called by
+`ProxyCommand <http://en.wikibooks.org/wiki/OpenSSH/Cookbook/Proxies_and_Jump_Hosts#ProxyCommand_with_Netcat>`__
+from `lib-ssh <https://www.libssh.org>`__.
+
+--------------
+
+It works *transparently* with :
+
+-  ssh
+-  scp
+-  rsync
+-  git
+-  and even desktop applications depending on ``lib-ssh`` (for instance
+   `Tower <http://www.git-tower.com>`__, `Atom.io <https://atom.io>`__,
+   `SSH Tunnel Manager <http://projects.tynsoe.org/fr/stm/>`__)
+
+--------------
+
+The ``.ssh/config`` file is automatically generated, you need to update
+``.ssh/config.advanced`` file instead; With new features and a better
+regex engine for the hostnames.
+
+*Note: Each time the script is called, it recreate a fresh new
+``.ssh/config``, so be careful, backup your old .ssh/config file !*
+
+Commmand line features
+----------------------
+
+**Gateway chaining**
+
+::
+
+    ssh foo.com/bar.com
+
+Connect to ``bar.com`` using ssh and create a proxy on ``bar.com`` to
+``foo.com``. Then connect to ``foo.com`` using the created proxy on
+``bar.com``.
+
+::
+
+    ssh foo.com/bar.com/baz.com
+
+Connect to ``foo.com`` using ``bar.com/baz.com`` which itself uses
+``baz.com``.
+
+Configuration features
+----------------------
+
+-  regex for hostnames - gw.school-\ *.*.domain.net
+-  aliases
+-  gateways - transparent ssh connections chaining
+-  includes files
+-  real local command - executes a command on the local shell when
+   connecting
+-  intelligent proxycommand with fallbacks
+-  inherits configuration
+-  variable expansion
+
+Config example
+--------------
+
+``~/.ssh/config.advanced``
+
+::
+
+    # Simple example
+    [foo.com]
+    user = pacman
+    port = 2222
+
+    [bar]
+    hostname = 1.2.3.4
+    gateways = foo.com   # `ssh bar` will use `foo.com` as gateway
+
+    [default]
+    ProxyCommand = advanced-ssh-config --hostname=%h --port=%p -u
+
+--------------
+
+::
+
+    # Complete example
+    [foo]
+    user = pacman
+    port = 2222
+    hostname = foo.com
+
+    [bar]
+    hostname = 1.2.3.4
+    gateways = foo
+    # By running `ssh bar`, you will ssh to `bar` through a `ssh foo`
+
+    [vm-.*\.joe\.com]
+    IdentityFile = ~/.ssh/root-joe
+    gateways = direct joe.com joe.com/bar
+    # Will try to ssh without proxy, then fallback to joe.com proxy, then fallback to joe.com through bar
+    DynamicForward = 43217
+    LocalForward = 1723 localhost:1723
+    ForwardX11 = yes
+
+    [default]
+    Includes = ~/.ssh/config.advanced2 ~/.ssh/config.advanced3
+    Port = 22
+    User = root
+    IdentityFile = ~/.ssh/id_rsa
+    ProxyCommand = advanced-ssh-config --hostname=%h --port=%p -u
+    Gateways = direct
+    PubkeyAuthentication = yes
+    VisualHostKey = yes
+    ControlMaster = auto
+    ControlPath = ~/.ssh/controlmaster/%h-%p-%r.sock
+    EscapeChar = ~
+
+Installation
+------------
+
+>From Pypi
+
+::
+
+    # pip install advanced-ssh-config
+
+Or by cloning
+
+::
+
+    # git clone https://github.com/moul/advanced-ssh-config
+    # cd advanced-ssh-config
+    # python setup.py install
+
+Backup your old ~/.ssh/config file
+
+::
+
+    # cp ~/.ssh/config ~/.ssh/config.backup
+
+Generate the new config file
+
+::
+
+    # advanced-ssh-config -u
+
+Or add this line manually in your ~/.ssh/config file
+
+::
+
+    ...
+    ProxyCommand = advanced-ssh-config --hostname=%h --port=%p -u
+    ...
+
+Tests
+-----
+
+Install test dependencies and run tests
+
+::
+
+    # python setup.py test
+
+Pep8
+
+::
+
+    # pep8 advanced_ssh_config | grep -v /tests/
+
+Docker
+------
+
+Build
+
+::
+
+    # docker build -t moul/advanced-ssh-config .
+
+Run
+
+::
+
+    # docker run -rm -i -t moul/advanced-ssh-config
+    or
+    # docker run -rm -i -t -v $(pwd)/:/advanced_ssh_config moul/advanced-ssh-config
+    or
+    # docker run -rm -i -t -v moul/advanced-ssh-config python setup.py test
+
+Contributors
+------------
+
+-  `Christo DeLange <https://github.com/dldinternet>`__
+
+--
+
+© 2009-2015 Manfred Touron - `MIT
+License <https://github.com/moul/advanced-ssh-config/blob/master/License.txt>`__.
+
+.. |PyPI version| image:: https://badge.fury.io/py/advanced-ssh-config.png
+   :target: http://badge.fury.io/py/advanced-ssh-config
+.. |Build Status| image:: https://travis-ci.org/moul/advanced-ssh-config.png?branch=develop
+   :target: https://travis-ci.org/moul/advanced-ssh-config
+.. |authors| image:: https://sourcegraph.com/api/repos/github.com/moul/advanced-ssh-config/badges/authors.png
+   :target: https://sourcegraph.com/github.com/moul/advanced-ssh-config
+.. |library users| image:: https://sourcegraph.com/api/repos/github.com/moul/advanced-ssh-config/badges/library-users.png
+   :target: https://sourcegraph.com/github.com/moul/advanced-ssh-config
+.. |Total views| image:: https://sourcegraph.com/api/repos/github.com/moul/advanced-ssh-config/counters/views.png
+   :target: https://sourcegraph.com/github.com/moul/advanced-ssh-config
+.. |Views in the last 24 hours| image:: https://sourcegraph.com/api/repos/github.com/moul/advanced-ssh-config/counters/views-24h.png
+   :target: https://sourcegraph.com/github.com/moul/advanced-ssh-config
+.. |PyPi downloads| image:: https://pypip.in/d/advanced-ssh-config/badge.png
+   :target: https://crate.io/packages/advanced-ssh-config/
+.. |Bitdeli Badge| image:: https://d2weczhvl823v0.cloudfront.net/moul/advanced-ssh-config/trend.png
+   :target: https://bitdeli.com/free
+.. |Gitter chat| image:: https://badges.gitter.im/moul/advanced-ssh-config.png
+   :target: https://gitter.im/moul/advanced-ssh-config
+
+
