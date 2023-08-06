@@ -1,0 +1,72 @@
+#!/usr/bin/env python2
+
+'''Hipshot - Simulate long-exposure photography
+
+Usage:
+    hipshot video <file> [--display=<bool>]
+    hipshot photos <file>... [--display=<bool>]
+    hipshot -h | --help
+    hipshot -v | --version
+
+Options:
+    -d, --display=<bool>    Display the process [default: True].
+    -h, --help              Print this help.
+    -v, --version           Print version information.
+'''
+
+
+import cv
+from docopt import docopt
+try:
+    from os import EX_DATAERR, EX_NOINPUT, EX_USAGE
+except ImportError:
+    EX_DATAERR, EX_NOINPUT, EX_USAGE = 1, 2, 3
+from os.path import exists
+from sys import exit, float_info, stderr
+
+from avena import image, utils, video
+from hipshot import hipshot
+
+
+long_version = 'Hipshot ' + hipshot.__version__
+
+_EXT = '.png'
+
+
+if '__main__' in __name__:
+
+    arguments = docopt(__doc__, version=long_version)
+
+    filenames = arguments['<file>']
+    if not all(map(exists, filenames)):
+        print>>stderr, 'error: a file does not exist'
+        exit(EX_NOINPUT)
+    filename = filenames[0]
+
+    if arguments['video']:
+        utils._PREFERRED_RGB = video._OCV_RGB
+        frames = video.get_frames(video_file=filename, as_array=True)
+        alpha = 1.0 / video.num_frames(filename)
+    elif arguments['photos']:
+        utils._PREFERRED_RGB = image._PIL_RGB
+        frames = (image.read(f) for f in filenames)
+        alpha = 1.0 / len(filenames)
+
+    if arguments['--display'] == 'True':
+        display = 'Hipshot'
+        cv.NamedWindow(display, flags=cv.CV_WINDOW_AUTOSIZE)
+    else:
+        display = None
+
+    try:
+        merged_frames = hipshot.merge(frames, alpha, display=display)
+        print image.save(
+            merged_frames,
+            filename,
+            random=True,
+            ext=_EXT,
+            normalize=True,
+        )
+    except IOError:
+        print>>stderr, 'error: could not read or write file(s)'
+        exit(EX_DATAERR)
