@@ -1,0 +1,33 @@
+{% for redirect_from in redirect_from_domains %}
+$HTTP["host"] == "{{ redirect_from }}" {
+  url.redirect = ( "^/(.*)" => "http://{{ domain_name }}/$1" )
+}
+{% endfor %}
+
+$HTTP["host"] == "{{ domain_name }}" {
+    accesslog.filename           = "/opt/log/www/{{project_name}}/access.log"
+
+    server.document-root         = "{{ static_dir }}"
+    fastcgi.server = (
+        "/{{project_name}}.fcgi" => (
+            "{{project_name}}" => (
+                "socket" => "/var/run/lighttpd/{{project_name}}.sock",
+                "bin-path" => "{{ fcgi_path }}",
+                "check-local" => "disable",
+                "max-procs" => {{ max_procs }}
+            )
+        ),
+    )
+    alias.url = (
+        "{{ www_uploaded_path }}" => "{{ uploaded_dir }}",
+        "{{ www_static_path }}" => "{{ static_dir }}",
+    )
+
+    url.rewrite-once = (
+        "^({{ www_static_path }}.*)$" => "$1",
+        "^({{ www_uploaded_path }}.*)$" => "$1",
+        "^/([^/]+\.txt)$" => "{{ www_static_path }}$1",
+        "^/favicon\.ico$" => "{{ www_static_path }}favicon.ico",
+        "^(/.*)$" => "/{{ project_name }}.fcgi$1",
+    )
+}
