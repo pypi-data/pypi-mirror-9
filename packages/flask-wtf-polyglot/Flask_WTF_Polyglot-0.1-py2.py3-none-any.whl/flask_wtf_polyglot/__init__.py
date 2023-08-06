@@ -1,0 +1,1 @@
+from flask_wtf_polyglot.form import PolyglotForm
