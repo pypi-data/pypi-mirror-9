@@ -1,0 +1,233 @@
+#!/usr/bin/env python
+import collections
+import json
+import os
+import simplejson
+from decipher.beacon import BeaconAPIException, api
+import getopt, sys
+
+W = sys.stdout.write
+
+
+def usage(err):
+    if err: print err
+    print "Usage:"
+    print " beacon [options] <verb> <resource> [arg=value...]"
+    print "Verb is one of:"
+    print " get    -- list resources"
+    print " post   -- create new resource"
+    print " put    -- update existing resource"
+    print " delete -- delete or retire existing resource"
+    print " login  -- interactively define an API key and host"
+    print " rekey  -- rekey your current secret key and update the config file"
+    print
+    print "Extra arguments are decoded as JSON objects/arrays if they start with { or ["
+    print
+    print "Options:"
+    print " -v verbose (show headers sent & received))"
+    print " -t display output as an aligned text table"
+    print " -x display output as IBM JSON XML"
+    print " -m do not run, but display the arguments for this call for meta-API input"
+    print " -p display Python code required to make the call"
+    print " -s <section> use a different section in the %s file than %r" % (api.inifile, api.section)
+    print " -V <version> use a different API version"
+    print " --batch <tab delimitered file> -- execute calls once for each entry in the file"
+    sys.exit(1)
+
+def fatal(err):
+    print >> sys.stderr, "FATAL ERROR:", err
+    sys.exit(1)
+
+def dump(obj):
+    if isinstance(obj, str):
+        return obj
+    elif isinstance(obj, unicode):
+        return obj.encode("utf8")
+    elif obj is None:
+        return ""
+    try:
+        import yaml
+        return yaml.safe_dump(obj).strip().replace('\n', ' ').rstrip(" .\n")
+    except ImportError:
+        return str(obj)
+
+
+def decode(name, v):
+    ":type v: str"
+    if v.startswith(('{', '[')):
+        if v.endswith(","):
+            v = "[%s]" % v.rstrip(",")
+        try:
+            return json.loads(v)
+        except ValueError, e:
+            print >> sys.stderr, "While decoding:\n%s\n" % v
+            print >> sys.stderr, "ERROR: Could not decode argument %s: %s" % (name ,e)
+            raise SystemExit(1)
+    elif ',' in v:
+        return filter(None, v.split(','))
+    elif v.startswith('@'):
+        # read a file as input possibly converting
+        v = v[1:]
+        if '@' in v:             fname, format = v.rsplit('@', 1)
+        else:                    fname, format = v, None
+        try:
+            if format == 'json':
+                import csv
+                return list(csv.DictReader(open(fname), delimiter="\t", quotechar='"'))
+            elif format is None:
+                return open(fname).read()
+            else:
+                return fatal("invalid file format %r" % format)
+        except IOError, e:
+            return fatal("could not open file %r specified as %r argument: %s" % (fname, name, e))
+
+
+    if v == 'null':
+        return None
+    try:
+        return int(v)
+    except ValueError:
+        pass
+    return v
+
+
+def main():
+    try:
+        opts, args = getopt.getopt(sys.argv[1:], "vmtpxs:V:", ["batch="])
+    except getopt.GetoptError, err:
+        return usage(str(err))
+    format = showPythonCode = outputMeta = batchSource = None
+    for k,v in opts:
+        if k == '-v':
+            api.verbose = True
+        elif k == '-t':
+            format = 'text'
+        elif k == '-x':
+            api.xml = True
+        elif k == '-p':
+            showPythonCode = True
+        elif k == '-m':
+            outputMeta = True
+        elif k == '-s':
+            api.section = v
+        elif k == '-V':
+            api.version = int(v)
+        elif k == '--batch':
+            batchSource = v
+
+    if args:
+        if args[0] == "login":
+            from decipher.commands import login
+            return login.login(api, args)
+        elif args[0] == "rekey":
+            from decipher.commands.rekey import rekey
+            return rekey (api, args)
+        elif args[0] == "xt":
+            from decipher.commands.xt import xt
+            return xt(api, args)
+
+    if batchSource:
+        from decipher.commands.batch import batch
+        return batch(api, args, globals(), batchSource)
+
+    try:
+        (verb, resource), rest  = args[:2], args[2:]
+    except ValueError:
+        return usage("too few parameters")
+
+    verb = verb.lower()
+    if verb not in ('get', 'put', 'post', 'delete'):
+        return usage('invalid verb %r' % verb)
+
+    if resource.startswith("./") and os.environ.get('HERMES2_HOME'):
+        cwd = os.getcwd()
+        home = os.environ['HERMES2_HOME'] + '/'
+        if not cwd.startswith(home):
+            print >> sys.stderr, "To use relative paths, you must be in %s " % home
+            return 1
+        if not os.path.isfile("survey.xml"):
+            print >> sys.stderr, "No survey.xml in current directory"
+            return 1
+        spath = cwd[len(home):]
+        resource = 'surveys/%s/%s' % (spath, resource[2:])
+
+
+    try:
+        args = dict(x.split('=', 1) for x in rest)
+    except ValueError:
+        print >>sys.stderr, "Unexpected argument format; arguments must have key=value format"
+        raise SystemExit(1)
+
+    if verb != 'get':
+        args = {k: decode(k, v) for k,v in args.items()}
+
+    if showPythonCode:
+        sargs = ', '.join("%s=%s" % (k,json.dumps(v)) for k,v in args.items())
+        print """
+from decipher.beacon import api
+
+result = api.%s(%r, %s)
+print result
+""" % (verb, resource, sargs)
+        return
+
+    if outputMeta:
+        args['__meta'] = True
+
+    try:
+        res = getattr(api, verb)(resource, **args)
+    except BeaconAPIException, err:
+        print >> sys.stderr, "ERROR: %s" % err
+        if api.verbose:
+            print err.body
+        sys.exit(1)
+    if outputMeta:
+        print json.dumps(res)
+        return
+
+    if isinstance(res, (list, dict)):
+        if format == 'text':
+            if not res:
+                print "[no data]"
+            elif isinstance(res, dict):
+                items = sorted(res.items())
+                length = max(len(x) for x in res)
+                for k,v in items:
+                    print "%*s: %s" % (length,  k, v)
+            else:
+                # find max length for each field
+                mlen = collections.defaultdict(int)
+                res = [{k: dump(v) for k,v in x.items()} for x in res]
+                for x in res:
+                    for k,v in x.items():
+                        mlen[k] = max(mlen[k], 2+len(str(v)))
+
+                order = sorted(res[0])
+                if "id" in order:
+                    order.remove("id")
+                    order.insert(0, "id")
+                order = [(x, min(30, max(2+len(x), mlen[x]))) for x in order]
+                print
+                for field, length in order:
+                    W(" %-*s |" % (length, field))
+                print
+                W('-' * (sum(3+x[1] for x in order)) + "\n")
+                for x in res:
+                    for field, length in order:
+                        if x[field].isdigit():
+                            W(" %*.*s |" % (length, length, x[field]))
+                        else:
+                            W(" %-*.*s |" % (length, length, x[field]))
+
+                    print
+                print
+
+        else:
+            print simplejson.dumps(res, indent=1)
+    else:
+        print res
+
+if __name__ == '__main__':
+    main()
+
+
