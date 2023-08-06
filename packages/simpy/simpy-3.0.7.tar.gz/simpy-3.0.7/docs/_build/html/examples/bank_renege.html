@@ -1,0 +1,223 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>Bank Renege &mdash; SimPy 3.0.6 documentation</title>
+    
+    <link rel="stylesheet" href="../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../',
+        VERSION:     '3.0.6',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../_static/jquery.js"></script>
+    <script type="text/javascript" src="../_static/underscore.js"></script>
+    <script type="text/javascript" src="../_static/doctools.js"></script>
+    <link rel="shortcut icon" href="../_static/favicon.ico"/>
+    <link rel="top" title="SimPy 3.0.6 documentation" href="../index.html" />
+    <link rel="up" title="Examples" href="index.html" />
+    <link rel="next" title="Carwash" href="carwash.html" />
+    <link rel="prev" title="Examples" href="index.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="carwash.html" title="Carwash"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="index.html" title="Examples"
+             accesskey="P">previous</a> |</li>
+        <li><a href="../contents.html">SimPy 3.0.6 documentation</a> &raquo;</li>
+          <li><a href="index.html" accesskey="U">Examples</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="bank-renege">
+<h1>Bank Renege<a class="headerlink" href="#bank-renege" title="Permalink to this headline">¶</a></h1>
+<p>Covers:</p>
+<ul class="simple">
+<li>Resources: Resource</li>
+<li>Condition events</li>
+</ul>
+<p>A counter with a random service time and customers who renege. Based on the
+program bank08.py from TheBank tutorial of SimPy 2. (KGM)</p>
+<p>This example models a bank counter and customers arriving t random times. Each
+customer has a certain patience. It waits to get to the counter until she’s at
+the end of her tether. If she gets to the counter, she uses it for a while
+before releasing it.</p>
+<p>New customers are created by the <tt class="docutils literal"><span class="pre">source</span></tt> process every few time steps.</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Bank renege example</span>
+
+<span class="sd">Covers:</span>
+
+<span class="sd">- Resources: Resource</span>
+<span class="sd">- Condition events</span>
+
+<span class="sd">Scenario:</span>
+<span class="sd">  A counter with a random service time and customers who renege. Based on the</span>
+<span class="sd">  program bank08.py from TheBank tutorial of SimPy 2. (KGM)</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">import</span> <span class="nn">random</span>
+
+<span class="kn">import</span> <span class="nn">simpy</span>
+
+
+<span class="n">RANDOM_SEED</span> <span class="o">=</span> <span class="mi">42</span>
+<span class="n">NEW_CUSTOMERS</span> <span class="o">=</span> <span class="mi">5</span>  <span class="c"># Total number of customers</span>
+<span class="n">INTERVAL_CUSTOMERS</span> <span class="o">=</span> <span class="mf">10.0</span>  <span class="c"># Generate new customers roughly every x seconds</span>
+<span class="n">MIN_PATIENCE</span> <span class="o">=</span> <span class="mi">1</span>  <span class="c"># Min. customer patience</span>
+<span class="n">MAX_PATIENCE</span> <span class="o">=</span> <span class="mi">3</span>  <span class="c"># Max. customer patience</span>
+
+
+<span class="k">def</span> <span class="nf">source</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">number</span><span class="p">,</span> <span class="n">interval</span><span class="p">,</span> <span class="n">counter</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Source generates customers randomly&quot;&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">number</span><span class="p">):</span>
+        <span class="n">c</span> <span class="o">=</span> <span class="n">customer</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="s">&#39;Customer</span><span class="si">%02d</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">i</span><span class="p">,</span> <span class="n">counter</span><span class="p">,</span> <span class="n">time_in_bank</span><span class="o">=</span><span class="mf">12.0</span><span class="p">)</span>
+        <span class="n">env</span><span class="o">.</span><span class="n">process</span><span class="p">(</span><span class="n">c</span><span class="p">)</span>
+        <span class="n">t</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">expovariate</span><span class="p">(</span><span class="mf">1.0</span> <span class="o">/</span> <span class="n">interval</span><span class="p">)</span>
+        <span class="k">yield</span> <span class="n">env</span><span class="o">.</span><span class="n">timeout</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">customer</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">counter</span><span class="p">,</span> <span class="n">time_in_bank</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Customer arrives, is served and leaves.&quot;&quot;&quot;</span>
+    <span class="n">arrive</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">now</span>
+    <span class="k">print</span><span class="p">(</span><span class="s">&#39;</span><span class="si">%7.4f</span><span class="s"> </span><span class="si">%s</span><span class="s">: Here I am&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">arrive</span><span class="p">,</span> <span class="n">name</span><span class="p">))</span>
+
+    <span class="k">with</span> <span class="n">counter</span><span class="o">.</span><span class="n">request</span><span class="p">()</span> <span class="k">as</span> <span class="n">req</span><span class="p">:</span>
+        <span class="n">patience</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="n">MIN_PATIENCE</span><span class="p">,</span> <span class="n">MAX_PATIENCE</span><span class="p">)</span>
+        <span class="c"># Wait for the counter or abort at the end of our tether</span>
+        <span class="n">results</span> <span class="o">=</span> <span class="k">yield</span> <span class="n">req</span> <span class="o">|</span> <span class="n">env</span><span class="o">.</span><span class="n">timeout</span><span class="p">(</span><span class="n">patience</span><span class="p">)</span>
+
+        <span class="n">wait</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">now</span> <span class="o">-</span> <span class="n">arrive</span>
+
+        <span class="k">if</span> <span class="n">req</span> <span class="ow">in</span> <span class="n">results</span><span class="p">:</span>
+            <span class="c"># We got to the counter</span>
+            <span class="k">print</span><span class="p">(</span><span class="s">&#39;</span><span class="si">%7.4f</span><span class="s"> </span><span class="si">%s</span><span class="s">: Waited </span><span class="si">%6.3f</span><span class="s">&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">now</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">wait</span><span class="p">))</span>
+
+            <span class="n">tib</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">expovariate</span><span class="p">(</span><span class="mf">1.0</span> <span class="o">/</span> <span class="n">time_in_bank</span><span class="p">)</span>
+            <span class="k">yield</span> <span class="n">env</span><span class="o">.</span><span class="n">timeout</span><span class="p">(</span><span class="n">tib</span><span class="p">)</span>
+            <span class="k">print</span><span class="p">(</span><span class="s">&#39;</span><span class="si">%7.4f</span><span class="s"> </span><span class="si">%s</span><span class="s">: Finished&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">now</span><span class="p">,</span> <span class="n">name</span><span class="p">))</span>
+
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c"># We reneged</span>
+            <span class="k">print</span><span class="p">(</span><span class="s">&#39;</span><span class="si">%7.4f</span><span class="s"> </span><span class="si">%s</span><span class="s">: RENEGED after </span><span class="si">%6.3f</span><span class="s">&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">now</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">wait</span><span class="p">))</span>
+
+
+<span class="c"># Setup and start the simulation</span>
+<span class="k">print</span><span class="p">(</span><span class="s">&#39;Bank renege&#39;</span><span class="p">)</span>
+<span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="n">RANDOM_SEED</span><span class="p">)</span>
+<span class="n">env</span> <span class="o">=</span> <span class="n">simpy</span><span class="o">.</span><span class="n">Environment</span><span class="p">()</span>
+
+<span class="c"># Start processes and run</span>
+<span class="n">counter</span> <span class="o">=</span> <span class="n">simpy</span><span class="o">.</span><span class="n">Resource</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">capacity</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">env</span><span class="o">.</span><span class="n">process</span><span class="p">(</span><span class="n">source</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">NEW_CUSTOMERS</span><span class="p">,</span> <span class="n">INTERVAL_CUSTOMERS</span><span class="p">,</span> <span class="n">counter</span><span class="p">))</span>
+<span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>The simulation&#8217;s output:</p>
+<div class="highlight-python"><div class="highlight"><pre>Bank renege
+ 0.0000 Customer00: Here I am
+ 0.0000 Customer00: Waited  0.000
+ 3.8595 Customer00: Finished
+10.2006 Customer01: Here I am
+10.2006 Customer01: Waited  0.000
+12.7265 Customer02: Here I am
+13.9003 Customer02: RENEGED after  1.174
+23.7507 Customer01: Finished
+34.9993 Customer03: Here I am
+34.9993 Customer03: Waited  0.000
+37.9599 Customer03: Finished
+40.4798 Customer04: Here I am
+40.4798 Customer04: Waited  0.000
+43.1401 Customer04: Finished
+</pre></div>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+            <p class="logo"><a href="../contents.html">
+              <img class="logo" src="../_static/simpy-logo-small.png" alt="Logo"/>
+            </a></p>
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="index.html"
+                        title="previous chapter">Examples</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="carwash.html"
+                        title="next chapter">Carwash</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="../_sources/examples/bank_renege.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="carwash.html" title="Carwash"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="index.html" title="Examples"
+             >previous</a> |</li>
+        <li><a href="../contents.html">SimPy 3.0.6 documentation</a> &raquo;</li>
+          <li><a href="index.html" >Examples</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2002–2015, Team SimPy.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

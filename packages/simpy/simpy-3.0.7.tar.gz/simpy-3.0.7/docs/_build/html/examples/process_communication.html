@@ -1,0 +1,329 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>Process Communication &mdash; SimPy 3.0.6 documentation</title>
+    
+    <link rel="stylesheet" href="../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../',
+        VERSION:     '3.0.6',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../_static/jquery.js"></script>
+    <script type="text/javascript" src="../_static/underscore.js"></script>
+    <script type="text/javascript" src="../_static/doctools.js"></script>
+    <link rel="shortcut icon" href="../_static/favicon.ico"/>
+    <link rel="top" title="SimPy 3.0.6 documentation" href="../index.html" />
+    <link rel="up" title="Examples" href="index.html" />
+    <link rel="next" title="Event Latency" href="latency.html" />
+    <link rel="prev" title="Gas Station Refueling" href="gas_station_refuel.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="latency.html" title="Event Latency"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="gas_station_refuel.html" title="Gas Station Refueling"
+             accesskey="P">previous</a> |</li>
+        <li><a href="../contents.html">SimPy 3.0.6 documentation</a> &raquo;</li>
+          <li><a href="index.html" accesskey="U">Examples</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="process-communication">
+<h1>Process Communication<a class="headerlink" href="#process-communication" title="Permalink to this headline">¶</a></h1>
+<p>Covers:</p>
+<ul class="simple">
+<li>Resources: Store</li>
+</ul>
+<p>This example shows how to interconnect simulation model elements together using
+&#8220;resources.Store&#8221; for one-to-one, and many-to-one asynchronous processes. For
+one-to-many a simple BroadCastPipe class is constructed from Store.</p>
+<dl class="docutils">
+<dt>When Useful:</dt>
+<dd><p class="first">When a consumer process does not always wait on a generating process
+and these processes run asynchronously. This example shows how to
+create a buffer and also tell is the consumer process was late
+yielding to the event from a generating process.</p>
+<p>This is also useful when some information needs to be broadcast to
+many receiving processes</p>
+<p class="last">Finally, using pipes can simplify how processes are interconnected to
+each other in a simulation model.</p>
+</dd>
+<dt>Example By:</dt>
+<dd>Keith Smith</dd>
+</dl>
+<div class="highlight-python"><div class="highlight"><pre><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Process communication example</span>
+
+<span class="sd">Covers:</span>
+
+<span class="sd">- Resources: Store</span>
+
+<span class="sd">Scenario:</span>
+<span class="sd">  This example shows how to interconnect simulation model elements</span>
+<span class="sd">  together using :class:`~simpy.resources.store.Store` for one-to-one,</span>
+<span class="sd">  and many-to-one asynchronous processes. For one-to-many a simple</span>
+<span class="sd">  BroadCastPipe class is constructed from Store.</span>
+
+<span class="sd">When Useful:</span>
+<span class="sd">  When a consumer process does not always wait on a generating process</span>
+<span class="sd">  and these processes run asynchronously. This example shows how to</span>
+<span class="sd">  create a buffer and also tell is the consumer process was late</span>
+<span class="sd">  yielding to the event from a generating process.</span>
+
+<span class="sd">  This is also useful when some information needs to be broadcast to</span>
+<span class="sd">  many receiving processes</span>
+
+<span class="sd">  Finally, using pipes can simplify how processes are interconnected to</span>
+<span class="sd">  each other in a simulation model.</span>
+
+<span class="sd">Example By:</span>
+<span class="sd">  Keith Smith</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">import</span> <span class="nn">random</span>
+
+<span class="kn">import</span> <span class="nn">simpy</span>
+
+
+<span class="n">RANDOM_SEED</span> <span class="o">=</span> <span class="mi">42</span>
+<span class="n">SIM_TIME</span> <span class="o">=</span> <span class="mi">100</span>
+
+
+<span class="k">class</span> <span class="nc">BroadcastPipe</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;A Broadcast pipe that allows one process to send messages to many.</span>
+
+<span class="sd">    This construct is useful when message consumers are running at</span>
+<span class="sd">    different rates than message generators and provides an event</span>
+<span class="sd">    buffering to the consuming processes.</span>
+
+<span class="sd">    The parameters are used to create a new</span>
+<span class="sd">    :class:`~simpy.resources.store.Store` instance each time</span>
+<span class="sd">    :meth:`get_output_conn()` is called.</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env</span><span class="p">,</span> <span class="n">capacity</span><span class="o">=</span><span class="n">simpy</span><span class="o">.</span><span class="n">core</span><span class="o">.</span><span class="n">Infinity</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">env</span> <span class="o">=</span> <span class="n">env</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">capacity</span> <span class="o">=</span> <span class="n">capacity</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">pipes</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="k">def</span> <span class="nf">put</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Broadcast a *value* to all receivers.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">pipes</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s">&#39;There are no output pipes.&#39;</span><span class="p">)</span>
+        <span class="n">events</span> <span class="o">=</span> <span class="p">[</span><span class="n">store</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="k">for</span> <span class="n">store</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">pipes</span><span class="p">]</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">all_of</span><span class="p">(</span><span class="n">events</span><span class="p">)</span>  <span class="c"># Condition event for all &quot;events&quot;</span>
+
+    <span class="k">def</span> <span class="nf">get_output_conn</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Get a new output connection for this broadcast pipe.</span>
+
+<span class="sd">        The return value is a :class:`~simpy.resources.store.Store`.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">pipe</span> <span class="o">=</span> <span class="n">simpy</span><span class="o">.</span><span class="n">Store</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="p">,</span> <span class="n">capacity</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">capacity</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">pipes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">pipe</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">pipe</span>
+
+
+<span class="k">def</span> <span class="nf">message_generator</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">env</span><span class="p">,</span> <span class="n">out_pipe</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;A process which randomly generates messages.&quot;&quot;&quot;</span>
+    <span class="k">while</span> <span class="bp">True</span><span class="p">:</span>
+        <span class="c"># wait for next transmission</span>
+        <span class="k">yield</span> <span class="n">env</span><span class="o">.</span><span class="n">timeout</span><span class="p">(</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">6</span><span class="p">,</span> <span class="mi">10</span><span class="p">))</span>
+
+        <span class="c"># messages are time stamped to later check if the consumer was</span>
+        <span class="c"># late getting them.  Note, using event.triggered to do this may</span>
+        <span class="c"># result in failure due to FIFO nature of simulation yields.</span>
+        <span class="c"># (i.e. if at the same env.now, message_generator puts a message</span>
+        <span class="c"># in the pipe first and then message_consumer gets from pipe,</span>
+        <span class="c"># the event.triggered will be True in the other order it will be</span>
+        <span class="c"># False</span>
+        <span class="n">msg</span> <span class="o">=</span> <span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">now</span><span class="p">,</span> <span class="s">&#39;</span><span class="si">%s</span><span class="s"> says hello at </span><span class="si">%d</span><span class="s">&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">env</span><span class="o">.</span><span class="n">now</span><span class="p">))</span>
+        <span class="n">out_pipe</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">message_consumer</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">env</span><span class="p">,</span> <span class="n">in_pipe</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;A process which consumes messages.&quot;&quot;&quot;</span>
+    <span class="k">while</span> <span class="bp">True</span><span class="p">:</span>
+        <span class="c"># Get event for message pipe</span>
+        <span class="n">msg</span> <span class="o">=</span> <span class="k">yield</span> <span class="n">in_pipe</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="n">msg</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">env</span><span class="o">.</span><span class="n">now</span><span class="p">:</span>
+            <span class="c"># if message was already put into pipe, then</span>
+            <span class="c"># message_consumer was late getting to it. Depending on what</span>
+            <span class="c"># is being modeled this, may, or may not have some</span>
+            <span class="c"># significance</span>
+            <span class="k">print</span><span class="p">(</span><span class="s">&#39;LATE Getting Message: at time </span><span class="si">%d</span><span class="s">: </span><span class="si">%s</span><span class="s"> received message: </span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span>
+                    <span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">now</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">msg</span><span class="p">[</span><span class="mi">1</span><span class="p">]))</span>
+
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c"># message_consumer is synchronized with message_generator</span>
+            <span class="k">print</span><span class="p">(</span><span class="s">&#39;at time </span><span class="si">%d</span><span class="s">: </span><span class="si">%s</span><span class="s"> received message: </span><span class="si">%s</span><span class="s">.&#39;</span> <span class="o">%</span>
+                    <span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">now</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">msg</span><span class="p">[</span><span class="mi">1</span><span class="p">]))</span>
+
+        <span class="c"># Process does some other work, which may result in missing messages</span>
+        <span class="k">yield</span> <span class="n">env</span><span class="o">.</span><span class="n">timeout</span><span class="p">(</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="mi">8</span><span class="p">))</span>
+
+
+<span class="c"># Setup and start the simulation</span>
+<span class="k">print</span><span class="p">(</span><span class="s">&#39;Process communication&#39;</span><span class="p">)</span>
+<span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="n">RANDOM_SEED</span><span class="p">)</span>
+<span class="n">env</span> <span class="o">=</span> <span class="n">simpy</span><span class="o">.</span><span class="n">Environment</span><span class="p">()</span>
+
+<span class="c"># For one-to-one or many-to-one type pipes, use Store</span>
+<span class="n">pipe</span> <span class="o">=</span> <span class="n">simpy</span><span class="o">.</span><span class="n">Store</span><span class="p">(</span><span class="n">env</span><span class="p">)</span>
+<span class="n">env</span><span class="o">.</span><span class="n">process</span><span class="p">(</span><span class="n">message_generator</span><span class="p">(</span><span class="s">&#39;Generator A&#39;</span><span class="p">,</span> <span class="n">env</span><span class="p">,</span> <span class="n">pipe</span><span class="p">))</span>
+<span class="n">env</span><span class="o">.</span><span class="n">process</span><span class="p">(</span><span class="n">message_consumer</span><span class="p">(</span><span class="s">&#39;Consumer A&#39;</span><span class="p">,</span> <span class="n">env</span><span class="p">,</span> <span class="n">pipe</span><span class="p">))</span>
+
+<span class="k">print</span><span class="p">(</span><span class="s">&#39;</span><span class="se">\n</span><span class="s">One-to-one pipe communication</span><span class="se">\n</span><span class="s">&#39;</span><span class="p">)</span>
+<span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">until</span><span class="o">=</span><span class="n">SIM_TIME</span><span class="p">)</span>
+
+<span class="c"># For one-to many use BroadcastPipe</span>
+<span class="c"># (Note: could also be used for one-to-one,many-to-one or many-to-many)</span>
+<span class="n">env</span> <span class="o">=</span> <span class="n">simpy</span><span class="o">.</span><span class="n">Environment</span><span class="p">()</span>
+<span class="n">bc_pipe</span> <span class="o">=</span> <span class="n">BroadcastPipe</span><span class="p">(</span><span class="n">env</span><span class="p">)</span>
+
+<span class="n">env</span><span class="o">.</span><span class="n">process</span><span class="p">(</span><span class="n">message_generator</span><span class="p">(</span><span class="s">&#39;Generator A&#39;</span><span class="p">,</span> <span class="n">env</span><span class="p">,</span> <span class="n">bc_pipe</span><span class="p">))</span>
+<span class="n">env</span><span class="o">.</span><span class="n">process</span><span class="p">(</span><span class="n">message_consumer</span><span class="p">(</span><span class="s">&#39;Consumer A&#39;</span><span class="p">,</span> <span class="n">env</span><span class="p">,</span> <span class="n">bc_pipe</span><span class="o">.</span><span class="n">get_output_conn</span><span class="p">()))</span>
+<span class="n">env</span><span class="o">.</span><span class="n">process</span><span class="p">(</span><span class="n">message_consumer</span><span class="p">(</span><span class="s">&#39;Consumer B&#39;</span><span class="p">,</span> <span class="n">env</span><span class="p">,</span> <span class="n">bc_pipe</span><span class="o">.</span><span class="n">get_output_conn</span><span class="p">()))</span>
+
+<span class="k">print</span><span class="p">(</span><span class="s">&#39;</span><span class="se">\n</span><span class="s">One-to-many pipe communication</span><span class="se">\n</span><span class="s">&#39;</span><span class="p">)</span>
+<span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">until</span><span class="o">=</span><span class="n">SIM_TIME</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The simulation&#8217;s output:</p>
+<div class="highlight-python"><div class="highlight"><pre>Process communication
+
+One-to-one pipe communication
+
+at time 6: Consumer A received message: Generator A says hello at 6.
+at time 12: Consumer A received message: Generator A says hello at 12.
+at time 19: Consumer A received message: Generator A says hello at 19.
+at time 26: Consumer A received message: Generator A says hello at 26.
+at time 36: Consumer A received message: Generator A says hello at 36.
+at time 46: Consumer A received message: Generator A says hello at 46.
+at time 52: Consumer A received message: Generator A says hello at 52.
+at time 58: Consumer A received message: Generator A says hello at 58.
+LATE Getting Message: at time 66: Consumer A received message: Generator A says hello at 65
+at time 75: Consumer A received message: Generator A says hello at 75.
+at time 85: Consumer A received message: Generator A says hello at 85.
+at time 95: Consumer A received message: Generator A says hello at 95.
+
+One-to-many pipe communication
+
+at time 10: Consumer A received message: Generator A says hello at 10.
+at time 10: Consumer B received message: Generator A says hello at 10.
+at time 18: Consumer A received message: Generator A says hello at 18.
+at time 18: Consumer B received message: Generator A says hello at 18.
+at time 27: Consumer A received message: Generator A says hello at 27.
+at time 27: Consumer B received message: Generator A says hello at 27.
+at time 34: Consumer A received message: Generator A says hello at 34.
+at time 34: Consumer B received message: Generator A says hello at 34.
+at time 40: Consumer A received message: Generator A says hello at 40.
+LATE Getting Message: at time 41: Consumer B received message: Generator A says hello at 40
+at time 46: Consumer A received message: Generator A says hello at 46.
+LATE Getting Message: at time 47: Consumer B received message: Generator A says hello at 46
+at time 56: Consumer A received message: Generator A says hello at 56.
+at time 56: Consumer B received message: Generator A says hello at 56.
+at time 65: Consumer A received message: Generator A says hello at 65.
+at time 65: Consumer B received message: Generator A says hello at 65.
+at time 74: Consumer A received message: Generator A says hello at 74.
+at time 74: Consumer B received message: Generator A says hello at 74.
+at time 82: Consumer A received message: Generator A says hello at 82.
+at time 82: Consumer B received message: Generator A says hello at 82.
+at time 92: Consumer A received message: Generator A says hello at 92.
+at time 92: Consumer B received message: Generator A says hello at 92.
+at time 98: Consumer B received message: Generator A says hello at 98.
+at time 98: Consumer A received message: Generator A says hello at 98.
+</pre></div>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+            <p class="logo"><a href="../contents.html">
+              <img class="logo" src="../_static/simpy-logo-small.png" alt="Logo"/>
+            </a></p>
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="gas_station_refuel.html"
+                        title="previous chapter">Gas Station Refueling</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="latency.html"
+                        title="next chapter">Event Latency</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="../_sources/examples/process_communication.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="latency.html" title="Event Latency"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="gas_station_refuel.html" title="Gas Station Refueling"
+             >previous</a> |</li>
+        <li><a href="../contents.html">SimPy 3.0.6 documentation</a> &raquo;</li>
+          <li><a href="index.html" >Examples</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2002–2015, Team SimPy.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

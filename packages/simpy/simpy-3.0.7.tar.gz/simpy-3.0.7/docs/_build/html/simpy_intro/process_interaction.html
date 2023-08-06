@@ -1,0 +1,261 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>Process Interaction &mdash; SimPy 3.0.6 documentation</title>
+    
+    <link rel="stylesheet" href="../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../',
+        VERSION:     '3.0.6',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../_static/jquery.js"></script>
+    <script type="text/javascript" src="../_static/underscore.js"></script>
+    <script type="text/javascript" src="../_static/doctools.js"></script>
+    <link rel="shortcut icon" href="../_static/favicon.ico"/>
+    <link rel="top" title="SimPy 3.0.6 documentation" href="../index.html" />
+    <link rel="up" title="SimPy in 10 Minutes" href="index.html" />
+    <link rel="next" title="Shared Resources" href="shared_resources.html" />
+    <link rel="prev" title="Basic Concepts" href="basic_concepts.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="shared_resources.html" title="Shared Resources"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="basic_concepts.html" title="Basic Concepts"
+             accesskey="P">previous</a> |</li>
+        <li><a href="../contents.html">SimPy 3.0.6 documentation</a> &raquo;</li>
+          <li><a href="index.html" accesskey="U">SimPy in 10 Minutes</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="process-interaction">
+<h1>Process Interaction<a class="headerlink" href="#process-interaction" title="Permalink to this headline">¶</a></h1>
+<p>The <a class="reference internal" href="../api_reference/simpy.events.html#simpy.events.Process" title="simpy.events.Process"><tt class="xref py py-class docutils literal"><span class="pre">Process</span></tt></a> instance that is returned by
+<a class="reference internal" href="../api_reference/simpy.core.html#simpy.core.Environment.process" title="simpy.core.Environment.process"><tt class="xref py py-meth docutils literal"><span class="pre">Environment.process()</span></tt></a> can be utilized for process interactions. The two
+most common examples for this are to wait for another process to finish and to
+interrupt another process while it is waiting for an event.</p>
+<div class="section" id="waiting-for-a-process">
+<h2>Waiting for a Process<a class="headerlink" href="#waiting-for-a-process" title="Permalink to this headline">¶</a></h2>
+<p>As it happens, a SimPy <a class="reference internal" href="../api_reference/simpy.events.html#simpy.events.Process" title="simpy.events.Process"><tt class="xref py py-class docutils literal"><span class="pre">Process</span></tt></a> can be used like an event
+(technically, a process actually <em>is</em> an event). If you yield it, you are
+resumed once the process has finished. Imagine a car-wash simulation where cars
+enter the car-wash and wait for the washing process to finish. Or an airport
+simulation where passengers have to wait until a security check finishes.</p>
+<p>Lets assume that the car from our last example magically became an electric
+vehicle. Electric vehicles usually take a lot of time charging their batteries
+after a trip. They have to wait until their battery is charged before they can
+start driving again.</p>
+<p>We can model this with an additional <tt class="docutils literal"><span class="pre">charge()</span></tt> process for our car.
+Therefore, we refactor our car to be a class with two process methods:
+<tt class="docutils literal"><span class="pre">run()</span></tt> (which is the original <tt class="docutils literal"><span class="pre">car()</span></tt> process function) and <tt class="docutils literal"><span class="pre">charge()</span></tt>.</p>
+<p>The <tt class="docutils literal"><span class="pre">run</span></tt> process is automatically started when <tt class="docutils literal"><span class="pre">Car</span></tt> is instantiated.
+A new <tt class="docutils literal"><span class="pre">charge</span></tt> process is started every time the vehicle starts parking. By
+yielding the <a class="reference internal" href="../api_reference/simpy.events.html#simpy.events.Process" title="simpy.events.Process"><tt class="xref py py-class docutils literal"><span class="pre">Process</span></tt></a> instance that
+<a class="reference internal" href="../api_reference/simpy.core.html#simpy.core.Environment.process" title="simpy.core.Environment.process"><tt class="xref py py-meth docutils literal"><span class="pre">Environment.process()</span></tt></a> returns, the <tt class="docutils literal"><span class="pre">run</span></tt> process starts waiting for
+it to finish:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="k">class</span> <span class="nc">Car</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+<span class="gp">... </span>    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env</span><span class="p">):</span>
+<span class="gp">... </span>        <span class="bp">self</span><span class="o">.</span><span class="n">env</span> <span class="o">=</span> <span class="n">env</span>
+<span class="gp">... </span>        <span class="c"># Start the run process everytime an instance is created.</span>
+<span class="gp">... </span>        <span class="bp">self</span><span class="o">.</span><span class="n">action</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">process</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">run</span><span class="p">())</span>
+<span class="gp">...</span>
+<span class="gp">... </span>    <span class="k">def</span> <span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="gp">... </span>        <span class="k">while</span> <span class="bp">True</span><span class="p">:</span>
+<span class="gp">... </span>            <span class="k">print</span><span class="p">(</span><span class="s">&#39;Start parking and charging at </span><span class="si">%d</span><span class="s">&#39;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">now</span><span class="p">)</span>
+<span class="gp">... </span>            <span class="n">charge_duration</span> <span class="o">=</span> <span class="mi">5</span>
+<span class="gp">... </span>            <span class="c"># We yield the process that process() returns</span>
+<span class="gp">... </span>            <span class="c"># to wait for it to finish</span>
+<span class="gp">... </span>            <span class="k">yield</span> <span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">process</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">charge</span><span class="p">(</span><span class="n">charge_duration</span><span class="p">))</span>
+<span class="gp">...</span>
+<span class="gp">... </span>            <span class="c"># The charge process has finished and</span>
+<span class="gp">... </span>            <span class="c"># we can start driving again.</span>
+<span class="gp">... </span>            <span class="k">print</span><span class="p">(</span><span class="s">&#39;Start driving at </span><span class="si">%d</span><span class="s">&#39;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">now</span><span class="p">)</span>
+<span class="gp">... </span>            <span class="n">trip_duration</span> <span class="o">=</span> <span class="mi">2</span>
+<span class="gp">... </span>            <span class="k">yield</span> <span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">timeout</span><span class="p">(</span><span class="n">trip_duration</span><span class="p">)</span>
+<span class="gp">...</span>
+<span class="gp">... </span>    <span class="k">def</span> <span class="nf">charge</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">duration</span><span class="p">):</span>
+<span class="gp">... </span>        <span class="k">yield</span> <span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">timeout</span><span class="p">(</span><span class="n">duration</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Starting the simulation is straight forward again: We create an environment,
+one (or more) cars and finally call meth:<cite>~Environment.simulate()</cite>.</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="kn">import</span> <span class="nn">simpy</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">env</span> <span class="o">=</span> <span class="n">simpy</span><span class="o">.</span><span class="n">Environment</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">car</span> <span class="o">=</span> <span class="n">Car</span><span class="p">(</span><span class="n">env</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">until</span><span class="o">=</span><span class="mi">15</span><span class="p">)</span>
+<span class="go">Start parking and charging at 0</span>
+<span class="go">Start driving at 5</span>
+<span class="go">Start parking and charging at 7</span>
+<span class="go">Start driving at 12</span>
+<span class="go">Start parking and charging at 14</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="interrupting-another-process">
+<h2>Interrupting Another Process<a class="headerlink" href="#interrupting-another-process" title="Permalink to this headline">¶</a></h2>
+<p>Imagine, you don&#8217;t want to wait until your electric vehicle is fully charged
+but want to interrupt the charging process and just start driving instead.</p>
+<p>SimPy allows you to interrupt a running process by calling its
+<a class="reference internal" href="../api_reference/simpy.events.html#simpy.events.Process.interrupt" title="simpy.events.Process.interrupt"><tt class="xref py py-meth docutils literal"><span class="pre">interrupt()</span></tt></a> method:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="k">def</span> <span class="nf">driver</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">car</span><span class="p">):</span>
+<span class="gp">... </span>    <span class="k">yield</span> <span class="n">env</span><span class="o">.</span><span class="n">timeout</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
+<span class="gp">... </span>    <span class="n">car</span><span class="o">.</span><span class="n">action</span><span class="o">.</span><span class="n">interrupt</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>The <tt class="docutils literal"><span class="pre">driver</span></tt> process has a reference to the car&#8217;s <tt class="docutils literal"><span class="pre">action</span></tt> process. After
+waiting for 3 time steps, it interrupts that process.</p>
+<p>Interrupts are thrown into process functions as <a class="reference internal" href="../api_reference/simpy.events.html#simpy.events.Interrupt" title="simpy.events.Interrupt"><tt class="xref py py-exc docutils literal"><span class="pre">Interrupt</span></tt></a>
+exceptions that can (should) be handled by the interrupted process. The process
+can than decide what to do next (e.g., continuing to wait for the original
+event or yielding a new event):</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="k">class</span> <span class="nc">Car</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+<span class="gp">... </span>    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env</span><span class="p">):</span>
+<span class="gp">... </span>        <span class="bp">self</span><span class="o">.</span><span class="n">env</span> <span class="o">=</span> <span class="n">env</span>
+<span class="gp">... </span>        <span class="bp">self</span><span class="o">.</span><span class="n">action</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">process</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">run</span><span class="p">())</span>
+<span class="gp">...</span>
+<span class="gp">... </span>    <span class="k">def</span> <span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="gp">... </span>        <span class="k">while</span> <span class="bp">True</span><span class="p">:</span>
+<span class="gp">... </span>            <span class="k">print</span><span class="p">(</span><span class="s">&#39;Start parking and charging at </span><span class="si">%d</span><span class="s">&#39;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">now</span><span class="p">)</span>
+<span class="gp">... </span>            <span class="n">charge_duration</span> <span class="o">=</span> <span class="mi">5</span>
+<span class="gp">... </span>            <span class="c"># We may get interrupted while charging the battery</span>
+<span class="gp">... </span>            <span class="k">try</span><span class="p">:</span>
+<span class="gp">... </span>                <span class="k">yield</span> <span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">process</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">charge</span><span class="p">(</span><span class="n">charge_duration</span><span class="p">))</span>
+<span class="gp">... </span>            <span class="k">except</span> <span class="n">simpy</span><span class="o">.</span><span class="n">Interrupt</span><span class="p">:</span>
+<span class="gp">... </span>                <span class="c"># When we received an interrupt, we stop charing and</span>
+<span class="gp">... </span>                <span class="c"># switch to the &quot;driving&quot; state</span>
+<span class="gp">... </span>                <span class="k">print</span><span class="p">(</span><span class="s">&#39;Was interrupted. Hope, the battery is full enough ...&#39;</span><span class="p">)</span>
+<span class="gp">...</span>
+<span class="gp">... </span>            <span class="k">print</span><span class="p">(</span><span class="s">&#39;Start driving at </span><span class="si">%d</span><span class="s">&#39;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">now</span><span class="p">)</span>
+<span class="gp">... </span>            <span class="n">trip_duration</span> <span class="o">=</span> <span class="mi">2</span>
+<span class="gp">... </span>            <span class="k">yield</span> <span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">timeout</span><span class="p">(</span><span class="n">trip_duration</span><span class="p">)</span>
+<span class="gp">...</span>
+<span class="gp">... </span>    <span class="k">def</span> <span class="nf">charge</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">duration</span><span class="p">):</span>
+<span class="gp">... </span>        <span class="k">yield</span> <span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">timeout</span><span class="p">(</span><span class="n">duration</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>When you compare the output of this simulation with the previous example,
+you&#8217;ll notice that the car now starts driving at time <tt class="docutils literal"><span class="pre">3</span></tt> instead of <tt class="docutils literal"><span class="pre">5</span></tt>:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="n">env</span> <span class="o">=</span> <span class="n">simpy</span><span class="o">.</span><span class="n">Environment</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">car</span> <span class="o">=</span> <span class="n">Car</span><span class="p">(</span><span class="n">env</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">env</span><span class="o">.</span><span class="n">process</span><span class="p">(</span><span class="n">driver</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">car</span><span class="p">))</span>
+<span class="go">&lt;Process(driver) object at 0x...&gt;</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">until</span><span class="o">=</span><span class="mi">15</span><span class="p">)</span>
+<span class="go">Start parking and charging at 0</span>
+<span class="go">Was interrupted. Hope, the battery is full enough ...</span>
+<span class="go">Start driving at 3</span>
+<span class="go">Start parking and charging at 5</span>
+<span class="go">Start driving at 10</span>
+<span class="go">Start parking and charging at 12</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="what-s-next">
+<h2>What&#8217;s Next<a class="headerlink" href="#what-s-next" title="Permalink to this headline">¶</a></h2>
+<p>We just demonstrated two basic methods for process interactions&#8212;waiting for
+a process and interrupting a process. Take a look at the
+<a class="reference internal" href="../topical_guides/index.html"><em>Topical Guides</em></a> or the <a class="reference internal" href="../api_reference/simpy.events.html#simpy.events.Process" title="simpy.events.Process"><tt class="xref py py-class docutils literal"><span class="pre">Process</span></tt></a> API
+reference for more details.</p>
+<p>In the <a class="reference internal" href="shared_resources.html"><em>next section</em></a> we will cover the basic usage of
+shared resources.</p>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+            <p class="logo"><a href="../contents.html">
+              <img class="logo" src="../_static/simpy-logo-small.png" alt="Logo"/>
+            </a></p>
+  <h3><a href="../contents.html">Table Of Contents</a></h3>
+  <ul>
+<li><a class="reference internal" href="#">Process Interaction</a><ul>
+<li><a class="reference internal" href="#waiting-for-a-process">Waiting for a Process</a></li>
+<li><a class="reference internal" href="#interrupting-another-process">Interrupting Another Process</a></li>
+<li><a class="reference internal" href="#what-s-next">What&#8217;s Next</a></li>
+</ul>
+</li>
+</ul>
+
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="basic_concepts.html"
+                        title="previous chapter">Basic Concepts</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="shared_resources.html"
+                        title="next chapter">Shared Resources</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="../_sources/simpy_intro/process_interaction.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="shared_resources.html" title="Shared Resources"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="basic_concepts.html" title="Basic Concepts"
+             >previous</a> |</li>
+        <li><a href="../contents.html">SimPy 3.0.6 documentation</a> &raquo;</li>
+          <li><a href="index.html" >SimPy in 10 Minutes</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2002–2015, Team SimPy.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

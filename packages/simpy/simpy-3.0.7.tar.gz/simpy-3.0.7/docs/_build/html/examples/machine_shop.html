@@ -1,0 +1,298 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>Machine Shop &mdash; SimPy 3.0.6 documentation</title>
+    
+    <link rel="stylesheet" href="../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../',
+        VERSION:     '3.0.6',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../_static/jquery.js"></script>
+    <script type="text/javascript" src="../_static/underscore.js"></script>
+    <script type="text/javascript" src="../_static/doctools.js"></script>
+    <link rel="shortcut icon" href="../_static/favicon.ico"/>
+    <link rel="top" title="SimPy 3.0.6 documentation" href="../index.html" />
+    <link rel="up" title="Examples" href="index.html" />
+    <link rel="next" title="Movie Renege" href="movie_renege.html" />
+    <link rel="prev" title="Carwash" href="carwash.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="movie_renege.html" title="Movie Renege"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="carwash.html" title="Carwash"
+             accesskey="P">previous</a> |</li>
+        <li><a href="../contents.html">SimPy 3.0.6 documentation</a> &raquo;</li>
+          <li><a href="index.html" accesskey="U">Examples</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="machine-shop">
+<h1>Machine Shop<a class="headerlink" href="#machine-shop" title="Permalink to this headline">¶</a></h1>
+<p>Covers:</p>
+<ul class="simple">
+<li>Interrupts</li>
+<li>Resources: PreemptiveResource</li>
+</ul>
+<p>This example comprises a workshop with <em>n</em> identical machines. A stream of jobs
+(enough to keep the machines busy) arrives. Each machine breaks down
+periodically. Repairs are carried out by one repairman. The repairman has
+other, less important tasks to perform, too. Broken machines preempt theses
+tasks. The repairman continues them when he is done with the machine repair.
+The workshop works continuously.</p>
+<p>A machine has two processes: <em>working</em> implements the actual behaviour of the
+machine (producing parts). <em>break_machine</em> periodically interrupts the
+<em>working</em> process to simulate the machine failure.</p>
+<p>The repairman&#8217;s other job is also a process (implemented by <em>other_job</em>). The
+repairman itself is a <a class="reference internal" href="../api_reference/simpy.resources.html#simpy.resources.resource.PreemptiveResource" title="simpy.resources.resource.PreemptiveResource"><tt class="xref py py-class docutils literal"><span class="pre">PreemptiveResource</span></tt></a>
+with a capacity of <em>1</em>. The machine repairing has a priority of <em>1</em>, while the
+other job has a priority of <em>2</em> (the smaller the number, the higher the
+priority).</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Machine shop example</span>
+
+<span class="sd">Covers:</span>
+
+<span class="sd">- Interrupts</span>
+<span class="sd">- Resources: PreemptiveResource</span>
+
+<span class="sd">Scenario:</span>
+<span class="sd">  A workshop has *n* identical machines. A stream of jobs (enough to</span>
+<span class="sd">  keep the machines busy) arrives. Each machine breaks down</span>
+<span class="sd">  periodically. Repairs are carried out by one repairman. The repairman</span>
+<span class="sd">  has other, less important tasks to perform, too. Broken machines</span>
+<span class="sd">  preempt theses tasks. The repairman continues them when he is done</span>
+<span class="sd">  with the machine repair. The workshop works continuously.</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">import</span> <span class="nn">random</span>
+
+<span class="kn">import</span> <span class="nn">simpy</span>
+
+
+<span class="n">RANDOM_SEED</span> <span class="o">=</span> <span class="mi">42</span>
+<span class="n">PT_MEAN</span> <span class="o">=</span> <span class="mf">10.0</span>         <span class="c"># Avg. processing time in minutes</span>
+<span class="n">PT_SIGMA</span> <span class="o">=</span> <span class="mf">2.0</span>         <span class="c"># Sigma of processing time</span>
+<span class="n">MTTF</span> <span class="o">=</span> <span class="mf">300.0</span>           <span class="c"># Mean time to failure in minutes</span>
+<span class="n">BREAK_MEAN</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">/</span> <span class="n">MTTF</span>  <span class="c"># Param. for expovariate distribution</span>
+<span class="n">REPAIR_TIME</span> <span class="o">=</span> <span class="mf">30.0</span>     <span class="c"># Time it takes to repair a machine in minutes</span>
+<span class="n">JOB_DURATION</span> <span class="o">=</span> <span class="mf">30.0</span>    <span class="c"># Duration of other jobs in minutes</span>
+<span class="n">NUM_MACHINES</span> <span class="o">=</span> <span class="mi">10</span>      <span class="c"># Number of machines in the machine shop</span>
+<span class="n">WEEKS</span> <span class="o">=</span> <span class="mi">4</span>              <span class="c"># Simulation time in weeks</span>
+<span class="n">SIM_TIME</span> <span class="o">=</span> <span class="n">WEEKS</span> <span class="o">*</span> <span class="mi">7</span> <span class="o">*</span> <span class="mi">24</span> <span class="o">*</span> <span class="mi">60</span>  <span class="c"># Simulation time in minutes</span>
+
+
+<span class="k">def</span> <span class="nf">time_per_part</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;Return actual processing time for a concrete part.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">random</span><span class="o">.</span><span class="n">normalvariate</span><span class="p">(</span><span class="n">PT_MEAN</span><span class="p">,</span> <span class="n">PT_SIGMA</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">time_to_failure</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;Return time until next failure for a machine.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">random</span><span class="o">.</span><span class="n">expovariate</span><span class="p">(</span><span class="n">BREAK_MEAN</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">Machine</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;A machine produces parts and my get broken every now and then.</span>
+
+<span class="sd">    If it breaks, it requests a *repairman* and continues the production</span>
+<span class="sd">    after the it is repaired.</span>
+
+<span class="sd">    A machine has a *name* and a numberof *parts_made* thus far.</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">repairman</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">env</span> <span class="o">=</span> <span class="n">env</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="n">name</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">parts_made</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">broken</span> <span class="o">=</span> <span class="bp">False</span>
+
+        <span class="c"># Start &quot;working&quot; and &quot;break_machine&quot; processes for this machine.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">process</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">process</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">working</span><span class="p">(</span><span class="n">repairman</span><span class="p">))</span>
+        <span class="n">env</span><span class="o">.</span><span class="n">process</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">break_machine</span><span class="p">())</span>
+
+    <span class="k">def</span> <span class="nf">working</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">repairman</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Produce parts as long as the simulation runs.</span>
+
+<span class="sd">        While making a part, the machine may break multiple times.</span>
+<span class="sd">        Request a repairman when this happens.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">while</span> <span class="bp">True</span><span class="p">:</span>
+            <span class="c"># Start making a new part</span>
+            <span class="n">done_in</span> <span class="o">=</span> <span class="n">time_per_part</span><span class="p">()</span>
+            <span class="k">while</span> <span class="n">done_in</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="c"># Working on the part</span>
+                    <span class="n">start</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">now</span>
+                    <span class="k">yield</span> <span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">timeout</span><span class="p">(</span><span class="n">done_in</span><span class="p">)</span>
+                    <span class="n">done_in</span> <span class="o">=</span> <span class="mi">0</span>  <span class="c"># Set to 0 to exit while loop.</span>
+
+                <span class="k">except</span> <span class="n">simpy</span><span class="o">.</span><span class="n">Interrupt</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">broken</span> <span class="o">=</span> <span class="bp">True</span>
+                    <span class="n">done_in</span> <span class="o">-=</span> <span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">now</span> <span class="o">-</span> <span class="n">start</span>  <span class="c"># How much time left?</span>
+
+                    <span class="c"># Request a repairman. This will preempt its &quot;other_job&quot;.</span>
+                    <span class="k">with</span> <span class="n">repairman</span><span class="o">.</span><span class="n">request</span><span class="p">(</span><span class="n">priority</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span> <span class="k">as</span> <span class="n">req</span><span class="p">:</span>
+                        <span class="k">yield</span> <span class="n">req</span>
+                        <span class="k">yield</span> <span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">timeout</span><span class="p">(</span><span class="n">REPAIR_TIME</span><span class="p">)</span>
+
+                    <span class="bp">self</span><span class="o">.</span><span class="n">broken</span> <span class="o">=</span> <span class="bp">False</span>
+
+            <span class="c"># Part is done.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">parts_made</span> <span class="o">+=</span> <span class="mi">1</span>
+
+    <span class="k">def</span> <span class="nf">break_machine</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Break the machine every now and then.&quot;&quot;&quot;</span>
+        <span class="k">while</span> <span class="bp">True</span><span class="p">:</span>
+            <span class="k">yield</span> <span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">timeout</span><span class="p">(</span><span class="n">time_to_failure</span><span class="p">())</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">broken</span><span class="p">:</span>
+                <span class="c"># Only break the machine if it is currently working.</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">process</span><span class="o">.</span><span class="n">interrupt</span><span class="p">()</span>
+
+
+<span class="k">def</span> <span class="nf">other_jobs</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">repairman</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;The repairman&#39;s other (unimportant) job.&quot;&quot;&quot;</span>
+    <span class="k">while</span> <span class="bp">True</span><span class="p">:</span>
+        <span class="c"># Start a new job</span>
+        <span class="n">done_in</span> <span class="o">=</span> <span class="n">JOB_DURATION</span>
+        <span class="k">while</span> <span class="n">done_in</span><span class="p">:</span>
+            <span class="c"># Retry the job until it is done.</span>
+            <span class="c"># It&#39;s priority is lower than that of machine repairs.</span>
+            <span class="k">with</span> <span class="n">repairman</span><span class="o">.</span><span class="n">request</span><span class="p">(</span><span class="n">priority</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span> <span class="k">as</span> <span class="n">req</span><span class="p">:</span>
+                <span class="k">yield</span> <span class="n">req</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">start</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">now</span>
+                    <span class="k">yield</span> <span class="n">env</span><span class="o">.</span><span class="n">timeout</span><span class="p">(</span><span class="n">done_in</span><span class="p">)</span>
+                    <span class="n">done_in</span> <span class="o">=</span> <span class="mi">0</span>
+                <span class="k">except</span> <span class="n">simpy</span><span class="o">.</span><span class="n">Interrupt</span><span class="p">:</span>
+                    <span class="n">done_in</span> <span class="o">-=</span> <span class="n">env</span><span class="o">.</span><span class="n">now</span> <span class="o">-</span> <span class="n">start</span>
+
+
+<span class="c"># Setup and start the simulation</span>
+<span class="k">print</span><span class="p">(</span><span class="s">&#39;Machine shop&#39;</span><span class="p">)</span>
+<span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="n">RANDOM_SEED</span><span class="p">)</span>  <span class="c"># This helps reproducing the results</span>
+
+<span class="c"># Create an environment and start the setup process</span>
+<span class="n">env</span> <span class="o">=</span> <span class="n">simpy</span><span class="o">.</span><span class="n">Environment</span><span class="p">()</span>
+<span class="n">repairman</span> <span class="o">=</span> <span class="n">simpy</span><span class="o">.</span><span class="n">PreemptiveResource</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">capacity</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">machines</span> <span class="o">=</span> <span class="p">[</span><span class="n">Machine</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="s">&#39;Machine </span><span class="si">%d</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">i</span><span class="p">,</span> <span class="n">repairman</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">NUM_MACHINES</span><span class="p">)]</span>
+<span class="n">env</span><span class="o">.</span><span class="n">process</span><span class="p">(</span><span class="n">other_jobs</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">repairman</span><span class="p">))</span>
+
+<span class="c"># Execute!</span>
+<span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">until</span><span class="o">=</span><span class="n">SIM_TIME</span><span class="p">)</span>
+
+<span class="c"># Analyis/results</span>
+<span class="k">print</span><span class="p">(</span><span class="s">&#39;Machine shop results after </span><span class="si">%s</span><span class="s"> weeks&#39;</span> <span class="o">%</span> <span class="n">WEEKS</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">machine</span> <span class="ow">in</span> <span class="n">machines</span><span class="p">:</span>
+    <span class="k">print</span><span class="p">(</span><span class="s">&#39;</span><span class="si">%s</span><span class="s"> made </span><span class="si">%d</span><span class="s"> parts.&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">machine</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">machine</span><span class="o">.</span><span class="n">parts_made</span><span class="p">))</span>
+</pre></div>
+</div>
+<p>The simulation&#8217;s output:</p>
+<div class="highlight-python"><div class="highlight"><pre>Machine shop
+Machine shop results after 4 weeks
+Machine 0 made 3251 parts.
+Machine 1 made 3273 parts.
+Machine 2 made 3242 parts.
+Machine 3 made 3343 parts.
+Machine 4 made 3387 parts.
+Machine 5 made 3244 parts.
+Machine 6 made 3269 parts.
+Machine 7 made 3185 parts.
+Machine 8 made 3302 parts.
+Machine 9 made 3279 parts.
+</pre></div>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+            <p class="logo"><a href="../contents.html">
+              <img class="logo" src="../_static/simpy-logo-small.png" alt="Logo"/>
+            </a></p>
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="carwash.html"
+                        title="previous chapter">Carwash</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="movie_renege.html"
+                        title="next chapter">Movie Renege</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="../_sources/examples/machine_shop.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="movie_renege.html" title="Movie Renege"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="carwash.html" title="Carwash"
+             >previous</a> |</li>
+        <li><a href="../contents.html">SimPy 3.0.6 documentation</a> &raquo;</li>
+          <li><a href="index.html" >Examples</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2002–2015, Team SimPy.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

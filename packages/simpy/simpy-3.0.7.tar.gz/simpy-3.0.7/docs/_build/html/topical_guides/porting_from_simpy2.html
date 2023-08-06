@@ -1,0 +1,391 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>Porting from SimPy 2 to 3 &mdash; SimPy 3.0.6 documentation</title>
+    
+    <link rel="stylesheet" href="../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../',
+        VERSION:     '3.0.6',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../_static/jquery.js"></script>
+    <script type="text/javascript" src="../_static/underscore.js"></script>
+    <script type="text/javascript" src="../_static/doctools.js"></script>
+    <link rel="shortcut icon" href="../_static/favicon.ico"/>
+    <link rel="top" title="SimPy 3.0.6 documentation" href="../index.html" />
+    <link rel="up" title="Topical Guides" href="index.html" />
+    <link rel="next" title="Examples" href="../examples/index.html" />
+    <link rel="prev" title="Real-time simulations" href="real-time-simulations.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="../examples/index.html" title="Examples"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="real-time-simulations.html" title="Real-time simulations"
+             accesskey="P">previous</a> |</li>
+        <li><a href="../contents.html">SimPy 3.0.6 documentation</a> &raquo;</li>
+          <li><a href="index.html" accesskey="U">Topical Guides</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="porting-from-simpy-2-to-3">
+<span id="porting-from-simpy2"></span><h1>Porting from SimPy 2 to 3<a class="headerlink" href="#porting-from-simpy-2-to-3" title="Permalink to this headline">¶</a></h1>
+<p>Porting from SimPy 2 to SimPy 3 is not overly complicated. A lot of changes
+merely comprise copy/paste.</p>
+<p>This guide describes the conceptual and API changes between both SimPy versions
+and shows you how to change your code for SimPy 3.</p>
+<div class="section" id="imports">
+<h2>Imports<a class="headerlink" href="#imports" title="Permalink to this headline">¶</a></h2>
+<p>In SimPy 2, you had to decide at import-time whether you wanted to use a normal
+simulation (<tt class="docutils literal"><span class="pre">SimPy.Simulation</span></tt>), a real-time simulation
+(<tt class="docutils literal"><span class="pre">SimPy.SimulationRT</span></tt>) or something else. You usually had to import
+<tt class="docutils literal"><span class="pre">Simulation</span></tt> (or <tt class="docutils literal"><span class="pre">SimulationRT</span></tt>), <tt class="docutils literal"><span class="pre">Process</span></tt> and some of the SimPy
+keywords (<tt class="docutils literal"><span class="pre">hold</span></tt> or <tt class="docutils literal"><span class="pre">passivate</span></tt>, for example) from that package.</p>
+<p>In SimPy 3, you usually need to import much less classes and modules (for
+example, all keywords are gone). In most use cases you will now only need to
+import <a class="reference internal" href="../api_reference/simpy.html#module-simpy" title="simpy"><tt class="xref py py-mod docutils literal"><span class="pre">simpy</span></tt></a>.</p>
+<p><strong>SimPy 2</strong></p>
+<div class="highlight-python"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">Simpy.Simulation</span> <span class="kn">import</span> <span class="n">Simulation</span><span class="p">,</span> <span class="n">Process</span><span class="p">,</span> <span class="n">hold</span>
+</pre></div>
+</div>
+<p><strong>SimPy 3</strong></p>
+<div class="highlight-python"><div class="highlight"><pre><span class="kn">import</span> <span class="nn">simpy</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="the-simulation-classes">
+<h2>The <tt class="docutils literal"><span class="pre">Simulation*</span></tt> classes<a class="headerlink" href="#the-simulation-classes" title="Permalink to this headline">¶</a></h2>
+<p>SimPy 2 encapsulated the simulation state in a <tt class="docutils literal"><span class="pre">Simulation*</span></tt> class (e.g.,
+<tt class="docutils literal"><span class="pre">Simulation</span></tt>, <tt class="docutils literal"><span class="pre">SimulationRT</span></tt> or <tt class="docutils literal"><span class="pre">SimulationTrace</span></tt>). This
+class also had a <tt class="docutils literal"><span class="pre">simulate()</span></tt> method that executed a normal simulation,
+a real-time simulation or something else (depending on the particular class).</p>
+<p>There was a global <tt class="docutils literal"><span class="pre">Simulation</span></tt> instance that was automatically created when
+you imported SimPy. You could also instantiate it on your own to uses SimPy&#8217;s
+object-orient API. This led to some confusion and problems, because you had to
+pass the <tt class="docutils literal"><span class="pre">Simulation</span></tt> instance around when you were using the object-oriented
+API but not if you were using the procedural API.</p>
+<p>In SimPy 3, an <a class="reference internal" href="../api_reference/simpy.core.html#simpy.core.Environment" title="simpy.core.Environment"><tt class="xref py py-class docutils literal"><span class="pre">Environment</span></tt></a> replaces <tt class="docutils literal"><span class="pre">Simulation</span></tt> and
+<a class="reference internal" href="../api_reference/simpy.rt.html#simpy.rt.RealtimeEnvironment" title="simpy.rt.RealtimeEnvironment"><tt class="xref py py-class docutils literal"><span class="pre">RealtimeEnvironment</span></tt></a> replaces <tt class="docutils literal"><span class="pre">SimulationRT</span></tt>. You always
+need to instantiate an environment. There&#8217;s no more global state.</p>
+<p>To execute a simulation, you call the environment&#8217;s
+<a class="reference internal" href="../api_reference/simpy.core.html#simpy.core.Environment.run" title="simpy.core.Environment.run"><tt class="xref py py-meth docutils literal"><span class="pre">run()</span></tt></a> method.</p>
+<p><strong>SimPy 2</strong></p>
+<div class="highlight-python"><div class="highlight"><pre><span class="c"># Procedural API</span>
+<span class="kn">from</span> <span class="nn">SimPy.Simulation</span> <span class="kn">import</span> <span class="n">initialize</span><span class="p">,</span> <span class="n">simulate</span>
+
+<span class="n">initialize</span><span class="p">()</span>
+<span class="c"># Start processes</span>
+<span class="n">simulate</span><span class="p">(</span><span class="n">until</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+</pre></div>
+</div>
+<div class="highlight-python"><div class="highlight"><pre><span class="c"># Object-oriented API</span>
+<span class="kn">from</span> <span class="nn">SimPy.Simulation</span> <span class="kn">import</span> <span class="n">Simulation</span>
+
+<span class="n">sim</span> <span class="o">=</span> <span class="n">Simulation</span><span class="p">()</span>
+<span class="c"># Start processes</span>
+<span class="n">sim</span><span class="o">.</span><span class="n">simulate</span><span class="p">(</span><span class="n">until</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+</pre></div>
+</div>
+<p><strong>SimPy3</strong></p>
+<div class="highlight-python"><div class="highlight"><pre><span class="kn">import</span> <span class="nn">simpy</span>
+
+<span class="n">env</span> <span class="o">=</span> <span class="n">simpy</span><span class="o">.</span><span class="n">Environment</span><span class="p">()</span>
+<span class="c"># Start processes</span>
+<span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">until</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="defining-a-process">
+<h2>Defining a Process<a class="headerlink" href="#defining-a-process" title="Permalink to this headline">¶</a></h2>
+<p>Processes had to inherit the <tt class="docutils literal"><span class="pre">Process</span></tt> base class in SimPy 2. Subclasses had
+to implement at least a so called <em>Process Execution Method (PEM)</em> (which is
+basically a generator function) and in most cases <tt class="docutils literal"><span class="pre">__init__()</span></tt>. Each process
+needed to know the <tt class="docutils literal"><span class="pre">Simulation</span></tt> instance it belonged to. This reference was
+passed implicitly in the procedural API and had to be passed explicitly in the
+object-oriented API. Apart from some internal problems, this made it quite
+cumbersome to define a simple process.</p>
+<p>Processes were started by passing the <tt class="docutils literal"><span class="pre">Process</span></tt> and a generator instance
+created by the generator function to either the global <tt class="docutils literal"><span class="pre">activate()</span></tt> function
+or the corresponding <tt class="docutils literal"><span class="pre">Simulation</span></tt> method.</p>
+<p>A process in SimPy 3 is a Python generator (no matter if it’s defined on module
+level or as an instance method) wrapped in a <a class="reference internal" href="../api_reference/simpy.events.html#simpy.events.Process" title="simpy.events.Process"><tt class="xref py py-class docutils literal"><span class="pre">Process</span></tt></a>
+instance. The generator usually requires a reference to a
+<a class="reference internal" href="../api_reference/simpy.core.html#simpy.core.Environment" title="simpy.core.Environment"><tt class="xref py py-class docutils literal"><span class="pre">Environment</span></tt></a> to interact with, but this is completely
+optional.</p>
+<p>Processes are can be started by creating a <a class="reference internal" href="../api_reference/simpy.events.html#simpy.events.Process" title="simpy.events.Process"><tt class="xref py py-class docutils literal"><span class="pre">Process</span></tt></a>
+instance and passing the generator to it. The environment provides a shortcut
+for this: <a class="reference internal" href="../api_reference/simpy.core.html#simpy.core.Environment.process" title="simpy.core.Environment.process"><tt class="xref py py-meth docutils literal"><span class="pre">process()</span></tt></a>.</p>
+<p><strong>SimPy 2</strong></p>
+<div class="highlight-python"><div class="highlight"><pre><span class="c"># Procedural API</span>
+<span class="kn">from</span> <span class="nn">Simpy.Simulation</span> <span class="kn">import</span> <span class="n">Process</span>
+
+<span class="k">class</span> <span class="nc">MyProcess</span><span class="p">(</span><span class="n">Process</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">another_param</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">another_param</span> <span class="o">=</span> <span class="n">another_param</span>
+
+    <span class="k">def</span> <span class="nf">generator_function</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Implement the process&#39; behavior.&quot;&quot;&quot;</span>
+        <span class="k">yield</span> <span class="n">something</span>
+
+<span class="n">initialize</span><span class="p">()</span>
+<span class="n">proc</span> <span class="o">=</span> <span class="n">Process</span><span class="p">(</span><span class="s">&#39;Spam&#39;</span><span class="p">)</span>
+<span class="n">activate</span><span class="p">(</span><span class="n">proc</span><span class="p">,</span> <span class="n">proc</span><span class="o">.</span><span class="n">generator_function</span><span class="p">())</span>
+</pre></div>
+</div>
+<div class="highlight-python"><div class="highlight"><pre><span class="c"># Object-oriented API</span>
+<span class="kn">from</span> <span class="nn">SimPy.Simulation</span> <span class="kn">import</span> <span class="n">Simulation</span><span class="p">,</span> <span class="n">Process</span>
+
+<span class="k">class</span> <span class="nc">MyProcess</span><span class="p">(</span><span class="n">Process</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sim</span><span class="p">,</span> <span class="n">another_param</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="n">sim</span><span class="o">=</span><span class="n">sim</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">another_param</span> <span class="o">=</span> <span class="n">another_param</span>
+
+    <span class="k">def</span> <span class="nf">generator_function</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Implement the process&#39; behaviour.&quot;&quot;&quot;</span>
+        <span class="k">yield</span> <span class="n">something</span>
+
+<span class="n">sim</span> <span class="o">=</span> <span class="n">Simulation</span><span class="p">()</span>
+<span class="n">proc</span> <span class="o">=</span> <span class="n">Process</span><span class="p">(</span><span class="n">sim</span><span class="p">,</span> <span class="s">&#39;Spam&#39;</span><span class="p">)</span>
+<span class="n">sim</span><span class="o">.</span><span class="n">activate</span><span class="p">(</span><span class="n">proc</span><span class="p">,</span> <span class="n">proc</span><span class="o">.</span><span class="n">generator_function</span><span class="p">())</span>
+</pre></div>
+</div>
+<p><strong>SimPy 3</strong></p>
+<div class="highlight-python"><div class="highlight"><pre><span class="kn">import</span> <span class="nn">simpy</span>
+
+<span class="k">def</span> <span class="nf">generator_function</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">another_param</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Implement the process&#39; behavior.&quot;&quot;&quot;</span>
+    <span class="k">yield</span> <span class="n">something</span>
+
+<span class="n">env</span> <span class="o">=</span> <span class="n">simpy</span><span class="o">.</span><span class="n">Environment</span><span class="p">()</span>
+<span class="n">proc</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">process</span><span class="p">(</span><span class="n">generator_function</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="s">&#39;Spam&#39;</span><span class="p">))</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="simpy-keywords-hold-etc">
+<h2>SimPy Keywords (<tt class="docutils literal"><span class="pre">hold</span></tt> etc.)<a class="headerlink" href="#simpy-keywords-hold-etc" title="Permalink to this headline">¶</a></h2>
+<p>In SimPy 2, processes created new events by yielding a <em>SimPy Keyword</em> and some
+additional parameters (at least <tt class="docutils literal"><span class="pre">self</span></tt>). These keywords had to be imported
+from <tt class="docutils literal"><span class="pre">SimPy.Simulation*</span></tt> if they were used. Internally, the keywords were
+mapped to a function that generated the according event.</p>
+<p>In SimPy 3, you directly yield <a class="reference internal" href="../api_reference/simpy.events.html#module-simpy.events" title="simpy.events"><tt class="xref py py-mod docutils literal"><span class="pre">events</span></tt></a> if you want to wait for an
+event to occur. You can instantiate an event directly or use the shortcuts
+provided by <a class="reference internal" href="../api_reference/simpy.core.html#simpy.core.Environment" title="simpy.core.Environment"><tt class="xref py py-class docutils literal"><span class="pre">Environment</span></tt></a>.</p>
+<p>Generally, whenever a process yields an event, the execution of the process is
+suspended and resumed once the event has been triggered. To motivate this
+understanding, some of the events were renamed. For example, the <tt class="docutils literal"><span class="pre">hold</span></tt>
+keyword meant to wait until some time has passed. In terms of events this means
+that a timeout has happened. Therefore <tt class="docutils literal"><span class="pre">hold</span></tt> has been replaced by a
+<a class="reference internal" href="../api_reference/simpy.events.html#simpy.events.Timeout" title="simpy.events.Timeout"><tt class="xref py py-class docutils literal"><span class="pre">Timeout</span></tt></a> event.</p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last"><a class="reference internal" href="../api_reference/simpy.events.html#simpy.events.Process" title="simpy.events.Process"><tt class="xref py py-class docutils literal"><span class="pre">Process</span></tt></a> is also an <a class="reference internal" href="../api_reference/simpy.events.html#simpy.events.Event" title="simpy.events.Event"><tt class="xref py py-class docutils literal"><span class="pre">Event</span></tt></a>. If
+you want to wait for a process to finish, simply yield it.</p>
+</div>
+<p><strong>SimPy 2</strong></p>
+<div class="highlight-python"><div class="highlight"><pre><span class="k">yield</span> <span class="n">hold</span><span class="p">,</span> <span class="bp">self</span><span class="p">,</span> <span class="n">duration</span>
+<span class="k">yield</span> <span class="n">passivate</span><span class="p">,</span> <span class="bp">self</span>
+<span class="k">yield</span> <span class="n">request</span><span class="p">,</span> <span class="bp">self</span><span class="p">,</span> <span class="n">resource</span>
+<span class="k">yield</span> <span class="n">release</span><span class="p">,</span> <span class="bp">self</span><span class="p">,</span> <span class="n">resource</span>
+<span class="k">yield</span> <span class="n">waitevent</span><span class="p">,</span> <span class="bp">self</span><span class="p">,</span> <span class="n">event</span>
+<span class="k">yield</span> <span class="n">waitevent</span><span class="p">,</span> <span class="bp">self</span><span class="p">,</span> <span class="p">[</span><span class="n">event_a</span><span class="p">,</span> <span class="n">event_b</span><span class="p">,</span> <span class="n">event_c</span><span class="p">]</span>
+<span class="k">yield</span> <span class="n">queueevent</span><span class="p">,</span> <span class="bp">self</span><span class="p">,</span> <span class="n">event_list</span>
+<span class="k">yield</span> <span class="n">get</span><span class="p">,</span> <span class="bp">self</span><span class="p">,</span> <span class="n">level</span><span class="p">,</span> <span class="n">amount</span>
+<span class="k">yield</span> <span class="n">put</span><span class="p">,</span> <span class="bp">self</span><span class="p">,</span> <span class="n">level</span><span class="p">,</span> <span class="n">amount</span>
+</pre></div>
+</div>
+<p><strong>SimPy 3</strong></p>
+<div class="highlight-python"><div class="highlight"><pre><span class="k">yield</span> <span class="n">env</span><span class="o">.</span><span class="n">timeout</span><span class="p">(</span><span class="n">duration</span><span class="p">)</span>        <span class="c"># hold: renamed</span>
+<span class="k">yield</span> <span class="n">env</span><span class="o">.</span><span class="n">event</span><span class="p">()</span>                  <span class="c"># passivate: renamed</span>
+<span class="k">yield</span> <span class="n">resource</span><span class="o">.</span><span class="n">request</span><span class="p">()</span>           <span class="c"># Request is now bound to class Resource</span>
+<span class="n">resource</span><span class="o">.</span><span class="n">release</span><span class="p">()</span>                 <span class="c"># Release no longer needs to be yielded</span>
+<span class="k">yield</span> <span class="n">event</span>                        <span class="c"># waitevent: just yield the event</span>
+<span class="k">yield</span> <span class="n">env</span><span class="o">.</span><span class="n">all_of</span><span class="p">([</span><span class="n">event_a</span><span class="p">,</span> <span class="n">event_b</span><span class="p">,</span> <span class="n">event_c</span><span class="p">])</span>  <span class="c"># waitvent</span>
+<span class="k">yield</span> <span class="n">env</span><span class="o">.</span><span class="n">any_of</span><span class="p">([</span><span class="n">event_a</span><span class="p">,</span> <span class="n">event_b</span><span class="p">,</span> <span class="n">event_c</span><span class="p">])</span>  <span class="c"># queuevent</span>
+<span class="k">yield</span> <span class="n">container</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">amount</span><span class="p">)</span>        <span class="c"># Level is now called Container</span>
+<span class="k">yield</span> <span class="n">container</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">amount</span><span class="p">)</span>
+
+<span class="k">yield</span> <span class="n">event_a</span> <span class="o">|</span> <span class="n">event_b</span>            <span class="c"># Wait for either a or b. This is new.</span>
+<span class="k">yield</span> <span class="n">event_a</span> <span class="o">&amp;</span> <span class="n">event_b</span>            <span class="c"># Wait for a and b. This is new.</span>
+<span class="k">yield</span> <span class="n">env</span><span class="o">.</span><span class="n">process</span><span class="p">(</span><span class="n">calculation</span><span class="p">(</span><span class="n">env</span><span class="p">))</span>  <span class="c"># Wait for the process calculation to</span>
+                                     <span class="c"># to finish.</span>
+</pre></div>
+</div>
+<div class="section" id="partially-supported-features">
+<h3>Partially supported features<a class="headerlink" href="#partially-supported-features" title="Permalink to this headline">¶</a></h3>
+<p>The following <tt class="docutils literal"><span class="pre">waituntil</span></tt> keyword is not completely supported anymore:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="k">yield</span> <span class="n">waituntil</span><span class="p">,</span> <span class="bp">self</span><span class="p">,</span> <span class="n">cond_func</span>
+</pre></div>
+</div>
+<p>SimPy 2 was evaluating <tt class="docutils literal"><span class="pre">cond_func</span></tt> after <em>every</em> event, which was
+computationally very expensive. One possible workaround is for example the
+following process, which evaluates <tt class="docutils literal"><span class="pre">cond_func</span></tt> periodically:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="k">def</span> <span class="nf">waituntil</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">cond_func</span><span class="p">,</span> <span class="n">delay</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
+    <span class="k">while</span> <span class="ow">not</span> <span class="n">cond_func</span><span class="p">():</span>
+        <span class="k">yield</span> <span class="n">env</span><span class="o">.</span><span class="n">timeout</span><span class="p">(</span><span class="n">delay</span><span class="p">)</span>
+
+<span class="c"># Usage:</span>
+<span class="k">yield</span> <span class="n">waituntil</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">cond_func</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="interrupts">
+<h2>Interrupts<a class="headerlink" href="#interrupts" title="Permalink to this headline">¶</a></h2>
+<p>In SimPy 2, <tt class="docutils literal"><span class="pre">interrupt()</span></tt> was a method of the interrupting process. The
+victim of the interrupt had to be passed as an argument.</p>
+<p>The victim was not directly notified of the interrupt but had to check if the
+<tt class="docutils literal"><span class="pre">interrupted</span></tt> flag was set. Afterwards, it had to reset the interrupt via
+<tt class="docutils literal"><span class="pre">interruptReset()</span></tt>. You could manually set the <tt class="docutils literal"><span class="pre">interruptCause</span></tt> attribute
+of the victim.</p>
+<p>Explicitly checking for an interrupt is obviously error prone as it is too easy
+to be forgotten.</p>
+<p>In SimPy 3, you call <a class="reference internal" href="../api_reference/simpy.events.html#simpy.events.Process.interrupt" title="simpy.events.Process.interrupt"><tt class="xref py py-meth docutils literal"><span class="pre">interrupt()</span></tt></a> on the victim
+process. You can optionally supply a cause. An <a class="reference internal" href="../api_reference/simpy.events.html#simpy.events.Interrupt" title="simpy.events.Interrupt"><tt class="xref py py-exc docutils literal"><span class="pre">Interrupt</span></tt></a>
+is then thrown into the victim process, which has to handle the interrupt via
+<tt class="docutils literal"><span class="pre">try:</span> <span class="pre">...</span> <span class="pre">except</span> <span class="pre">Interrupt:</span> <span class="pre">...</span></tt>.</p>
+<p><strong>SimPy 2</strong></p>
+<div class="highlight-python"><div class="highlight"><pre><span class="k">class</span> <span class="nc">Interrupter</span><span class="p">(</span><span class="n">Process</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">victim</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">victim</span> <span class="o">=</span> <span class="n">victim</span>
+
+    <span class="k">def</span> <span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">yield</span> <span class="n">hold</span><span class="p">,</span> <span class="bp">self</span><span class="p">,</span> <span class="mi">1</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">interrupt</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">victim_proc</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">victim_proc</span><span class="o">.</span><span class="n">interruptCause</span> <span class="o">=</span> <span class="s">&#39;Spam&#39;</span>
+
+<span class="k">class</span> <span class="nc">Victim</span><span class="p">(</span><span class="n">Process</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">yield</span> <span class="n">hold</span><span class="p">,</span> <span class="bp">self</span><span class="p">,</span> <span class="mi">10</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">interrupted</span><span class="p">:</span>
+            <span class="n">cause</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">interruptCause</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">interruptReset</span><span class="p">()</span>
+</pre></div>
+</div>
+<p><strong>SimPy 3</strong></p>
+<div class="highlight-python"><div class="highlight"><pre><span class="k">def</span> <span class="nf">interrupter</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">victim_proc</span><span class="p">):</span>
+    <span class="k">yield</span> <span class="n">env</span><span class="o">.</span><span class="n">timeout</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">victim_proc</span><span class="o">.</span><span class="n">interrupt</span><span class="p">(</span><span class="s">&#39;Spam&#39;</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">victim</span><span class="p">(</span><span class="n">env</span><span class="p">):</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">yield</span> <span class="n">env</span><span class="o">.</span><span class="n">timeout</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
+    <span class="k">except</span> <span class="n">Interrupt</span> <span class="k">as</span> <span class="n">interrupt</span><span class="p">:</span>
+        <span class="n">cause</span> <span class="o">=</span> <span class="n">interrupt</span><span class="o">.</span><span class="n">cause</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="conclusion">
+<h2>Conclusion<a class="headerlink" href="#conclusion" title="Permalink to this headline">¶</a></h2>
+<p>This guide is by no means complete. If you run into problems, please have
+a look at the other <a class="reference internal" href="index.html"><em>guides</em></a>, the <a class="reference internal" href="../examples/index.html"><em>examples</em></a> or the <a class="reference internal" href="../api_reference/index.html"><em>API Reference</em></a>. You are also very
+welcome to submit improvements. Just create a pull request at <a class="reference external" href="https://bitbucket.org/simpy/simpy/">bitbucket</a>.</p>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+            <p class="logo"><a href="../contents.html">
+              <img class="logo" src="../_static/simpy-logo-small.png" alt="Logo"/>
+            </a></p>
+  <h3><a href="../contents.html">Table Of Contents</a></h3>
+  <ul>
+<li><a class="reference internal" href="#">Porting from SimPy 2 to 3</a><ul>
+<li><a class="reference internal" href="#imports">Imports</a></li>
+<li><a class="reference internal" href="#the-simulation-classes">The <tt class="docutils literal"><span class="pre">Simulation*</span></tt> classes</a></li>
+<li><a class="reference internal" href="#defining-a-process">Defining a Process</a></li>
+<li><a class="reference internal" href="#simpy-keywords-hold-etc">SimPy Keywords (<tt class="docutils literal"><span class="pre">hold</span></tt> etc.)</a><ul>
+<li><a class="reference internal" href="#partially-supported-features">Partially supported features</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#interrupts">Interrupts</a></li>
+<li><a class="reference internal" href="#conclusion">Conclusion</a></li>
+</ul>
+</li>
+</ul>
+
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="real-time-simulations.html"
+                        title="previous chapter">Real-time simulations</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="../examples/index.html"
+                        title="next chapter">Examples</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="../_sources/topical_guides/porting_from_simpy2.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="../examples/index.html" title="Examples"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="real-time-simulations.html" title="Real-time simulations"
+             >previous</a> |</li>
+        <li><a href="../contents.html">SimPy 3.0.6 documentation</a> &raquo;</li>
+          <li><a href="index.html" >Topical Guides</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2002–2015, Team SimPy.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

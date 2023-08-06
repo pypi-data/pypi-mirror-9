@@ -1,0 +1,305 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>Process Interaction &mdash; SimPy 3.0.6 documentation</title>
+    
+    <link rel="stylesheet" href="../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../',
+        VERSION:     '3.0.6',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../_static/jquery.js"></script>
+    <script type="text/javascript" src="../_static/underscore.js"></script>
+    <script type="text/javascript" src="../_static/doctools.js"></script>
+    <link rel="shortcut icon" href="../_static/favicon.ico"/>
+    <link rel="top" title="SimPy 3.0.6 documentation" href="../index.html" />
+    <link rel="up" title="Topical Guides" href="index.html" />
+    <link rel="next" title="Shared Resources" href="resources.html" />
+    <link rel="prev" title="Events" href="events.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="resources.html" title="Shared Resources"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="events.html" title="Events"
+             accesskey="P">previous</a> |</li>
+        <li><a href="../contents.html">SimPy 3.0.6 documentation</a> &raquo;</li>
+          <li><a href="index.html" accesskey="U">Topical Guides</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="process-interaction">
+<h1>Process Interaction<a class="headerlink" href="#process-interaction" title="Permalink to this headline">¶</a></h1>
+<p>Discrete event simulation is only made interesting by interactions between
+processes.</p>
+<p>So this guide is about:</p>
+<ul class="simple">
+<li><a class="reference internal" href="#sleep-until-woken-up"><em>Sleep until woken up</em></a> (passivate/reactivate)</li>
+<li><a class="reference internal" href="#waiting-for-another-process-to-terminate"><em>Waiting for another process to terminate</em></a></li>
+<li><a class="reference internal" href="#interrupting-another-process"><em>Interrupting another process</em></a></li>
+</ul>
+<p>The first two items were already covered in the <a class="reference internal" href="events.html"><em>Events</em></a> guide, but we&#8217;ll
+also include them here for the sake of completeness.</p>
+<p>Another possibility for processes to interact are resources. They are discussed
+in a <a class="reference internal" href="resources.html"><em>separate guide</em></a>.</p>
+<div class="section" id="sleep-until-woken-up">
+<span id="id1"></span><h2>Sleep until woken up<a class="headerlink" href="#sleep-until-woken-up" title="Permalink to this headline">¶</a></h2>
+<p>Imagine you want to model an electric vehicle with an intelligent
+battery-charging controller. While the vehicle is driving, the controller can
+be passive but needs to be reactivate once the vehicle is connected to the
+power grid in order to charge the battery.</p>
+<p>In SimPy 2, this pattern was known as <em>passivate / reactivate</em>. In SimPy 3,
+you can accomplish that with a simple, shared <a class="reference internal" href="../api_reference/simpy.events.html#simpy.events.Event" title="simpy.events.Event"><tt class="xref py py-class docutils literal"><span class="pre">Event</span></tt></a>:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span> <span class="nn">random</span> <span class="kn">import</span> <span class="n">seed</span><span class="p">,</span> <span class="n">randint</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">seed</span><span class="p">(</span><span class="mi">23</span><span class="p">)</span>
+<span class="go">&gt;&gt;&gt;</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="kn">import</span> <span class="nn">simpy</span>
+<span class="go">&gt;&gt;&gt;</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">class</span> <span class="nc">EV</span><span class="p">:</span>
+<span class="gp">... </span>    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env</span><span class="p">):</span>
+<span class="gp">... </span>        <span class="bp">self</span><span class="o">.</span><span class="n">env</span> <span class="o">=</span> <span class="n">env</span>
+<span class="gp">... </span>        <span class="bp">self</span><span class="o">.</span><span class="n">drive_proc</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">process</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">drive</span><span class="p">(</span><span class="n">env</span><span class="p">))</span>
+<span class="gp">... </span>        <span class="bp">self</span><span class="o">.</span><span class="n">bat_ctrl_proc</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">process</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">bat_ctrl</span><span class="p">(</span><span class="n">env</span><span class="p">))</span>
+<span class="gp">... </span>        <span class="bp">self</span><span class="o">.</span><span class="n">bat_ctrl_reactivate</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">event</span><span class="p">()</span>
+<span class="gp">...</span>
+<span class="gp">... </span>    <span class="k">def</span> <span class="nf">drive</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env</span><span class="p">):</span>
+<span class="gp">... </span>        <span class="k">while</span> <span class="bp">True</span><span class="p">:</span>
+<span class="gp">... </span>            <span class="c"># Drive for 20-40 min</span>
+<span class="gp">... </span>            <span class="k">yield</span> <span class="n">env</span><span class="o">.</span><span class="n">timeout</span><span class="p">(</span><span class="n">randint</span><span class="p">(</span><span class="mi">20</span><span class="p">,</span> <span class="mi">40</span><span class="p">))</span>
+<span class="gp">...</span>
+<span class="gp">... </span>            <span class="c"># Park for 1–6 hours</span>
+<span class="gp">... </span>            <span class="k">print</span><span class="p">(</span><span class="s">&#39;Start parking at&#39;</span><span class="p">,</span> <span class="n">env</span><span class="o">.</span><span class="n">now</span><span class="p">)</span>
+<span class="gp">... </span>            <span class="bp">self</span><span class="o">.</span><span class="n">bat_ctrl_reactivate</span><span class="o">.</span><span class="n">succeed</span><span class="p">()</span>  <span class="c"># &quot;reactivate&quot;</span>
+<span class="gp">... </span>            <span class="bp">self</span><span class="o">.</span><span class="n">bat_ctrl_reactivate</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">event</span><span class="p">()</span>
+<span class="gp">... </span>            <span class="k">yield</span> <span class="n">env</span><span class="o">.</span><span class="n">timeout</span><span class="p">(</span><span class="n">randint</span><span class="p">(</span><span class="mi">60</span><span class="p">,</span> <span class="mi">360</span><span class="p">))</span>
+<span class="gp">... </span>            <span class="k">print</span><span class="p">(</span><span class="s">&#39;Stop parking at&#39;</span><span class="p">,</span> <span class="n">env</span><span class="o">.</span><span class="n">now</span><span class="p">)</span>
+<span class="gp">...</span>
+<span class="gp">... </span>    <span class="k">def</span> <span class="nf">bat_ctrl</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env</span><span class="p">):</span>
+<span class="gp">... </span>        <span class="k">while</span> <span class="bp">True</span><span class="p">:</span>
+<span class="gp">... </span>            <span class="k">print</span><span class="p">(</span><span class="s">&#39;Bat. ctrl. passivating at&#39;</span><span class="p">,</span> <span class="n">env</span><span class="o">.</span><span class="n">now</span><span class="p">)</span>
+<span class="gp">... </span>            <span class="k">yield</span> <span class="bp">self</span><span class="o">.</span><span class="n">bat_ctrl_reactivate</span>  <span class="c"># &quot;passivate&quot;</span>
+<span class="gp">... </span>            <span class="k">print</span><span class="p">(</span><span class="s">&#39;Bat. ctrl. reactivated at&#39;</span><span class="p">,</span> <span class="n">env</span><span class="o">.</span><span class="n">now</span><span class="p">)</span>
+<span class="gp">...</span>
+<span class="gp">... </span>            <span class="c"># Intelligent charging behavior here …</span>
+<span class="gp">... </span>            <span class="k">yield</span> <span class="n">env</span><span class="o">.</span><span class="n">timeout</span><span class="p">(</span><span class="n">randint</span><span class="p">(</span><span class="mi">30</span><span class="p">,</span> <span class="mi">90</span><span class="p">))</span>
+<span class="gp">...</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">env</span> <span class="o">=</span> <span class="n">simpy</span><span class="o">.</span><span class="n">Environment</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">ev</span> <span class="o">=</span> <span class="n">EV</span><span class="p">(</span><span class="n">env</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">until</span><span class="o">=</span><span class="mi">150</span><span class="p">)</span>
+<span class="go">Bat. ctrl. passivating at 0</span>
+<span class="go">Start parking at 29</span>
+<span class="go">Bat. ctrl. reactivated at 29</span>
+<span class="go">Bat. ctrl. passivating at 60</span>
+<span class="go">Stop parking at 131</span>
+</pre></div>
+</div>
+<p>Since <tt class="docutils literal"><span class="pre">bat_ctrl()</span></tt> just waits for a normal event, we no longer call this
+pattern <em>passivate / reactivate</em> in SimPy 3.</p>
+</div>
+<div class="section" id="waiting-for-another-process-to-terminate">
+<span id="id2"></span><h2>Waiting for another process to terminate<a class="headerlink" href="#waiting-for-another-process-to-terminate" title="Permalink to this headline">¶</a></h2>
+<p>The example above has a problem: it may happen that the vehicles wants to park
+for a shorter duration than it takes to charge the battery (this is the case if
+both, charging and parking would take 60 to 90 minutes).</p>
+<p>To fix this problem we have to slightly change our model. A new <tt class="docutils literal"><span class="pre">bat_ctrl()</span></tt>
+will be started every time the EV starts parking. The EV then waits until the
+parking duration is over <em>and</em> until the charging has stopped:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="k">class</span> <span class="nc">EV</span><span class="p">:</span>
+<span class="gp">... </span>    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env</span><span class="p">):</span>
+<span class="gp">... </span>        <span class="bp">self</span><span class="o">.</span><span class="n">env</span> <span class="o">=</span> <span class="n">env</span>
+<span class="gp">... </span>        <span class="bp">self</span><span class="o">.</span><span class="n">drive_proc</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">process</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">drive</span><span class="p">(</span><span class="n">env</span><span class="p">))</span>
+<span class="gp">...</span>
+<span class="gp">... </span>    <span class="k">def</span> <span class="nf">drive</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env</span><span class="p">):</span>
+<span class="gp">... </span>        <span class="k">while</span> <span class="bp">True</span><span class="p">:</span>
+<span class="gp">... </span>            <span class="c"># Drive for 20-40 min</span>
+<span class="gp">... </span>            <span class="k">yield</span> <span class="n">env</span><span class="o">.</span><span class="n">timeout</span><span class="p">(</span><span class="n">randint</span><span class="p">(</span><span class="mi">20</span><span class="p">,</span> <span class="mi">40</span><span class="p">))</span>
+<span class="gp">...</span>
+<span class="gp">... </span>            <span class="c"># Park for 1–6 hours</span>
+<span class="gp">... </span>            <span class="k">print</span><span class="p">(</span><span class="s">&#39;Start parking at&#39;</span><span class="p">,</span> <span class="n">env</span><span class="o">.</span><span class="n">now</span><span class="p">)</span>
+<span class="gp">... </span>            <span class="n">charging</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">process</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">bat_ctrl</span><span class="p">(</span><span class="n">env</span><span class="p">))</span>
+<span class="gp">... </span>            <span class="n">parking</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">timeout</span><span class="p">(</span><span class="n">randint</span><span class="p">(</span><span class="mi">60</span><span class="p">,</span> <span class="mi">360</span><span class="p">))</span>
+<span class="gp">... </span>            <span class="k">yield</span> <span class="n">charging</span> <span class="o">&amp;</span> <span class="n">parking</span>
+<span class="gp">... </span>            <span class="k">print</span><span class="p">(</span><span class="s">&#39;Stop parking at&#39;</span><span class="p">,</span> <span class="n">env</span><span class="o">.</span><span class="n">now</span><span class="p">)</span>
+<span class="gp">...</span>
+<span class="gp">... </span>    <span class="k">def</span> <span class="nf">bat_ctrl</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env</span><span class="p">):</span>
+<span class="gp">... </span>        <span class="k">print</span><span class="p">(</span><span class="s">&#39;Bat. ctrl. started at&#39;</span><span class="p">,</span> <span class="n">env</span><span class="o">.</span><span class="n">now</span><span class="p">)</span>
+<span class="gp">... </span>        <span class="c"># Intelligent charging behavior here …</span>
+<span class="gp">... </span>        <span class="k">yield</span> <span class="n">env</span><span class="o">.</span><span class="n">timeout</span><span class="p">(</span><span class="n">randint</span><span class="p">(</span><span class="mi">30</span><span class="p">,</span> <span class="mi">90</span><span class="p">))</span>
+<span class="gp">... </span>        <span class="k">print</span><span class="p">(</span><span class="s">&#39;Bat. ctrl. done at&#39;</span><span class="p">,</span> <span class="n">env</span><span class="o">.</span><span class="n">now</span><span class="p">)</span>
+<span class="gp">...</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">env</span> <span class="o">=</span> <span class="n">simpy</span><span class="o">.</span><span class="n">Environment</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">ev</span> <span class="o">=</span> <span class="n">EV</span><span class="p">(</span><span class="n">env</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">until</span><span class="o">=</span><span class="mi">310</span><span class="p">)</span>
+<span class="go">Start parking at 29</span>
+<span class="go">Bat. ctrl. started at 29</span>
+<span class="go">Bat. ctrl. done at 83</span>
+<span class="go">Stop parking at 305</span>
+</pre></div>
+</div>
+<p>Again, nothing new (if you&#8217;ve read the <a class="reference internal" href="events.html"><em>Events</em></a> guide) and special is
+happening. SimPy processes are events, too, so you can yield them and will thus
+wait for them to get triggered. You can also wait for two events at the same
+time by concatenating them with <tt class="docutils literal"><span class="pre">&amp;</span></tt> (see
+<a class="reference internal" href="events.html#waiting-for-multiple-events-at-once"><em>Waiting for multiple events at once</em></a>).</p>
+</div>
+<div class="section" id="interrupting-another-process">
+<span id="id3"></span><h2>Interrupting another process<a class="headerlink" href="#interrupting-another-process" title="Permalink to this headline">¶</a></h2>
+<p>As usual, we now have another problem: Imagine, a trip is very urgent, but with
+the current implementation, we always need to wait until the battery is fully
+charged. If we could somehow interrupt that ...</p>
+<p>Fortunate coincidence, there is indeed a way to do exactly this. You can call
+<tt class="docutils literal"><span class="pre">interrupt()</span></tt> on a <a class="reference internal" href="../api_reference/simpy.events.html#simpy.events.Process" title="simpy.events.Process"><tt class="xref py py-class docutils literal"><span class="pre">Process</span></tt></a>. This will throw an
+<a class="reference internal" href="../api_reference/simpy.events.html#simpy.events.Interrupt" title="simpy.events.Interrupt"><tt class="xref py py-class docutils literal"><span class="pre">Interrupt</span></tt></a> exception into that process, resuming it
+immediately:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="k">class</span> <span class="nc">EV</span><span class="p">:</span>
+<span class="gp">... </span>    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env</span><span class="p">):</span>
+<span class="gp">... </span>        <span class="bp">self</span><span class="o">.</span><span class="n">env</span> <span class="o">=</span> <span class="n">env</span>
+<span class="gp">... </span>        <span class="bp">self</span><span class="o">.</span><span class="n">drive_proc</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">process</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">drive</span><span class="p">(</span><span class="n">env</span><span class="p">))</span>
+<span class="gp">...</span>
+<span class="gp">... </span>    <span class="k">def</span> <span class="nf">drive</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env</span><span class="p">):</span>
+<span class="gp">... </span>        <span class="k">while</span> <span class="bp">True</span><span class="p">:</span>
+<span class="gp">... </span>            <span class="c"># Drive for 20-40 min</span>
+<span class="gp">... </span>            <span class="k">yield</span> <span class="n">env</span><span class="o">.</span><span class="n">timeout</span><span class="p">(</span><span class="n">randint</span><span class="p">(</span><span class="mi">20</span><span class="p">,</span> <span class="mi">40</span><span class="p">))</span>
+<span class="gp">...</span>
+<span class="gp">... </span>            <span class="c"># Park for 1 hour</span>
+<span class="gp">... </span>            <span class="k">print</span><span class="p">(</span><span class="s">&#39;Start parking at&#39;</span><span class="p">,</span> <span class="n">env</span><span class="o">.</span><span class="n">now</span><span class="p">)</span>
+<span class="gp">... </span>            <span class="n">charging</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">process</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">bat_ctrl</span><span class="p">(</span><span class="n">env</span><span class="p">))</span>
+<span class="gp">... </span>            <span class="n">parking</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">timeout</span><span class="p">(</span><span class="mi">60</span><span class="p">)</span>
+<span class="gp">... </span>            <span class="k">yield</span> <span class="n">charging</span> <span class="o">|</span> <span class="n">parking</span>
+<span class="gp">... </span>            <span class="k">if</span> <span class="ow">not</span> <span class="n">charging</span><span class="o">.</span><span class="n">triggered</span><span class="p">:</span>
+<span class="gp">... </span>                <span class="c"># Interrupt charging if not already done.</span>
+<span class="gp">... </span>                <span class="n">charging</span><span class="o">.</span><span class="n">interrupt</span><span class="p">(</span><span class="s">&#39;Need to go!&#39;</span><span class="p">)</span>
+<span class="gp">... </span>            <span class="k">print</span><span class="p">(</span><span class="s">&#39;Stop parking at&#39;</span><span class="p">,</span> <span class="n">env</span><span class="o">.</span><span class="n">now</span><span class="p">)</span>
+<span class="gp">...</span>
+<span class="gp">... </span>    <span class="k">def</span> <span class="nf">bat_ctrl</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env</span><span class="p">):</span>
+<span class="gp">... </span>        <span class="k">print</span><span class="p">(</span><span class="s">&#39;Bat. ctrl. started at&#39;</span><span class="p">,</span> <span class="n">env</span><span class="o">.</span><span class="n">now</span><span class="p">)</span>
+<span class="gp">... </span>        <span class="k">try</span><span class="p">:</span>
+<span class="gp">... </span>            <span class="k">yield</span> <span class="n">env</span><span class="o">.</span><span class="n">timeout</span><span class="p">(</span><span class="n">randint</span><span class="p">(</span><span class="mi">60</span><span class="p">,</span> <span class="mi">90</span><span class="p">))</span>
+<span class="gp">... </span>            <span class="k">print</span><span class="p">(</span><span class="s">&#39;Bat. ctrl. done at&#39;</span><span class="p">,</span> <span class="n">env</span><span class="o">.</span><span class="n">now</span><span class="p">)</span>
+<span class="gp">... </span>        <span class="k">except</span> <span class="n">simpy</span><span class="o">.</span><span class="n">Interrupt</span> <span class="k">as</span> <span class="n">i</span><span class="p">:</span>
+<span class="gp">... </span>            <span class="c"># Onoes! Got interrupted before the charging was done.</span>
+<span class="gp">... </span>            <span class="k">print</span><span class="p">(</span><span class="s">&#39;Bat. ctrl. interrupted at&#39;</span><span class="p">,</span> <span class="n">env</span><span class="o">.</span><span class="n">now</span><span class="p">,</span> <span class="s">&#39;msg:&#39;</span><span class="p">,</span>
+<span class="gp">... </span>                  <span class="n">i</span><span class="o">.</span><span class="n">cause</span><span class="p">)</span>
+<span class="gp">...</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">env</span> <span class="o">=</span> <span class="n">simpy</span><span class="o">.</span><span class="n">Environment</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">ev</span> <span class="o">=</span> <span class="n">EV</span><span class="p">(</span><span class="n">env</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">until</span><span class="o">=</span><span class="mi">100</span><span class="p">)</span>
+<span class="go">Start parking at 31</span>
+<span class="go">Bat. ctrl. started at 31</span>
+<span class="go">Stop parking at 91</span>
+<span class="go">Bat. ctrl. interrupted at 91 msg: Need to go!</span>
+</pre></div>
+</div>
+<p>What <tt class="docutils literal"><span class="pre">process.interrupt()</span></tt> actually does is scheduling an
+<a class="reference internal" href="../api_reference/simpy.events.html#simpy.events.Interruption" title="simpy.events.Interruption"><tt class="xref py py-class docutils literal"><span class="pre">Interruption</span></tt></a> event for immediate execution. If this
+event is executed it will remove the victim process&#8217; <tt class="docutils literal"><span class="pre">_resume()</span></tt> method from
+the callbacks of the event that it is currently waiting for (see
+<a class="reference internal" href="../api_reference/simpy.events.html#simpy.events.Process.target" title="simpy.events.Process.target"><tt class="xref py py-attr docutils literal"><span class="pre">target</span></tt></a>). Following that it will throw the
+<tt class="docutils literal"><span class="pre">Interrupt</span></tt> exception into the process.</p>
+<p>Since we don&#8217;t to anything special to the original target event of the process,
+the interrupted process can yield the same event again after catching the
+<tt class="docutils literal"><span class="pre">Interrupt</span></tt> – Imagine someone waiting for a shop to open. The person may get
+interrupted by a phone call.  After finishing the call, he or she checks if the
+shop already opened and either enters or continues to wait.</p>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+            <p class="logo"><a href="../contents.html">
+              <img class="logo" src="../_static/simpy-logo-small.png" alt="Logo"/>
+            </a></p>
+  <h3><a href="../contents.html">Table Of Contents</a></h3>
+  <ul>
+<li><a class="reference internal" href="#">Process Interaction</a><ul>
+<li><a class="reference internal" href="#sleep-until-woken-up">Sleep until woken up</a></li>
+<li><a class="reference internal" href="#waiting-for-another-process-to-terminate">Waiting for another process to terminate</a></li>
+<li><a class="reference internal" href="#interrupting-another-process">Interrupting another process</a></li>
+</ul>
+</li>
+</ul>
+
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="events.html"
+                        title="previous chapter">Events</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="resources.html"
+                        title="next chapter">Shared Resources</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="../_sources/topical_guides/process_interaction.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="resources.html" title="Shared Resources"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="events.html" title="Events"
+             >previous</a> |</li>
+        <li><a href="../contents.html">SimPy 3.0.6 documentation</a> &raquo;</li>
+          <li><a href="index.html" >Topical Guides</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2002–2015, Team SimPy.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

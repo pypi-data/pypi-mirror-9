@@ -1,0 +1,695 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>simpy.resources — Shared resource primitives &mdash; SimPy 3.0.6 documentation</title>
+    
+    <link rel="stylesheet" href="../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../',
+        VERSION:     '3.0.6',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../_static/jquery.js"></script>
+    <script type="text/javascript" src="../_static/underscore.js"></script>
+    <script type="text/javascript" src="../_static/doctools.js"></script>
+    <link rel="shortcut icon" href="../_static/favicon.ico"/>
+    <link rel="top" title="SimPy 3.0.6 documentation" href="../index.html" />
+    <link rel="up" title="API Reference" href="index.html" />
+    <link rel="next" title="simpy.rt — Real-time simulation" href="simpy.rt.html" />
+    <link rel="prev" title="simpy.events — Core event types" href="simpy.events.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="simpy.rt.html" title="simpy.rt — Real-time simulation"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="simpy.events.html" title="simpy.events — Core event types"
+             accesskey="P">previous</a> |</li>
+        <li><a href="../contents.html">SimPy 3.0.6 documentation</a> &raquo;</li>
+          <li><a href="index.html" accesskey="U">API Reference</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="module-simpy.resources">
+<span id="simpy-resources-shared-resource-primitives"></span><h1><tt class="docutils literal"><span class="pre">simpy.resources</span></tt> &#8212; Shared resource primitives<a class="headerlink" href="#module-simpy.resources" title="Permalink to this headline">¶</a></h1>
+<p>SimPy implements three types of resources that can be used to synchronize
+processes or to model congestion points:</p>
+<table border="1" class="longtable docutils">
+<colgroup>
+<col width="10%" />
+<col width="90%" />
+</colgroup>
+<tbody valign="top">
+<tr class="row-odd"><td><a class="reference internal" href="#module-simpy.resources.resource" title="simpy.resources.resource"><tt class="xref py py-obj docutils literal"><span class="pre">simpy.resources.resource</span></tt></a></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><a class="reference internal" href="#module-simpy.resources.container" title="simpy.resources.container"><tt class="xref py py-obj docutils literal"><span class="pre">simpy.resources.container</span></tt></a></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><a class="reference internal" href="#module-simpy.resources.store" title="simpy.resources.store"><tt class="xref py py-obj docutils literal"><span class="pre">simpy.resources.store</span></tt></a></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>They are derived from the base classes defined in the
+<a class="reference internal" href="#module-simpy.resources.base" title="simpy.resources.base"><tt class="xref py py-mod docutils literal"><span class="pre">base</span></tt></a> module. These classes are also meant to support
+the implementation of custom resource types.</p>
+<div class="section" id="module-simpy.resources.resource">
+<span id="resources-simpy-resources-resource"></span><h2>Resources &#8212; <tt class="docutils literal"><span class="pre">simpy.resources.resource</span></tt><a class="headerlink" href="#module-simpy.resources.resource" title="Permalink to this headline">¶</a></h2>
+<p>Shared resources supporting priorities and preemption.</p>
+<p>These resources can be used to limit the number of processes using them
+concurrently. A process needs to <em>request</em> the usage right to a resource. Once
+the usage right is not needed anymore it has to be <em>released</em>. A gas station
+can be modelled as a resource with a limited amount of fuel-pumps. Vehicles
+arrive at the gas station and request to use a fuel-pump. If all fuel-pumps are
+in use, the vehicle needs to wait until one of the users has finished refueling
+and releases its fuel-pump.</p>
+<p>These resources can be used by a limited number of processes at a time.
+Processes <em>request</em> these resources to become a user and have to <em>release</em> them
+once they are done. For example, a gas station with a limited number of fuel
+pumps can be modeled with a <cite>Resource</cite>. Arriving vehicles request a fuel-pump.
+Once one is available they refuel. When they are done, the release the
+fuel-pump and leave the gas station.</p>
+<p>Requesting a resource is modelled as &#8220;putting a process&#8217; token into the
+resources&#8221; and releasing a resources correspondingly as &#8220;getting a process&#8217;
+token out of the resource&#8221;. Thus, calling <tt class="docutils literal"><span class="pre">request()</span></tt>/<tt class="docutils literal"><span class="pre">release()</span></tt> is
+equivalent to calling <tt class="docutils literal"><span class="pre">put()</span></tt>/<tt class="docutils literal"><span class="pre">get()</span></tt>. Note, that releasing a resource will
+always succeed immediately, no matter if a process is actually using a resource
+or not.</p>
+<p>Besides <a class="reference internal" href="#simpy.resources.resource.Resource" title="simpy.resources.resource.Resource"><tt class="xref py py-class docutils literal"><span class="pre">Resource</span></tt></a>, there is a <a class="reference internal" href="#simpy.resources.resource.PriorityResource" title="simpy.resources.resource.PriorityResource"><tt class="xref py py-class docutils literal"><span class="pre">PriorityResource</span></tt></a>, where
+processes can define a request priority, and a <a class="reference internal" href="#simpy.resources.resource.PreemptiveResource" title="simpy.resources.resource.PreemptiveResource"><tt class="xref py py-class docutils literal"><span class="pre">PreemptiveResource</span></tt></a>
+whose resource users can be preempted by requests with a higher priority.</p>
+<dl class="class">
+<dt id="simpy.resources.resource.Resource">
+<em class="property">class </em><tt class="descclassname">simpy.resources.resource.</tt><tt class="descname">Resource</tt><big>(</big><em>env</em>, <em>capacity=1</em><big>)</big><a class="headerlink" href="#simpy.resources.resource.Resource" title="Permalink to this definition">¶</a></dt>
+<dd><p>Resource with <em>capacity</em> of usage slots that can be requested by
+processes.</p>
+<p>If all slots are taken, requests are enqueued. Once a usage request is
+released, a pending request will be triggered.</p>
+<p>The <em>env</em> parameter is the <a class="reference internal" href="simpy.core.html#simpy.core.Environment" title="simpy.core.Environment"><tt class="xref py py-class docutils literal"><span class="pre">Environment</span></tt></a> instance the
+resource is bound to.</p>
+<dl class="attribute">
+<dt id="simpy.resources.resource.Resource.users">
+<tt class="descname">users</tt><em class="property"> = None</em><a class="headerlink" href="#simpy.resources.resource.Resource.users" title="Permalink to this definition">¶</a></dt>
+<dd><p>List of <a class="reference internal" href="#simpy.resources.resource.Request" title="simpy.resources.resource.Request"><tt class="xref py py-class docutils literal"><span class="pre">Request</span></tt></a> events for the processes that are currently
+using the resource.</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="simpy.resources.resource.Resource.queue">
+<tt class="descname">queue</tt><em class="property"> = None</em><a class="headerlink" href="#simpy.resources.resource.Resource.queue" title="Permalink to this definition">¶</a></dt>
+<dd><p>Queue of pending <a class="reference internal" href="#simpy.resources.resource.Request" title="simpy.resources.resource.Request"><tt class="xref py py-class docutils literal"><span class="pre">Request</span></tt></a> events. Alias of
+<a class="reference internal" href="#simpy.resources.base.BaseResource.put_queue" title="simpy.resources.base.BaseResource.put_queue"><tt class="xref py py-attr docutils literal"><span class="pre">put_queue</span></tt></a>.</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="simpy.resources.resource.Resource.count">
+<tt class="descname">count</tt><a class="headerlink" href="#simpy.resources.resource.Resource.count" title="Permalink to this definition">¶</a></dt>
+<dd><p>Number of users currently using the resource.</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="simpy.resources.resource.Resource.request">
+<tt class="descname">request</tt><a class="headerlink" href="#simpy.resources.resource.Resource.request" title="Permalink to this definition">¶</a></dt>
+<dd><p>Request a usage slot.</p>
+<p>alias of <a class="reference internal" href="#simpy.resources.resource.Request" title="simpy.resources.resource.Request"><tt class="xref py py-class docutils literal"><span class="pre">Request</span></tt></a></p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="simpy.resources.resource.Resource.release">
+<tt class="descname">release</tt><a class="headerlink" href="#simpy.resources.resource.Resource.release" title="Permalink to this definition">¶</a></dt>
+<dd><p>Release a usage slot.</p>
+<p>alias of <a class="reference internal" href="#simpy.resources.resource.Release" title="simpy.resources.resource.Release"><tt class="xref py py-class docutils literal"><span class="pre">Release</span></tt></a></p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="simpy.resources.resource.PriorityResource">
+<em class="property">class </em><tt class="descclassname">simpy.resources.resource.</tt><tt class="descname">PriorityResource</tt><big>(</big><em>env</em>, <em>capacity=1</em><big>)</big><a class="headerlink" href="#simpy.resources.resource.PriorityResource" title="Permalink to this definition">¶</a></dt>
+<dd><p>A <a class="reference internal" href="#simpy.resources.resource.Resource" title="simpy.resources.resource.Resource"><tt class="xref py py-class docutils literal"><span class="pre">Resource</span></tt></a> supporting prioritized
+requests.</p>
+<p>Pending requests in the <a class="reference internal" href="#simpy.resources.resource.Resource.queue" title="simpy.resources.resource.Resource.queue"><tt class="xref py py-attr docutils literal"><span class="pre">queue</span></tt></a> are sorted in ascending
+order by their <em>priority</em> (that means lower values are more important).</p>
+<dl class="attribute">
+<dt id="simpy.resources.resource.PriorityResource.PutQueue">
+<tt class="descname">PutQueue</tt><a class="headerlink" href="#simpy.resources.resource.PriorityResource.PutQueue" title="Permalink to this definition">¶</a></dt>
+<dd><p>Type of the put queue. See
+<a class="reference internal" href="#simpy.resources.base.BaseResource.put_queue" title="simpy.resources.base.BaseResource.put_queue"><tt class="xref py py-attr docutils literal"><span class="pre">put_queue</span></tt></a> for details.</p>
+<p>alias of <a class="reference internal" href="#simpy.resources.resource.SortedQueue" title="simpy.resources.resource.SortedQueue"><tt class="xref py py-class docutils literal"><span class="pre">SortedQueue</span></tt></a></p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="simpy.resources.resource.PriorityResource.GetQueue">
+<tt class="descname">GetQueue</tt><a class="headerlink" href="#simpy.resources.resource.PriorityResource.GetQueue" title="Permalink to this definition">¶</a></dt>
+<dd><p>Type of the get queue. See
+<a class="reference internal" href="#simpy.resources.base.BaseResource.get_queue" title="simpy.resources.base.BaseResource.get_queue"><tt class="xref py py-attr docutils literal"><span class="pre">get_queue</span></tt></a> for details.</p>
+<p>alias of <a class="reference external" href="http://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.4)"><tt class="xref py py-class docutils literal"><span class="pre">list</span></tt></a></p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="simpy.resources.resource.PriorityResource.request">
+<tt class="descname">request</tt><a class="headerlink" href="#simpy.resources.resource.PriorityResource.request" title="Permalink to this definition">¶</a></dt>
+<dd><p>Request a usage slot with the given <em>priority</em>.</p>
+<p>alias of <a class="reference internal" href="#simpy.resources.resource.PriorityRequest" title="simpy.resources.resource.PriorityRequest"><tt class="xref py py-class docutils literal"><span class="pre">PriorityRequest</span></tt></a></p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="simpy.resources.resource.PriorityResource.release">
+<tt class="descname">release</tt><a class="headerlink" href="#simpy.resources.resource.PriorityResource.release" title="Permalink to this definition">¶</a></dt>
+<dd><p>Release a usage slot.</p>
+<p>alias of <a class="reference internal" href="#simpy.resources.resource.Release" title="simpy.resources.resource.Release"><tt class="xref py py-class docutils literal"><span class="pre">Release</span></tt></a></p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="simpy.resources.resource.PreemptiveResource">
+<em class="property">class </em><tt class="descclassname">simpy.resources.resource.</tt><tt class="descname">PreemptiveResource</tt><big>(</big><em>env</em>, <em>capacity=1</em><big>)</big><a class="headerlink" href="#simpy.resources.resource.PreemptiveResource" title="Permalink to this definition">¶</a></dt>
+<dd><p>A <a class="reference internal" href="#simpy.resources.resource.PriorityResource" title="simpy.resources.resource.PriorityResource"><tt class="xref py py-class docutils literal"><span class="pre">PriorityResource</span></tt></a> with preemption.</p>
+<p>If a request is preempted, the process of that request will receive an
+<a class="reference internal" href="simpy.events.html#simpy.events.Interrupt" title="simpy.events.Interrupt"><tt class="xref py py-class docutils literal"><span class="pre">Interrupt</span></tt></a> with a <a class="reference internal" href="#simpy.resources.resource.Preempted" title="simpy.resources.resource.Preempted"><tt class="xref py py-class docutils literal"><span class="pre">Preempted</span></tt></a> instance as
+cause.</p>
+</dd></dl>
+
+<dl class="class">
+<dt id="simpy.resources.resource.Preempted">
+<em class="property">class </em><tt class="descclassname">simpy.resources.resource.</tt><tt class="descname">Preempted</tt><big>(</big><em>by</em>, <em>usage_since</em><big>)</big><a class="headerlink" href="#simpy.resources.resource.Preempted" title="Permalink to this definition">¶</a></dt>
+<dd><p>Cause of an preemption <a class="reference internal" href="simpy.events.html#simpy.events.Interrupt" title="simpy.events.Interrupt"><tt class="xref py py-class docutils literal"><span class="pre">Interrupt</span></tt></a> containing
+information about the preemption.</p>
+<dl class="attribute">
+<dt id="simpy.resources.resource.Preempted.by">
+<tt class="descname">by</tt><em class="property"> = None</em><a class="headerlink" href="#simpy.resources.resource.Preempted.by" title="Permalink to this definition">¶</a></dt>
+<dd><p>The preempting <a class="reference internal" href="simpy.events.html#simpy.events.Process" title="simpy.events.Process"><tt class="xref py py-class docutils literal"><span class="pre">simpy.events.Process</span></tt></a>.</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="simpy.resources.resource.Preempted.usage_since">
+<tt class="descname">usage_since</tt><em class="property"> = None</em><a class="headerlink" href="#simpy.resources.resource.Preempted.usage_since" title="Permalink to this definition">¶</a></dt>
+<dd><p>The simulation time at which the preempted process started to use
+the resource.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="simpy.resources.resource.Request">
+<em class="property">class </em><tt class="descclassname">simpy.resources.resource.</tt><tt class="descname">Request</tt><big>(</big><em>resource</em><big>)</big><a class="headerlink" href="#simpy.resources.resource.Request" title="Permalink to this definition">¶</a></dt>
+<dd><p>Request usage of the <em>resource</em>. The event is triggered once access is
+granted. Subclass of <a class="reference internal" href="#simpy.resources.base.Put" title="simpy.resources.base.Put"><tt class="xref py py-class docutils literal"><span class="pre">simpy.resources.base.Put</span></tt></a>.</p>
+<p>If the maximum capacity of users has not yet been reached, the request is
+triggered immediately. If the maximum capacity has been
+reached, the request is triggered once an earlier usage request on the
+resource is released.</p>
+<p>The request is automatically released when the request was created within
+a <a class="reference external" href="http://docs.python.org/3/reference/compound_stmts.html#with" title="(in Python v3.4)"><tt class="xref std std-keyword docutils literal"><span class="pre">with</span></tt></a> statement.</p>
+</dd></dl>
+
+<dl class="class">
+<dt id="simpy.resources.resource.PriorityRequest">
+<em class="property">class </em><tt class="descclassname">simpy.resources.resource.</tt><tt class="descname">PriorityRequest</tt><big>(</big><em>resource</em>, <em>priority=0</em>, <em>preempt=True</em><big>)</big><a class="headerlink" href="#simpy.resources.resource.PriorityRequest" title="Permalink to this definition">¶</a></dt>
+<dd><p>Request the usage of <em>resource</em> with a given <em>priority</em>. If the
+<em>resource</em> supports preemption and <em>preempt</em> is <tt class="docutils literal"><span class="pre">True</span></tt> other usage
+requests of the <em>resource</em> may be preempted (see
+<a class="reference internal" href="#simpy.resources.resource.PreemptiveResource" title="simpy.resources.resource.PreemptiveResource"><tt class="xref py py-class docutils literal"><span class="pre">PreemptiveResource</span></tt></a> for details).</p>
+<p>This event type inherits <a class="reference internal" href="#simpy.resources.resource.Request" title="simpy.resources.resource.Request"><tt class="xref py py-class docutils literal"><span class="pre">Request</span></tt></a> and adds some additional
+attributes needed by <a class="reference internal" href="#simpy.resources.resource.PriorityResource" title="simpy.resources.resource.PriorityResource"><tt class="xref py py-class docutils literal"><span class="pre">PriorityResource</span></tt></a> and
+<a class="reference internal" href="#simpy.resources.resource.PreemptiveResource" title="simpy.resources.resource.PreemptiveResource"><tt class="xref py py-class docutils literal"><span class="pre">PreemptiveResource</span></tt></a></p>
+<dl class="attribute">
+<dt id="simpy.resources.resource.PriorityRequest.priority">
+<tt class="descname">priority</tt><em class="property"> = None</em><a class="headerlink" href="#simpy.resources.resource.PriorityRequest.priority" title="Permalink to this definition">¶</a></dt>
+<dd><p>The priority of this request. A smaller number means higher
+priority.</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="simpy.resources.resource.PriorityRequest.preempt">
+<tt class="descname">preempt</tt><em class="property"> = None</em><a class="headerlink" href="#simpy.resources.resource.PriorityRequest.preempt" title="Permalink to this definition">¶</a></dt>
+<dd><p>Indicates whether the request should preempt a resource user or not
+(<a class="reference internal" href="#simpy.resources.resource.PriorityResource" title="simpy.resources.resource.PriorityResource"><tt class="xref py py-class docutils literal"><span class="pre">PriorityResource</span></tt></a> ignores this flag).</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="simpy.resources.resource.PriorityRequest.time">
+<tt class="descname">time</tt><em class="property"> = None</em><a class="headerlink" href="#simpy.resources.resource.PriorityRequest.time" title="Permalink to this definition">¶</a></dt>
+<dd><p>The time at which the request was made.</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="simpy.resources.resource.PriorityRequest.key">
+<tt class="descname">key</tt><em class="property"> = None</em><a class="headerlink" href="#simpy.resources.resource.PriorityRequest.key" title="Permalink to this definition">¶</a></dt>
+<dd><p>Key for sorting events. Consists of the priority (lower value is
+more important), the time at which the request was made (earlier
+requests are more important) and finally the preemption flag (preempt
+requests are more important).</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="simpy.resources.resource.Release">
+<em class="property">class </em><tt class="descclassname">simpy.resources.resource.</tt><tt class="descname">Release</tt><big>(</big><em>resource</em>, <em>request</em><big>)</big><a class="headerlink" href="#simpy.resources.resource.Release" title="Permalink to this definition">¶</a></dt>
+<dd><p>Releases the usage of <em>resource</em> granted by <em>request</em>. This event is
+triggered immediately. Subclass of <a class="reference internal" href="#simpy.resources.base.Get" title="simpy.resources.base.Get"><tt class="xref py py-class docutils literal"><span class="pre">simpy.resources.base.Get</span></tt></a>.</p>
+<dl class="attribute">
+<dt id="simpy.resources.resource.Release.request">
+<tt class="descname">request</tt><em class="property"> = None</em><a class="headerlink" href="#simpy.resources.resource.Release.request" title="Permalink to this definition">¶</a></dt>
+<dd><p>The request (<a class="reference internal" href="#simpy.resources.resource.Request" title="simpy.resources.resource.Request"><tt class="xref py py-class docutils literal"><span class="pre">Request</span></tt></a>) that is to be released.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="simpy.resources.resource.SortedQueue">
+<em class="property">class </em><tt class="descclassname">simpy.resources.resource.</tt><tt class="descname">SortedQueue</tt><big>(</big><em>maxlen=None</em><big>)</big><a class="headerlink" href="#simpy.resources.resource.SortedQueue" title="Permalink to this definition">¶</a></dt>
+<dd><p>Queue for sorting events by their <a class="reference internal" href="#simpy.resources.resource.PriorityRequest.key" title="simpy.resources.resource.PriorityRequest.key"><tt class="xref py py-attr docutils literal"><span class="pre">key</span></tt></a>
+attribute.</p>
+<dl class="attribute">
+<dt id="simpy.resources.resource.SortedQueue.maxlen">
+<tt class="descname">maxlen</tt><em class="property"> = None</em><a class="headerlink" href="#simpy.resources.resource.SortedQueue.maxlen" title="Permalink to this definition">¶</a></dt>
+<dd><p>Maximum length of the queue.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="simpy.resources.resource.SortedQueue.append">
+<tt class="descname">append</tt><big>(</big><em>item</em><big>)</big><a class="headerlink" href="#simpy.resources.resource.SortedQueue.append" title="Permalink to this definition">¶</a></dt>
+<dd><p>Sort <em>item</em> into the queue.</p>
+<p>Raise a <a class="reference external" href="http://docs.python.org/3/library/exceptions.html#RuntimeError" title="(in Python v3.4)"><tt class="xref py py-exc docutils literal"><span class="pre">RuntimeError</span></tt></a> if the queue is full.</p>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="module-simpy.resources.container">
+<span id="containers-simpy-resources-container"></span><h2>Containers &#8212; <tt class="docutils literal"><span class="pre">simpy.resources.container</span></tt><a class="headerlink" href="#module-simpy.resources.container" title="Permalink to this headline">¶</a></h2>
+<p>Resource for sharing homogeneous matter between processes, either continuous
+(like water) or discrete (like apples).</p>
+<p>A <a class="reference internal" href="#simpy.resources.container.Container" title="simpy.resources.container.Container"><tt class="xref py py-class docutils literal"><span class="pre">Container</span></tt></a> can be used to model the fuel tank of a gasoline station.
+Tankers increase and refuelled cars decrease the amount of gas in the station&#8217;s
+fuel tanks.</p>
+<dl class="class">
+<dt id="simpy.resources.container.Container">
+<em class="property">class </em><tt class="descclassname">simpy.resources.container.</tt><tt class="descname">Container</tt><big>(</big><em>env</em>, <em>capacity=inf</em>, <em>init=0</em><big>)</big><a class="headerlink" href="#simpy.resources.container.Container" title="Permalink to this definition">¶</a></dt>
+<dd><p>Resource containing up to <em>capacity</em> of matter which may either be
+continuous (like water) or discrete (like apples). It supports requests to
+put or get matter into/from the container.</p>
+<p>The <em>env</em> parameter is the <a class="reference internal" href="simpy.core.html#simpy.core.Environment" title="simpy.core.Environment"><tt class="xref py py-class docutils literal"><span class="pre">Environment</span></tt></a> instance the
+container is bound to.</p>
+<p>The <em>capacity</em> defines the size of the container. By default, a container
+is of unlimited size. The initial amount of matter is specified by <em>init</em>
+and defaults to <tt class="docutils literal"><span class="pre">0</span></tt>.</p>
+<p>Raise a <a class="reference external" href="http://docs.python.org/3/library/exceptions.html#ValueError" title="(in Python v3.4)"><tt class="xref py py-exc docutils literal"><span class="pre">ValueError</span></tt></a> if <tt class="docutils literal"><span class="pre">capacity</span> <span class="pre">&lt;=</span> <span class="pre">0</span></tt>, <tt class="docutils literal"><span class="pre">init</span> <span class="pre">&lt;</span> <span class="pre">0</span></tt> or
+<tt class="docutils literal"><span class="pre">init</span> <span class="pre">&gt;</span> <span class="pre">capacity</span></tt>.</p>
+<dl class="attribute">
+<dt id="simpy.resources.container.Container.level">
+<tt class="descname">level</tt><a class="headerlink" href="#simpy.resources.container.Container.level" title="Permalink to this definition">¶</a></dt>
+<dd><p>The current amount of the matter in the container.</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="simpy.resources.container.Container.put">
+<tt class="descname">put</tt><a class="headerlink" href="#simpy.resources.container.Container.put" title="Permalink to this definition">¶</a></dt>
+<dd><p>Request to put <em>amount</em> of matter into the container.</p>
+<p>alias of <a class="reference internal" href="#simpy.resources.container.ContainerPut" title="simpy.resources.container.ContainerPut"><tt class="xref py py-class docutils literal"><span class="pre">ContainerPut</span></tt></a></p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="simpy.resources.container.Container.get">
+<tt class="descname">get</tt><a class="headerlink" href="#simpy.resources.container.Container.get" title="Permalink to this definition">¶</a></dt>
+<dd><p>Request to get <em>amount</em> of matter out of the container.</p>
+<p>alias of <a class="reference internal" href="#simpy.resources.container.ContainerGet" title="simpy.resources.container.ContainerGet"><tt class="xref py py-class docutils literal"><span class="pre">ContainerGet</span></tt></a></p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="simpy.resources.container.ContainerPut">
+<em class="property">class </em><tt class="descclassname">simpy.resources.container.</tt><tt class="descname">ContainerPut</tt><big>(</big><em>container</em>, <em>amount</em><big>)</big><a class="headerlink" href="#simpy.resources.container.ContainerPut" title="Permalink to this definition">¶</a></dt>
+<dd><p>Request to put <em>amount</em> of matter into the <em>container</em>. The request will
+be triggered once there is enough space in the <em>container</em> available.</p>
+<p>Raise a <a class="reference external" href="http://docs.python.org/3/library/exceptions.html#ValueError" title="(in Python v3.4)"><tt class="xref py py-exc docutils literal"><span class="pre">ValueError</span></tt></a> if <tt class="docutils literal"><span class="pre">amount</span> <span class="pre">&lt;=</span> <span class="pre">0</span></tt>.</p>
+<dl class="attribute">
+<dt id="simpy.resources.container.ContainerPut.amount">
+<tt class="descname">amount</tt><em class="property"> = None</em><a class="headerlink" href="#simpy.resources.container.ContainerPut.amount" title="Permalink to this definition">¶</a></dt>
+<dd><p>The amount of matter to be put into the container.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="simpy.resources.container.ContainerGet">
+<em class="property">class </em><tt class="descclassname">simpy.resources.container.</tt><tt class="descname">ContainerGet</tt><big>(</big><em>container</em>, <em>amount</em><big>)</big><a class="headerlink" href="#simpy.resources.container.ContainerGet" title="Permalink to this definition">¶</a></dt>
+<dd><p>Request to get <em>amount</em> of matter from the <em>container</em>. The request will
+be triggered once there is enough matter available in the <em>container</em>.</p>
+<p>Raise a <a class="reference external" href="http://docs.python.org/3/library/exceptions.html#ValueError" title="(in Python v3.4)"><tt class="xref py py-exc docutils literal"><span class="pre">ValueError</span></tt></a> if <tt class="docutils literal"><span class="pre">amount</span> <span class="pre">&lt;=</span> <span class="pre">0</span></tt>.</p>
+<dl class="attribute">
+<dt id="simpy.resources.container.ContainerGet.amount">
+<tt class="descname">amount</tt><em class="property"> = None</em><a class="headerlink" href="#simpy.resources.container.ContainerGet.amount" title="Permalink to this definition">¶</a></dt>
+<dd><p>The amount of matter to be taken out of the container.</p>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="module-simpy.resources.store">
+<span id="stores-simpy-resources-store"></span><h2>Stores &#8212; <tt class="docutils literal"><span class="pre">simpy.resources.store</span></tt><a class="headerlink" href="#module-simpy.resources.store" title="Permalink to this headline">¶</a></h2>
+<p>Shared resources for storing a possibly unlimited amount of objects supporting
+requests for specific objects.</p>
+<p>The <a class="reference internal" href="#simpy.resources.store.Store" title="simpy.resources.store.Store"><tt class="xref py py-class docutils literal"><span class="pre">Store</span></tt></a> operates in a FIFO (first-in, first-out) order. Objects are
+retrieved from the store in the order they were put in. The <em>get</em> requests of a
+<a class="reference internal" href="#simpy.resources.store.FilterStore" title="simpy.resources.store.FilterStore"><tt class="xref py py-class docutils literal"><span class="pre">FilterStore</span></tt></a> can be customized by a filter to only retrieve objects
+matching a given criterion.</p>
+<dl class="class">
+<dt id="simpy.resources.store.Store">
+<em class="property">class </em><tt class="descclassname">simpy.resources.store.</tt><tt class="descname">Store</tt><big>(</big><em>env</em>, <em>capacity=inf</em><big>)</big><a class="headerlink" href="#simpy.resources.store.Store" title="Permalink to this definition">¶</a></dt>
+<dd><p>Resource with <em>capacity</em> slots for storing arbitrary objects. By
+default, the <em>capacity</em> is unlimited and objects are put and retrieved from
+the store in a first-in first-out order.</p>
+<p>The <em>env</em> parameter is the <a class="reference internal" href="simpy.core.html#simpy.core.Environment" title="simpy.core.Environment"><tt class="xref py py-class docutils literal"><span class="pre">Environment</span></tt></a> instance the
+container is bound to.</p>
+<dl class="attribute">
+<dt id="simpy.resources.store.Store.items">
+<tt class="descname">items</tt><em class="property"> = None</em><a class="headerlink" href="#simpy.resources.store.Store.items" title="Permalink to this definition">¶</a></dt>
+<dd><p>List of the items available in the store.</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="simpy.resources.store.Store.put">
+<tt class="descname">put</tt><a class="headerlink" href="#simpy.resources.store.Store.put" title="Permalink to this definition">¶</a></dt>
+<dd><p>Request to put <em>item</em> into the store.</p>
+<p>alias of <a class="reference internal" href="#simpy.resources.store.StorePut" title="simpy.resources.store.StorePut"><tt class="xref py py-class docutils literal"><span class="pre">StorePut</span></tt></a></p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="simpy.resources.store.Store.get">
+<tt class="descname">get</tt><a class="headerlink" href="#simpy.resources.store.Store.get" title="Permalink to this definition">¶</a></dt>
+<dd><p>Request to get an <em>item</em> out of the store.</p>
+<p>alias of <a class="reference internal" href="#simpy.resources.store.StoreGet" title="simpy.resources.store.StoreGet"><tt class="xref py py-class docutils literal"><span class="pre">StoreGet</span></tt></a></p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="simpy.resources.store.FilterStore">
+<em class="property">class </em><tt class="descclassname">simpy.resources.store.</tt><tt class="descname">FilterStore</tt><big>(</big><em>env</em>, <em>capacity=inf</em><big>)</big><a class="headerlink" href="#simpy.resources.store.FilterStore" title="Permalink to this definition">¶</a></dt>
+<dd><p>Resource with <em>capacity</em> slots for storing arbitrary objects supporting
+filtered get requests. Like the <a class="reference internal" href="#simpy.resources.store.Store" title="simpy.resources.store.Store"><tt class="xref py py-class docutils literal"><span class="pre">Store</span></tt></a>, the <em>capacity</em> is unlimited
+by default and objects are put and retrieved from the store in a first-in
+first-out order.</p>
+<p>Get requests can be customized with a filter function to only trigger for
+items for which said filter function returns <tt class="docutils literal"><span class="pre">True</span></tt>.</p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p>In contrast to <a class="reference internal" href="#simpy.resources.store.Store" title="simpy.resources.store.Store"><tt class="xref py py-class docutils literal"><span class="pre">Store</span></tt></a>, get requests of a <a class="reference internal" href="#simpy.resources.store.FilterStore" title="simpy.resources.store.FilterStore"><tt class="xref py py-class docutils literal"><span class="pre">FilterStore</span></tt></a>
+won&#8217;t necessarily be triggered in the same order they were issued.</p>
+<p class="last"><em>Example:</em> The store is empty. <em>Process 1</em> tries to get an item of type
+<em>a</em>, <em>Process 2</em> an item of type <em>b</em>. Another process puts one item of
+type <em>b</em> into the store. Though <em>Process 2</em> made his request after
+<em>Process 1</em>, it will receive that new item because <em>Process 1</em> doesn&#8217;t
+want it.</p>
+</div>
+<dl class="attribute">
+<dt id="simpy.resources.store.FilterStore.put">
+<tt class="descname">put</tt><a class="headerlink" href="#simpy.resources.store.FilterStore.put" title="Permalink to this definition">¶</a></dt>
+<dd><p>Request a to put <em>item</em> into the store.</p>
+<p>alias of <a class="reference internal" href="#simpy.resources.store.StorePut" title="simpy.resources.store.StorePut"><tt class="xref py py-class docutils literal"><span class="pre">StorePut</span></tt></a></p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="simpy.resources.store.FilterStore.get">
+<tt class="descname">get</tt><a class="headerlink" href="#simpy.resources.store.FilterStore.get" title="Permalink to this definition">¶</a></dt>
+<dd><p>Request a to get an <em>item</em>, for which <em>filter</em> returns <tt class="docutils literal"><span class="pre">True</span></tt>, out of
+the store.</p>
+<p>alias of <a class="reference internal" href="#simpy.resources.store.FilterStoreGet" title="simpy.resources.store.FilterStoreGet"><tt class="xref py py-class docutils literal"><span class="pre">FilterStoreGet</span></tt></a></p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="simpy.resources.store.StorePut">
+<em class="property">class </em><tt class="descclassname">simpy.resources.store.</tt><tt class="descname">StorePut</tt><big>(</big><em>store</em>, <em>item</em><big>)</big><a class="headerlink" href="#simpy.resources.store.StorePut" title="Permalink to this definition">¶</a></dt>
+<dd><p>Request to put <em>item</em> into the <em>store</em>. The request is triggered once
+there is space for the item in the store.</p>
+<dl class="attribute">
+<dt id="simpy.resources.store.StorePut.item">
+<tt class="descname">item</tt><em class="property"> = None</em><a class="headerlink" href="#simpy.resources.store.StorePut.item" title="Permalink to this definition">¶</a></dt>
+<dd><p>The item to put into the store.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="simpy.resources.store.StoreGet">
+<em class="property">class </em><tt class="descclassname">simpy.resources.store.</tt><tt class="descname">StoreGet</tt><big>(</big><em>resource</em><big>)</big><a class="headerlink" href="#simpy.resources.store.StoreGet" title="Permalink to this definition">¶</a></dt>
+<dd><p>Request to get an <em>item</em> from the <em>store</em>. The request is triggered
+once there is an item available in the store.</p>
+</dd></dl>
+
+<dl class="class">
+<dt id="simpy.resources.store.FilterStoreGet">
+<em class="property">class </em><tt class="descclassname">simpy.resources.store.</tt><tt class="descname">FilterStoreGet</tt><big>(</big><em>resource</em>, <em>filter=&lt;function FilterStoreGet.&lt;lambda&gt; at 0x7f02e52bbd90&gt;</em><big>)</big><a class="headerlink" href="#simpy.resources.store.FilterStoreGet" title="Permalink to this definition">¶</a></dt>
+<dd><p>Request to get an <em>item</em> from the <em>store</em> matching the <em>filter</em>. The
+request is triggered once there is such an item available in the store.</p>
+<p><em>filter</em> is a function receiving one item. It should return <tt class="docutils literal"><span class="pre">True</span></tt> for
+items matching the filter criterion. The default function returns <tt class="docutils literal"><span class="pre">True</span></tt>
+for all items, which makes the request to behave exactly like
+<a class="reference internal" href="#simpy.resources.store.StoreGet" title="simpy.resources.store.StoreGet"><tt class="xref py py-class docutils literal"><span class="pre">StoreGet</span></tt></a>.</p>
+<dl class="attribute">
+<dt id="simpy.resources.store.FilterStoreGet.filter">
+<tt class="descname">filter</tt><em class="property"> = None</em><a class="headerlink" href="#simpy.resources.store.FilterStoreGet.filter" title="Permalink to this definition">¶</a></dt>
+<dd><p>The filter function to filter items in the store.</p>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="module-simpy.resources.base">
+<span id="base-classes-simpy-resources-base"></span><h2>Base classes &#8212; <tt class="docutils literal"><span class="pre">simpy.resources.base</span></tt><a class="headerlink" href="#module-simpy.resources.base" title="Permalink to this headline">¶</a></h2>
+<p>Base classes of for Simpy&#8217;s shared resource types.</p>
+<p><a class="reference internal" href="#simpy.resources.base.BaseResource" title="simpy.resources.base.BaseResource"><tt class="xref py py-class docutils literal"><span class="pre">BaseResource</span></tt></a> defines the abstract base resource. It supports <em>get</em> and
+<em>put</em> requests, which return <a class="reference internal" href="#simpy.resources.base.Put" title="simpy.resources.base.Put"><tt class="xref py py-class docutils literal"><span class="pre">Put</span></tt></a> and <a class="reference internal" href="#simpy.resources.base.Get" title="simpy.resources.base.Get"><tt class="xref py py-class docutils literal"><span class="pre">Get</span></tt></a> events respectively.
+These events are triggered once the request has been completed.</p>
+<dl class="class">
+<dt id="simpy.resources.base.BaseResource">
+<em class="property">class </em><tt class="descclassname">simpy.resources.base.</tt><tt class="descname">BaseResource</tt><big>(</big><em>env</em>, <em>capacity</em><big>)</big><a class="headerlink" href="#simpy.resources.base.BaseResource" title="Permalink to this definition">¶</a></dt>
+<dd><p>Abstract base class for a shared resource.</p>
+<p>You can <a class="reference internal" href="#simpy.resources.base.BaseResource.put" title="simpy.resources.base.BaseResource.put"><tt class="xref py py-meth docutils literal"><span class="pre">put()</span></tt></a> something into the resources or <a class="reference internal" href="#simpy.resources.base.BaseResource.get" title="simpy.resources.base.BaseResource.get"><tt class="xref py py-meth docutils literal"><span class="pre">get()</span></tt></a>
+something out of it. Both methods return an event that is triggered once
+the operation is completed. If a <a class="reference internal" href="#simpy.resources.base.BaseResource.put" title="simpy.resources.base.BaseResource.put"><tt class="xref py py-meth docutils literal"><span class="pre">put()</span></tt></a> request cannot complete
+immediately (for example if the resource has reached a capacity limit) it
+is enqueued in the <a class="reference internal" href="#simpy.resources.base.BaseResource.put_queue" title="simpy.resources.base.BaseResource.put_queue"><tt class="xref py py-attr docutils literal"><span class="pre">put_queue</span></tt></a> for later processing. Likewise for
+<a class="reference internal" href="#simpy.resources.base.BaseResource.get" title="simpy.resources.base.BaseResource.get"><tt class="xref py py-meth docutils literal"><span class="pre">get()</span></tt></a> requests.</p>
+<p>Subclasses can customize the resource by:</p>
+<ul class="simple">
+<li>providing custom <a class="reference internal" href="#simpy.resources.base.BaseResource.PutQueue" title="simpy.resources.base.BaseResource.PutQueue"><tt class="xref py py-attr docutils literal"><span class="pre">PutQueue</span></tt></a> and <a class="reference internal" href="#simpy.resources.base.BaseResource.GetQueue" title="simpy.resources.base.BaseResource.GetQueue"><tt class="xref py py-attr docutils literal"><span class="pre">GetQueue</span></tt></a> types,</li>
+<li>providing custom <a class="reference internal" href="#simpy.resources.base.Put" title="simpy.resources.base.Put"><tt class="xref py py-class docutils literal"><span class="pre">Put</span></tt></a> respectively <a class="reference internal" href="#simpy.resources.base.Get" title="simpy.resources.base.Get"><tt class="xref py py-class docutils literal"><span class="pre">Get</span></tt></a> events,</li>
+<li>and implementing the request processing behaviour through the methods
+<tt class="docutils literal"><span class="pre">_do_get()</span></tt> and <tt class="docutils literal"><span class="pre">_do_put()</span></tt>.</li>
+</ul>
+<dl class="attribute">
+<dt id="simpy.resources.base.BaseResource.PutQueue">
+<tt class="descname">PutQueue</tt><a class="headerlink" href="#simpy.resources.base.BaseResource.PutQueue" title="Permalink to this definition">¶</a></dt>
+<dd><p>The type to be used for the <a class="reference internal" href="#simpy.resources.base.BaseResource.put_queue" title="simpy.resources.base.BaseResource.put_queue"><tt class="xref py py-attr docutils literal"><span class="pre">put_queue</span></tt></a>. It is a plain
+<a class="reference external" href="http://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.4)"><tt class="xref py py-class docutils literal"><span class="pre">list</span></tt></a> by default. The type must support index access (e.g.
+<tt class="docutils literal"><span class="pre">__getitem__()</span></tt> and <tt class="docutils literal"><span class="pre">__len__()</span></tt>) as well as provide <tt class="docutils literal"><span class="pre">append()</span></tt> and
+<tt class="docutils literal"><span class="pre">pop()</span></tt> operations.</p>
+<p>alias of <a class="reference external" href="http://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.4)"><tt class="xref py py-class docutils literal"><span class="pre">list</span></tt></a></p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="simpy.resources.base.BaseResource.GetQueue">
+<tt class="descname">GetQueue</tt><a class="headerlink" href="#simpy.resources.base.BaseResource.GetQueue" title="Permalink to this definition">¶</a></dt>
+<dd><p>The type to be used for the <a class="reference internal" href="#simpy.resources.base.BaseResource.get_queue" title="simpy.resources.base.BaseResource.get_queue"><tt class="xref py py-attr docutils literal"><span class="pre">get_queue</span></tt></a>. It is a plain
+<a class="reference external" href="http://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.4)"><tt class="xref py py-class docutils literal"><span class="pre">list</span></tt></a> by default. The type must support index access (e.g.
+<tt class="docutils literal"><span class="pre">__getitem__()</span></tt> and <tt class="docutils literal"><span class="pre">__len__()</span></tt>) as well as provide <tt class="docutils literal"><span class="pre">append()</span></tt> and
+<tt class="docutils literal"><span class="pre">pop()</span></tt> operations.</p>
+<p>alias of <a class="reference external" href="http://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.4)"><tt class="xref py py-class docutils literal"><span class="pre">list</span></tt></a></p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="simpy.resources.base.BaseResource.put_queue">
+<tt class="descname">put_queue</tt><em class="property"> = None</em><a class="headerlink" href="#simpy.resources.base.BaseResource.put_queue" title="Permalink to this definition">¶</a></dt>
+<dd><p>Queue of pending <em>put</em> requests.</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="simpy.resources.base.BaseResource.get_queue">
+<tt class="descname">get_queue</tt><em class="property"> = None</em><a class="headerlink" href="#simpy.resources.base.BaseResource.get_queue" title="Permalink to this definition">¶</a></dt>
+<dd><p>Queue of pending <em>get</em> requests.</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="simpy.resources.base.BaseResource.capacity">
+<tt class="descname">capacity</tt><a class="headerlink" href="#simpy.resources.base.BaseResource.capacity" title="Permalink to this definition">¶</a></dt>
+<dd><p>Maximum capacity of the resource.</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="simpy.resources.base.BaseResource.put">
+<tt class="descname">put</tt><a class="headerlink" href="#simpy.resources.base.BaseResource.put" title="Permalink to this definition">¶</a></dt>
+<dd><p>Request to put something into the resource and return a <a class="reference internal" href="#simpy.resources.base.Put" title="simpy.resources.base.Put"><tt class="xref py py-class docutils literal"><span class="pre">Put</span></tt></a>
+event, which gets triggered once the request succeeds.</p>
+<p>alias of <a class="reference internal" href="#simpy.resources.base.Put" title="simpy.resources.base.Put"><tt class="xref py py-class docutils literal"><span class="pre">Put</span></tt></a></p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="simpy.resources.base.BaseResource.get">
+<tt class="descname">get</tt><a class="headerlink" href="#simpy.resources.base.BaseResource.get" title="Permalink to this definition">¶</a></dt>
+<dd><p>Request to get something from the resource and return a <a class="reference internal" href="#simpy.resources.base.Get" title="simpy.resources.base.Get"><tt class="xref py py-class docutils literal"><span class="pre">Get</span></tt></a>
+event, which gets triggered once the request succeeds.</p>
+<p>alias of <a class="reference internal" href="#simpy.resources.base.Get" title="simpy.resources.base.Get"><tt class="xref py py-class docutils literal"><span class="pre">Get</span></tt></a></p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="simpy.resources.base.Put">
+<em class="property">class </em><tt class="descclassname">simpy.resources.base.</tt><tt class="descname">Put</tt><big>(</big><em>resource</em><big>)</big><a class="headerlink" href="#simpy.resources.base.Put" title="Permalink to this definition">¶</a></dt>
+<dd><p>Generic event for requesting to put something into the <em>resource</em>.</p>
+<p>This event (and all of its subclasses) can act as context manager and can
+be used with the <a class="reference external" href="http://docs.python.org/3/reference/compound_stmts.html#with" title="(in Python v3.4)"><tt class="xref std std-keyword docutils literal"><span class="pre">with</span></tt></a> statement to automatically cancel the
+request if an exception (like an <a class="reference internal" href="simpy.events.html#simpy.events.Interrupt" title="simpy.events.Interrupt"><tt class="xref py py-class docutils literal"><span class="pre">simpy.events.Interrupt</span></tt></a> for
+example) occurs:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="k">with</span> <span class="n">res</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">item</span><span class="p">)</span> <span class="k">as</span> <span class="n">request</span><span class="p">:</span>
+    <span class="k">yield</span> <span class="n">request</span>
+</pre></div>
+</div>
+<dl class="method">
+<dt id="simpy.resources.base.Put.cancel">
+<tt class="descname">cancel</tt><big>(</big><big>)</big><a class="headerlink" href="#simpy.resources.base.Put.cancel" title="Permalink to this definition">¶</a></dt>
+<dd><p>Cancel this put request.</p>
+<p>This method has to be called if the put request must be aborted, for
+example if a process needs to handle an exception like an
+<a class="reference internal" href="simpy.events.html#simpy.events.Interrupt" title="simpy.events.Interrupt"><tt class="xref py py-class docutils literal"><span class="pre">Interrupt</span></tt></a>.</p>
+<p>If the put request was created in a <a class="reference external" href="http://docs.python.org/3/reference/compound_stmts.html#with" title="(in Python v3.4)"><tt class="xref std std-keyword docutils literal"><span class="pre">with</span></tt></a> statement, this
+method is called automatically.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="simpy.resources.base.Get">
+<em class="property">class </em><tt class="descclassname">simpy.resources.base.</tt><tt class="descname">Get</tt><big>(</big><em>resource</em><big>)</big><a class="headerlink" href="#simpy.resources.base.Get" title="Permalink to this definition">¶</a></dt>
+<dd><p>Generic event for requesting to get something from the <em>resource</em>.</p>
+<p>This event (and all of its subclasses) can act as context manager and can
+be used with the <a class="reference external" href="http://docs.python.org/3/reference/compound_stmts.html#with" title="(in Python v3.4)"><tt class="xref std std-keyword docutils literal"><span class="pre">with</span></tt></a> statement to automatically cancel the
+request if an exception (like an <a class="reference internal" href="simpy.events.html#simpy.events.Interrupt" title="simpy.events.Interrupt"><tt class="xref py py-class docutils literal"><span class="pre">simpy.events.Interrupt</span></tt></a> for
+example) occurs:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="k">with</span> <span class="n">res</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">item</span><span class="p">)</span> <span class="k">as</span> <span class="n">request</span><span class="p">:</span>
+    <span class="k">yield</span> <span class="n">request</span>
+</pre></div>
+</div>
+<dl class="method">
+<dt id="simpy.resources.base.Get.cancel">
+<tt class="descname">cancel</tt><big>(</big><big>)</big><a class="headerlink" href="#simpy.resources.base.Get.cancel" title="Permalink to this definition">¶</a></dt>
+<dd><p>Cancel this get request.</p>
+<p>This method has to be called if the get request must be aborted, for
+example if a process needs to handle an exception like an
+<a class="reference internal" href="simpy.events.html#simpy.events.Interrupt" title="simpy.events.Interrupt"><tt class="xref py py-class docutils literal"><span class="pre">Interrupt</span></tt></a>.</p>
+<p>If the get request was created in a <a class="reference external" href="http://docs.python.org/3/reference/compound_stmts.html#with" title="(in Python v3.4)"><tt class="xref std std-keyword docutils literal"><span class="pre">with</span></tt></a> statement, this
+method is called automatically.</p>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+            <p class="logo"><a href="../contents.html">
+              <img class="logo" src="../_static/simpy-logo-small.png" alt="Logo"/>
+            </a></p>
+  <h3><a href="../contents.html">Table Of Contents</a></h3>
+  <ul>
+<li><a class="reference internal" href="#"><tt class="docutils literal"><span class="pre">simpy.resources</span></tt> &#8212; Shared resource primitives</a><ul>
+<li><a class="reference internal" href="#module-simpy.resources.resource">Resources &#8212; <tt class="docutils literal"><span class="pre">simpy.resources.resource</span></tt></a></li>
+<li><a class="reference internal" href="#module-simpy.resources.container">Containers &#8212; <tt class="docutils literal"><span class="pre">simpy.resources.container</span></tt></a></li>
+<li><a class="reference internal" href="#module-simpy.resources.store">Stores &#8212; <tt class="docutils literal"><span class="pre">simpy.resources.store</span></tt></a></li>
+<li><a class="reference internal" href="#module-simpy.resources.base">Base classes &#8212; <tt class="docutils literal"><span class="pre">simpy.resources.base</span></tt></a></li>
+</ul>
+</li>
+</ul>
+
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="simpy.events.html"
+                        title="previous chapter"><tt class="docutils literal"><span class="pre">simpy.events</span></tt> &#8212; Core event types</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="simpy.rt.html"
+                        title="next chapter"><tt class="docutils literal"><span class="pre">simpy.rt</span></tt> &#8212; Real-time simulation</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="../_sources/api_reference/simpy.resources.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="simpy.rt.html" title="simpy.rt — Real-time simulation"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="simpy.events.html" title="simpy.events — Core event types"
+             >previous</a> |</li>
+        <li><a href="../contents.html">SimPy 3.0.6 documentation</a> &raquo;</li>
+          <li><a href="index.html" >API Reference</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2002–2015, Team SimPy.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

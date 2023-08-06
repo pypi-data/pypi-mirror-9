@@ -1,0 +1,384 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>Events &mdash; SimPy 3.0.6 documentation</title>
+    
+    <link rel="stylesheet" href="../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../',
+        VERSION:     '3.0.6',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../_static/jquery.js"></script>
+    <script type="text/javascript" src="../_static/underscore.js"></script>
+    <script type="text/javascript" src="../_static/doctools.js"></script>
+    <link rel="shortcut icon" href="../_static/favicon.ico"/>
+    <link rel="top" title="SimPy 3.0.6 documentation" href="../index.html" />
+    <link rel="up" title="Topical Guides" href="index.html" />
+    <link rel="next" title="Process Interaction" href="process_interaction.html" />
+    <link rel="prev" title="Environments" href="environments.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="process_interaction.html" title="Process Interaction"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="environments.html" title="Environments"
+             accesskey="P">previous</a> |</li>
+        <li><a href="../contents.html">SimPy 3.0.6 documentation</a> &raquo;</li>
+          <li><a href="index.html" accesskey="U">Topical Guides</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="events">
+<h1>Events<a class="headerlink" href="#events" title="Permalink to this headline">¶</a></h1>
+<p>SimPy includes an extensive set of event types for various purposes. All of
+them inherit <a class="reference internal" href="../api_reference/simpy.events.html#simpy.events.Event" title="simpy.events.Event"><tt class="xref py py-class docutils literal"><span class="pre">simpy.events.Event</span></tt></a>. The listing below shows the
+hierarchy of events built into SimPy:</p>
+<div class="highlight-python"><div class="highlight"><pre>events.Event
+↑
++— events.Timeout
+|
++— events.Initialize
+|
++— events.Process
+|
++— events.Condition
+|  ↑
+|  +— events.AllOf
+|  |
+|  +— events.AnyOf
+⋮
++– [resource events]
+</pre></div>
+</div>
+<p>This is the set of basic events. Events are extensible and resources, for
+example, define additional events. In this guide, we&#8217;ll focus on the events in
+the <a class="reference internal" href="../api_reference/simpy.events.html#module-simpy.events" title="simpy.events"><tt class="xref py py-mod docutils literal"><span class="pre">simpy.events</span></tt></a> module. The <a class="reference internal" href="resources.html"><em>guide to resources</em></a>
+describes the various resource events.</p>
+<div class="section" id="event-basics">
+<h2>Event basics<a class="headerlink" href="#event-basics" title="Permalink to this headline">¶</a></h2>
+<p>SimPy events are very similar – if not identical — to deferreds, futures or
+promises. Instances of the class <a class="reference internal" href="../api_reference/simpy.events.html#simpy.events.Event" title="simpy.events.Event"><tt class="xref py py-class docutils literal"><span class="pre">Event</span></tt></a> are used to describe any kind
+of events. Events can be in one of the following states. An event</p>
+<ul class="simple">
+<li>might happen (not triggered),</li>
+<li>is going to happen (triggered) or</li>
+<li>has happened (processed).</li>
+</ul>
+<p>They traverse these states exactly once in that order. Events are also tightly
+bound to time and time causes events to advance their state.</p>
+<p>Initially, events are not triggered and just objects in memory.</p>
+<p>If an event gets triggered, it is scheduled at a given time and inserted into
+SimPy&#8217;s event queue. The property <a class="reference internal" href="../api_reference/simpy.events.html#simpy.events.Event.triggered" title="simpy.events.Event.triggered"><tt class="xref py py-attr docutils literal"><span class="pre">Event.triggered</span></tt></a> becomes <tt class="docutils literal"><span class="pre">True</span></tt>.</p>
+<p>As long as the event is not <em>processed</em>, you can add <em>callbacks</em> to an event.
+Callbacks are callables that accept an event as parameter and are stored in the
+<a class="reference internal" href="../api_reference/simpy.events.html#simpy.events.Event.callbacks" title="simpy.events.Event.callbacks"><tt class="xref py py-attr docutils literal"><span class="pre">Event.callbacks</span></tt></a> list.</p>
+<p>An event becomes <em>processed</em> when SimPy pops it from the event queue and
+calls all of its callbacks. It is now no longer possible to add callbacks. The
+property <a class="reference internal" href="../api_reference/simpy.events.html#simpy.events.Event.processed" title="simpy.events.Event.processed"><tt class="xref py py-attr docutils literal"><span class="pre">Event.processed</span></tt></a> becomes <tt class="docutils literal"><span class="pre">True</span></tt>.</p>
+<p>Events also have a <em>value</em>. The value can be set before or when the event is
+triggered and can be retrieved via <a class="reference internal" href="../api_reference/simpy.events.html#simpy.events.Event.value" title="simpy.events.Event.value"><tt class="xref py py-attr docutils literal"><span class="pre">Event.value</span></tt></a> or, within a process, by
+yielding the event (<tt class="docutils literal"><span class="pre">value</span> <span class="pre">=</span> <span class="pre">yield</span> <span class="pre">event</span></tt>).</p>
+<div class="section" id="adding-callbacks-to-an-event">
+<h3>Adding callbacks to an event<a class="headerlink" href="#adding-callbacks-to-an-event" title="Permalink to this headline">¶</a></h3>
+<p>&#8220;What? Callbacks? I&#8217;ve never seen no callbacks!&#8221;, you might think if you have
+worked your way through the <a class="reference internal" href="../simpy_intro/index.html"><em>tutorial</em></a>.</p>
+<p>That&#8217;s on purpose. The most common way to add a callback to an event is
+yielding it from your process function (<tt class="docutils literal"><span class="pre">yield</span> <span class="pre">event</span></tt>). This will add the
+process&#8217; <em>_resume()</em> method as a callback. That&#8217;s how your process gets resumed
+when it yielded an event.</p>
+<p>However, you can add any callable object (function) to the list of callbacks
+as long as it accepts an event instance as its single parameter:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="kn">import</span> <span class="nn">simpy</span>
+<span class="go">&gt;&gt;&gt;</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">def</span> <span class="nf">my_callback</span><span class="p">(</span><span class="n">event</span><span class="p">):</span>
+<span class="gp">... </span>    <span class="k">print</span><span class="p">(</span><span class="s">&#39;Called back from&#39;</span><span class="p">,</span> <span class="n">event</span><span class="p">)</span>
+<span class="gp">...</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">env</span> <span class="o">=</span> <span class="n">simpy</span><span class="o">.</span><span class="n">Environment</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">event</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">event</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">event</span><span class="o">.</span><span class="n">callbacks</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">my_callback</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">event</span><span class="o">.</span><span class="n">callbacks</span>
+<span class="go">[&lt;function my_callback at 0x...&gt;]</span>
+</pre></div>
+</div>
+<p>If an event has been <em>processed</em>, all of its <a class="reference internal" href="../api_reference/simpy.events.html#simpy.events.Event.callbacks" title="simpy.events.Event.callbacks"><tt class="xref py py-attr docutils literal"><span class="pre">Event.callbacks</span></tt></a> have been
+executed and the attribute is set to <tt class="docutils literal"><span class="pre">None</span></tt>. This is to prevent you from
+adding more callbacks – these would of course never get called because the
+event has already happened.</p>
+<p>Processes are smart about this, though. If you yield a processed event,
+<em>_resume()</em> will immediately resume your process with the value of the event
+(because there is nothing to wait for).</p>
+</div>
+<div class="section" id="triggering-events">
+<h3>Triggering events<a class="headerlink" href="#triggering-events" title="Permalink to this headline">¶</a></h3>
+<p>When events are triggered, they can either <em>succeed</em> or <em>fail</em>. For example, if
+an event is to be triggered at the end of a computation and everything works
+out fine, the event will <em>succeed</em>. If an exceptions occurs during that
+computation, the event will <em>fail</em>.</p>
+<p>To trigger an event and mark it as successful, you can use
+<tt class="docutils literal"><span class="pre">Event.succeed(value=None)</span></tt>. You can optionally pass a <em>value</em> to it (e.g.,
+the results of a computation).</p>
+<p>To trigger an event and mark it as failed, call <tt class="docutils literal"><span class="pre">Event.fail(exception)</span></tt>
+and pass an <a class="reference external" href="http://docs.python.org/3/library/exceptions.html#Exception" title="(in Python v3.4)"><tt class="xref py py-class docutils literal"><span class="pre">Exception</span></tt></a> instance to it (e.g., the exception you caught
+during your failed computation).</p>
+<p>There is also a generic way to trigger an event: <tt class="docutils literal"><span class="pre">Event.trigger(event)</span></tt>.
+This will take the value and outcome (success or failure) of the event passed
+to it.</p>
+<p>All three methods return the event instance they are bound to. This allows you
+to do things like <tt class="docutils literal"><span class="pre">yield</span> <span class="pre">Event(env).succeed()</span></tt>.</p>
+</div>
+</div>
+<div class="section" id="example-usages-for-event">
+<h2>Example usages for <tt class="docutils literal"><span class="pre">Event</span></tt><a class="headerlink" href="#example-usages-for-event" title="Permalink to this headline">¶</a></h2>
+<p>The simple mechanics outlined above provide a great flexibility in the way
+events (even the basic <a class="reference internal" href="../api_reference/simpy.events.html#simpy.events.Event" title="simpy.events.Event"><tt class="xref py py-class docutils literal"><span class="pre">Event</span></tt></a>) can be used.</p>
+<p>One example for this is that events can be shared. They can be created by a
+process or outside of the context of a process. They can be passed to other
+processes and chained:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="k">class</span> <span class="nc">School</span><span class="p">:</span>
+<span class="gp">... </span>    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env</span><span class="p">):</span>
+<span class="gp">... </span>        <span class="bp">self</span><span class="o">.</span><span class="n">env</span> <span class="o">=</span> <span class="n">env</span>
+<span class="gp">... </span>        <span class="bp">self</span><span class="o">.</span><span class="n">class_ends</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">event</span><span class="p">()</span>
+<span class="gp">... </span>        <span class="bp">self</span><span class="o">.</span><span class="n">pupil_procs</span> <span class="o">=</span> <span class="p">[</span><span class="n">env</span><span class="o">.</span><span class="n">process</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">pupil</span><span class="p">())</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3</span><span class="p">)]</span>
+<span class="gp">... </span>        <span class="bp">self</span><span class="o">.</span><span class="n">bell_proc</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">process</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">bell</span><span class="p">())</span>
+<span class="gp">...</span>
+<span class="gp">... </span>    <span class="k">def</span> <span class="nf">bell</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="gp">... </span>        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">2</span><span class="p">):</span>
+<span class="gp">... </span>            <span class="k">yield</span> <span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">timeout</span><span class="p">(</span><span class="mi">45</span><span class="p">)</span>
+<span class="gp">... </span>            <span class="bp">self</span><span class="o">.</span><span class="n">class_ends</span><span class="o">.</span><span class="n">succeed</span><span class="p">()</span>
+<span class="gp">... </span>            <span class="bp">self</span><span class="o">.</span><span class="n">class_ends</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">event</span><span class="p">()</span>
+<span class="gp">... </span>            <span class="k">print</span><span class="p">()</span>
+<span class="gp">...</span>
+<span class="gp">... </span>    <span class="k">def</span> <span class="nf">pupil</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="gp">... </span>        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">2</span><span class="p">):</span>
+<span class="gp">... </span>            <span class="k">print</span><span class="p">(</span><span class="s">&#39; \o/&#39;</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s">&#39;&#39;</span><span class="p">)</span>
+<span class="gp">... </span>            <span class="k">yield</span> <span class="bp">self</span><span class="o">.</span><span class="n">class_ends</span>
+<span class="gp">...</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">school</span> <span class="o">=</span> <span class="n">School</span><span class="p">(</span><span class="n">env</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">()</span>
+<span class="go"> \o/ \o/ \o/</span>
+<span class="go"> \o/ \o/ \o/</span>
+</pre></div>
+</div>
+<p>This can also be used like the <em>passivate / reactivate</em> known from SimPy 2.
+The pupils <em>passivate</em> when class begins and are <em>reactivated</em> when the bell
+rings.</p>
+</div>
+<div class="section" id="let-time-pass-by-the-timeout">
+<h2>Let time pass by: the <tt class="docutils literal"><span class="pre">Timeout</span></tt><a class="headerlink" href="#let-time-pass-by-the-timeout" title="Permalink to this headline">¶</a></h2>
+<p>To actually let time pass in a simulation, there is the <em>timeout</em> event.
+A timeout has two parameters: a <em>delay</em> and an optional <em>value</em>:
+<tt class="docutils literal"><span class="pre">Timeout(delay,</span> <span class="pre">value=None)</span></tt>. It triggers itself during its creation and
+schedules itself at <tt class="docutils literal"><span class="pre">now</span> <span class="pre">+</span> <span class="pre">delay</span></tt>. Thus, the <tt class="docutils literal"><span class="pre">succeed()</span></tt> and <tt class="docutils literal"><span class="pre">fail()</span></tt>
+methods cannot be called again and you have to pass the event value to it when
+you create the timeout.</p>
+<p>The delay can be any kind of number, usually an <em>int</em> or <em>float</em> as long as it
+supports comparison and addition.</p>
+</div>
+<div class="section" id="processes-are-events-too">
+<h2>Processes are events, too<a class="headerlink" href="#processes-are-events-too" title="Permalink to this headline">¶</a></h2>
+<p>SimPy processes (as created by <a class="reference internal" href="../api_reference/simpy.events.html#simpy.events.Process" title="simpy.events.Process"><tt class="xref py py-class docutils literal"><span class="pre">Process</span></tt></a> or <tt class="docutils literal"><span class="pre">env.process()</span></tt>) have the
+nice property of being events, too.</p>
+<p>That means, that a process can yield another process. It will then be resumed
+when the other process ends. The event&#8217;s value will be the return value of that
+process:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="k">def</span> <span class="nf">sub</span><span class="p">(</span><span class="n">env</span><span class="p">):</span>
+<span class="gp">... </span>    <span class="k">yield</span> <span class="n">env</span><span class="o">.</span><span class="n">timeout</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+<span class="gp">... </span>    <span class="k">return</span> <span class="mi">23</span>
+<span class="gp">...</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">def</span> <span class="nf">parent</span><span class="p">(</span><span class="n">env</span><span class="p">):</span>
+<span class="gp">... </span>    <span class="n">ret</span> <span class="o">=</span> <span class="k">yield</span> <span class="n">env</span><span class="o">.</span><span class="n">process</span><span class="p">(</span><span class="n">sub</span><span class="p">(</span><span class="n">env</span><span class="p">))</span>
+<span class="gp">... </span>    <span class="k">return</span> <span class="n">ret</span>
+<span class="gp">...</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">process</span><span class="p">(</span><span class="n">parent</span><span class="p">(</span><span class="n">env</span><span class="p">)))</span>
+<span class="go">23</span>
+</pre></div>
+</div>
+<p>The example above will only work in Python &gt;= 3.3. As a workaround for older
+Python versions, you can use <tt class="docutils literal"><span class="pre">env.exit(23)</span></tt> with the same effect.</p>
+<p>When a process is created, it schedules an <a class="reference internal" href="../api_reference/simpy.events.html#simpy.events.Initialize" title="simpy.events.Initialize"><tt class="xref py py-class docutils literal"><span class="pre">Initialize</span></tt></a> event which will
+start the execution of the process when triggered. You usually won&#8217;t have to
+deal with this type of event.</p>
+<p>If you don&#8217;t want a process to start immediately but after a certain delay, you
+can use <a class="reference internal" href="../api_reference/simpy.util.html#simpy.util.start_delayed" title="simpy.util.start_delayed"><tt class="xref py py-func docutils literal"><span class="pre">simpy.util.start_delayed()</span></tt></a>. This method returns a helper
+process that uses a <em>timeout</em> before actually starting a process.</p>
+<p>The example from above, but with a delayed start of <tt class="docutils literal"><span class="pre">sub()</span></tt>:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span> <span class="nn">simpy.util</span> <span class="kn">import</span> <span class="n">start_delayed</span>
+<span class="go">&gt;&gt;&gt;</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">def</span> <span class="nf">sub</span><span class="p">(</span><span class="n">env</span><span class="p">):</span>
+<span class="gp">... </span>    <span class="k">yield</span> <span class="n">env</span><span class="o">.</span><span class="n">timeout</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+<span class="gp">... </span>    <span class="k">return</span> <span class="mi">23</span>
+<span class="gp">...</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">def</span> <span class="nf">parent</span><span class="p">(</span><span class="n">env</span><span class="p">):</span>
+<span class="gp">... </span>    <span class="n">start</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">now</span>
+<span class="gp">... </span>    <span class="n">sub_proc</span> <span class="o">=</span> <span class="k">yield</span> <span class="n">start_delayed</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">sub</span><span class="p">(</span><span class="n">env</span><span class="p">),</span> <span class="n">delay</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+<span class="gp">... </span>    <span class="k">assert</span> <span class="n">env</span><span class="o">.</span><span class="n">now</span> <span class="o">-</span> <span class="n">start</span> <span class="o">==</span> <span class="mi">3</span>
+<span class="gp">...</span>
+<span class="gp">... </span>    <span class="n">ret</span> <span class="o">=</span> <span class="k">yield</span> <span class="n">sub_proc</span>
+<span class="gp">... </span>    <span class="k">return</span> <span class="n">ret</span>
+<span class="gp">...</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">process</span><span class="p">(</span><span class="n">parent</span><span class="p">(</span><span class="n">env</span><span class="p">)))</span>
+<span class="go">23</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="waiting-for-multiple-events-at-once">
+<span id="id1"></span><h2>Waiting for multiple events at once<a class="headerlink" href="#waiting-for-multiple-events-at-once" title="Permalink to this headline">¶</a></h2>
+<p>Sometimes, you want to wait for more than one event at the same time. For
+example, you may want to wait for a resource, but not for an unlimited amount
+of time. Or you may want to wait until all a set of events has happened.</p>
+<p>SimPy therefore offers the <a class="reference internal" href="../api_reference/simpy.events.html#simpy.events.AnyOf" title="simpy.events.AnyOf"><tt class="xref py py-class docutils literal"><span class="pre">AnyOf</span></tt></a> and <a class="reference internal" href="../api_reference/simpy.events.html#simpy.events.AllOf" title="simpy.events.AllOf"><tt class="xref py py-class docutils literal"><span class="pre">AllOf</span></tt></a> events which both
+are a <a class="reference internal" href="../api_reference/simpy.events.html#simpy.events.Condition" title="simpy.events.Condition"><tt class="xref py py-class docutils literal"><span class="pre">Condition</span></tt></a> event.</p>
+<p>Both take a list of events as an argument and are triggered if at least one or
+all of them of them are triggered.</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span> <span class="nn">simpy.events</span> <span class="kn">import</span> <span class="n">AnyOf</span><span class="p">,</span> <span class="n">AllOf</span><span class="p">,</span> <span class="n">Event</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">events</span> <span class="o">=</span> <span class="p">[</span><span class="n">Event</span><span class="p">(</span><span class="n">env</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3</span><span class="p">)]</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">a</span> <span class="o">=</span> <span class="n">AnyOf</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">events</span><span class="p">)</span>  <span class="c"># Triggers if at least one of &quot;events&quot; is triggered.</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">b</span> <span class="o">=</span> <span class="n">AllOf</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">events</span><span class="p">)</span>  <span class="c"># Triggers if all each of &quot;events&quot; is triggered.</span>
+</pre></div>
+</div>
+<p>The value of a condition event is an ordered dictionary with an entry for every
+triggered event. In the case of <tt class="docutils literal"><span class="pre">AllOf</span></tt>, the size of that dictionary will
+always be the same as the length of the event list. The value dict of <tt class="docutils literal"><span class="pre">AnyOf</span></tt>
+will have at least one entry. In both cases, the event instances are used as
+keys and the event values will be the values.</p>
+<p>As a shorthand for <tt class="docutils literal"><span class="pre">AllOf</span></tt> and <tt class="docutils literal"><span class="pre">AnyOf</span></tt>, you can also use the logical
+operators <tt class="docutils literal"><span class="pre">&amp;</span></tt> (and) and <tt class="docutils literal"><span class="pre">|</span></tt> (or):</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="k">def</span> <span class="nf">test_condition</span><span class="p">(</span><span class="n">env</span><span class="p">):</span>
+<span class="gp">... </span>    <span class="n">t1</span><span class="p">,</span> <span class="n">t2</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">timeout</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="s">&#39;spam&#39;</span><span class="p">),</span> <span class="n">env</span><span class="o">.</span><span class="n">timeout</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="s">&#39;eggs&#39;</span><span class="p">)</span>
+<span class="gp">... </span>    <span class="n">ret</span> <span class="o">=</span> <span class="k">yield</span> <span class="n">t1</span> <span class="o">|</span> <span class="n">t2</span>
+<span class="gp">... </span>    <span class="k">assert</span> <span class="n">ret</span> <span class="o">==</span> <span class="p">{</span><span class="n">t1</span><span class="p">:</span> <span class="s">&#39;spam&#39;</span><span class="p">}</span>
+<span class="gp">...</span>
+<span class="gp">... </span>    <span class="n">t1</span><span class="p">,</span> <span class="n">t2</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">timeout</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="s">&#39;spam&#39;</span><span class="p">),</span> <span class="n">env</span><span class="o">.</span><span class="n">timeout</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="s">&#39;eggs&#39;</span><span class="p">)</span>
+<span class="gp">... </span>    <span class="n">ret</span> <span class="o">=</span> <span class="k">yield</span> <span class="n">t1</span> <span class="o">&amp;</span> <span class="n">t2</span>
+<span class="gp">... </span>    <span class="k">assert</span> <span class="n">ret</span> <span class="o">==</span> <span class="p">{</span><span class="n">t1</span><span class="p">:</span> <span class="s">&#39;spam&#39;</span><span class="p">,</span> <span class="n">t2</span><span class="p">:</span> <span class="s">&#39;eggs&#39;</span><span class="p">}</span>
+<span class="gp">...</span>
+<span class="gp">... </span>    <span class="c"># You can also concatenate &amp; and |</span>
+<span class="gp">... </span>    <span class="n">e1</span><span class="p">,</span> <span class="n">e2</span><span class="p">,</span> <span class="n">e3</span> <span class="o">=</span> <span class="p">[</span><span class="n">env</span><span class="o">.</span><span class="n">timeout</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3</span><span class="p">)]</span>
+<span class="gp">... </span>    <span class="k">yield</span> <span class="p">(</span><span class="n">e1</span> <span class="o">|</span> <span class="n">e2</span><span class="p">)</span> <span class="o">&amp;</span> <span class="n">e3</span>
+<span class="gp">... </span>    <span class="k">assert</span> <span class="nb">all</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">processed</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="p">[</span><span class="n">e1</span><span class="p">,</span> <span class="n">e2</span><span class="p">,</span> <span class="n">e3</span><span class="p">])</span>
+<span class="gp">...</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">proc</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">process</span><span class="p">(</span><span class="n">test_condition</span><span class="p">(</span><span class="n">env</span><span class="p">))</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>The order of condition results is identical to the order in which the condition
+events were specified. This allows the following idiom for conveniently
+fetching the values of multiple events specified in an <em>and</em> condition
+(including <tt class="docutils literal"><span class="pre">AllOf</span></tt>):</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="k">def</span> <span class="nf">fetch_values_of_multiple_events</span><span class="p">(</span><span class="n">env</span><span class="p">):</span>
+<span class="gp">... </span>    <span class="n">t1</span><span class="p">,</span> <span class="n">t2</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">timeout</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="s">&#39;spam&#39;</span><span class="p">),</span> <span class="n">env</span><span class="o">.</span><span class="n">timeout</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="s">&#39;eggs&#39;</span><span class="p">)</span>
+<span class="gp">... </span>    <span class="n">r1</span><span class="p">,</span> <span class="n">r2</span> <span class="o">=</span> <span class="p">(</span><span class="k">yield</span> <span class="n">t1</span> <span class="o">&amp;</span> <span class="n">t2</span><span class="p">)</span><span class="o">.</span><span class="n">values</span><span class="p">()</span>
+<span class="gp">... </span>    <span class="k">assert</span> <span class="n">r1</span> <span class="o">==</span> <span class="s">&#39;spam&#39;</span> <span class="ow">and</span> <span class="n">r2</span> <span class="o">==</span> <span class="s">&#39;eggs&#39;</span>
+<span class="gp">...</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">proc</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">process</span><span class="p">(</span><span class="n">fetch_values_of_multiple_events</span><span class="p">(</span><span class="n">env</span><span class="p">))</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+            <p class="logo"><a href="../contents.html">
+              <img class="logo" src="../_static/simpy-logo-small.png" alt="Logo"/>
+            </a></p>
+  <h3><a href="../contents.html">Table Of Contents</a></h3>
+  <ul>
+<li><a class="reference internal" href="#">Events</a><ul>
+<li><a class="reference internal" href="#event-basics">Event basics</a><ul>
+<li><a class="reference internal" href="#adding-callbacks-to-an-event">Adding callbacks to an event</a></li>
+<li><a class="reference internal" href="#triggering-events">Triggering events</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#example-usages-for-event">Example usages for <tt class="docutils literal"><span class="pre">Event</span></tt></a></li>
+<li><a class="reference internal" href="#let-time-pass-by-the-timeout">Let time pass by: the <tt class="docutils literal"><span class="pre">Timeout</span></tt></a></li>
+<li><a class="reference internal" href="#processes-are-events-too">Processes are events, too</a></li>
+<li><a class="reference internal" href="#waiting-for-multiple-events-at-once">Waiting for multiple events at once</a></li>
+</ul>
+</li>
+</ul>
+
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="environments.html"
+                        title="previous chapter">Environments</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="process_interaction.html"
+                        title="next chapter">Process Interaction</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="../_sources/topical_guides/events.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="process_interaction.html" title="Process Interaction"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="environments.html" title="Environments"
+             >previous</a> |</li>
+        <li><a href="../contents.html">SimPy 3.0.6 documentation</a> &raquo;</li>
+          <li><a href="index.html" >Topical Guides</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2002–2015, Team SimPy.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

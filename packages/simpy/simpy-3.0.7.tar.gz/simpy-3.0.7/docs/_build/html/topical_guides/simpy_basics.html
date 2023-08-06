@@ -1,0 +1,221 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>SimPy basics &mdash; SimPy 3.0.6 documentation</title>
+    
+    <link rel="stylesheet" href="../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../',
+        VERSION:     '3.0.6',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../_static/jquery.js"></script>
+    <script type="text/javascript" src="../_static/underscore.js"></script>
+    <script type="text/javascript" src="../_static/doctools.js"></script>
+    <link rel="shortcut icon" href="../_static/favicon.ico"/>
+    <link rel="top" title="SimPy 3.0.6 documentation" href="../index.html" />
+    <link rel="up" title="Topical Guides" href="index.html" />
+    <link rel="next" title="Environments" href="environments.html" />
+    <link rel="prev" title="Topical Guides" href="index.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="environments.html" title="Environments"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="index.html" title="Topical Guides"
+             accesskey="P">previous</a> |</li>
+        <li><a href="../contents.html">SimPy 3.0.6 documentation</a> &raquo;</li>
+          <li><a href="index.html" accesskey="U">Topical Guides</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="simpy-basics">
+<h1>SimPy basics<a class="headerlink" href="#simpy-basics" title="Permalink to this headline">¶</a></h1>
+<p>This guide describes the basic concepts of SimPy: How does it work? What are
+processes, events and the environment? What can I do with them?</p>
+<div class="section" id="how-simpy-works">
+<h2>How SimPy works<a class="headerlink" href="#how-simpy-works" title="Permalink to this headline">¶</a></h2>
+<p>If you break SimPy down, it is just an asynchronous event dispatcher. You
+generate events and schedule them at a given simulation time. Events are sorted
+by priority, simulation time, and an increasing event id. An event also has
+a list of callbacks, which are executed when the event is triggered and
+processed by the event loop. Events may also have a return value.</p>
+<p>The components involved in this are the <a class="reference internal" href="../api_reference/simpy.core.html#simpy.core.Environment" title="simpy.core.Environment"><tt class="xref py py-class docutils literal"><span class="pre">Environment</span></tt></a>,
+<a class="reference internal" href="../api_reference/simpy.events.html#module-simpy.events" title="simpy.events"><tt class="xref py py-mod docutils literal"><span class="pre">events</span></tt></a> and the process functions that you write.</p>
+<p>Process functions implement your simulation model, that is, they define the
+behavior of your simulation. They are plain Python generator functions that
+yield instances of <a class="reference internal" href="../api_reference/simpy.events.html#simpy.events.Event" title="simpy.events.Event"><tt class="xref py py-class docutils literal"><span class="pre">Event</span></tt></a>.</p>
+<p>The environment stores these events in its event list and keeps track of the
+current simulation time.</p>
+<p>If a process function yields an event, SimPy adds the process to the event&#8217;s
+callbacks and suspends the process until the event is triggered and processed.
+When a process waiting for an event is resumed, it will also receive the
+event&#8217;s value.</p>
+<p>Here is a very simple example that illustrates all this; the code is more
+verbose than it needs to be to make things extra clear. You find a compact
+version of it at the end of this section:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="kn">import</span> <span class="nn">simpy</span>
+<span class="go">&gt;&gt;&gt;</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">def</span> <span class="nf">example</span><span class="p">(</span><span class="n">env</span><span class="p">):</span>
+<span class="gp">... </span>    <span class="n">event</span> <span class="o">=</span> <span class="n">simpy</span><span class="o">.</span><span class="n">events</span><span class="o">.</span><span class="n">Timeout</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">delay</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="mi">42</span><span class="p">)</span>
+<span class="gp">... </span>    <span class="n">value</span> <span class="o">=</span> <span class="k">yield</span> <span class="n">event</span>
+<span class="gp">... </span>    <span class="k">print</span><span class="p">(</span><span class="s">&#39;now=</span><span class="si">%d</span><span class="s">, value=</span><span class="si">%d</span><span class="s">&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">now</span><span class="p">,</span> <span class="n">value</span><span class="p">))</span>
+<span class="go">&gt;&gt;&gt;</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">env</span> <span class="o">=</span> <span class="n">simpy</span><span class="o">.</span><span class="n">Environment</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">example_gen</span> <span class="o">=</span> <span class="n">example</span><span class="p">(</span><span class="n">env</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span> <span class="o">=</span> <span class="n">simpy</span><span class="o">.</span><span class="n">events</span><span class="o">.</span><span class="n">Process</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">example_gen</span><span class="p">)</span>
+<span class="go">&gt;&gt;&gt;</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">()</span>
+<span class="go">now=1, value=42</span>
+</pre></div>
+</div>
+<p>The <tt class="docutils literal"><span class="pre">example()</span></tt> process function above first creates
+a <a class="reference internal" href="../api_reference/simpy.events.html#simpy.events.Timeout" title="simpy.events.Timeout"><tt class="xref py py-class docutils literal"><span class="pre">Timeout</span></tt></a> event. It passes the environment, a delay, and
+a value to it. The Timeout schedules itself at <tt class="docutils literal"><span class="pre">now</span> <span class="pre">+</span> <span class="pre">delay</span></tt> (that&#8217;s why the
+environment is required); other event types usually schedule themselves at the
+current simulation time.</p>
+<p>The process function then yields the event and thus gets suspended. It is
+resumed, when SimPy processes the Timeout event. The process function also
+receives the event&#8217;s value (42) &#8211; this is, however, optional, so <tt class="docutils literal"><span class="pre">yield</span>
+<span class="pre">event</span></tt> would have been okay if the you were not interested in the value or if
+the event had no value at all.</p>
+<p>Finally, the process function prints the current simulation time (that is
+accessible via the environment&#8217;s <a class="reference internal" href="../api_reference/simpy.core.html#simpy.core.Environment.now" title="simpy.core.Environment.now"><tt class="xref py py-attr docutils literal"><span class="pre">now</span></tt></a> attribute)
+and the Timeout&#8217;s value.</p>
+<p>If all required process functions are defined, you can instantiate all objects
+for your simulation. In most cases, you start by creating an instance of
+<a class="reference internal" href="../api_reference/simpy.core.html#simpy.core.Environment" title="simpy.core.Environment"><tt class="xref py py-class docutils literal"><span class="pre">Environment</span></tt></a>, because you&#8217;ll need to pass it around a lot
+when creating everything else.</p>
+<p>Starting a process function involves two things:</p>
+<ol class="arabic simple">
+<li>You have to call the process function to create a generator object. (This
+will not execute any code of that function yet. Please read <a class="reference external" href="http://stackoverflow.com/questions/231767/the-python-yield-keyword-explained/231855#231855">The Python
+yield keyword explained</a>,
+to understand why this is the case.)</li>
+<li>You then create an instance of <a class="reference internal" href="../api_reference/simpy.events.html#simpy.events.Process" title="simpy.events.Process"><tt class="xref py py-class docutils literal"><span class="pre">Process</span></tt></a> and pass the
+environment and the generator object to it. This will schedule an
+<a class="reference internal" href="../api_reference/simpy.events.html#simpy.events.Initialize" title="simpy.events.Initialize"><tt class="xref py py-class docutils literal"><span class="pre">Initialize</span></tt></a> event at the current simulation time which
+starts the execution of the process function. The process instance is also
+an event that is triggered when the process function returns. The
+<a class="reference internal" href="events.html"><em>guide to events</em></a> explains why this is handy.</li>
+</ol>
+<p>Finally, you can start SimPy&#8217;s event loop. By default, it will run as long as
+there are events in the event list, but you can also let it stop earlier by
+providing an <tt class="docutils literal"><span class="pre">until</span></tt> argument (see <a class="reference internal" href="environments.html#simulation-control"><em>Simulation control</em></a>).</p>
+<p>The following guides describe the environment and its interactions with events
+and process functions in more detail.</p>
+</div>
+<div class="section" id="best-practice-version-of-the-example-above">
+<h2>&#8220;Best practice&#8221; version of the example above<a class="headerlink" href="#best-practice-version-of-the-example-above" title="Permalink to this headline">¶</a></h2>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="kn">import</span> <span class="nn">simpy</span>
+<span class="go">&gt;&gt;&gt;</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">def</span> <span class="nf">example</span><span class="p">(</span><span class="n">env</span><span class="p">):</span>
+<span class="gp">... </span>    <span class="n">value</span> <span class="o">=</span> <span class="k">yield</span> <span class="n">env</span><span class="o">.</span><span class="n">timeout</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="mi">42</span><span class="p">)</span>
+<span class="gp">... </span>    <span class="k">print</span><span class="p">(</span><span class="s">&#39;now=</span><span class="si">%d</span><span class="s">, value=</span><span class="si">%d</span><span class="s">&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">now</span><span class="p">,</span> <span class="n">value</span><span class="p">))</span>
+<span class="go">&gt;&gt;&gt;</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">env</span> <span class="o">=</span> <span class="n">simpy</span><span class="o">.</span><span class="n">Environment</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">process</span><span class="p">(</span><span class="n">example</span><span class="p">(</span><span class="n">env</span><span class="p">))</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">env</span><span class="o">.</span><span class="n">run</span><span class="p">()</span>
+<span class="go">now=1, value=42</span>
+</pre></div>
+</div>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+            <p class="logo"><a href="../contents.html">
+              <img class="logo" src="../_static/simpy-logo-small.png" alt="Logo"/>
+            </a></p>
+  <h3><a href="../contents.html">Table Of Contents</a></h3>
+  <ul>
+<li><a class="reference internal" href="#">SimPy basics</a><ul>
+<li><a class="reference internal" href="#how-simpy-works">How SimPy works</a></li>
+<li><a class="reference internal" href="#best-practice-version-of-the-example-above">&#8220;Best practice&#8221; version of the example above</a></li>
+</ul>
+</li>
+</ul>
+
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="index.html"
+                        title="previous chapter">Topical Guides</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="environments.html"
+                        title="next chapter">Environments</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="../_sources/topical_guides/simpy_basics.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="environments.html" title="Environments"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="index.html" title="Topical Guides"
+             >previous</a> |</li>
+        <li><a href="../contents.html">SimPy 3.0.6 documentation</a> &raquo;</li>
+          <li><a href="index.html" >Topical Guides</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2002–2015, Team SimPy.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>
