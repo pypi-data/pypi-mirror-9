@@ -1,0 +1,3 @@
+Ein Skript zum löschen von temporären Daten in TeX-Projekten.
+
+
