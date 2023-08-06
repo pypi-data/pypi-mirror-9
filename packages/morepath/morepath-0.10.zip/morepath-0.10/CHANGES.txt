@@ -1,0 +1,697 @@
+CHANGES
+*******
+
+0.10 (2015-04-09)
+=================
+
+- Server-side templating language support: there is now a ``template``
+  argument for the ``html`` directive (and ``view`` and ``json``).
+  You need to use a plugin to add particular template languages to
+  your project, such as ``more.chameleon`` and ``more.jinja2``, but
+  you can also add your own.
+
+  See http://morepath.readthedocs.org/en/latest/templates.html
+
+- Add a new "A Review of the Web" document to the docs to show how
+  Morepath fits within the web.
+
+  http://morepath.readthedocs.org/en/latest/web.html
+
+- The publisher does not respond to a ``None`` render function
+  anymore. Instead, the ``view`` directive now uses a default
+  ``render_view`` if ``None`` is configured. This simplifies the
+  publisher guaranteeing a ``render`` function always exists.
+
+  Fixes https://github.com/morepath/morepath/issues/283
+
+- Introduce a ``request.resolve_path`` method that allows you to resolve
+  paths to objects programmatically.
+
+- Modify ``setup.py`` to use ``io.open`` instead of ``open`` to
+  include the README and the CHANGELOG and hardcode UTF-8 so it works
+  on all versions of Python with all default encodings.
+
+- Various documentation fixes.
+
+0.9 (2014-11-25)
+================
+
+- **Breaking change**. In previous releases of Morepath, Morepath did
+  not include the full hostname in generated links (so ``/a`` instead
+  of ``http://example.com/a``). Morepath 0.9 does include the full
+  hostname in generated links by default. This to support the
+  non-browser client use case better. In the previous system without
+  fully qualified URLs, client code needs to manually add the base of
+  links itself in order to be able to access them. That makes client
+  code more complicated than it should be. To make writing such client
+  code as easy as possible Morepath now generates complete URLs.
+
+  This should not break any code, though it can break tests that rely
+  on the previous behavior. To fix ``webtest`` style tests, prefix
+  the expected links with ``http://localhost/``.
+
+  If for some reason you want the old behavior back in an application,
+  you can use the ``link_prefix`` directive::
+
+    @App.link_prefix()
+    def my_link_prefix(request):
+        return '' # prefix nothing again
+
+- Directives are now logged to the ``morepath.directive`` log, which
+  is using the standard Python ``logging`` infrastructure. See
+  http://morepath.readthedocs.org/en/latest/logging.html
+
+- Document ``more.forwarded`` proxy support in
+  http://morepath.readthedocs.org/en/latest/paths_and_linking.html
+
+- Document behavior of ``request.after`` in combination with directly
+  returning a response object from a view.
+
+- Expose ``body_model_predicate`` to the public Morepath API. You
+  can now say your predicate comes after it.
+
+- Expose ``LAST_VIEW_PREDICATE`` to the Morepath API. This is the last
+  predicate defined by the Morepath core.
+
+- Update the predicate documentation.
+
+- Updated the more.static doc to reflect changes in it.
+
+- Fix doc for grouping views with the ``with`` statement.
+
+- Suggest a few things to try when your code doesn't appear to be
+  scanned properly.
+
+- A new view predicate without a fallback resulted in an internal
+  server error if the predicate did not match. Now it results in a 404
+  Not Found by default. To override this default, define a predicate
+  fallback.
+
+0.8 (2014-11-13)
+================
+
+- **Breaking change**. Reg 0.9 introduces a new, more powerful
+  way to create dispatch functions, and this has resulted in
+  a new, incompatible Reg API.
+
+  Morepath has been adjusted to make use of the new Reg. This won't
+  affect many Morepath applications, and they should be able to
+  continue unchanged. But some Morepath extensions and advanced
+  applications may break, so you should be aware of the changes.
+
+  * The ``@App.function`` directive has changed from this::
+
+      class A(object):
+          pass
+
+      class B(object):
+          pass
+
+      @reg.generic
+      def dispatch_function(a, b):
+          pass
+
+      @App.function(dispatch_function, A, B)
+      def dispatched_to(a, b):
+          return 'dispatched to A and B'
+
+    to this::
+
+      class A(object):
+          pass
+
+      class B(object):
+          pass
+
+      @reg.dispatch('a', 'b')
+      def dispatch_function(a, b):
+          pass
+
+      @App.function(dispatch_function, a=A, b=B)
+      def dispatched_to(a, b):
+          return 'dispatched to A and B'
+
+    The new system in Reg (see its docs_) is a lot more flexible than
+    what we had before. When you use ``function`` you don't need to
+    know about the order of the predicates anymore -- this is
+    determined by the arguments to ``@reg.dispatch()``. You can now
+    also have function arguments that Reg ignores for dispatch.
+
+  * The ``@App.predicate`` and ``@App.predicate_fallback`` directive
+    have changed. You can now install custom predicates and fallbacks
+    for *any* generic function that's marked with
+    ``@reg.dispatch_external_predicates()``. The Morepath view code
+    has been simplified to be based on this, and is also more powerful
+    as it can now be extended with new predicates that use
+    predicate-style dispatch.
+
+  .. _docs: http://reg.readthedocs.org
+
+- Introduce the ``body_model`` predicate for views. You can give it
+  the class of the ``request.body_obj`` you want to handle with this
+  view. In combination with the ``load_json`` directive this allows
+  you to write views that respond only to the POSTing or PUTing of a
+  certain type of object.
+
+- Internals refactoring: we had a few potentially overridable dispatch
+  functions in ``morepath.generic`` that actually were never
+  overridden in any directives. Simplify this by moving their
+  implementation into ``morepath.publish`` and
+  ``morepath.request``. ``generic.link``, ``generic.consume`` and
+  ``generic.response`` are now gone.
+
+- Introduce a ``link_prefix`` directive that allows you to set the
+  URL prefix used by every link generated by the request.
+
+- A bug fix in ``request.view()``; the ``lookup`` on the ``request``
+  was not properly updated.
+
+- Another bug fix in ``request.view()``; if ``deferred_link_app`` app
+  is used, ``request.app`` should be adjusted to the app currently
+  being deferred to.
+
+- ``request.after`` behavior is clarified: it does not run for any
+  exceptions raised during the handling of the request, only for the
+  "proper" response. Fix a bug where it *did* sometimes run.
+
+- Previously if you returned ``None`` for a path in a ``variables``
+  function for a path, you would get a path with ``None`` in it. Now
+  it is a ``LinkError``.
+
+- If you return a non-dict for ``variables`` for a path, you get a proper
+  ``LinkError`` now.
+
+- One test related to defer_links did not work correctly in Python 3. Fixed.
+
+- Add API doc for ``body_obj``. Also fix JSON and objects doc to talk
+  about ``request.body_obj`` instead of ``request.obj``.
+
+- Extend API docs for security: detail the API an identity policy
+  needs to implement and fix a few bugs.
+
+- Fix ReST error in API docs for ``autoconfig`` and ``autosetup``.
+
+- Fix a few ReST links to the API docs in the app reuse document.
+
+0.7 (2014-11-03)
+================
+
+- **Breaking change**. There has been a change in the way the mount
+  directive works. There has also been a change in the way linking
+  between application works. The changes result in a simpler, more
+  powerful API and implementation.
+
+  The relevant changes are:
+
+  * You can now define your own custom ``__init__`` for
+    ``morepath.App`` subclasses. Here you can specify the arguments
+    with which your application object should be mounted. The previous
+    ``variables`` class attribute is now ignored.
+
+    It's not necessary to use ``super()`` when you subclass from
+    ``morepath.App`` directly.
+
+    So, instead of this::
+
+       class MyApp(morepath.App):
+           variables = ['mount_id']
+
+    You should now write this::
+
+       class MyApp(morepath.App):
+           def __init__(self, mount_id):
+               self.mount_id = mount_id
+
+  * The ``mount`` directive should now return an *instance* of the
+    application being mounted, not a dictionary with mount
+    parameters. The application is specified using the ``app``
+    argument to the directive. So instead of this::
+
+      @RootApp.mount(app=MyApp, path='sub/{id}')
+      def mount_sub(id):
+          return {
+             'mount_id': id
+          }
+
+    You should now use this::
+
+      @RootApp.mount(app=MyApp, path='sub/{id}')
+      def mount_sub(id):
+          return MyApp(mount_id=id)
+
+  * The ``mount`` directive now takes a ``variables`` argument. This
+    works like the ``variables`` argument to the ``path``
+    directive and is used to construct links.
+
+    It is given an instance of the app being mounted, and it should
+    reconstruct those variables needed in its path as a dictionary. If
+    omitted, Morepath tries to get them as attributes from the
+    application instance, just like it tries to get attributes of any
+    model instance.
+
+    ``MyApp`` above is a good example of where this is required: it
+    does store the correct information, but as the ``mount_id``
+    attribute, not the ``id`` attribute. You should add a ``variables``
+    argument to the ``mount`` directive to explain to Morepath how
+    to obtain ``id``::
+
+      @RootApp.mount(app=MyApp, path='sub/{id}',
+                     variables=lambda app: dict(id=app.mount_id))
+      def mount_sub(id):
+          return MyApp(mount_id=id)
+
+    The simplest way to avoid having to do this is to name the
+    attributes the same way as the variables in the paths, just like
+    you can do for model classes.
+
+  * In the past you'd get additional mount context variables as extra
+    variables in the function decorated by the ``path`` decorator.
+    This does not happen anymore. Instead you can add a special
+    ``app`` parameter to this function. This gives you access to the
+    current application object, and you can extract its attributes
+    there.
+
+    So instead of this::
+
+       @MyApp.path(path='models/{id}', model=Model)
+       def get_root(mount_id, id):
+           return Model(mount_id, id)
+
+    where ``mount_id`` is magically retrieved from the way ``MyApp`` was
+    mounted, you now write this::
+
+       @MyApp.path(path='models/{id}', model=Model)
+       def get_root(app, id):
+           return Model(app.mount_id, id)
+
+  * There was an ``request.mounted`` attribute. This was a special an
+    instance of a special ``Mounted`` class. This ``Mounted`` class is
+    now gone -- instead mounted applications are simply instances of
+    their class. To access the currently mounted application, use
+    ``request.app``.
+
+  * The ``Request`` object had ``child`` and ``sibling`` methods as
+    well as a ``parent`` attribute to navigate to different "link
+    makers".  You'd navigate to the link maker of an application in
+    order to create links to objects in that application. These are
+    now gone. Instead you can do this navigation from the application
+    object directly, and instead of link makers, you get application
+    instances. You can pass an application instance as a special
+    ``app`` argument to ``request.link`` and ``request.view``.
+
+    So instead of this::
+
+       request.child(foo).link(obj)
+
+    You now write this::
+
+       request.link(obj, app=request.app.child(foo))
+
+    And instead of this::
+
+       request.parent.link(obj)
+
+    You now write this::
+
+       request.link(obj, app=request.app.parent)
+
+    Note that the new ``defer_links`` directive can be used to
+    automate this behavior for particular models.
+
+  * The ``.child`` method on ``App`` can the app class as well as the
+    parameters for the function decorated by the ``mount`` directive::
+
+       app.child(MyApp, id='foo')
+
+    This can also be done by name. So, assuming ``MyApp`` was mounted
+    under ``my_app``::
+
+       app.child('my_app', id='foo')
+
+    This is how ``request.child`` worked already.
+
+    As an alternative you can now instead pass an app *instance*::
+
+       app.child(MyApp(mount_id='foo'))
+
+    Unlike the other ways to get the child, this takes the parameters
+    need to create the app instance, as opposed to taking the
+    parameters under which the app was mounted.
+
+  Motivation behind these changes:
+
+  Morepath used to have a ``Mount`` class separate from the ``App``
+  classes you define. Since Morepath 0.4 application objects became
+  classes, and it made sense to make their instances the same as the
+  mounted application. This unification has now taken place.
+
+  It then also made sense to use its navigation methods (``child`` and
+  friend) to navigate the mount tree, instead of using the rather
+  complicated "link maker" infrastructure we had before.
+
+  This change simplifies the implementation of mounting considerably,
+  without taking away features and actually making the APIs involved
+  more clear. This simplification in turn made it easier to implement
+  the new ``defer_links`` directive.
+
+- **Breaking change**. The arguments to the ``render`` function have
+  changed. This is a function you can pass to a view directive.  The
+  render function now takes a second argument, the request. You need
+  to update your render functions to take this into account. This only
+  affects code that supplies an explicit ``render`` function to the
+  ``view``, ``json`` and ``html`` directives, and since not a lot of
+  those functions exist, the impact is expected to be minimal.
+
+- **Breaking change**. In certain circumstances it was useful to
+  access the settings through an application instance using
+  ``app.settings``. This does not work anymore; access the settings
+  through ``app.registry.settings`` instead.
+
+- ``dump_json`` and ``load_json`` directives. This lets you
+  automatically convert an object going to a response to JSON, and
+  converts JSON coming in as a request body from JSON to an
+  object. See http://morepath.readthedocs.org/en/latest/json.html for
+  more information.
+
+- ``defer_links`` directive. This directive can be used to declare
+  that a particular mounted application takes care of linking to
+  instances of a class. Besides deferring ``request.link()`` it will
+  also defer ``request.view``. This lets you combine applications with
+  more ease. By returning ``None`` from it you can also defer links to
+  this app's parent app.
+
+- ``app.ancestors()`` method and ``app.root`` attribute. These can be
+  used for convenient access to the ancestor apps of a mounted
+  application. To access from the request, use ``request.app.root``
+  and ``request.app.ancestors()``.
+
+- The ``App`` class now has a ``request_class`` class attribute. This
+  determines the class of the request that is created and can be
+  overridden by subclasses. ``more.static`` now makes use of this.
+
+- Several generic functions that weren't really pulling their weight
+  are now gone as part of the mount simplification:
+  ``generic.context`` and ``generic.traject`` are not needed anymore,
+  along with ``generic.link_maker``.
+
+- Change documentation to use uppercase class names for App classes
+  everywhere. This reflects a change in 0.4 and should help clarity.
+
+- Added documentation about auto-reloading Morepath during development.
+
+- No longer silently suppress ImportError during scanning: this can
+  hide genuine ``ImportError`` in the underlying code.
+
+  We were suppressing ``ImportError`` before as it can be triggered
+  by packages that rely on optional dependencies.
+
+  This is a common case in the ``.tests`` subdirectory of a package
+  which may import a test runner like ``pytest``. ``pytest`` is only a
+  test dependency of the package and not a mainline dependencies, and
+  this can break scanning. To avoid this problem, Morepath's autosetup
+  and autoconfig now automatically ignore ``.tests`` and ``.test``
+  sub-packages.
+
+  Enhanced the API docs for ``autosetup`` and ``autoconfig`` to describe
+  scenarios which can generate legitimate ``ImportError`` exceptions
+  and how to handle them.
+
+- Fix of examples in tween documentation.
+
+- Minor improvement in docstrings.
+
+0.6 (2014-09-08)
+================
+
+- Fix documentation on the ``with`` statement; it was not using the local
+  ``view`` variable correctly.
+
+- Add #morepath IRC channel to the community docs.
+
+- Named mounts. Instead of referring to the app class when
+  constructing a link to an object in an application mounted
+  elsewhere, you can put in the name of the mount. The name of the
+  mount can be given explicitly in the mount directive but defaults to
+  the mount path.
+
+  This helps when an application is mounted several times and needs to
+  generate different links depending on where it's mounted; by
+  referring to the application by name this is loosely coupled and
+  will work no matter what application is mounted under that name.
+
+  This also helps when linking to an application that may or may not
+  be present; instead of doing an import while looking for
+  ``ImportError``, you can try to construct the link and you'll get a
+  ``LinkError`` exception if the application is not there. Though this
+  still assumes you can import the model class of what you're linking
+  to.
+
+  (see issue #197)
+
+- Introduce a ``sibling`` method on Request. This combines the
+  ``.parent.child`` step in one for convenience when you want to
+  link to a sibling app.
+
+0.5.1 (2014-08-28)
+==================
+
+- Drop usage of sphinxcontrib.youtube in favor of raw HTML embedding,
+  as otherwise too many things broke on readthedocs.
+
+0.5 (2014-08-28)
+================
+
+- Add ``more.static`` documentation on local components.
+
+- Add links to youtube videos on Morepath: the keynote at PyCon DE
+  2013, and the talk on Morepath at EuroPython 2014.
+
+- Add a whole bunch of extra code quality tools to buildout.
+
+- ``verify_identity`` would be called even if no identity could be
+  established. Now skip calling ``verify_identity`` when we already
+  have ``NO_IDENTITY``. See issue #175.
+
+- Fix issue #186: mounting an app that is absorbing paths could
+  sometimes generate the wrong link. Thanks to Ying Zhong for the bug
+  report and test case.
+
+- Upgraded to a newer version of Reg (0.8) for ``@reg.classgeneric``
+  support as well as performance improvements.
+
+- Add a note in the documentation on how to deal with URL parameters
+  that are not Python names (such as ``foo@``, or ``blah[]``). You can
+  use a combination of ``extra_parameters`` and ``get_converters`` to
+  handle them.
+
+- Document the use of the ``with`` statement for directive
+  abbreviation (see the Views document).
+
+- Created a mailing list:
+
+  https://groups.google.com/forum/#!forum/morepath
+
+  Please join!
+
+  Add a new page on community to document this.
+
+0.4.1 (2014-07-08)
+==================
+
+- Compatibility for Python 3. I introduced a meta class in Morepath
+  0.4 and Python 3 did not like this. Now the tests pass again in
+  Python 3.
+
+- remove ``generic.lookup``, unused since Morepath 0.4.
+
+- Increase test coverage back to 100%.
+
+0.4 (2014-07-07)
+================
+
+- **BREAKING CHANGE** Move to class-based application registries. This
+  breaks old code and it needs to be updated. The update is not
+  difficult and amounts to:
+
+  * subclass ``morepath.App`` instead of instantiating it to create a
+    new app. Use subclasses for extension too.
+
+  * To get a WSGI object you can plug into a WSGI server, you need to
+    instantiate the app class first.
+
+  Old way::
+
+     app = morepath.App()
+
+  So, the ``app`` object that you use directives on is an
+  instance. New way::
+
+    class app(morepath.App):
+        pass
+
+  So, now it's a class. The directives look the same as before, so this
+  hasn't changed::
+
+     @app.view(model=Foo)
+     def foo_default(self, request):
+        ...
+
+  To extend an application with another one, you used to have to pass
+  the ``extends`` arguments. Old way::
+
+    sub_app = morepath.App(extends=[core_app])
+
+  This has now turned into subclassing. New way::
+
+    class sub_app(core_app):
+        pass
+
+  There was also a ``variables`` argument to specify an application
+  that can be mounted. Old way::
+
+     app = morepath.App(variables=['foo'])
+
+  This is now a class attribute. New way::
+
+     class app(morepath.App):
+         variables = ['foo']
+
+  The ``name`` argument to help debugging is gone; we can look at the
+  class name now. The ``testing_config`` argument used internally in
+  the Morepath tests has also become a class attribute.
+
+  In the old system, the application object was both configuration
+  point and WSGI object. Old way::
+
+      app = morepath.App()
+
+      # configuration
+      @app.path(...)
+      ...
+
+      # wsgi
+      morepath.run(app)
+
+  In the Morepath 0.4 this has been split. As we've already seen, the
+  application *class* serves. To get a WSGI object, you need to first
+  *instantiate* it. New way::
+
+     class app(morepath.App):
+       pass
+
+     # configuration
+     @app.path(...)
+     ...
+
+     # wsgi
+     morepath.run(app())
+
+  To mount an application manually with variables, we used to need the
+  special ``mount()`` method. Old way::
+
+    mounted_wiki_app = wiki_app.mount(wiki_id=3)
+
+  In the new system, mounting is done during instantiation of the app::
+
+    mounted_wiki_app = wiki_app(wiki_id=3)
+
+  Class names in Python are usually spelled with an upper case. In the
+  Morepath docs the application object has been spelled with a lower
+  case. We've used lower-case class names for application objects even
+  in the updated docs for example code, but feel free to make them
+  upper-case in your own code if you wish.
+
+  Why this change? There are some major benefits to this change:
+
+  * both extending and mounting app now use natural Python mechanisms:
+    subclassing and instantation.
+
+  * it allows us to expose the facility to create new directives to
+    the API. You can create application-specific directives.
+
+- You can define your own directives on your applications using the
+  ``directive`` directive::
+
+    @my_app.directive('my_directive')
+
+  This exposes details of the configuration system which is
+  underdocumented for now; study the ``morepath.directive`` module
+  source code for examples.
+
+- Document how to use more.static to include static resources into
+  your application.
+
+- Add a ``recursive=False`` option to the config.scan method. This
+  allows the non-recursive scanning of a package. Only its
+  ``__init__.py`` will be scanned.
+
+- To support scanning a single module non-recursively we need a
+  feature that hasn't landed in mainline Venusian yet, so depend on
+  Venusifork for now.
+
+- A small optimization in the publishing machinery. Less work is done
+  to update the generic function lookup context during routing.
+
+0.3 (2014-06-23)
+================
+
+- Ability to absorb paths entirely in path directive, as per issue #132.
+
+- Refactor of config engine to make Venusian and immediate config more
+  clear.
+
+- Typo fix in docs (Remco Wendt).
+
+- Get version number in docs from setuptools.
+
+- Fix changelog so that PyPI page generates HTML correctly.
+
+- Fix PDF generation so that the full content is generated.
+
+- Ability to mark a view as internal. It will be available to
+  ``request.view()`` but will give 404 on the web. This is useful for
+  structuring JSON views for reusability where you don't want them to
+  actually show up on the web.
+
+- A ``request.child(something).view()`` that had this view in turn
+  call a ``request.view()`` from the context of the ``something``
+  application would fail -- it would not be able to look up the view
+  as lookups still occurred in the context of the mounting
+  application. This is now fixed. (thanks Ying Zhong for reporting it)
+
+  Along with this fix refactored the request object so it keeps a
+  simple ``mounted`` attribute instead of a stack of ``mounts``; the
+  stack-like nature was not in use anymore as mounts themselves have
+  parents anyway. The new code is simpler.
+
+0.2 (2014-04-24)
+================
+
+- Python 3 support, in particular Python 3.4 (Alec Munro - fudomunro
+  on github).
+
+- Link generation now takes ``SCRIPT_NAME`` into account.
+
+- Morepath 0.1 had a security system, but it was undocumented. Now
+  it's documented (docs now in `Morepath Security`_), and some of its
+  behavior was slightly tweaked:
+
+  * new ``verify_identity`` directive.
+
+  * ``permission`` directive was renamed to ``permission_rule``.
+
+  * default unauthorized error is 403 Forbidden, not 401 Unauthorized.
+
+  * ``morepath.remember`` and ``morepath.forbet`` renamed to
+    ``morepath.remember_identity`` and ``morepath.forget_identity``.
+
+- Installation documentation tweaks. (Auke Willem Oosterhoff)
+
+- ``.gitignore`` tweaks (Auke Willem Oosterhoff)
+
+.. _`Morepath Security`: http://blog.startifact.com/posts/morepath-security.html
+
+0.1 (2014-04-08)
+================
+
+- Initial public release.
