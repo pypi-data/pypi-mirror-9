@@ -1,0 +1,10 @@
+__version__ = "0.4"
+__git_commiter_name__ = "Guy Rozendorn"
+__git_commiter_email__ = "guy@rzn.co.il"
+__git_branch__ = '(detached from v0.4)'
+__git_remote_tracking_branch__ = '(No remote tracking)'
+__git_remote_url__ = '(Not remote tracking)'
+__git_head_hash__ = 'ac206c893d96c33927ec333422a96c1c91840831'
+__git_head_subject__ = 'Finished release v0.4.'
+__git_head_message__ = '* release/v0.4:\n  whitespace\n  TRIVIAL timeout in aix is in seconds\n  HOSTDEV-1808 support AIX\n  TRIVIAL use os_info instead of platform\n  STORAGEMODEL-329 fixing size of SCSICMD\n  STORAGEMODEL-332 fixing DataIn for write commands\n  HOSTDEV-1991 ASI: ReportReadCapacityData16.p_i_exponenet should be p_i_exponent'
+__git_dirty_diff__ = ''
