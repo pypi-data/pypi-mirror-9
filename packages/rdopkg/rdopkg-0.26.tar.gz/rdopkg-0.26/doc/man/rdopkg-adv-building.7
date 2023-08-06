@@ -1,0 +1,405 @@
+'\" t
+.\"     Title: rdopkg-adv-building
+.\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
+.\" Generator: DocBook XSL Stylesheets v1.78.1 <http://docbook.sf.net/>
+.\"      Date: 03/19/2015
+.\"    Manual: \ \&
+.\"    Source: \ \&
+.\"  Language: English
+.\"
+.TH "RDOPKG\-ADV\-BUILDIN" "7" "03/19/2015" "\ \&" "\ \&"
+.\" -----------------------------------------------------------------
+.\" * Define some portability stuff
+.\" -----------------------------------------------------------------
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.\" http://bugs.debian.org/507673
+.\" http://lists.gnu.org/archive/html/groff/2009-02/msg00013.html
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.ie \n(.g .ds Aq \(aq
+.el       .ds Aq '
+.\" -----------------------------------------------------------------
+.\" * set default formatting
+.\" -----------------------------------------------------------------
+.\" disable hyphenation
+.nh
+.\" disable justification (adjust text to left margin only)
+.ad l
+.\" -----------------------------------------------------------------
+.\" * MAIN CONTENT STARTS HERE *
+.\" -----------------------------------------------------------------
+.SH "NAME"
+rdopkg-adv-building \- rdopkg adventures: building and submitting updates
+.SH "SYNOPSIS"
+.sp
+This is a story about using rdopkg kojibuild and rdopkg coprbuild to build new RDO packages in koji and copr and submitting them to RDO using rdopkg update\&.
+.SH "PROLOGUE"
+.sp
+Fedora builds are built in koji while EPEL builds are built in copr\&.
+.sp
+Run rdopkg info to get information about active releases and associated build systems/branches\&.
+.sp
+First, need to \fBrequest build permissions\fR in each copr\&. For Icehouse, following coprs are used (you need to sign in with your FAS):
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+https://copr\&.fedoraproject\&.org/coprs/jruzicka/rdo\-icehouse\-epel\-6/permissions/
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+https://copr\&.fedoraproject\&.org/coprs/jruzicka/rdo\-icehouse\-epel\-7/permissions/
+.RE
+.sp
+Poke an admin (jruzicka, apevec) to grant your requests\&.
+.sp
+Then, you need to save your \fBAPI token\fR to ~/config/copr as described here:
+.sp
+https://copr\&.fedoraproject\&.org/api/
+.sp
+Due to copr limitation, you also need to be able to scp to fedorapeople\&.org in order to upload SRPMs\&.
+.SH "CHAPTER 1"
+.sp
+Assume I want to build all RDO Icehouse builds after I modified f21 dist\-git branch (possibly by rdopkg new\-version 2\&.0\&.3)\&.
+.sp
+First, let\(cqs see what rdopkg thinks about f21 branch:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$ git checkout f21
+$ rdopkg pkgenv
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+Package: python\-swiftclient
+Version: 2\&.0\&.3
+OS dist: RDO
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+Dist\-git branch:       f21
+Local patches branch:  stable/icehouse
+Remote patches branch: patches/stable/icehouse
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+RDO release guess: icehouse
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+It detected icehouse release properly, we should be good to go\&.
+.SH "CHAPTER 2"
+.sp
+\fBbuild fedora package in koji\fR
+.sp
+After I\(cqm happy with my changes, I push the disgit and start the koji build\&.
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$ fedpkg push
+$ rdopkg kojibuild
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+This does fedpkg build and creates new update file up\&.yml:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$ cat up\&.yml
+\-\-\-
+notes: FILLME
+builds:
+\- id: python\-swiftclient\-2\&.0\&.3\-1\&.fc21
+  source: koji
+  repo: icehouse
+  dist: fedora\-20
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+Note it\(cqs fc21 build for fedora\-20\&. rdopkg info confirms this:
+.sp
+fedora\-20 built in koji/f21 from f21 branch
+.SH "CHAPTER 3"
+.sp
+\fBbuild epel\-6 and epel\-7 packages in copr\fR
+.sp
+Let\(cqs build epel\-6 first:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$ rdopkg coprbuild \-d epel\-6
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+This will:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+create el6 source RPM from current dist\-git
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+upload the source RPM to your
+fedorapeople\&.org:~/public_html/copr
+(specify Fedora user with
+\-u/\-\-fuser)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+submit the source RPM to build in
+jruzicka / rdo\-$RELEASE\-$DIST
+copr
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+watch the build
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+print
+rdopkg update
+entry for build and append it to
+up\&.yml
+.RE
+.sp
+Let\(cqs see the update file now:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$ cat up\&.yml
+\-\-\-
+notes: FILLME
+builds:
+\- id: python\-swiftclient\-2\&.0\&.3\-1\&.fc21
+  source: koji
+  repo: icehouse
+  dist: fedora\-20
+\- id: python\-swiftclient\-2\&.0\&.3\-1\&.el6
+  source: copr\-jruzicka
+  repo: icehouse
+  dist: epel\-6
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+OK\&. Now I need to build epel\-7 from the very same f21 branch\&.
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$ rdopkg coprbuild \-d epel\-7
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+Let\(cqs see the update file again:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$ cat up\&.yml
+\-\-\-
+notes: FILLME
+builds:
+\- id: python\-swiftclient\-2\&.0\&.3\-1\&.fc21
+  source: koji
+  repo: icehouse
+  dist: fedora\-20
+\- id: python\-swiftclient\-2\&.0\&.3\-1\&.el6
+  source: copr\-jruzicka
+  repo: icehouse
+  dist: epel\-6
+\- id: python\-swiftclient\-2\&.0\&.3\-1\&.el7
+  source: copr\-jruzicka
+  repo: icehouse
+  dist: epel\-7
+.fi
+.if n \{\
+.RE
+.\}
+.SH "CHAPTER 4"
+.sp
+\fBsubmit builds using rdopkg update\fR
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$ rdopkg update
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+This will pick up up\&.yml and:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+force me to provide an actual update description in
+notes
+field
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+validate the update using
+rdoinfo
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+check for builds availability
+.RE
+.sp
+and if all is good:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+submit the update to
+rdo\-update
+repo
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+delete local
+up\&.yml
+so that next
+kojibuild/coprbuild
+starts with fresh
+up\&.yml
+.RE
+.sp
+Done and done\&.
+.SH "EPILOGUE"
+.sp
+See available options
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$ rdopkg coprbuild \-h
+$ rdopkg kojibuild \-h
+$ rdopkg update \-h
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+and rdopkg(1) manual for more information\&.

@@ -1,0 +1,857 @@
+'\" t
+.\"     Title: rdopkg
+.\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
+.\" Generator: DocBook XSL Stylesheets v1.78.1 <http://docbook.sf.net/>
+.\"      Date: 03/19/2015
+.\"    Manual: \ \&
+.\"    Source: \ \&
+.\"  Language: English
+.\"
+.TH "RDOPKG" "1" "03/19/2015" "\ \&" "\ \&"
+.\" -----------------------------------------------------------------
+.\" * Define some portability stuff
+.\" -----------------------------------------------------------------
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.\" http://bugs.debian.org/507673
+.\" http://lists.gnu.org/archive/html/groff/2009-02/msg00013.html
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.ie \n(.g .ds Aq \(aq
+.el       .ds Aq '
+.\" -----------------------------------------------------------------
+.\" * set default formatting
+.\" -----------------------------------------------------------------
+.\" disable hyphenation
+.nh
+.\" disable justification (adjust text to left margin only)
+.ad l
+.\" -----------------------------------------------------------------
+.\" * MAIN CONTENT STARTS HERE *
+.\" -----------------------------------------------------------------
+.SH "NAME"
+rdopkg \- RDO packaging tool
+.SH "SYNOPSIS"
+.sp
+rdopkg <action> <arg>\&...
+.sp
+rdopkg \-c
+.sp
+rdopkg \-h
+.SH "DESCRIPTION"
+.sp
+\fBrdopkg\fR is a tool for automating RDO/RHOSP packaging tasks, such as introducing patches, updating packages to new versions and submitting packages to RDO\&.
+.sp
+Run rdopkg \-h to get available actions\&.
+.SS "persistence"
+.sp
+rdopkg provides multi\-step actions where each step is (should be) idempotent so if something fails along the way or human interaction is required, rdopkg drops to shell, let\(cqs you rectify and then continue by running rdopkg \-c\&.
+.sp
+The state is stored in \&.rdopkg\&.json file in current directory\&. Stored action can be inspected (rdopkg \-i) or continued (rdopkg \-c)\&. When new action is run in such directory, rdopkg asks to confirm if you want to abandon the previous action\&.
+.SH "ACTIONS"
+.SS "Important actions diagram"
+.sp
+\ \&
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+                      +\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-+
+                     /  WHAT DO YOU NEED?  /
+                    +\-\-\-\-\-+\-\-\-\-\-\-\-\-\-\-+\-\-\-\-+
+                          |          |
+                  +\-\-\-\-\-\-\-+          +\-\-\-\-\-\-\-\-\-\-\-\-\-+
+                  |                                |
+           build new package               submit RDO update
+                  |                                |
+                  v                                |
+           +\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-+                      |
+          /  what change?  /                       |
+         +\-\-+\-\-\-\-\-+\-\-\-\-\-+\-+                        |
+            |     |     |                          |
+     +\-\-\-\-\-\-+     |     +\-\-\-\-\-\-\-\-+                 |
+     |            |              |                 |
+just update   introduce    update to new           |
+  \&.spec       patch(es)   upstream version         |
+     |            |              |                 |
+     |            |              |                 |
+     v            v              v                 v
+  +\-\-\-\-\-+     +\-\-\-\-\-\-\-+    +\-\-\-\-\-\-\-\-\-\-\-\-\-+    +\-\-\-\-\-\-\-\-+
+  | fix |     | patch |    | new\-version |    | update |
+  +\-\-\-\-\-+     +\-\-\-\-\-\-\-+    +\-\-\-\-\-\-\-\-\-\-\-\-\-+    +\-\-\-\-\-\-\-\-+
+.fi
+.if n \{\
+.RE
+.\}
+.SS "ACTION: fix"
+.sp
+Make \&.spec file only changes\&.
+.sp
+\fBFlow:\fR
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Bump Release, prepare a new %changelog entry header\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Drop to shell, let user edit \&.spec file\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+After running
+rdopkg, ensure description was added to %changelog and commit changes to new commit\&.
+.RE
+.sp
+\fBExample:\fR
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+cd python\-novaclient
+rdopkg fix
+vim python\-novaclient\&.spec
+rdopkg \-c
+.fi
+.if n \{\
+.RE
+.\}
+.SS "ACTION: patch"
+.sp
+Introduce new patches to the package\&.
+.sp
+This action works with patches branch (see AUTOMAGIC → patches branch)\&. By default, rdopkg resets local patches branch to remote patches branch\&. You can skip this this with \-\-local\-patches to directly use local patches branch as is\&.
+.sp
+Note that patch is a high level wrapper of update\-patches action\&. If you\(cqre interested in just updating patches in \&.spec file from local patches branch, try using update\-patches action instead\&.
+.sp
+Don\(cqt forget to git fetch before running the action\&.
+.sp
+After running rdopkg patch, new commit will contain the changes\&.
+.sp
+\fBFlow:\fR
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Unless
+\-l/\-\-local\-patches
+was used, reset local patches branch to remote patches branch\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Update \&.spec file: bump Release, create new %changelog entry with new patches\*(Aq titles and create a commit\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Update patches from local patches branch (update\-patches
+action)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Display the diff\&.
+.RE
+.SS "ACTION: new\-version"
+.sp
+Update package to new upstream version\&.
+.sp
+This action works with patches branch (see AUTOMAGIC → patches branch)\&. After successful rebase, rdopkg will offer to push the rebased patches branch\&.
+.sp
+Required new\-version argument is a new version to rebase on, presumably a git version tag\&.
+.sp
+Don\(cqt forget to git fetch \-\-all before running the action\&.
+.sp
+After running rdopkg new\-version, new commit will contain the changes\&.
+.sp
+\fBFlow:\fR
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Show diff from previous version, especially changes to
+requirements\&.txt\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Reset local patches branch to remote patches branch
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Rebase local patches branch on
+$NEW_VERSION
+tag\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Update
+\&.spec
+file: set
+Version,
+Release
+and
+patches_base
+to appropriate values and create new %changelog entry\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Download source tarball\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Run
+fedpkg new\-sources
+(rhpkg new\-sources)\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Update patches from local patches branch (update\-patches
+action)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Display the diff\&.
+.RE
+.sp
+\fBExample:\fR
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+cd python\-novaclient
+git fetch \-\-all
+rdopkg new\-version 2\&.15\&.0
+# rebase failed, manually fix using git
+rdopkg \-c
+.fi
+.if n \{\
+.RE
+.\}
+.SS "ACTION: update\-patches"
+.sp
+Update \&.spec file with patches from patches branch\&.
+.sp
+This is a core low level action used by other actions such as patch and new\-version to update dist\-git patches from patches branch\&. See AUTOMAGIC → patches branch for explanation\&.
+.sp
+update\-patches is a rework of now obsolete update\-patches\&.sh script with less restrictions and more features such as optional #patches_base, support for git am %{patches} method of applying patches and smart patches branch detection\&.
+.sp
+\fBFlow:\fR
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Export patches from patches branch using
+git format\-patch
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Add these patches to dist\-git and edit
+\&.spec
+file to apply them
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Create new commit with the change (or amend previous with
+\-a/\-\-amend)
+.RE
+.sp
+\fBExample:\fR
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+rdopkg update\-patches
+.fi
+.if n \{\
+.RE
+.\}
+.SS "ACTION: kojibuild"
+.sp
+Build the package in koji\&.
+.sp
+See rdopkg\-adv\-building(7) for complete example of building and submitting packages for RDO\&.
+.sp
+This is esentaially a wrapper over fedpkg build with added value of generating update entries for rdopkg update\&.
+.sp
+By default, build is appended to up\&.yml update file (new one is created if needed) which is then used by rdopkg update to submit builds to RDO\&. Use \-f/\-\-update\-file to specify different file or \-F/\-\-no\-update\-file to disable this\&.
+.sp
+\fBFlow:\fR
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Run equivalent of
+fedpkg build
+using disgusting
+fedpkg
+python module\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Watch the build\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Print
+rdopkg update
+entry for the build and dump it to
+up\&.yml\&.
+.RE
+.sp
+\fBExample:\fR
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+rdopkg kojibuild
+.fi
+.if n \{\
+.RE
+.\}
+.SS "ACTION: coprbuild"
+.sp
+Build the package in copr\-jruzicka\&.
+.sp
+See rdopkg\-adv\-building(7) for complete example including instructions how to setup copr, obtain permissions, build, submit update, and more\&.
+.sp
+\fBPlease\fR, try to do coprbuild after successful kojibuild to ensure same SRPM for both builds\&. This will be automated further in the future\&.
+.sp
+\-r/\-\-release and \-d/\-\-dist are autodetected from current branch if possible\&. These are used to select right copr to build in\&.
+.sp
+By default, build is appended to up\&.yml update file (new one is created if needed) which is then used by rdopkg update to submit builds to RDO\&. Use \-f/\-\-update\-file to specify different file or \-F/\-\-no\-update\-file to disable this\&.
+.sp
+\fBFlow:\fR
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Create the source RPM from current dist\-git\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Upload the source RPM to your
+fedorapeople\&.org:~/public_html/copr\&. (specify Fedora user with
+\-u/\-\-fuser)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Submit the source RPM to build in
+jruzicka / rdo\-$RELEASE\-$DIST
+copr\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Watch the build\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Print
+rdopkg update
+entry for the build and dump it to
+up\&.yml\&.
+.RE
+.sp
+\fBExample:\fR
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+rdopkg coprbuild
+.fi
+.if n \{\
+.RE
+.\}
+.SS "ACTION: update"
+.sp
+Submit updated packages into RDO\&.
+.sp
+See rdopkg\-adv\-building(7) for complete example of building and submitting packages for RDO\&.
+.sp
+This command expects special update file as its optional argument which defaults to up\&.yml\&. rdopkg kojibuild and rdopkg coprbuild automatically generate this file, you only need to provide description of the update in notes: field\&.
+.sp
+rdopkg validates the update using rdoinfo, checks the availability of builds in respective build sources, submits the update for review into rdo\-update repository, and \fBdeletes\fR the local update file (only in case of default up\&.yml) so that next kojibuild/coprbuild start with fresh update file\&. This way, no action parameters or file manipulations are required\&.
+.sp
+Note that kojibuild and coprbuild actions support \-s/\-\-skip\-build argument which can be used to generate update file without triggering the build (i\&.e\&. after the builds are done manually)\&.
+.sp
+\fBExample update file:\fR
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+notes: |\-
+  Latest upstream python\-swiftclient\-1\&.2\&.3 for RDO Juno
+  Fixes rhbz#1234567
+builds:
+\- id: python\-swiftclient\-1\&.2\&.3\-1\&.fc22
+  source: koji
+  repo: juno
+  dist: fedora\-21
+\- id: python\-swiftclient\-1\&.2\&.3\-1\&.el7
+  source: copr\-jruzicka
+  repo: juno
+  dist: epel\-7
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+\fBJuno example:\fR
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+rdopkg kojibuild
+rdopkg coprbuild
+rdopkg update
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+\fBIcehouse example:\fR
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+rdopkg kojibuild
+rdopkg coprbuild \-d epel\-6
+rdopkg coprbuild \-d epel\-7
+rdopkg update
+.fi
+.if n \{\
+.RE
+.\}
+.SS "ACTION: amend"
+.sp
+Amend last git commit with current dist\-git changes and (re)generate the commit message from %changelog\&.
+.sp
+This simple atomic action is equivalent to running
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+git commit \-a \-\-amend \-m "$AUTOMAGIC_COMMIT_MESSAGE"
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+See AUTOMAGIC → commit message for more information about the generated commit message\&.
+.SS "ACTION: squash"
+.sp
+Squash last git commit into previous one\&. Commit message of previous commit is used\&.
+.sp
+This simple atomic action is a shortcut for
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+git reset \-\-soft HEAD~
+git commit \-\-amend \-\-no\-edit
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+This is useful for squashing commits created by lower level actions such as update\-patches\&.
+.SS "ACTION: get\-sources"
+.sp
+Download package source archive\&.
+.sp
+Currently, Source0 from \&.spec file is downloaded\&.
+.SS "ACTION: push\-updates"
+.sp
+Push pending updates to repositories\&.
+.sp
+This \fBspecial\fR action is to be used on RDO repo box to push updated packages to repos including download of built packages, signing and calling createrepo\&.
+.sp
+Two positional arguemnts are required:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+update\-repo\-path: path to rdo\-update git repo containing updates to push
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+dest\-base: destination path base
+.RE
+.sp
+By default, all update files in $UPDATE_REPO_PATH/ready/ are pushed\&. You can override this by specifying update files to push using \-f/\-\-files argument (relative to and residing in update\-repo\-path)\&.
+.sp
+Each build contained in pushed update file is downloaded, signed and copied to appropriate directory: $DEST_BASE$REPO/$DIST/$TAG
+.sp
+\fBprotips:\fR
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+If you input incorrect passphrase, run
+rdopkg \-c
+to try again\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+You can force overwrite of existing packages by
+\-w/\-\-overwrite
+.RE
+.SH "AUTOMAGIC"
+.sp
+Instead of requiring project config files or endless lists of command line arguments, rdopkg tries to guess all the neccessary variables\&.
+.SS "patches branch"
+.sp
+update\-patches is a core lower level action for updating dist\-git \&.spec file with patches from associated patches branch\&. rdopkg tries hard to detect the patches branch automagically, it\(cqs usually $BRANCH\-patches for $BRANCH dist\-git but one patches branch per multiple dist\-gits is also supported\&.
+.sp
+Best illustrated by example, following are all valid patches branches for rhos\-5\&.0\-rhel\-7 dist\-git and they\(cqre searched in that order:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+rhos\-5\&.0\-rhel\-7\-patches
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+rhos\-5\&.0\-rhel\-patches
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBrhos\-5\&.0\-patches ←\-\- preferred for RHOSP\fR
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+rhos\-patches
+.RE
+.sp
+Use rdopkg pkgenv to check detected patches branch\&.
+.sp
+You can specify remote patches branch by \-p/\-\-patches\-branch action parameter for actions that use it, such as patch and new\-version\&.
+.sp
+Previously, now obsolete update\-patches\&.sh script required patches_base comment to be present in spec file which indicated git revision on top of which the patches are applied but \fBthis is now optional\fR with update\-patches action and defaults to \&.spec Version\&.
+.sp
+Most common use of patches_base is to specify number of patches on top of patches base (which defaults to spec Version) to skip:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+# patches_base=+2
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+You can set an arbitrary git revision as a patches base:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+# patches_base=1\&.2\&.3+2
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+You shouldn\(cqt need to modify this by hand expect the number of skipped patches as rdopkg manages patches_base as needed\&.
+.SS "commit message"
+.sp
+Actions modifying dist\-git generate commit message from %changelog\&.
+.sp
+First line of commit message is first line from latest %changelog entry\&.
+.sp
+If there are multiple lines in latest %changelog entry, entire entry is listed in the commit message\&.
+.sp
+For each "(rhbz#XYZ)" mentioned in latest %changelog entry, "Resolves: rhbz#XYZ" is appended to commit message as required by RHOSP workflow\&.
+.sp
+If you need to (re)generate commit message after modifying %changelog, use \fBACTION: amend\fR\&.
+.sp
+For example following %changelog entry:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+%changelog
+* Tue Feb 11 2014 Jakub Ruzicka <jruzicka@redhat\&.com> 0\&.5\&.1\-2
+\- Update to upstream 0\&.5\&.1
+\- Fix evil Bug of Doom (rhbz#123456)
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+will generate following commit message:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+Update to upstream 0\&.5\&.1
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+Resolves: rhbz#123456
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+Changelog:
+\- Update to upstream 0\&.5\&.1
+\- Fix evil Bug of Doom (rhbz#123456)
+.fi
+.if n \{\
+.RE
+.\}
+.SH "SEE ALSO"
+.sp
+rdopkg\-adv\-new\-version(7), rdopkg\-adv\-building(7)
+.SH "CONTACT"
+.sp
+rdopkg is maintained by Jakub Ruzicka <jruzicka@redhat\&.com>\&.
+.sp
+Bugs are tracked in Red Hat Bugzilla:
+.sp
+https://bugzilla\&.redhat\&.com/buglist\&.cgi?component=rdopkg
+.sp
+To report a new bug:
+.sp
+https://bugzilla\&.redhat\&.com/enter_bug\&.cgi?product=RDO&component=rdopkg
