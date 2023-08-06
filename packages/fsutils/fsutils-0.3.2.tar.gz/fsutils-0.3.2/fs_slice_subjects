@@ -1,0 +1,160 @@
+#!/usr/bin/python
+
+# See file COPYING distributed with fsutils for copyright and license.
+
+import sys
+import os
+import argparse
+import nibabel
+import fsutils
+
+version = '0.1.2'
+
+progname = os.path.basename(sys.argv[0])
+
+description = """
+
+Create images for FreeSurfer subjects.
+
+Specify the input volume, the output image, and an optional overlay volume 
+and color file.  Volumes must be 256x256x256 and have type uint8.
+
+Subjects may be given on the command line; if none are given, all subjects in 
+the specified subjects directory are processed.
+
+Input and overlay volumes are found in the mri directory for each subject, 
+and output images are written to the qa directory for each subject (this 
+directory is created if it does not exist).
+
+If an overlay is given, {progname} first looks for the color file under 
+$FREESURFER_HOME, then as an unedited path.
+
+Examples:
+
+    {progname} -i T1.mgz -o t1.png -S study2
+
+Slices mri/T1.mgz for all the subjects in study2/ and writes the images 
+to qa/t1.png.
+
+    {progname} -i orig.mgz 
+        -o aseg.png 
+        -O aseg.mgz FreeSurferColorLUT.txt 
+        bert ernie
+
+Slices mri/orig.mgz, overlays mri/aseg.mgz, and writes the result to 
+qa/aseg.png for subjects bert and ernie in $SUBJECTS_DIR.
+
+""".format(progname=progname)
+
+parser = argparse.ArgumentParser(description=description, 
+                                 formatter_class=argparse.RawTextHelpFormatter)
+
+parser.add_argument('-v', '--version', 
+                    default=False, 
+                    action='version', 
+                    version='%s %s' % (progname, version), 
+                    help='show version and exit')
+parser.add_argument('--force', '-f', 
+                    default=False, 
+                    action='store_true', 
+                    help='force overwrite')
+parser.add_argument('--overlay', '-O',
+                    nargs=2,
+                    metavar=('OVERLAY', 'COLOR_FILE'), 
+                    help='overlay volume and color table')
+parser.add_argument('--input', '-i', 
+                    required=True)
+parser.add_argument('--output', '-o', 
+                    required=True)
+parser.add_argument('--subjects-dir', '-S')
+parser.add_argument('subjects', 
+                    metavar='subject', 
+                    nargs='*')
+
+args = parser.parse_args()
+
+subjects_dir = args.subjects_dir
+if not subjects_dir and 'SUBJECTS_DIR' in os.environ:
+    subjects_dir = os.environ['SUBJECTS_DIR']
+
+if not subjects_dir:
+    parser.print_usage(sys.stderr)
+    fmt = '%s: error: no subjects directory or subjects given\n'
+    sys.stderr.write(fmt % progname)
+    sys.exit(2)
+
+subjects = []
+if args.subjects:
+    subjects = list(args.subjects)
+else:
+    if not os.path.isdir(subjects_dir):
+        msg = '%s: %s is not a directory\n' % (progname, subjects_dir)
+        sys.stderr.write(msg)
+        sys.exit(1)
+    for path in os.listdir(subjects_dir):
+        full_path = os.path.join(subjects_dir, path)
+        if os.path.isdir(full_path):
+            subjects.append(path)
+
+palette = None
+overlay_spec = None
+if args.overlay:
+    (overlay_spec, palette_spec) = args.overlay
+    if 'FREESURFER_HOME' in os.environ:
+        palette_fname = os.path.join(os.environ['FREESURFER_HOME'], 
+                                     palette_spec)
+        try:
+            palette = fsutils.read_color_palette(palette_fname)
+        except:
+            print 'can\'t find %s in FREESURFER_HOME' % palette_spec
+        else:
+            print 'read %s in FREESURFER_HOME' % palette_spec
+    if not palette:
+        try:
+            palette = fsutils.read_color_palette(palette_spec)
+        except:
+            print 'can\'t find %s' % palette_spec
+        else:
+            print 'read %s' % palette_spec
+    if not palette:
+        msg = '%s: can\'t find color file %s\n' % (progname, palette_spec)
+        sys.stderr.write(msg)
+        sys.exit(1)
+
+error_flag = False
+
+for subject in subjects:
+    qa_dir = os.path.join(subjects_dir, subject, 'qa')
+    out_fname = os.path.join(qa_dir, args.output)
+    if not args.force and os.path.exists(out_fname):
+        print '%s: %s exists' % (subject, args.output)
+        continue
+    print subject
+    try:
+        in_fname = os.path.join(subjects_dir, subject, 'mri', args.input)
+        base_vol = nibabel.load(in_fname)
+        if overlay_spec:
+            overlay_fname = os.path.join(subjects_dir, 
+                                         subject, 
+                                         'mri', 
+                                         overlay_spec)
+            overlay_vol = nibabel.load(overlay_fname)
+        if not overlay_spec:
+            im = fsutils.slice(base_vol)
+        else:
+            im = fsutils.slice(base_vol, (overlay_vol, palette))
+        if not os.path.exists(qa_dir):
+            os.mkdir(qa_dir)
+        im.save(out_fname)
+    except Exception, data:
+        msg = 'error: %s\n' % str(data)
+        sys.stderr.write(msg)
+        error_flag = True
+
+if error_flag:
+    print 'errors in one or more subjects'
+    sys.exit(1)
+
+sys.exit(0)
+
+# eof

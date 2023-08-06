@@ -1,0 +1,89 @@
+#!/usr/bin/python
+
+# See file COPYING distributed with fsutils for copyright and license.
+
+import sys
+import os
+import argparse
+import nibabel
+import fsutils
+
+version = '0.1.2'
+
+progname = os.path.basename(sys.argv[0])
+
+description = """
+
+Create images from FreeSurfer volumes.
+
+Specify the input volume, the output image, and an optional overlay volume 
+and color file.  Volumes must be 256x256x256 and have type uint8.
+
+Examples:
+
+    {progname} T1.mgz t1.png
+
+    {progname} orig.mgz 
+        -O aseg.mgz $FREESURFER_HOME/FreeSurferColorLUT.txt 
+        aseg.png
+
+""".format(progname=progname)
+
+parser = argparse.ArgumentParser(description=description, 
+                                 formatter_class=argparse.RawTextHelpFormatter)
+
+parser.add_argument('-v', '--version', 
+                    default=False, 
+                    action='version', 
+                    version='%s %s' % (progname, version), 
+                    help='show version and exit')
+parser.add_argument('--force', '-f', 
+                    default=False, 
+                    action='store_true', 
+                    help='force overwrite')
+parser.add_argument('--overlay', '-O', 
+                    nargs=2, 
+                    metavar=('OVERLAY', 'COLOR_FILE'), 
+                    help='overlay volume and color table')
+parser.add_argument('input')
+parser.add_argument('output')
+
+args = parser.parse_args()
+
+if not args.force and os.path.exists(args.output):
+    sys.stderr.write('%s: %s exists\n' % (progname, args.output))
+    sys.exit(1)
+
+try:
+    print 'reading %s...' % args.input
+    base_vol = nibabel.load(args.input)
+except IOError, data:
+    sys.stderr.write('%s: %s: %s\n' % (progname, args.input, data.strerror))
+    sys.exit(1)
+
+if args.overlay:
+    try:
+        print 'reading %s...' % args.overlay[0]
+        overlay_vol = nibabel.load(args.overlay[0])
+    except IOError, data:
+        msg = '%s: %s: %s\n' % (progname, args.overlay[0], data.strerror)
+        sys.stderr.write(msg)
+        sys.exit(1)
+    print 'reading %s...' % args.overlay[1]
+    try:
+        palette = fsutils.read_color_palette(args.overlay[1])
+    except IOError, data:
+        msg = '%s: %s: %s\n' % (progname, args.overlay[1], data.strerror)
+        sys.stderr.write(msg)
+        sys.exit(1)
+
+if not args.overlay:
+    im = fsutils.slice(base_vol)
+else:
+    im = fsutils.slice(base_vol, (overlay_vol, palette))
+
+im.save(args.output)
+
+sys.exit(0)
+
+# eof
