@@ -1,0 +1,300 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta content="Ruffus is a Computation Pipeline library for python. It is open-sourced, powerful and user-friendly, and widely used in science and bioinformatics" name="description" />
+<meta content="python, pipeline, computation, cluster, Ruffus, bioinformatics, parallel' name='keywords" name="keywords" />
+<meta content="Leo Goodstadt" name="Author" />
+<meta content="Leo Goodstadt" name="Publisher" />
+<meta content="ruffus&#64;llew.org.uk" name="Email" />
+<meta content="index, follow" name="robots" />
+<meta content="en-uk" name="language" />
+<meta content="United Kingdom" name="country" />
+<meta content="Leo Goodstadt 2009-2014" name="copyright" />
+
+    <title>Appendix 2: How dependency is checked &mdash; ruffus 2.6 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/ruffus.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '2.6',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <script type="text/javascript" src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    <link rel="top" title="ruffus 2.6 documentation" href="../../index.html" />
+    <link rel="next" title="Appendix 3: Exceptions thrown inside pipelines" href="exceptions.html" />
+    <link rel="prev" title="Appendix 1: Flow Chart Colours with pipeline_printout_graph(...)" href="flowchart_colours.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="exceptions.html" title="Appendix 3: Exceptions thrown inside pipelines"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="flowchart_colours.html" title="Appendix 1: Flow Chart Colours with pipeline_printout_graph(...)"
+             accesskey="P">previous</a> |</li>
+        Ruffus v. 2.6
+            <li><a href="../../index.html">Home</a> | </li>
+            <li><a href="../../contents.html">Contents</a> | </li>
+            <li><a href="../../installation.html">Install</a>  | </li>
+            <li><a href="introduction.html">Manual</a>  / </li>
+            <li><a href="manual_contents.html">(TOC)</a>  | </li>
+            <li><a href="../../faq.html">FAQ</a>  | </li>
+            <li><a href="../../cheatsheet.html">Cheat sheet</a> | </li>
+            <li><a href="command_line.html">Command Line</a> | </li>
+            <li><a href="../../gallery.html">Gallery</a> |  </li>
+            <li><a href="../../new_syntax.html">New syntax in v 2.6</a> | </li>
+            <li><a href="../../history.html">Latest Changes</a> &raquo; </li>
+ 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="new-manual-dependencies-chapter-num-how-dependency-is-checked">
+<span id="new-manual-dependencies"></span><span id="index-0"></span><h1><strong>Appendix 2</strong>: How dependency is checked<a class="headerlink" href="#new-manual-dependencies-chapter-num-how-dependency-is-checked" title="Permalink to this headline">¶</a></h1>
+<div class="admonition seealso">
+<p class="first admonition-title">See also</p>
+<ul class="last simple">
+<li><a class="reference internal" href="manual_contents.html#new-manual-table-of-contents"><em>Manual Table of Contents</em></a></li>
+</ul>
+</div>
+<div class="section" id="overview">
+<h2>Overview<a class="headerlink" href="#overview" title="Permalink to this headline">¶</a></h2>
+<blockquote>
+<div><p>How does <em>Ruffus</em> decide how to run your pipeline?</p>
+<blockquote>
+<div><ul class="simple">
+<li>In which order should pipelined functions be called?</li>
+<li>Which parts of the pipeline are up-to-date and do not need to be rerun?</li>
+</ul>
+</div></blockquote>
+</div></blockquote>
+<div class="section" id="running-all-out-of-date-tasks-and-dependents">
+<h3>Running all out-of-date tasks and dependents<a class="headerlink" href="#running-all-out-of-date-tasks-and-dependents" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><a class="reference internal image-reference" href="../../_images/manual_dependencies_flowchart_intro.png"><img alt="../../_images/manual_dependencies_flowchart_intro.png" src="../../_images/manual_dependencies_flowchart_intro.png" style="width: 275.0px; height: 222.0px;" /></a>
+<p>By default, <em>Ruffus</em> will</p>
+<blockquote>
+<div><ul class="simple">
+<li>build a flow chart (dependency tree) of pipelined tasks (functions)</li>
+<li>start from the most ancestral tasks with the fewest dependencies (<tt class="docutils literal"><span class="pre">task1</span></tt> and <tt class="docutils literal"><span class="pre">task4</span></tt> in the flowchart above).</li>
+<li>walk up the tree to find the first incomplete / out-of-date tasks (i.e. <tt class="docutils literal"><span class="pre">task3</span></tt> and <tt class="docutils literal"><span class="pre">task5</span></tt>.</li>
+<li>start running from there</li>
+</ul>
+</div></blockquote>
+<dl class="docutils">
+<dt>All down-stream (dependent) tasks will be re-run anyway, so we don&#8217;t have to test</dt>
+<dd>whether they are up-to-date or not.</dd>
+</dl>
+<div class="admonition note" id="new-manual-dependencies-checking-multiple-times">
+<p class="first admonition-title">Note</p>
+<p>This means that <em>Ruffus</em> <em>may</em> ask any task if their jobs are out of date more than once:</p>
+<blockquote class="last">
+<div><ul class="simple">
+<li>once when deciding which parts of the pipeline have to be run</li>
+<li>once just before executing the task.</li>
+</ul>
+</div></blockquote>
+</div>
+<p><em>Ruffus</em> tries to be clever / efficient, and does the minimal amount of querying.</p>
+</div></blockquote>
+</div>
+<div class="section" id="forced-reruns">
+<span id="new-manual-dependencies-forced-reruns"></span><h3>Forced Reruns<a class="headerlink" href="#forced-reruns" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>Even if a pipeline stage appears to be up to date,
+you can always force the pipeline to include from one or more task functions.</p>
+<p>This is particularly useful, for example, if the pipeline data hasn&#8217;t changed but
+the analysis or computional code has.</p>
+<blockquote>
+<div><div class="highlight-python"><div class="highlight"><pre><span class="n">pipeline_run</span><span class="p">(</span><span class="n">forcedtorun_tasks</span> <span class="o">=</span> <span class="p">[</span><span class="n">up_to_date_task1</span><span class="p">])</span>
+</pre></div>
+</div>
+<p>will run all tasks from <tt class="docutils literal"><span class="pre">up_to_date_task1</span></tt> to <tt class="docutils literal"><span class="pre">final_task</span></tt></p>
+</div></blockquote>
+<p>Both the &#8220;target&#8221; and the &#8220;forced&#8221; lists can include as many tasks as you wish. All dependencies
+are still carried out and out-of-date jobs rerun.</p>
+</div></blockquote>
+</div>
+<div class="section" id="esoteric-option-minimal-reruns">
+<span id="new-manual-dependencies-minimal-reruns"></span><h3>Esoteric option: Minimal Reruns<a class="headerlink" href="#esoteric-option-minimal-reruns" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>In the above example, if we were to delete the results of <tt class="docutils literal"><span class="pre">up_to_date_task1</span></tt>, <em>Ruffus</em>
+would rerun <tt class="docutils literal"><span class="pre">up_to_date_task1</span></tt>, <tt class="docutils literal"><span class="pre">up_to_date_task2</span></tt> and <tt class="docutils literal"><span class="pre">task3</span></tt>.</p>
+<p>However, you might argue that so long as <tt class="docutils literal"><span class="pre">up_to_date_task2</span></tt> is up-to-date, and it
+is the only necessary prerequisite for <tt class="docutils literal"><span class="pre">task3</span></tt>, we should not be concerned about
+<tt class="docutils literal"><span class="pre">up_to_date_task1</span></tt>.</p>
+<p>This is enabled with:</p>
+<blockquote>
+<div><div class="highlight-python"><div class="highlight"><pre><span class="n">pipeline_run</span><span class="p">([</span><span class="n">task6</span><span class="p">],</span> <span class="n">gnu_make_maximal_rebuild_mode</span> <span class="o">=</span> <span class="bp">False</span><span class="p">)</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>This option walks down the dependency tree and proceeds no further when it encounters
+an up-to-date task (<tt class="docutils literal"><span class="pre">up_to_date_task2</span></tt>) whatever the state of what lies beyond it.</p>
+<p>This rather dangerous option is useful if you don&#8217;t want to keep all the intermediate
+files/results from upstream tasks. The pipeline will only not involve any incomplete
+tasks which precede an up-to-date result.</p>
+<p>This is seldom what you intend, and you should always check that the appropriate stages
+of the pipeline are executed in the flowchart output.</p>
+</div></blockquote>
+</div>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h3><a href="../../contents.html">Table Of Contents</a></h3>
+  <ul>
+<li><a class="reference internal" href="#"><strong>Appendix 2</strong>: How dependency is checked</a><ul>
+<li><a class="reference internal" href="#overview">Overview</a><ul>
+<li><a class="reference internal" href="#running-all-out-of-date-tasks-and-dependents">Running all out-of-date tasks and dependents</a></li>
+<li><a class="reference internal" href="#forced-reruns">Forced Reruns</a></li>
+<li><a class="reference internal" href="#esoteric-option-minimal-reruns">Esoteric option: Minimal Reruns</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="flowchart_colours.html"
+                        title="previous chapter"><strong>Appendix 1</strong>: Flow Chart Colours with <tt class="docutils literal"><span class="pre">pipeline_printout_graph(...)</span></tt></a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="exceptions.html"
+                        title="next chapter"><strong>Appendix 3</strong>: Exceptions thrown inside pipelines</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="../../_sources/tutorials/new_tutorial/dependencies.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+    
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+    <h3> Quick Reference:</h3>
+    <ul>
+        <h4><a href="../../decorators/decorators.html#core">Core:</a></h4>   
+        <ul>
+            <li><a href="../../decorators/originate.html">@originate</a>                           </li>
+            <li><a href="../../decorators/split.html">@split</a>                                   </li>
+            <li><a href="../../decorators/transform.html">@transform</a>                           </li>
+            <li><a href="../../decorators/merge.html">@merge</a>                                   </li>
+        </ul>
+
+        <h4><a href="../../decorators/decorators.html#advanced">Advanced</a></h4>   
+        <ul>
+            <li><a href="../../decorators/subdivide.html">@subdivide</a>                           </li>
+            <li><a href="../../decorators/transform_ex.html">@transform (add_inputs) </a>          </li>
+            <li><a href="../../decorators/collate.html">@collate</a>                               </li>
+            <li><a href="../../decorators/collate_ex.html">@collate (add_inputs)</a>               </li>
+            <li><a href="../../decorators/graphviz.html">@graphviz</a>                             </li>
+            <li><a href="../../decorators/mkdir.html">@mkdir</a>                                   </li>
+            <li><a href="../../decorators/follows.html">@follows / mkdir</a>                       </li>
+            <li><a href="../../decorators/posttask.html">@posttask touch_file</a>                  </li>
+            <li><a href="../../decorators/active_if.html">@active_if</a>                           </li>
+            <li><a href="../../decorators/jobs_limit.html">@jobs_limit</a>                         </li>
+        </ul>
+    
+        <h4><a href="../../decorators/decorators.html#combinatorics">Combinatorial:</a></h4>   
+        <ul>
+            <li><a href="../../decorators/product.html">@product </a>                              </li>
+            <li><a href="../../decorators/permutations.html">@permutations </a>                    </li>
+            <li><a href="../../decorators/combinations.html">@combinations </a>                    </li>
+            <li><a href="../../decorators/combinations_with_replacement.html">@combinations_ _with_replacement </a>                    </li>
+        </ul>
+
+                        
+        <h4><a href="../../decorators/decorators.html#esoteric">Esoteric</a></h4>   
+        <ul>
+            <li><a href="../../decorators/files_ex.html">@files (on the fly)</a>                   </li>
+            <li><a href="../../decorators/parallel.html">@parallel</a>                             </li>
+            <li><a href="../../decorators/check_if_uptodate.html">@check_if_uptodate</a>           </li>
+        </ul>
+
+
+        <h4 ><a href="../../decorators/indicator_objects.html">Indicator objects</a></h4>
+        <h4 >Pipeline functions</h4>
+        <ul>
+            <li><a href="../../pipeline_functions.html#pipeline-functions-pipeline-run">pipeline_run</a>                       </li>
+            <li><a href="../../pipeline_functions.html#pipeline-functions-pipeline-printout">pipeline_printout</a>                      </li>
+            <li><a href="../../pipeline_functions.html#pipeline-functions-pipeline-printout-graph">pipeline_printout_graph</a>          </li>
+            <li><a href="../../pipeline_functions.html#pipeline-functions-pipeline-get-task-names">pipeline_get_task_names</a>          </li>
+            <li><a href="../../drmaa_wrapper_functions.html#drmaa-wrapper-functions-drmaa_wrapper-run_job">drmaa_wrapper.run_job</a>          </li>
+        </ul>
+
+         <a href="../../todo.html">Future plans</a>
+    </ul>
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="exceptions.html" title="Appendix 3: Exceptions thrown inside pipelines"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="flowchart_colours.html" title="Appendix 1: Flow Chart Colours with pipeline_printout_graph(...)"
+             >previous</a> |</li>
+        Ruffus v. 2.6
+            <li><a href="../../index.html">Home</a> | </li>
+            <li><a href="../../contents.html">Contents</a> | </li>
+            <li><a href="../../installation.html">Install</a>  | </li>
+            <li><a href="introduction.html">Manual</a>  / </li>
+            <li><a href="manual_contents.html">(TOC)</a>  | </li>
+            <li><a href="../../faq.html">FAQ</a>  | </li>
+            <li><a href="../../cheatsheet.html">Cheat sheet</a> | </li>
+            <li><a href="command_line.html">Command Line</a> | </li>
+            <li><a href="../../gallery.html">Gallery</a> |  </li>
+            <li><a href="../../new_syntax.html">New syntax in v 2.6</a> | </li>
+            <li><a href="../../history.html">Latest Changes</a> &raquo; </li>
+ 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2009-2013 Leo Goodstadt.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

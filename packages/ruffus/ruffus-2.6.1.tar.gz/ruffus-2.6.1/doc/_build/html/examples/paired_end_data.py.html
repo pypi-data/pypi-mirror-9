@@ -1,0 +1,307 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>Example code for FAQ Good practices: &#34;What is the best way of handling data in file pairs (or triplets etc.)?&#34; &mdash; ruffus 2.6 documentation</title>
+    
+    <link rel="stylesheet" href="../_static/ruffus.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../',
+        VERSION:     '2.6',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../_static/jquery.js"></script>
+    <script type="text/javascript" src="../_static/underscore.js"></script>
+    <script type="text/javascript" src="../_static/doctools.js"></script>
+    <script type="text/javascript" src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    <link rel="top" title="ruffus 2.6 documentation" href="../index.html" />
+    <link rel="next" title="Ruffus Decorators" href="../decorators/decorators.html" />
+    <link rel="prev" title="Ruffus code" href="bioinformatics/part2_code.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../decorators/decorators.html" title="Ruffus Decorators"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="bioinformatics/part2_code.html" title="Ruffus code"
+             accesskey="P">previous</a> |</li>
+        Ruffus v. 2.6
+            <li><a href="../index.html">Home</a> | </li>
+            <li><a href="../contents.html">Contents</a> | </li>
+            <li><a href="../installation.html">Install</a>  | </li>
+            <li><a href="../tutorials/new_tutorial/introduction.html">Manual</a>  / </li>
+            <li><a href="../tutorials/new_tutorial/manual_contents.html">(TOC)</a>  | </li>
+            <li><a href="../faq.html">FAQ</a>  | </li>
+            <li><a href="../cheatsheet.html">Cheat sheet</a> | </li>
+            <li><a href="../tutorials/new_tutorial/command_line.html">Command Line</a> | </li>
+            <li><a href="../gallery.html">Gallery</a> |  </li>
+            <li><a href="../new_syntax.html">New syntax in v 2.6</a> | </li>
+            <li><a href="../history.html">Latest Changes</a> &raquo; </li>
+ 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="example-code-for-faq-good-practices-what-is-the-best-way-of-handling-data-in-file-pairs-or-triplets-etc">
+<span id="faq-paired-files-code"></span><h1>Example code for <a class="reference internal" href="../faq.html#faq-paired-files"><em>FAQ Good practices: &#8220;What is the best way of handling data in file pairs (or triplets etc.)?&#8221;</em></a><a class="headerlink" href="#example-code-for-faq-good-practices-what-is-the-best-way-of-handling-data-in-file-pairs-or-triplets-etc" title="Permalink to this headline">¶</a></h1>
+<blockquote>
+<div><div class="admonition seealso">
+<p class="first admonition-title">See also</p>
+<ul class="last simple">
+<li><a class="reference internal" href="../tutorials/new_tutorial/subdivide_collate.html#new-manual-collate"><em>&#64;collate</em></a></li>
+</ul>
+</div>
+<div class="highlight-python"><div class="highlight"><pre><span class="c">#!/usr/bin/env python</span>
+<span class="kn">import</span> <span class="nn">sys</span><span class="o">,</span> <span class="nn">os</span>
+
+<span class="kn">from</span> <span class="nn">ruffus</span> <span class="kn">import</span> <span class="o">*</span>
+<span class="kn">import</span> <span class="nn">ruffus.cmdline</span> <span class="kn">as</span> <span class="nn">cmdline</span>
+<span class="kn">from</span> <span class="nn">subprocess</span> <span class="kn">import</span> <span class="n">check_call</span>
+
+<span class="n">parser</span> <span class="o">=</span> <span class="n">cmdline</span><span class="o">.</span><span class="n">get_argparse</span><span class="p">(</span><span class="n">description</span><span class="o">=</span><span class="s">&quot;Parimala&#39;s pipeline?&quot;</span><span class="p">)</span>
+
+<span class="hll"><span class="c">#                                                                                 .</span>
+</span><span class="hll"><span class="c">#   Very flexible handling of input files                                         .</span>
+</span><span class="hll"><span class="c">#                                                                                 .</span>
+</span><span class="hll"><span class="c">#      input files can be specified flexibly as:                                  .</span>
+</span><span class="hll"><span class="c">#                 --input a.fastq b.fastq                                         .</span>
+</span><span class="hll"><span class="c">#                 --input a.fastq --input b.fastq                                 .</span>
+</span><span class="hll"><span class="c">#                 --input *.fastq --input other/*.fastq                           .</span>
+</span><span class="hll"><span class="c">#                 --input &quot;*.fastq&quot;                                               .</span>
+</span><span class="hll"><span class="c">#                                                                                 .</span>
+</span><span class="hll"><span class="c">#       The last form is expanded in the script and avoids limitations on command .</span>
+</span><span class="hll"><span class="c">#           line lengths                                                          .</span>
+</span><span class="hll"><span class="c">#                                                                                 .</span>
+</span><span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&#39;-i&#39;</span><span class="p">,</span> <span class="s">&#39;--input&#39;</span><span class="p">,</span> <span class="n">nargs</span><span class="o">=</span><span class="s">&#39;+&#39;</span><span class="p">,</span> <span class="n">metavar</span><span class="o">=</span><span class="s">&quot;FILE&quot;</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s">&quot;append&quot;</span><span class="p">,</span> <span class="n">help</span> <span class="o">=</span> <span class="s">&quot;Fastq files&quot;</span><span class="p">)</span>
+
+<span class="n">options</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">()</span>
+
+<span class="c">#  standard python logger which can be synchronised across concurrent Ruffus tasks</span>
+<span class="n">logger</span><span class="p">,</span> <span class="n">logger_mutex</span> <span class="o">=</span> <span class="n">cmdline</span><span class="o">.</span><span class="n">setup_logging</span> <span class="p">(</span><span class="s">&quot;PARIMALA&quot;</span><span class="p">,</span> <span class="n">options</span><span class="o">.</span><span class="n">log_file</span><span class="p">,</span> <span class="n">options</span><span class="o">.</span><span class="n">verbose</span><span class="p">)</span>
+
+<span class="hll"><span class="c">#                                                                                .</span>
+</span><span class="hll"><span class="c">#   Useful code to turn input files into a flat list                             .</span>
+</span><span class="hll"><span class="c">#                                                                                .</span>
+</span><span class="kn">from</span> <span class="nn">glob</span> <span class="kn">import</span> <span class="n">glob</span>
+<span class="n">original_data_files</span> <span class="o">=</span> <span class="p">[</span><span class="n">fn</span> <span class="k">for</span> <span class="n">grouped</span> <span class="ow">in</span> <span class="n">options</span><span class="o">.</span><span class="n">input</span> <span class="k">for</span> <span class="n">glob_spec</span> <span class="ow">in</span> <span class="n">grouped</span> <span class="k">for</span> <span class="n">fn</span> <span class="ow">in</span> <span class="n">glob</span><span class="p">(</span><span class="n">glob_spec</span><span class="p">)]</span> <span class="k">if</span> <span class="n">options</span><span class="o">.</span><span class="n">input</span> <span class="k">else</span> <span class="p">[]</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">original_data_files</span><span class="p">:</span>
+    <span class="n">original_data_files</span> <span class="o">=</span> <span class="p">[[</span><span class="s">&quot;C1W1_R1.fastq.gz&quot;</span><span class="p">,</span> <span class="s">&quot;C1W1_R2.fastq.gz&quot;</span><span class="p">]]</span>
+    <span class="c">#raise Exception (&quot;No matching files specified with --input.&quot;)</span>
+
+<span class="c">#   &lt;&lt;&lt;----  pipelined functions go here</span>
+
+<span class="hll"><span class="c">#_________________________________________________________________________________</span>
+</span><span class="hll"><span class="c">#                                                                                .</span>
+</span><span class="hll"><span class="c">#   Group together file pairs                                                    .</span>
+</span><span class="hll"><span class="c">#_________________________________________________________________________________</span>
+</span><span class="nd">@collate</span><span class="p">(</span><span class="n">original_data_files</span><span class="p">,</span>
+            <span class="c"># match file name up to the &quot;R1.fastq.gz&quot;</span>
+            <span class="n">formatter</span><span class="p">(</span><span class="s">&quot;([^/]+)R[12].fastq.gz$&quot;</span><span class="p">),</span>
+            <span class="c"># Create output parameter supplied to next task</span>
+            <span class="p">[</span><span class="s">&quot;{path[0]}/{1[0]}paired.R1.fastq.gz&quot;</span><span class="p">,</span>  <span class="c"># paired file 1</span>
+             <span class="s">&quot;{path[0]}/{1[0]}paired.R2.fastq.gz&quot;</span><span class="p">],</span> <span class="c"># paired file 2</span>
+            <span class="c"># Extra parameters for our own convenience and use</span>
+            <span class="p">[</span><span class="s">&quot;{path[0]}/{1[0]}unpaired.R1.fastq.gz&quot;</span><span class="p">,</span>  <span class="c"># unpaired file 1</span>
+             <span class="s">&quot;{path[0]}/{1[0]}unpaired.R2.fastq.gz&quot;</span><span class="p">],</span> <span class="c"># unpaired file 2</span>
+            <span class="n">logger</span><span class="p">,</span> <span class="n">logger_mutex</span><span class="p">)</span>
+<span class="k">def</span> <span class="nf">trim_fastq</span><span class="p">(</span><span class="n">input_files</span><span class="p">,</span> <span class="n">output_paired_files</span><span class="p">,</span> <span class="n">discarded_unpaired_files</span><span class="p">,</span> <span class="n">logger</span><span class="p">,</span> <span class="n">logger_mutex</span><span class="p">):</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">input_files</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">2</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span><span class="s">&quot;One of read pairs </span><span class="si">%s</span><span class="s"> missing&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">input_files</span><span class="p">,))</span>
+    <span class="n">cmd</span> <span class="o">=</span> <span class="p">(</span><span class="s">&quot;java -jar ~/SPRING-SUMMER_2014/Softwares/Trimmomatic/Trimmomatic-0.32/trimmomatic-0.32.jar &quot;</span>
+           <span class="s">&quot; PE -phred33  &quot;</span>
+           <span class="s">&quot; {input_files[0]} {input_files[1]} &quot;</span>
+           <span class="s">&quot; {output_paired_files[0]} {output_paired_files[1]} &quot;</span>
+           <span class="s">&quot; {discarded_unpaired_files[0]} {discarded_unpaired_files[1]} &quot;</span>
+           <span class="s">&quot; LEADING:30 TRAILING:30 SLIDINGWINDOW:4:15 MINLEN:50 &quot;</span>
+        <span class="p">)</span>
+
+    <span class="n">check_call</span><span class="p">(</span><span class="n">cmd</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="o">**</span><span class="nb">locals</span><span class="p">()))</span>
+
+    <span class="k">with</span> <span class="n">logger_mutex</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&quot;Hooray trim_fastq worked&quot;</span><span class="p">)</span>
+
+<span class="hll"><span class="c">#_________________________________________________________________________________</span>
+</span><span class="hll"><span class="c">#                                                                                .</span>
+</span><span class="hll"><span class="c">#   Each file pair now makes its way down the rest of the pipeline as            .</span>
+</span><span class="hll"><span class="c">#       a couple                                                                 .</span>
+</span><span class="hll"><span class="c">#_________________________________________________________________________________</span>
+</span><span class="nd">@transform</span><span class="p">(</span><span class="n">trim_fastq</span><span class="p">,</span>
+            <span class="c"># regular expression match on first of pe files</span>
+            <span class="n">formatter</span><span class="p">(</span><span class="s">&quot;([^/]+)paired.R1.fastq.gz$&quot;</span><span class="p">),</span>
+            <span class="c"># Output parameter supplied to next task</span>
+            <span class="s">&quot;{path[0]}/{1[0]}.sam&quot;</span>
+
+           <span class="c"># Extra parameters for our own convenience and use</span>
+            <span class="s">&quot;{path[0]}/{1[0]}.pe_soap_pe&quot;</span><span class="p">,</span>        <span class="c"># soap intermediate file</span>
+            <span class="s">&quot;{path[0]}/{1[0]}.pe_soap_se&quot;</span><span class="p">,</span>        <span class="c"># soap intermediate file</span>
+            <span class="n">logger</span><span class="p">,</span> <span class="n">logger_mutex</span><span class="p">)</span>
+<span class="k">def</span> <span class="nf">align_seq</span><span class="p">(</span><span class="n">input_files</span><span class="p">,</span> <span class="n">output_file</span><span class="p">,</span> <span class="n">soap_pe_output_file</span><span class="p">,</span> <span class="n">soap_se_output_file</span><span class="p">,</span> <span class="n">logger</span><span class="p">,</span> <span class="n">logger_mutex</span><span class="p">):</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">input_files</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">2</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span><span class="s">&quot;One of read pairs </span><span class="si">%s</span><span class="s"> missing&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">input_files</span><span class="p">,))</span>
+    <span class="n">cmd</span> <span class="o">=</span> <span class="p">(</span><span class="s">&quot;~/SPRING-SUMMER_2014/Softwares/soap2.21release/soap &quot;</span>
+            <span class="s">&quot; -a {input_files[0]} &quot;</span>
+            <span class="s">&quot; -b {input_files[1]} &quot;</span>
+            <span class="s">&quot; -D Y55_genome.fa.index* &quot;</span>
+            <span class="s">&quot; -o {soap_pe_output_file} -2 {soap_se_output_file} -m 400 -x 600&quot;</span><span class="p">)</span>
+
+    <span class="n">check_call</span><span class="p">(</span><span class="n">cmd</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="o">**</span><span class="nb">locals</span><span class="p">()))</span>
+
+
+    <span class="c">#Soap_to_sam</span>
+    <span class="n">cmd</span> <span class="o">=</span> <span class="s">&quot; perl ~/SPRING-SUMMER_2014/Softwares/soap2sam.pl -p {soap_pe_output_file} &gt; {output_file}&quot;</span>
+
+    <span class="n">check_call</span><span class="p">(</span><span class="n">cmd</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="o">**</span><span class="nb">locals</span><span class="p">()))</span>
+
+
+    <span class="k">with</span> <span class="n">logger_mutex</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&quot;Hooray align_seq worked&quot;</span><span class="p">)</span>
+
+
+<span class="n">cmdline</span><span class="o">.</span><span class="n">run</span> <span class="p">(</span><span class="n">options</span><span class="p">)</span>
+</pre></div>
+</div>
+</div></blockquote>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="bioinformatics/part2_code.html"
+                        title="previous chapter">Ruffus code</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="../decorators/decorators.html"
+                        title="next chapter">Ruffus Decorators</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="../_sources/examples/paired_end_data.py.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+    
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+    <h3> Quick Reference:</h3>
+    <ul>
+        <h4><a href="../decorators/decorators.html#core">Core:</a></h4>   
+        <ul>
+            <li><a href="../decorators/originate.html">@originate</a>                           </li>
+            <li><a href="../decorators/split.html">@split</a>                                   </li>
+            <li><a href="../decorators/transform.html">@transform</a>                           </li>
+            <li><a href="../decorators/merge.html">@merge</a>                                   </li>
+        </ul>
+
+        <h4><a href="../decorators/decorators.html#advanced">Advanced</a></h4>   
+        <ul>
+            <li><a href="../decorators/subdivide.html">@subdivide</a>                           </li>
+            <li><a href="../decorators/transform_ex.html">@transform (add_inputs) </a>          </li>
+            <li><a href="../decorators/collate.html">@collate</a>                               </li>
+            <li><a href="../decorators/collate_ex.html">@collate (add_inputs)</a>               </li>
+            <li><a href="../decorators/graphviz.html">@graphviz</a>                             </li>
+            <li><a href="../decorators/mkdir.html">@mkdir</a>                                   </li>
+            <li><a href="../decorators/follows.html">@follows / mkdir</a>                       </li>
+            <li><a href="../decorators/posttask.html">@posttask touch_file</a>                  </li>
+            <li><a href="../decorators/active_if.html">@active_if</a>                           </li>
+            <li><a href="../decorators/jobs_limit.html">@jobs_limit</a>                         </li>
+        </ul>
+    
+        <h4><a href="../decorators/decorators.html#combinatorics">Combinatorial:</a></h4>   
+        <ul>
+            <li><a href="../decorators/product.html">@product </a>                              </li>
+            <li><a href="../decorators/permutations.html">@permutations </a>                    </li>
+            <li><a href="../decorators/combinations.html">@combinations </a>                    </li>
+            <li><a href="../decorators/combinations_with_replacement.html">@combinations_ _with_replacement </a>                    </li>
+        </ul>
+
+                        
+        <h4><a href="../decorators/decorators.html#esoteric">Esoteric</a></h4>   
+        <ul>
+            <li><a href="../decorators/files_ex.html">@files (on the fly)</a>                   </li>
+            <li><a href="../decorators/parallel.html">@parallel</a>                             </li>
+            <li><a href="../decorators/check_if_uptodate.html">@check_if_uptodate</a>           </li>
+        </ul>
+
+
+        <h4 ><a href="../decorators/indicator_objects.html">Indicator objects</a></h4>
+        <h4 >Pipeline functions</h4>
+        <ul>
+            <li><a href="../pipeline_functions.html#pipeline-functions-pipeline-run">pipeline_run</a>                       </li>
+            <li><a href="../pipeline_functions.html#pipeline-functions-pipeline-printout">pipeline_printout</a>                      </li>
+            <li><a href="../pipeline_functions.html#pipeline-functions-pipeline-printout-graph">pipeline_printout_graph</a>          </li>
+            <li><a href="../pipeline_functions.html#pipeline-functions-pipeline-get-task-names">pipeline_get_task_names</a>          </li>
+            <li><a href="../drmaa_wrapper_functions.html#drmaa-wrapper-functions-drmaa_wrapper-run_job">drmaa_wrapper.run_job</a>          </li>
+        </ul>
+
+         <a href="../todo.html">Future plans</a>
+    </ul>
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../decorators/decorators.html" title="Ruffus Decorators"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="bioinformatics/part2_code.html" title="Ruffus code"
+             >previous</a> |</li>
+        Ruffus v. 2.6
+            <li><a href="../index.html">Home</a> | </li>
+            <li><a href="../contents.html">Contents</a> | </li>
+            <li><a href="../installation.html">Install</a>  | </li>
+            <li><a href="../tutorials/new_tutorial/introduction.html">Manual</a>  / </li>
+            <li><a href="../tutorials/new_tutorial/manual_contents.html">(TOC)</a>  | </li>
+            <li><a href="../faq.html">FAQ</a>  | </li>
+            <li><a href="../cheatsheet.html">Cheat sheet</a> | </li>
+            <li><a href="../tutorials/new_tutorial/command_line.html">Command Line</a> | </li>
+            <li><a href="../gallery.html">Gallery</a> |  </li>
+            <li><a href="../new_syntax.html">New syntax in v 2.6</a> | </li>
+            <li><a href="../history.html">Latest Changes</a> &raquo; </li>
+ 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2009-2013 Leo Goodstadt.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

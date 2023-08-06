@@ -1,0 +1,551 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta content="Ruffus is a Computation Pipeline library for python. It is open-sourced, powerful and user-friendly, and widely used in science and bioinformatics" name="description" />
+<meta content="python, pipeline, computation, cluster, Ruffus, bioinformatics, parallel' name='keywords" name="keywords" />
+<meta content="Leo Goodstadt" name="Author" />
+<meta content="Leo Goodstadt" name="Publisher" />
+<meta content="ruffus&#64;llew.org.uk" name="Email" />
+<meta content="index, follow" name="robots" />
+<meta content="en-uk" name="language" />
+<meta content="United Kingdom" name="country" />
+<meta content="Leo Goodstadt 2009-2014" name="copyright" />
+
+    <title>Chapter 10: Checkpointing: Interrupted Pipelines and Exceptions &mdash; ruffus 2.6 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/ruffus.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '2.6',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <script type="text/javascript" src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    <link rel="top" title="ruffus 2.6 documentation" href="../../index.html" />
+    <link rel="next" title="Chapter 11: Pipeline topologies and a compendium of Ruffus decorators" href="decorators_compendium.html" />
+    <link rel="prev" title="Chapter 9: Preparing directories for output with @mkdir()" href="mkdir.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="decorators_compendium.html" title="Chapter 11: Pipeline topologies and a compendium of Ruffus decorators"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="mkdir.html" title="Chapter 9: Preparing directories for output with @mkdir()"
+             accesskey="P">previous</a> |</li>
+        Ruffus v. 2.6
+            <li><a href="../../index.html">Home</a> | </li>
+            <li><a href="../../contents.html">Contents</a> | </li>
+            <li><a href="../../installation.html">Install</a>  | </li>
+            <li><a href="introduction.html">Manual</a>  / </li>
+            <li><a href="manual_contents.html">(TOC)</a>  | </li>
+            <li><a href="../../faq.html">FAQ</a>  | </li>
+            <li><a href="../../cheatsheet.html">Cheat sheet</a> | </li>
+            <li><a href="command_line.html">Command Line</a> | </li>
+            <li><a href="../../gallery.html">Gallery</a> |  </li>
+            <li><a href="../../new_syntax.html">New syntax in v 2.6</a> | </li>
+            <li><a href="../../history.html">Latest Changes</a> &raquo; </li>
+ 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="new-manual-checkpointing-chapter-num-checkpointing-interrupted-pipelines-and-exceptions">
+<span id="new-manual-checkpointing"></span><span id="index-0"></span><h1><strong>Chapter 10</strong>: Checkpointing: Interrupted Pipelines and Exceptions<a class="headerlink" href="#new-manual-checkpointing-chapter-num-checkpointing-interrupted-pipelines-and-exceptions" title="Permalink to this headline">¶</a></h1>
+<div class="admonition seealso">
+<p class="first admonition-title">See also</p>
+<ul class="last simple">
+<li><a class="reference internal" href="manual_contents.html#new-manual-table-of-contents"><em>Manual Table of Contents</em></a></li>
+</ul>
+</div>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p>Remember to look at the example code:</p>
+<ul class="last simple">
+<li><a class="reference internal" href="checkpointing_code.html#new-manual-checkpointing-code"><em>Chapter 10: Python Code for Checkpointing: Interrupted Pipelines and Exceptions</em></a></li>
+</ul>
+</div>
+<div class="section" id="overview">
+<h2>Overview<a class="headerlink" href="#overview" title="Permalink to this headline">¶</a></h2>
+<blockquote>
+<div><a class="reference internal image-reference" href="../../_images/theoretical_pipeline_schematic.png"><img alt="../../_images/theoretical_pipeline_schematic.png" src="../../_images/theoretical_pipeline_schematic.png" style="width: 610.0px; height: 71.0px;" /></a>
+<p>Computational pipelines transform your data in stages until the final result is produced.</p>
+<p>By default, <em>Ruffus</em> uses file modification times for the <strong>input</strong> and <strong>output</strong> to determine
+whether each stage of a pipeline is up-to-date or not. But what happens when the task
+function is interrupted, whether from the command line or by error, half way through writing the output?</p>
+<p>In this case, the half-formed, truncated and corrupt <strong>Output</strong> file will look newer than its <strong>Input</strong> and hence up-to-date.</p>
+</div></blockquote>
+</div>
+<div class="section" id="interrupting-tasks">
+<span id="new-manual-interrupting-tasks"></span><span id="index-1"></span><h2>Interrupting tasks<a class="headerlink" href="#interrupting-tasks" title="Permalink to this headline">¶</a></h2>
+<blockquote>
+<div><p>Let us try with an example:</p>
+<blockquote>
+<div><div class="highlight-python"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">ruffus</span> <span class="kn">import</span> <span class="o">*</span>
+<span class="kn">import</span> <span class="nn">sys</span><span class="o">,</span> <span class="nn">time</span>
+
+<span class="c">#   create initial files</span>
+<span class="nd">@originate</span><span class="p">([</span><span class="s">&#39;job1.start&#39;</span><span class="p">])</span>
+<span class="k">def</span> <span class="nf">create_initial_files</span><span class="p">(</span><span class="n">output_file</span><span class="p">):</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">output_file</span><span class="p">,</span> <span class="s">&quot;w&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">oo</span><span class="p">:</span> <span class="k">pass</span>
+
+
+<span class="c">#---------------------------------------------------------------</span>
+<span class="c">#</span>
+<span class="c">#   long task to interrupt</span>
+<span class="c">#</span>
+<span class="nd">@transform</span><span class="p">(</span><span class="n">create_initial_files</span><span class="p">,</span> <span class="n">suffix</span><span class="p">(</span><span class="s">&quot;.start&quot;</span><span class="p">),</span> <span class="s">&quot;.output&quot;</span><span class="p">)</span>
+<span class="k">def</span> <span class="nf">long_task</span><span class="p">(</span><span class="n">input_files</span><span class="p">,</span> <span class="n">output_file</span><span class="p">):</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">output_file</span><span class="p">,</span> <span class="s">&quot;w&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">ff</span><span class="p">:</span>
+        <span class="n">ff</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s">&quot;Unfinished...&quot;</span><span class="p">)</span>
+        <span class="c"># sleep for 2 seconds here so you can interrupt me</span>
+        <span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s">&quot;Job started. Press ^C to interrupt me now...</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">)</span>
+<span class="hll">        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+</span>        <span class="n">ff</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s">&quot;</span><span class="se">\n</span><span class="s">Finished&quot;</span><span class="p">)</span>
+        <span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s">&quot;Job completed.</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">)</span>
+
+
+<span class="c">#       Run</span>
+<span class="n">pipeline_run</span><span class="p">([</span><span class="n">long_task</span><span class="p">])</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>When this script runs, it pauses in the middle with this message:</p>
+<div class="highlight-python"><div class="highlight"><pre>Job started. Press ^C to interrupt me now...
+</pre></div>
+</div>
+<p>If you interrupted the script by pressing Control-C at this point, you will see that <tt class="docutils literal"><span class="pre">job1.output</span></tt> contains only <tt class="docutils literal"><span class="pre">Unfinished...</span></tt>.
+However, if you should rerun the interrupted pipeline again, Ruffus ignores the corrupt, incomplete file:</p>
+<blockquote>
+<div><div class="highlight-pycon"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="n">pipeline_run</span><span class="p">([</span><span class="n">long_task</span><span class="p">])</span>
+<span class="go">Job started. Press ^C to interrupt me now...</span>
+<span class="go">Job completed</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>And if you had run <tt class="docutils literal"><span class="pre">pipeline_printout</span></tt>:</p>
+<blockquote>
+<div><div class="highlight-pycon"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="n">pipeline_printout</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="p">[</span><span class="n">long_task</span><span class="p">],</span> <span class="n">verbose</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+<span class="go">________________________________________</span>
+<span class="go">Tasks which will be run:</span>
+
+<span class="go">Task = long_task</span>
+<span class="go">       Job  = [job1.start</span>
+<span class="go">             -&gt; job1.output]</span>
+<span class="hll"><span class="go">         # Job needs update: Previous incomplete run leftover: [job1.output]</span>
+</span></pre></div>
+</div>
+</div></blockquote>
+<p>We can see that <em>Ruffus</em> magically knows that the previous run was incomplete, and that <tt class="docutils literal"><span class="pre">job1.output</span></tt> is detritus that needs to be discarded.</p>
+</div></blockquote>
+</div>
+<div class="section" id="checkpointing-only-log-completed-jobs">
+<span id="new-manual-logging-completed-jobs"></span><h2>Checkpointing: only log completed jobs<a class="headerlink" href="#checkpointing-only-log-completed-jobs" title="Permalink to this headline">¶</a></h2>
+<blockquote>
+<div><p>All is revealed if you were to look in the working directory. <em>Ruffus</em> has created a file called <tt class="docutils literal"><span class="pre">.ruffus_history.sqlite</span></tt>.
+In this <a class="reference external" href="https://sqlite.org/">SQLite</a> database, <em>Ruffus</em> logs only those files which are the result of a completed job,
+all other files are suspect.
+This file checkpoint database is a fail-safe, not a substitute for checking file modification times. If the <strong>Input</strong> or <strong>Output</strong> files are
+modified, the pipeline will rerun.</p>
+<p>By default, <em>Ruffus</em> saves only file timestamps to the SQLite database but you can also add a checksum of the pipeline task function body or parameters.
+This behaviour can be controlled by setting the <tt class="docutils literal"><span class="pre">checksum_level</span></tt> parameter
+in <tt class="docutils literal"><span class="pre">pipeline_run()</span></tt>. For example, if you do not want to save any timestamps or checksums:</p>
+<blockquote>
+<div><div class="highlight-python"><div class="highlight"><pre><span class="n">pipeline_run</span><span class="p">(</span><span class="n">checksum_level</span> <span class="o">=</span> <span class="mi">0</span><span class="p">)</span>
+
+<span class="n">CHECKSUM_FILE_TIMESTAMPS</span>      <span class="o">=</span> <span class="mi">0</span>     <span class="c"># only rerun when the file timestamps are out of date (classic mode)</span>
+<span class="n">CHECKSUM_HISTORY_TIMESTAMPS</span>   <span class="o">=</span> <span class="mi">1</span>     <span class="c"># Default: also rerun when the history shows a job as being out of date</span>
+<span class="n">CHECKSUM_FUNCTIONS</span>            <span class="o">=</span> <span class="mi">2</span>     <span class="c"># also rerun when function body has changed</span>
+<span class="n">CHECKSUM_FUNCTIONS_AND_PARAMS</span> <span class="o">=</span> <span class="mi">3</span>     <span class="c"># also rerun when function parameters or function body change</span>
+</pre></div>
+</div>
+</div></blockquote>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">Checksums are calculated from the <a class="reference external" href="http://docs.python.org/2/library/pickle.html">pickled</a> string for the function code and parameters.
+If pickling fails, Ruffus will degrade gracefully to saving just the timestamp in the SQLite database.</p>
+</div>
+</div></blockquote>
+</div>
+<div class="section" id="do-not-share-the-same-checkpoint-file-across-for-multiple-pipelines">
+<span id="new-manual-history-files-cannot-be-shared"></span><h2>Do not share the same checkpoint file across for multiple pipelines!<a class="headerlink" href="#do-not-share-the-same-checkpoint-file-across-for-multiple-pipelines" title="Permalink to this headline">¶</a></h2>
+<blockquote>
+<div><p>The name of the Ruffus python script is not saved in the checkpoint file along side timestamps and checksums.
+That means that you can rename your pipeline source code file without having to rerun the pipeline!
+The tradeoff is that if multiple pipelines are run from the same directory, and save their histories to the
+same SQlite database file, and if their file names overlap (all of these are bad ideas anyway!), this is
+bound to be a source of confusion.</p>
+<p>Luckily, the name and path of the checkpoint file can be also changed for each pipeline</p>
+</div></blockquote>
+</div>
+<div class="section" id="setting-checkpoint-file-names">
+<span id="new-manual-changing-history-file-name"></span><h2>Setting checkpoint file names<a class="headerlink" href="#setting-checkpoint-file-names" title="Permalink to this headline">¶</a></h2>
+<blockquote>
+<div><div class="admonition warning">
+<p class="first admonition-title">Warning</p>
+<p>Some file systems do not appear to support SQLite at all:</p>
+<p>There are reports that SQLite databases have <a class="reference external" href="http://beets.radbox.org/blog/sqlite-nightmare.html">file locking problems</a> on Lustre.</p>
+<p class="last">The best solution would be to keep the SQLite database on an alternate compatible file system away from the working directory if possible.</p>
+</div>
+</div></blockquote>
+<div class="section" id="environment-variable-default-ruffus-history-file">
+<h3>environment variable <tt class="docutils literal"><span class="pre">DEFAULT_RUFFUS_HISTORY_FILE</span></tt><a class="headerlink" href="#environment-variable-default-ruffus-history-file" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>The name of the checkpoint file is the value of the environment variable <tt class="docutils literal"><span class="pre">DEFAULT_RUFFUS_HISTORY_FILE</span></tt>.</p>
+<blockquote>
+<div>export DEFAULT_RUFFUS_HISTORY_FILE=/some/where/.ruffus_history.sqlite</div></blockquote>
+<p>This gives considerable flexibility, and allows a system-wide policy to be set so that all Ruffus checkpoint files are set logically to particular paths.</p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">It is your responsibility to make sure that the requisite destination directories for the checkpoint files exist beforehand!</p>
+</div>
+<p>Where this is missing, the checkpoint file defaults to <tt class="docutils literal"><span class="pre">.ruffus_history.sqlite</span></tt> in your working directory</p>
+</div></blockquote>
+</div>
+<div class="section" id="setting-the-checkpoint-file-name-manually">
+<h3>Setting the checkpoint file name manually<a class="headerlink" href="#setting-the-checkpoint-file-name-manually" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>This checkpoint file name can always be overridden as a parameter to Ruffus functions:</p>
+<blockquote>
+<div><div class="highlight-python"><div class="highlight"><pre><span class="n">pipeline_run</span><span class="p">(</span><span class="n">history_file</span> <span class="o">=</span> <span class="s">&quot;XXX&quot;</span><span class="p">)</span>
+<span class="n">pipeline_printout</span><span class="p">(</span><span class="n">history_file</span> <span class="o">=</span> <span class="s">&quot;XXX&quot;</span><span class="p">)</span>
+<span class="n">pipeline_printout_graph</span><span class="p">(</span><span class="n">history_file</span> <span class="o">=</span> <span class="s">&quot;XXX&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>There is also built in support in <tt class="docutils literal"><span class="pre">Ruffus.cmdline</span></tt>. So if you use this module, you can simply add to your command line:</p>
+<blockquote>
+<div><div class="highlight-bash"><div class="highlight"><pre><span class="c"># use a custom checkpoint file</span>
+myscript --checksum_file_name .myscript.ruffus_history.sqlite
+</pre></div>
+</div>
+</div></blockquote>
+<p>This takes precedence over everything else.</p>
+</div></blockquote>
+</div>
+</div>
+<div class="section" id="useful-checkpoint-file-name-policies-default-ruffus-history-file">
+<h2>Useful checkpoint file name policies <tt class="docutils literal"><span class="pre">DEFAULT_RUFFUS_HISTORY_FILE</span></tt><a class="headerlink" href="#useful-checkpoint-file-name-policies-default-ruffus-history-file" title="Permalink to this headline">¶</a></h2>
+<blockquote>
+<div>If the pipeline script is called <tt class="docutils literal"><span class="pre">test/bin/scripts/run.me.py</span></tt>, then these are the resulting checkpoint files locations:</div></blockquote>
+<div class="section" id="example-1-same-directory-different-name">
+<h3>Example 1: same directory, different name<a class="headerlink" href="#example-1-same-directory-different-name" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>If the environment variable is:</p>
+<div class="highlight-bash"><div class="highlight"><pre><span class="nb">export </span><span class="nv">DEFAULT_RUFFUS_HISTORY_FILE</span><span class="o">=</span>.<span class="o">{</span>basename<span class="o">}</span>.ruffus_history.sqlite
+</pre></div>
+</div>
+<p>Then the job checkpoint database for <tt class="docutils literal"><span class="pre">run.me.py</span></tt> will be <tt class="docutils literal"><span class="pre">.run.me.ruffus_history.sqlite</span></tt></p>
+<div class="highlight-bash"><div class="highlight"><pre>/test/bin/scripts/run.me.py
+/common/path/for/job_history/scripts/.run.me.ruffus_history.sqlite
+</pre></div>
+</div>
+</div></blockquote>
+</div>
+<div class="section" id="example-2-different-directory-same-name">
+<h3>Example 2: Different directory, same name<a class="headerlink" href="#example-2-different-directory-same-name" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><div class="highlight-bash"><div class="highlight"><pre><span class="nb">export </span><span class="nv">DEFAULT_RUFFUS_HISTORY_FILE</span><span class="o">=</span>/common/path/for/job_history/.<span class="o">{</span>basename<span class="o">}</span>.ruffus_history.sqlite
+</pre></div>
+</div>
+<div class="highlight-bash"><div class="highlight"><pre>/common/path/for/job_history/.run.me.ruffus_history.sqlite
+</pre></div>
+</div>
+</div></blockquote>
+</div>
+<div class="section" id="example-2-different-directory-same-name-but-keep-one-level-of-subdirectory-to-disambiguate">
+<h3>Example 2: Different directory, same name but keep one level of subdirectory to disambiguate<a class="headerlink" href="#example-2-different-directory-same-name-but-keep-one-level-of-subdirectory-to-disambiguate" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><div class="highlight-bash"><div class="highlight"><pre><span class="nb">export </span><span class="nv">DEFAULT_RUFFUS_HISTORY_FILE</span><span class="o">=</span>/common/path/for/job_history/<span class="o">{</span>subdir<span class="o">[</span>0<span class="o">]}</span>/.<span class="o">{</span>basename<span class="o">}</span>.ruffus_history.sqlite
+</pre></div>
+</div>
+<div class="highlight-bash"><div class="highlight"><pre>/common/path/for/job_history/scripts/.run.me.ruffus_history.sqlite
+</pre></div>
+</div>
+</div></blockquote>
+</div>
+<div class="section" id="example-2-nested-in-common-directory">
+<h3>Example 2: nested in common directory<a class="headerlink" href="#example-2-nested-in-common-directory" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><div class="highlight-bash"><div class="highlight"><pre><span class="nb">export </span><span class="nv">DEFAULT_RUFFUS_HISTORY_FILE</span><span class="o">=</span>/common/path/for/job_history/<span class="o">{</span>path<span class="o">}</span>/.<span class="o">{</span>basename<span class="o">}</span>.ruffus_history.sqlite
+</pre></div>
+</div>
+<div class="highlight-bash"><div class="highlight"><pre>/common/path/for/job_history/test/bin/scripts/.run.me.ruffus_history.sqlite
+</pre></div>
+</div>
+</div></blockquote>
+</div>
+</div>
+<div class="section" id="regenerating-the-checkpoint-file">
+<span id="new-manual-regenerating-history-file"></span><span id="index-2"></span><h2>Regenerating the checkpoint file<a class="headerlink" href="#regenerating-the-checkpoint-file" title="Permalink to this headline">¶</a></h2>
+<blockquote>
+<div><p>Occasionally you may need to re-generate the checkpoint file.</p>
+<p>This could be necessary:</p>
+<blockquote>
+<div><ul class="simple">
+<li>because you are upgrading from a previous version of Ruffus without checkpoint file support</li>
+<li>on the rare occasions when the SQLite file becomes corrupted and has to deleted</li>
+<li>if you wish to circumvent the file checking of Ruffus after making some manual changes!</li>
+</ul>
+</div></blockquote>
+<p>To do this, it is only necessary to call <tt class="docutils literal"><span class="pre">pipeline_run</span></tt> appropriately:</p>
+<blockquote>
+<div><div class="highlight-python"><div class="highlight"><pre><span class="n">CHECKSUM_REGENERATE</span> <span class="o">=</span> <span class="mi">2</span>
+<span class="n">pipeline</span><span class="p">(</span><span class="n">touch_files_only</span> <span class="o">=</span> <span class="n">CHECKSUM_REGENERATE</span><span class="p">)</span>
+</pre></div>
+</div>
+</div></blockquote>
+<p>Similarly, if you are using <tt class="docutils literal"><span class="pre">Ruffus.cmdline</span></tt>, you can call:</p>
+<blockquote>
+<div><div class="highlight-bash"><div class="highlight"><pre>myscript --recreate_database
+</pre></div>
+</div>
+</div></blockquote>
+<p>Note that this regenerates the checkpoint file to reflect the existing <em>Input</em>, <em>Output</em> files on disk.
+In other words, the onus is on you to make sure there are no half-formed, corrupt files. On the other hand,
+the pipeline does not need to have been previously run successfully for this to work. Essentially, Ruffus,
+pretends to run the pipeline, while logging all the files with consistent file modication times, stopping
+at the first tasks which appear out of date or incomplete.</p>
+</div></blockquote>
+</div>
+<div class="section" id="rules-for-determining-if-files-are-up-to-date">
+<span id="new-manual-skip-up-to-date-rules"></span><span id="index-3"></span><h2>Rules for determining if files are up to date<a class="headerlink" href="#rules-for-determining-if-files-are-up-to-date" title="Permalink to this headline">¶</a></h2>
+<blockquote>
+<div><p>The following simple rules are used by <em>Ruffus</em>.</p>
+<ol class="arabic">
+<li><p class="first">The pipeline stage will be rerun if:</p>
+<blockquote>
+<div><ul class="simple">
+<li>If any of the <strong>Input</strong> files are new (newer than the <strong>Output</strong> files)</li>
+<li>If any of the <strong>Output</strong> files are missing</li>
+</ul>
+</div></blockquote>
+</li>
+<li><p class="first">In addition, it is possible to run jobs which create files from scratch.</p>
+<blockquote>
+<div><ul class="simple">
+<li>If no <strong>Input</strong> file names are supplied, the job will only run if any <em>output</em> file is missing.</li>
+</ul>
+</div></blockquote>
+</li>
+<li><p class="first">Finally, if no <strong>Output</strong> file names are supplied, the job will always run.</p>
+</li>
+</ol>
+</div></blockquote>
+</div>
+<div class="section" id="missing-files-generate-exceptions">
+<span id="index-4"></span><h2>Missing files generate exceptions<a class="headerlink" href="#missing-files-generate-exceptions" title="Permalink to this headline">¶</a></h2>
+<blockquote>
+<div><p>If the <em>inputs</em> files for a job are missing, the task function will have no way
+to produce its <em>output</em>. In this case, a <tt class="docutils literal"><span class="pre">MissingInputFileError</span></tt> exception will be raised
+automatically. For example,</p>
+<blockquote>
+<div><div class="highlight-python"><div class="highlight"><pre>task.MissingInputFileError: No way to run job: Input file [&#39;a.1&#39;] does not exist
+for Job = [&quot;a.1&quot; -&gt; &quot;a.2&quot;, &quot;A file&quot;]
+</pre></div>
+</div>
+</div></blockquote>
+</div></blockquote>
+</div>
+<div class="section" id="caveats-coarse-timestamp-resolution">
+<span id="index-5"></span><h2>Caveats: Coarse Timestamp resolution<a class="headerlink" href="#caveats-coarse-timestamp-resolution" title="Permalink to this headline">¶</a></h2>
+<blockquote>
+<div><p>Note that modification times have precision to the nearest second under some older file systems
+(ext2/ext3?). This may be also be true for networked file systems.</p>
+<p><em>Ruffus</em> supplements the file system time resolution by independently recording the timestamp at
+full OS resolution (usually to at least the millisecond) at job completion, when presumably the <strong>Output</strong>
+files will have been created.</p>
+<p>However, <em>Ruffus</em> only does this if the discrepancy between file time and system time is less than a second
+(due to poor file system timestamp resolution). If there are large mismatches between the two, due for example
+to network time slippage, misconfiguration etc, <em>Ruffus</em> reverts to using the file system time and adds a one second
+delay between jobs (via <tt class="docutils literal"><span class="pre">time.sleep()</span></tt>) to make sure input and output file stamps are different.</p>
+<p>If you know that your filesystem has coarse-grained timestamp resolution, you can always revert to this very conservative behaviour,
+at the prices of some annoying 1s pauses, by setting <a class="reference internal" href="../../pipeline_functions.html#pipeline-functions-pipeline-run"><em>pipeline_run(one_second_per_job = True)</em></a></p>
+</div></blockquote>
+</div>
+<div class="section" id="flag-files-checkpointing-for-the-paranoid">
+<span id="index-6"></span><h2>Flag files: Checkpointing for the paranoid<a class="headerlink" href="#flag-files-checkpointing-for-the-paranoid" title="Permalink to this headline">¶</a></h2>
+<blockquote>
+<div><p>One other way of checkpointing your pipelines is to create an extra &#8220;flag&#8221; file as an additional
+<strong>Output</strong> file name. The flag file is only created or updated when everything else in the
+job has completed successifully and written to disk. A missing or out of date flag file then
+would be a sign for Ruffus that the task never completed properly in the first place.</p>
+<p>This used to be much the best way of performing checkpointing in Ruffus and is still
+the most bulletproof way of proceeding. For example, even the loss or corruption
+of the checkpoint file, would not affect things greatly.</p>
+<p>Nevertheless flag files are largely superfluous in modern <em>Ruffus</em>.</p>
+</div></blockquote>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h3><a href="../../contents.html">Table Of Contents</a></h3>
+  <ul>
+<li><a class="reference internal" href="#"><strong>Chapter 10</strong>: Checkpointing: Interrupted Pipelines and Exceptions</a><ul>
+<li><a class="reference internal" href="#overview">Overview</a></li>
+<li><a class="reference internal" href="#interrupting-tasks">Interrupting tasks</a></li>
+<li><a class="reference internal" href="#checkpointing-only-log-completed-jobs">Checkpointing: only log completed jobs</a></li>
+<li><a class="reference internal" href="#do-not-share-the-same-checkpoint-file-across-for-multiple-pipelines">Do not share the same checkpoint file across for multiple pipelines!</a></li>
+<li><a class="reference internal" href="#setting-checkpoint-file-names">Setting checkpoint file names</a><ul>
+<li><a class="reference internal" href="#environment-variable-default-ruffus-history-file">environment variable <tt class="docutils literal"><span class="pre">DEFAULT_RUFFUS_HISTORY_FILE</span></tt></a></li>
+<li><a class="reference internal" href="#setting-the-checkpoint-file-name-manually">Setting the checkpoint file name manually</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#useful-checkpoint-file-name-policies-default-ruffus-history-file">Useful checkpoint file name policies <tt class="docutils literal"><span class="pre">DEFAULT_RUFFUS_HISTORY_FILE</span></tt></a><ul>
+<li><a class="reference internal" href="#example-1-same-directory-different-name">Example 1: same directory, different name</a></li>
+<li><a class="reference internal" href="#example-2-different-directory-same-name">Example 2: Different directory, same name</a></li>
+<li><a class="reference internal" href="#example-2-different-directory-same-name-but-keep-one-level-of-subdirectory-to-disambiguate">Example 2: Different directory, same name but keep one level of subdirectory to disambiguate</a></li>
+<li><a class="reference internal" href="#example-2-nested-in-common-directory">Example 2: nested in common directory</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#regenerating-the-checkpoint-file">Regenerating the checkpoint file</a></li>
+<li><a class="reference internal" href="#rules-for-determining-if-files-are-up-to-date">Rules for determining if files are up to date</a></li>
+<li><a class="reference internal" href="#missing-files-generate-exceptions">Missing files generate exceptions</a></li>
+<li><a class="reference internal" href="#caveats-coarse-timestamp-resolution">Caveats: Coarse Timestamp resolution</a></li>
+<li><a class="reference internal" href="#flag-files-checkpointing-for-the-paranoid">Flag files: Checkpointing for the paranoid</a></li>
+</ul>
+</li>
+</ul>
+
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="mkdir.html"
+                        title="previous chapter"><strong>Chapter 9</strong>: Preparing directories for output with <tt class="docutils literal"><span class="pre">&#64;mkdir()</span></tt></a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="decorators_compendium.html"
+                        title="next chapter"><strong>Chapter 11</strong>: Pipeline topologies and a compendium of <em>Ruffus</em> decorators</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="../../_sources/tutorials/new_tutorial/checkpointing.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+    
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+    <h3> Quick Reference:</h3>
+    <ul>
+        <h4><a href="../../decorators/decorators.html#core">Core:</a></h4>   
+        <ul>
+            <li><a href="../../decorators/originate.html">@originate</a>                           </li>
+            <li><a href="../../decorators/split.html">@split</a>                                   </li>
+            <li><a href="../../decorators/transform.html">@transform</a>                           </li>
+            <li><a href="../../decorators/merge.html">@merge</a>                                   </li>
+        </ul>
+
+        <h4><a href="../../decorators/decorators.html#advanced">Advanced</a></h4>   
+        <ul>
+            <li><a href="../../decorators/subdivide.html">@subdivide</a>                           </li>
+            <li><a href="../../decorators/transform_ex.html">@transform (add_inputs) </a>          </li>
+            <li><a href="../../decorators/collate.html">@collate</a>                               </li>
+            <li><a href="../../decorators/collate_ex.html">@collate (add_inputs)</a>               </li>
+            <li><a href="../../decorators/graphviz.html">@graphviz</a>                             </li>
+            <li><a href="../../decorators/mkdir.html">@mkdir</a>                                   </li>
+            <li><a href="../../decorators/follows.html">@follows / mkdir</a>                       </li>
+            <li><a href="../../decorators/posttask.html">@posttask touch_file</a>                  </li>
+            <li><a href="../../decorators/active_if.html">@active_if</a>                           </li>
+            <li><a href="../../decorators/jobs_limit.html">@jobs_limit</a>                         </li>
+        </ul>
+    
+        <h4><a href="../../decorators/decorators.html#combinatorics">Combinatorial:</a></h4>   
+        <ul>
+            <li><a href="../../decorators/product.html">@product </a>                              </li>
+            <li><a href="../../decorators/permutations.html">@permutations </a>                    </li>
+            <li><a href="../../decorators/combinations.html">@combinations </a>                    </li>
+            <li><a href="../../decorators/combinations_with_replacement.html">@combinations_ _with_replacement </a>                    </li>
+        </ul>
+
+                        
+        <h4><a href="../../decorators/decorators.html#esoteric">Esoteric</a></h4>   
+        <ul>
+            <li><a href="../../decorators/files_ex.html">@files (on the fly)</a>                   </li>
+            <li><a href="../../decorators/parallel.html">@parallel</a>                             </li>
+            <li><a href="../../decorators/check_if_uptodate.html">@check_if_uptodate</a>           </li>
+        </ul>
+
+
+        <h4 ><a href="../../decorators/indicator_objects.html">Indicator objects</a></h4>
+        <h4 >Pipeline functions</h4>
+        <ul>
+            <li><a href="../../pipeline_functions.html#pipeline-functions-pipeline-run">pipeline_run</a>                       </li>
+            <li><a href="../../pipeline_functions.html#pipeline-functions-pipeline-printout">pipeline_printout</a>                      </li>
+            <li><a href="../../pipeline_functions.html#pipeline-functions-pipeline-printout-graph">pipeline_printout_graph</a>          </li>
+            <li><a href="../../pipeline_functions.html#pipeline-functions-pipeline-get-task-names">pipeline_get_task_names</a>          </li>
+            <li><a href="../../drmaa_wrapper_functions.html#drmaa-wrapper-functions-drmaa_wrapper-run_job">drmaa_wrapper.run_job</a>          </li>
+        </ul>
+
+         <a href="../../todo.html">Future plans</a>
+    </ul>
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="decorators_compendium.html" title="Chapter 11: Pipeline topologies and a compendium of Ruffus decorators"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="mkdir.html" title="Chapter 9: Preparing directories for output with @mkdir()"
+             >previous</a> |</li>
+        Ruffus v. 2.6
+            <li><a href="../../index.html">Home</a> | </li>
+            <li><a href="../../contents.html">Contents</a> | </li>
+            <li><a href="../../installation.html">Install</a>  | </li>
+            <li><a href="introduction.html">Manual</a>  / </li>
+            <li><a href="manual_contents.html">(TOC)</a>  | </li>
+            <li><a href="../../faq.html">FAQ</a>  | </li>
+            <li><a href="../../cheatsheet.html">Cheat sheet</a> | </li>
+            <li><a href="command_line.html">Command Line</a> | </li>
+            <li><a href="../../gallery.html">Gallery</a> |  </li>
+            <li><a href="../../new_syntax.html">New syntax in v 2.6</a> | </li>
+            <li><a href="../../history.html">Latest Changes</a> &raquo; </li>
+ 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2009-2013 Leo Goodstadt.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>
