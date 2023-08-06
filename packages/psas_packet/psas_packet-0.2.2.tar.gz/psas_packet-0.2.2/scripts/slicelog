@@ -1,0 +1,56 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+from __future__ import print_function
+import argparse
+import sys
+import itertools
+import codecs
+from psas_packet import io
+from psas_packet import messages
+
+SEQN = messages.MESSAGES['SEQN']
+HEAD = messages.HEADER
+
+def slicelog(begin, end, inlog, outlog):
+    with io.BinFile(inlog) as log:
+
+        messages = log.scan()
+
+        """
+        if begin is not None:
+            messages = itertools.dropwhile(lambda data: not (data[0] == SEQN.fourcc and SEQN.decode(data[1][messages.HEADER.size:])['Sequence'] >= begin))
+        if end is not None:
+            messages = itertools.takewhile(lambda data: not (data[0] == SEQN.fourcc and SEQN.decode(data[1][messages.HEADER.size:])['Sequence'] <= end))
+        """
+        seqn = 0
+        for fourcc, raw in messages:
+            if fourcc == SEQN.fourcc:
+               seqn = SEQN.decode(raw[HEAD.size:])['Sequence']
+               sys.stdout.write(" SEQN: %8d \r" % seqn)
+               sys.stdout.flush()
+            if seqn > begin:
+                outlog.write(raw)
+            
+            if seqn > end:
+                break
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(prog='log2csv')
+    parser.add_argument('logfile', type=argparse.FileType('rb'), help="Log file to read")
+    parser.add_argument('slice', type=str, help="slice")
+    parser.add_argument('-o', '--output', type=argparse.FileType('wb'), default=getattr(sys.stdout, 'buffer', sys.stdout), help="Output File", required=False)
+
+    args = vars(parser.parse_args())
+
+    begin, end = args['slice'].split(':')
+    try:
+        begin = int(begin)
+    except:
+        begin = None
+    try:
+        end = int(end)
+    except:
+        end = None
+
+    slicelog(begin, end, args['logfile'], args['output'])
