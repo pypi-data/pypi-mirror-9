@@ -1,0 +1,79 @@
+/* -*- mode: js2; coding: utf-8 -*- */
+
+/*jsl:declare Ext*/
+/*jsl:declare _*/
+
+Ext.define('{{project}}.module.Users', {
+    extend: 'MP.desktop.Module',
+
+    requires: [
+        'MP.grid.Panel'
+    ],
+
+    id: 'users-win',
+    iconCls: 'users-icon',
+    launcherText: _('Users'),
+    launcherTooltip: _('<b>Users</b><br/>Registered users management'),
+
+    users: {
+        xtype: 'editable-grid',
+        dataURL: '/auth/users',
+        sorters: ['last_name', 'first_name'],
+        noAddAndDelete: true
+    },
+
+    getUsersConfig: function(callback) {
+        var me = this;
+
+        me.fetchFieldsAndColumns(function(fields, columns,
+                                   idProperty,
+                                   successProperty,
+                                   rootProperty,
+                                   totalProperty) {
+            Ext.apply(me.users, {
+                fields: fields,
+                columns: columns,
+                idProperty: idProperty,
+                totalProperty: totalProperty,
+                successProperty: successProperty,
+                rootProperty: rootProperty
+            });
+            callback(me.users);
+        }, me, me.users.dataURL);
+    },
+
+    createOrShowWindow: function() {
+        var me = this;
+        var desktop = me.app.getDesktop();
+        var win = desktop.getWindow(me.id);
+
+        if(!win) {
+            var size = desktop.getReasonableWindowSize();
+
+            me.configure(
+                [me.getUsersConfig],
+                function(done) {
+                    win = desktop.createWindow({
+                        id: me.id,
+                        title: me.getLauncherText(),
+                        width: size.width,
+                        height: size.height,
+                        iconCls: me.iconCls,
+                        items: [me.users]
+                });
+
+                // Fetch the first page of records, and when done show
+                // the window
+                win.child('editable-grid').store.load({
+                    params: {start: 0, limit: me.pageSize},
+                    callback: function() {
+                        win.on({show: done, single: true});
+                        win.show();
+                    }
+                });
+            });
+        } else {
+            desktop.restoreWindow(win);
+        }
+    }
+});

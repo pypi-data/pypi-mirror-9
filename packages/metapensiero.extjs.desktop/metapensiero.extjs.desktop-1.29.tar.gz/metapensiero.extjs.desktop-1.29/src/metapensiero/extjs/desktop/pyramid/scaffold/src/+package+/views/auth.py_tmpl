@@ -1,0 +1,196 @@
+# -*- coding: utf-8 -*-
+
+import logging
+
+from pyramid.events import NewRequest, subscriber
+from pyramid.httpexceptions import HTTPUnauthorized
+from pyramid.i18n import get_localizer
+from pyramid.view import view_config
+
+from sqlalchemy import select
+from sqlalchemy.sql.functions import now
+from sqlalchemy.sql.expression import literal_column
+from sqlalchemy.types import String
+
+from ..i18n import translatable_string as _
+from ..models import DBSession, User
+from . import expose
+
+
+logger = logging.getLogger(__name__)
+
+NO_SUCH_USER = _(u'No such user!')
+NON_EXISTING_USERNAME = _(u'Non existing username')
+MANDATORY_FIELD = _(u'Mandatory field')
+MISSING_FIELDS = _(u'Missing fields')
+FULL_NAME = _(u'{first_name} {last_name}')
+
+
+@subscriber(NewRequest)
+def check_authorized_request(event,
+                             authorized_paths={'/',
+                                               '/auth/login',
+                                               '/catalog',
+                                               '/extjs-l10n',
+                                               }):
+    """Assert the request is authorized.
+
+    This function gets hooked at the Pyramid's ``NewRequest`` event,
+    so it will be executed at the start of each new request.
+
+    If the user has been authenticated, or if she is requesting a
+    static resource or one of the authentication views, then nothing
+    happens. Otherwise an HTTPUnauthorized exception is raised.
+    """
+
+    request = event.request
+
+    # Authenticated user?
+    session = request.session
+    if 'user_id' in session:
+        return
+
+    rpath = request.path
+
+    # Anonymous authorized path or static resource?
+    sw = rpath.startswith
+    if rpath in authorized_paths or sw('/static/') or sw('/desktop/'):
+        return
+    if sw('/scripts') and request.registry.settings.get('desktop.debug', False):
+        return
+
+    raise HTTPUnauthorized(_(u'You must re-authenticate yourself'))
+
+
+MODULES = dict(
+    users = dict(
+        classname = '{{project}}.module.Users',
+        shortcut = dict(
+            name = _('Users'),
+            iconCls = 'users-shortcut',
+            moduleId = 'users-win'),
+        quickstart = dict(
+            name = _('Users'),
+            iconCls = 'users-icon',
+            moduleId = 'users-win')),
+    )
+
+# Admin must access all modules!
+admin_modules = [MODULES[m]['classname']
+                 for m in MODULES]
+admin_shortcuts = []
+admin_quickstarts = []
+
+
+@view_config(route_name='login', renderer='json')
+def auth_user(request):
+    t = get_localizer(request).translate
+
+    data = request.params
+
+    username = data.get('username', None)
+    password = data.get('password', None)
+
+    if username and password:
+        sasess = DBSession()
+        user = sasess.query(User).filter_by(username=username).one()
+        if user is None:
+            return {'success': False,
+                    'message': t(NO_SUCH_USER),
+                    'errors': {'username': t(NON_EXISTING_USERNAME)}}
+        elif user.check_password(password):
+            is_admin = user.user_id == 0
+            if is_admin:
+                modules = admin_modules
+                shortcuts = admin_shortcuts
+                quickstart = admin_quickstarts
+            else:
+                modules = []
+                shortcuts = []
+                quickstart = []
+            user.last_login = now()
+        else:
+            return {'success': False,
+                    'message': t(NO_SUCH_USER),
+                    'errors': {'username': t(NON_EXISTING_USERNAME)}}
+
+        s = request.session
+        user_id = s['user_id'] = user.user_id
+        s['user_name'] = user.username
+        first_name = s['user_fn'] = user.first_name
+        last_name = s['user_ln'] = user.last_name
+
+        if first_name and last_name:
+            fullname = t(FULL_NAME).format(
+                first_name=first_name, last_name=last_name)
+        else:
+            fullname = username
+
+        def translate_name(cfg):
+            copy = dict(cfg)
+            copy['name'] = t(copy['name'])
+            return copy
+
+        result = {'success': True,
+                  'fullname': fullname,
+                  'is_admin': is_admin,
+                  'user_id': user_id,
+                  'modules': modules,
+                  'shortcuts': [translate_name(sc)
+                                for sc in shortcuts],
+                  'quickstart': [translate_name(qs)
+                                 for qs in quickstart]}
+
+        if hasattr(s, 'id'): # only on real session, not while testing
+            logger.info('Session %s: login user "%s" from %s',
+                s.id, username,
+                (request.environ.get('HTTP_X_FORWARDED_FOR') or
+                    request.environ.get('REMOTE_ADDR')))
+
+        return result
+    else:
+        errors = {}
+        if not username:
+            errors['username'] = t(MANDATORY_FIELD)
+        if not password:
+            errors['password'] = t(MANDATORY_FIELD)
+        return {'success': False,
+                'message': t(MISSING_FIELDS),
+                'errors': errors}
+
+
+@view_config(route_name='logout', renderer='json')
+def logout(request):
+    s = request.session
+    if hasattr(s, 'id'): # only on real session, not while testing
+        logger.info('Session %s: logout user "%s" from %s',
+                    s.id, s['user_name'],
+                    (request.environ.get('HTTP_X_FORWARDED_FOR') or
+                     request.environ.get('REMOTE_ADDR')))
+    if hasattr(s, 'namespace'):
+        # If this is a Beaker session, delete the cache on the filesystem
+        s.namespace.remove()
+    s.invalidate()
+    return {'success': True, 'message': 'Goodbye'}
+
+
+users_t = User.__table__
+
+@view_config(route_name='users', renderer='json')
+@expose(select([users_t.c.user_id,
+                users_t.c.username,
+                literal_column("'*'", String).label('password'),
+                users_t.c.first_name,
+                users_t.c.last_name,
+                users_t.c.last_login]),
+        metadata=dict(
+    username=dict(width=100),
+    first_name=dict(flex=1),
+    last_name=dict(flex=1),
+    password=dict(label=_('Password'),
+                  hint=_('Login password of the user'),
+                  hidden=True, password=True, width=70),
+    last_login=dict(readonly=True, sendback=False)
+    ))
+def users(request, results):
+    return results

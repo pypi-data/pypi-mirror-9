@@ -1,0 +1,45 @@
+# -*- mode: python; coding: utf-8 -*-
+
+import unittest
+
+from pyramid.paster import get_appsettings
+from sqlalchemy import engine_from_config
+import transaction
+from webtest import TestApp
+
+def setUp():
+    from ...models import Base, DBSession, User
+
+    settings = get_appsettings('test.ini')
+    engine = engine_from_config(settings, 'sqlalchemy.')
+    DBSession.configure(bind=engine)
+    Base.metadata.create_all(DBSession.bind)
+
+    with transaction.manager:
+        user = User(user_id=0, username='admin', password='admin',
+                    first_name="Ad", last_name="Min")
+        DBSession.add(user)
+        user = User(user_id=1, username='test', password='test',
+                    first_name="Te", last_name="St")
+        DBSession.add(user)
+
+
+class FunctionalTestCase(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        from {{package}} import main
+
+        settings = get_appsettings('test.ini')
+        cls.app = TestApp(main({}, **settings))
+
+
+class AuthenticatedTestCase(FunctionalTestCase):
+    USERNAME = None
+    PASSWORD = None
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+
+        cls.app.post('/auth/login', {'username': cls.USERNAME,
+                                     'password': cls.PASSWORD})
