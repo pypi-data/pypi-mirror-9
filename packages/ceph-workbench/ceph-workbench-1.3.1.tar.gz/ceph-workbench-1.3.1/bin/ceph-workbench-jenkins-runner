@@ -1,0 +1,111 @@
+#!/bin/bash -ex
+#
+# Ceph distributed storage system
+#
+# Copyright (C) 2015 Red Hat <contact@redhat.com>
+#
+# Author: Loic Dachary <loic@dachary.org>
+#
+#  This library is free software; you can redistribute it and/or
+#  modify it under the terms of the GNU Lesser General Public
+#  License as published by the Free Software Foundation; either
+#  version 2.1 of the License, or (at your option) any later version.
+#
+export PATH=$HOME:/usr/local/bin:$PATH
+
+REF=${REF:-${GIT_BRANCH#origin/}}
+git fetch origin +refs/heads/$REF:refs/heads/$REF
+number=$(echo $REF | perl -ne 'print $1 if(m:pull/(\d+):)')
+MERGE=+refs/pull/$number/*:refs/pull/$number/*
+if test -n "$number" ; then
+    git fetch origin $MERGE
+    commit=$(git rev-parse --verify pull/$number/merge 2>/dev/null || true)
+    if test -z "$commit" ; then
+	echo "Ignored because pull/$number/merge does not exist"
+	exit 0
+    fi
+else
+    MERGE=
+    commit=$(git rev-parse origin/$REF)
+fi
+git reset --hard $commit
+
+whitelist='ccheng.leo|danny.al-gaaf|abartlet|dachary|tchaikov|yuyuyu101|boydc2014|haomaiwang|majianpeng|zafman|xinxinsh|jecluis|sage'
+#whitelist='dachary'
+#whitelist='nobodyatall'
+DOCKER_SETUP=origin/master
+#DOCKER_SETUP=pull/3895/head
+author=$(git --no-pager log -1 --pretty='%ae')
+if ! echo $author | grep -E "$whitelist" ; then
+    NONET=--net=none
+    echo "Network disabled in container because $author not in $whitelist"
+fi
+
+# wait for https://github.com/ceph/ceph/pull/3872 
+if test "$REF" = master ; then
+    DEV=--dev
+#    ROOT_CHECK=--enable-root-make-check
+fi
+
+: ${OS:=centos-7}
+os_type=${OS/-*/}
+os_version=${OS/*-/}
+
+# delete these lines in a few weeks, it's for when there was no user in the container name
+docker stop ceph-$os_type-$os_version || true
+docker rm ceph-$os_type-$os_version || true
+
+docker stop ceph-$os_type-$os_version-$USER || true
+docker rm ceph-$os_type-$os_version-$USER || true
+
+DIR_DOCKER=../ceph-docker
+if ! test -d $DIR_DOCKER ; then
+    git clone http://workbench.dachary.org/ceph/ceph.git $DIR_DOCKER
+fi
+cd $DIR_DOCKER/src
+
+git fetch --force origin master $MERGE $REF
+git reset --hard $DOCKER_SETUP
+
+if $success && test/docker-test.sh --os-type $os_type --os-version $os_version true ; then
+    success=true
+else
+    success=false
+fi
+
+if $success && test/docker-test.sh --os-type $os_type --os-version $os_version --opts -t -- sudo chown -R $USER . ; then
+    success=true
+else
+    success=false
+fi
+
+# run autogen *from master* with network as it may need to access the network
+if $success && test/docker-test.sh --ref $commit --os-type $os_type --os-version $os_version -- /bin/bash -c 'git clean -qfdx ; git submodule foreach --recursive "git clean -qfdx && git reset --hard" || true ; git checkout '$DOCKER_SETUP' autogen.sh ; bash -x ./autogen.sh || true' ; then
+    success=true
+else
+    success=false
+fi
+
+function display_logs() {
+    local dir=$1
+    find $dir -name '*.trs' | xargs grep -l FAIL | while read file ; do
+        log=$(dirname $file)/$(basename $file .trs).log
+        echo FAIL: $log
+        cat $log
+    done
+}
+
+duration=1h
+# run make check without network to prevent network related bugs to spread
+
+if $success && timeout $duration test/docker-test.sh --ref $commit --os-type $os_type --os-version $os_version --opts "$NONET -t" $DEV -- /bin/bash -c "git checkout origin/master run-make-check.sh ; ./run-make-check.sh $ROOT_CHECK" ; then
+    success=true
+else
+    if test $? = 124 ; then
+	display_logs ../../ceph-$os_type-$os_version-$USER
+	echo abort by timeout after $duration
+    fi
+    success=false
+fi
+
+$success
