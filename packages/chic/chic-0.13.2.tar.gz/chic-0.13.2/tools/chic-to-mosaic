@@ -1,0 +1,249 @@
+#!/usr/bin/python
+# -*- coding:utf-8 -*-
+
+# Author: Pablo Saavedra Rodinho
+# Contact: pablo.saavedra@treitos.com
+
+# Author: Pablo Abelenda Gonzalez
+# Contact: pablo.abelenda@gmail.com
+
+"""
+Generate an html mosaic from a collection of dump files
+
+"""
+
+from optparse import OptionParser
+
+import os
+import sys
+import subprocess
+
+reload(sys)
+sys.setdefaultencoding('utf-8')
+
+import ConfigParser
+import simplejson as json
+
+
+import time
+from datetime import datetime
+import struct
+import socket
+
+import urllib2
+import httplib2
+
+DEV_NULL=open('/dev/null', "w")
+
+logfile = "/dev/stdout"
+loglevel = 20
+workdir = "./chic/"
+outputdir = workdir
+ffmpeg = "ffmpeg"
+
+# command line options parser ##################################################
+
+parser = OptionParser()
+
+parser.add_option("-w", "--workdir", dest="workdir", default=workdir,
+        help="Work directory (default: %s)" % workdir)
+parser.add_option("-o", "--outputdir", dest="outputdir", default=outputdir,
+        help="Output directory (default: %s)" % outputdir)
+
+parser.add_option("-l", "--logfile",
+        dest="logfile", help="Log file (default: %s)" % logfile,
+        default=logfile)
+parser.add_option("--loglevel",
+        dest="loglevel", help="Log level (default: %s)" % loglevel,
+        default=loglevel)
+parser.add_option("--ffmpeg",
+        dest="ffmpeg", help="FFmpeg binary path (default: %s)" % ffmpeg,
+        default=ffmpeg)
+
+(options, args) = parser.parse_args()
+
+
+workdir = options.workdir
+logfile = options.logfile
+loglevel = options.loglevel
+ffmpeg = options.ffmpeg
+outputdir = options.outputdir
+
+# logging ######################################################################
+import logging
+hdlr = logging.FileHandler(logfile)
+hdlr.setFormatter(logging.Formatter('%(levelname)s %(asctime)s %(message)s'))
+logger = logging.getLogger('chic')
+logger.addHandler(hdlr)
+logger.setLevel(int(loglevel))
+
+
+# setting up ###################################################################
+
+logger.info("Default encoding: %s" % sys.getdefaultencoding())
+
+frames_dir = outputdir + "/frames/"
+if not os.path.isfile(frames_dir):
+    try:
+        os.mkdir(frames_dir)
+    except OSError, e:
+        m = str(e)
+        logger.debug(m)
+
+################################################################################
+
+
+def main():
+    dbfilename = workdir + '/checks.db'
+
+    try:
+        dbfile = open(dbfilename)
+        db_json = json.load(dbfile)
+        dbfile.close()
+    except Exception:
+        db_json = None
+
+    for key,value in db_json.iteritems():
+        try:
+            if value["mosaic"] == True:
+              logger.info ("Generating Frames")
+              if value["ok"]:
+                  do_frames(key, value["dumpfile"])
+        except Exception, e:
+          logger.error ("Problem on %s stream: %s" % (key,e))
+
+    do_html(db_json)
+
+
+
+def do_frames(key,dumpfilename):
+    global frames_dir
+    global ffmpeg
+
+    key_frames_dir = frames_dir + "/" + key
+    if not os.path.isfile(key_frames_dir):
+        try:
+            os.makedirs(key_frames_dir)
+        except OSError, e:
+            m = str(e)
+            logger.debug(m)
+
+    cmd=ffmpeg + " -loglevel quiet -i " + dumpfilename + " -r 1 -vf select=\"eq(pict_type\,I)\" " \
+            + key_frames_dir + "/img%1d.jpg  >/dev/null 2>&1"
+    logger.debug("do_frames: Command to execute: %s" % cmd)
+    os.popen(cmd)
+
+
+def get_dump_info(key,dumpfilename,imgfilename):
+    global outputdir
+    global frames_dir
+    global ffmpeg
+
+    cmd=ffmpeg + " -i " + dumpfilename
+    logger.debug("get_dump_info: Command to execute: %s" % cmd)
+
+    commander = subprocess.Popen(cmd.split(), shell=False, bufsize=1024,
+         stdin=subprocess.PIPE, stdout=DEV_NULL,
+         stderr=subprocess.PIPE, close_fds=True)
+
+    res=""
+
+    for i in commander.stderr:
+        if "@" in i or "avconv" in i or "DEPRECATED" in i or "Last message repeated 4 times" in i:
+            continue
+        else:
+            res+= i
+
+    commander.wait()
+    info_file=outputdir + "/" + key + ".html"
+    info_output= open ( info_file, "w")
+    begin_header = "<html>\n<head>\n<meta http-equiv=\"refresh\" content=\"10\" http-equiv=\"content-type\" content=\"text/html; charset=utf-8\">\n"
+    title ="<h3>" + key + "</h3>"
+    image_code="<img src=%s alt=Channel %s title=%s> \n" %(imgfilename,key,key)
+
+    info_output.write(begin_header)
+    info_output.write(title)
+    info_output.write(image_code)
+    info_output.write("<p><plaintext> "+ res + "\n")
+    info_output.write("\n")
+    info_output.close()
+    return info_file
+
+
+def do_html(db_json):
+    global outputdir
+    global frames_dir
+
+    html_file = outputdir + "/mosaic.html"
+    html_output = open (html_file, "w" )
+
+    begin_header = "<html>\n<head>\n<meta http-equiv=\"refresh\" content=\"60\" http-equiv=\"content-type\" content=\"text/html; charset=utf-8\">\n"
+    title ="<h3>Channel mosaic</h3>"
+    style1="<style type=\"text/css\">div#mosaic {}\n"
+    style2="div.element { float:left; height: 115px; margin:0; padding:0; width:150px; }\n"
+    style3="div.element span.title {color:#000; font-size:10px; align:center; }\n"
+    style4="div.element img { height:100px; width:150px; }\n"
+    style5='''\
+div.element div.noimage {
+    width:100px;
+    height:60px;
+    text-align:center;
+    margin:0 auto;
+    color:#F33;
+    font-weight:bold;
+    line-height:90px;
+}
+'''
+    style6="</style>\n"
+    end_header="</head>"
+    begin_body="<body> <div id=\"mosaic\">"
+    footer = "</div> </body> </html>"
+
+    html_output.write(begin_header)
+    html_output.write(title)
+    html_output.write(style1)
+    html_output.write(style2)
+    html_output.write(style3)
+    html_output.write(style4)
+    html_output.write(style5)
+    html_output.write(style6)
+    html_output.write(end_header)
+    html_output.write(begin_body)
+
+    for key,value in db_json.iteritems():
+        i = key
+
+        if not value["mosaic"]:
+            logger.debug("Skikping %s key because is marked as not in mosaic")
+            continue
+
+        if value["ok"]:
+            l_frames = os.listdir(frames_dir + "/" + i)
+            l_frames.sort()
+            if l_frames == []:
+                img_relative_path = "no_image_found"
+                htm_relative_path = ""
+                image_code="<div class=\"element\"> <span class=\"title\"> %s </span> <a href=%s> <img src=%s alt=Channel %s title=%s width=\"150\" height=\"100\"> </a>  </div>  \n" %(i, htm_relative_path, img_relative_path,i,i)
+                html_output.write(image_code)
+            else:
+                filename=l_frames[len(l_frames)-1]
+                img_relative_path = "frames/" + i + "/" + filename
+                htm_relative_path = get_dump_info(key,value["dumpfile"],img_relative_path)
+                htm_relative_path=htm_relative_path.replace("chic//","")
+                image_code="<div class=\"element\"> <span class=\"title\"> %s </span> <a href=%s> <img src=%s alt=Channel %s title=%s width=\"150\" height=\"100\"> </a>  </div>  \n" %(i, htm_relative_path, img_relative_path,i,i)
+                html_output.write(image_code)
+        else: # mosaic = False
+            image_code="<div class=\"element\"> <span class=\"title\"> %s </span> <a href=%s> <img src=%s alt=Channel %s title=%s width=\"150\" height=\"100\"> </a>  </div>  \n" %(i, htm_relative_path, img_relative_path,i,i)
+            html_output.write(image_code)
+            _msg = "No input"
+            image_code="<div class=\"element\"> <span class=\"title\"> %s </span> <div class=\"noimage\">%s</div> </div>  \n" %(i, _msg)
+            html_output.write(image_code)
+
+    html_output.write(footer)
+    html_output.close()
+
+
+# main #########################################################################
+
+if __name__ == '__main__':
+    main()
