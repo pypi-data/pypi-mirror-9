@@ -1,0 +1,580 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>samsifter.util.serialize &mdash; SamSifter 0.5.2 documentation</title>
+    
+    <link rel="stylesheet" href="../../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../../',
+        VERSION:     '0.5.2',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../../_static/doctools.js"></script>
+    <link rel="top" title="SamSifter 0.5.2 documentation" href="../../../index.html" />
+    <link rel="up" title="Module code" href="../../index.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../../index.html">SamSifter 0.5.2 documentation</a> &raquo;</li>
+          <li><a href="../../index.html" accesskey="U">Module code</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <h1>Source code for samsifter.util.serialize</h1><div class="highlight"><pre>
+<span class="c">#!/usr/bin/env python3</span>
+<span class="c"># -*- coding: utf-8 -*-</span>
+<span class="sd">&quot;&quot;&quot;(De-)Serialization of SamSifter workflows.</span>
+
+<span class="sd">.. moduleauthor:: Florian Aldehoff (f.aldehoff@student.uni-tuebingen.de)</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">import</span> <span class="nn">sys</span>
+<span class="kn">import</span> <span class="nn">xml.etree.ElementTree</span> <span class="kn">as</span> <span class="nn">ET</span>
+<span class="kn">import</span> <span class="nn">xml.dom.minidom</span> <span class="kn">as</span> <span class="nn">minidom</span>
+
+
+<span class="kn">from</span> <span class="nn">samsifter.models.filter</span> <span class="kn">import</span> <span class="n">FilterItem</span>
+<span class="kn">from</span> <span class="nn">samsifter.models.parameter</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">FilterParameter</span><span class="p">,</span> <span class="n">FilterThreshold</span><span class="p">,</span> <span class="n">FilterFilepath</span><span class="p">,</span> <span class="n">FilterSwitch</span>
+<span class="p">)</span>
+<span class="kn">from</span> <span class="nn">samsifter.version</span> <span class="kn">import</span> <span class="n">samsifter_version</span>
+
+
+<div class="viewcode-block" id="WorkflowSerializer"><a class="viewcode-back" href="../../../samsifter.util.html#samsifter.util.serialize.WorkflowSerializer">[docs]</a><span class="k">class</span> <span class="nc">WorkflowSerializer</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;(De-)Serializing workflow data for permanent storage.</span>
+
+<span class="sd">    Uses ElementTree and minidom libraries to write to and read from XML files.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="nd">@classmethod</span>
+<div class="viewcode-block" id="WorkflowSerializer.serialize"><a class="viewcode-back" href="../../../samsifter.util.html#samsifter.util.serialize.WorkflowSerializer.serialize">[docs]</a>    <span class="k">def</span> <span class="nf">serialize</span><span class="p">(</span><span class="n">cls</span><span class="p">,</span> <span class="n">workflow</span><span class="p">,</span> <span class="n">filename</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Serializes workflow to XML file.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        workflow : Workflow</span>
+<span class="sd">            SamSifter workflow object to be serialized.</span>
+<span class="sd">        filename : str</span>
+<span class="sd">            Writable path to new XML file.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        bool</span>
+<span class="sd">            True on success.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">cls</span><span class="o">.</span><span class="n">tree_to_file</span><span class="p">(</span><span class="n">cls</span><span class="o">.</span><span class="n">workflow_to_xml</span><span class="p">(</span><span class="n">workflow</span><span class="p">),</span> <span class="n">filename</span><span class="p">)</span>
+</div>
+    <span class="nd">@classmethod</span>
+<div class="viewcode-block" id="WorkflowSerializer.deserialize"><a class="viewcode-back" href="../../../samsifter.util.html#samsifter.util.serialize.WorkflowSerializer.deserialize">[docs]</a>    <span class="k">def</span> <span class="nf">deserialize</span><span class="p">(</span><span class="n">cls</span><span class="p">,</span> <span class="n">workflow</span><span class="p">,</span> <span class="n">filename</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;De-serializes workflow from XML file.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        workflow : Workflow</span>
+<span class="sd">            SamSifter workflow object to be deserialized.</span>
+<span class="sd">        filename : str</span>
+<span class="sd">            Readable path to existing XML file.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        bool</span>
+<span class="sd">            True on success.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">cls</span><span class="o">.</span><span class="n">workflow_from_xml</span><span class="p">(</span><span class="n">cls</span><span class="o">.</span><span class="n">tree_from_file</span><span class="p">(</span><span class="n">filename</span><span class="p">),</span> <span class="n">workflow</span><span class="p">)</span>
+</div>
+    <span class="nd">@classmethod</span>
+<div class="viewcode-block" id="WorkflowSerializer.tree_from_file"><a class="viewcode-back" href="../../../samsifter.util.html#samsifter.util.serialize.WorkflowSerializer.tree_from_file">[docs]</a>    <span class="k">def</span> <span class="nf">tree_from_file</span><span class="p">(</span><span class="n">cls</span><span class="p">,</span> <span class="n">filename</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Initializes element tree from XML file.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        filename : str</span>
+<span class="sd">            Readable path to existing XML file.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        ElementTree</span>
+<span class="sd">            Tree representation of XML file contents.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">ET</span><span class="o">.</span><span class="n">ElementTree</span><span class="p">(</span><span class="nb">file</span><span class="o">=</span><span class="n">filename</span><span class="p">)</span>
+</div>
+    <span class="nd">@classmethod</span>
+<div class="viewcode-block" id="WorkflowSerializer.tree_to_file"><a class="viewcode-back" href="../../../samsifter.util.html#samsifter.util.serialize.WorkflowSerializer.tree_to_file">[docs]</a>    <span class="k">def</span> <span class="nf">tree_to_file</span><span class="p">(</span><span class="n">cls</span><span class="p">,</span> <span class="n">tree</span><span class="p">,</span> <span class="n">filename</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Write element tree to XML file.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        tree : ElementTree</span>
+<span class="sd">            Tree representation of workflow.</span>
+<span class="sd">        filename : str</span>
+<span class="sd">            Writable path to new XML file.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        bool</span>
+<span class="sd">            True on success.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">tree</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">filename</span><span class="p">,</span> <span class="n">xml_declaration</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s">&#39;UTF-8&#39;</span><span class="p">,</span>
+                          <span class="n">method</span><span class="o">=</span><span class="s">&#39;xml&#39;</span><span class="p">)</span>
+</div>
+    <span class="nd">@classmethod</span>
+<div class="viewcode-block" id="WorkflowSerializer.workflow_to_xml"><a class="viewcode-back" href="../../../samsifter.util.html#samsifter.util.serialize.WorkflowSerializer.workflow_to_xml">[docs]</a>    <span class="k">def</span> <span class="nf">workflow_to_xml</span><span class="p">(</span><span class="n">cls</span><span class="p">,</span> <span class="n">workflow</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Generate XML tree from workflow container.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        workflow : Workflow</span>
+<span class="sd">            SamSifter workflow container object to be serialized.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        ElementTree</span>
+<span class="sd">            Tree representation of workflow</span>
+<span class="sd">        None</span>
+<span class="sd">            If workflow is unitialized.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">workflow</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">None</span>
+
+        <span class="n">root</span> <span class="o">=</span> <span class="n">ET</span><span class="o">.</span><span class="n">Element</span><span class="p">(</span><span class="s">&quot;workflow&quot;</span><span class="p">)</span>
+
+        <span class="n">in_file</span> <span class="o">=</span> <span class="n">ET</span><span class="o">.</span><span class="n">SubElement</span><span class="p">(</span><span class="n">root</span><span class="p">,</span> <span class="s">&#39;filepath&#39;</span><span class="p">)</span>
+        <span class="n">in_file</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s">&#39;type&#39;</span><span class="p">,</span> <span class="s">&#39;input&#39;</span><span class="p">)</span>
+        <span class="n">in_file</span><span class="o">.</span><span class="n">text</span> <span class="o">=</span> <span class="n">workflow</span><span class="o">.</span><span class="n">get_in_filename</span><span class="p">()</span>
+
+        <span class="n">out_file</span> <span class="o">=</span> <span class="n">ET</span><span class="o">.</span><span class="n">SubElement</span><span class="p">(</span><span class="n">root</span><span class="p">,</span> <span class="s">&#39;filepath&#39;</span><span class="p">)</span>
+        <span class="n">out_file</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s">&#39;type&#39;</span><span class="p">,</span> <span class="s">&#39;output&#39;</span><span class="p">)</span>
+        <span class="n">out_file</span><span class="o">.</span><span class="n">text</span> <span class="o">=</span> <span class="n">workflow</span><span class="o">.</span><span class="n">get_out_filename</span><span class="p">()</span>
+
+        <span class="n">filters</span> <span class="o">=</span> <span class="n">ET</span><span class="o">.</span><span class="n">SubElement</span><span class="p">(</span><span class="n">root</span><span class="p">,</span> <span class="s">&#39;pipeline&#39;</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">position</span><span class="p">,</span> <span class="n">fltr</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">workflow</span><span class="o">.</span><span class="n">getModel</span><span class="p">()</span><span class="o">.</span><span class="n">iterate_items</span><span class="p">()):</span>
+            <span class="n">elem</span> <span class="o">=</span> <span class="n">ET</span><span class="o">.</span><span class="n">SubElement</span><span class="p">(</span><span class="n">filters</span><span class="p">,</span> <span class="s">&#39;tool&#39;</span><span class="p">)</span>
+            <span class="n">elem</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s">&#39;index&#39;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">position</span><span class="p">))</span>
+            <span class="n">elem</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s">&#39;type&#39;</span><span class="p">,</span> <span class="s">&#39;filter&#39;</span><span class="p">)</span>
+            <span class="n">elem</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">fltr</span><span class="o">.</span><span class="n">text</span><span class="p">()))</span>
+            <span class="n">elem</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s">&#39;desc&#39;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">fltr</span><span class="o">.</span><span class="n">desc</span><span class="p">))</span>
+            <span class="n">elem</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s">&#39;command&#39;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">fltr</span><span class="o">.</span><span class="n">command</span><span class="p">))</span>
+            <span class="n">elem</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s">&#39;icon_path&#39;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">fltr</span><span class="o">.</span><span class="n">icon_path</span><span class="p">))</span>
+
+            <span class="c"># store input/output restrictions</span>
+            <span class="n">elem</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s">&#39;input_format&#39;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">fltr</span><span class="o">.</span><span class="n">get_input_format</span><span class="p">()))</span>
+            <span class="n">elem</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s">&#39;input_sorting&#39;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">fltr</span><span class="o">.</span><span class="n">get_input_sorting</span><span class="p">()))</span>
+            <span class="n">elem</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s">&#39;input_compression&#39;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">fltr</span><span class="o">.</span><span class="n">get_input_compression</span><span class="p">()))</span>
+            <span class="n">elem</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s">&#39;output_format&#39;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">fltr</span><span class="o">.</span><span class="n">get_output_format</span><span class="p">()))</span>
+            <span class="n">elem</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s">&#39;output_sorting&#39;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">fltr</span><span class="o">.</span><span class="n">get_output_sorting</span><span class="p">()))</span>
+            <span class="n">elem</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s">&#39;output_compression&#39;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">fltr</span><span class="o">.</span><span class="n">get_output_compression</span><span class="p">()))</span>
+
+            <span class="k">for</span> <span class="n">param</span> <span class="ow">in</span> <span class="n">fltr</span><span class="o">.</span><span class="n">parameters</span><span class="p">:</span>
+                <span class="n">sub</span> <span class="o">=</span> <span class="n">ET</span><span class="o">.</span><span class="n">SubElement</span><span class="p">(</span><span class="n">elem</span><span class="p">,</span> <span class="s">&#39;parameter&#39;</span><span class="p">)</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">param</span><span class="p">,</span> <span class="n">FilterThreshold</span><span class="p">):</span>
+                    <span class="n">sub</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s">&#39;type&#39;</span><span class="p">,</span> <span class="s">&#39;threshold&#39;</span><span class="p">)</span>
+                    <span class="n">sub</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s">&#39;minimum&#39;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">param</span><span class="o">.</span><span class="n">get_minimum</span><span class="p">()))</span>
+                    <span class="n">sub</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s">&#39;maximum&#39;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">param</span><span class="o">.</span><span class="n">get_maximum</span><span class="p">()))</span>
+                    <span class="n">sub</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s">&#39;precision&#39;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">param</span><span class="o">.</span><span class="n">get_precision</span><span class="p">()))</span>
+                    <span class="n">sub</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s">&#39;unit&#39;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">param</span><span class="o">.</span><span class="n">get_unit</span><span class="p">()))</span>
+                <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">param</span><span class="p">,</span> <span class="n">FilterFilepath</span><span class="p">):</span>
+                    <span class="n">sub</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s">&#39;type&#39;</span><span class="p">,</span> <span class="s">&#39;filepath&#39;</span><span class="p">)</span>
+                    <span class="n">sub</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s">&#39;readable&#39;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">param</span><span class="o">.</span><span class="n">readable</span><span class="p">))</span>
+                    <span class="n">sub</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s">&#39;writable&#39;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">param</span><span class="o">.</span><span class="n">writable</span><span class="p">))</span>
+                    <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">ext</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">param</span><span class="o">.</span><span class="n">get_extensions</span><span class="p">()):</span>
+                        <span class="n">suffix</span> <span class="o">=</span> <span class="n">ET</span><span class="o">.</span><span class="n">SubElement</span><span class="p">(</span><span class="n">sub</span><span class="p">,</span> <span class="s">&#39;suffix&#39;</span><span class="p">)</span>
+                        <span class="n">suffix</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s">&#39;extension&#39;</span><span class="p">,</span> <span class="n">ext</span><span class="p">)</span>
+                        <span class="n">suffix</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s">&#39;index&#39;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">idx</span><span class="p">))</span>
+                <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">param</span><span class="p">,</span> <span class="n">FilterSwitch</span><span class="p">):</span>
+                    <span class="n">sub</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s">&#39;type&#39;</span><span class="p">,</span> <span class="s">&#39;switch&#39;</span><span class="p">)</span>
+                    <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">opt</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">param</span><span class="o">.</span><span class="n">get_options</span><span class="p">()):</span>
+                        <span class="n">option</span> <span class="o">=</span> <span class="n">ET</span><span class="o">.</span><span class="n">SubElement</span><span class="p">(</span><span class="n">sub</span><span class="p">,</span> <span class="s">&#39;option&#39;</span><span class="p">)</span>
+                        <span class="n">option</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s">&#39;value&#39;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">opt</span><span class="p">))</span>
+                        <span class="n">option</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s">&#39;index&#39;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">idx</span><span class="p">))</span>
+                        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">opt</span><span class="p">,</span> <span class="nb">bool</span><span class="p">):</span>
+                            <span class="n">option</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s">&#39;type&#39;</span><span class="p">,</span> <span class="s">&#39;bool&#39;</span><span class="p">)</span>
+                        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">opt</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
+                            <span class="n">option</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s">&#39;type&#39;</span><span class="p">,</span> <span class="s">&#39;int&#39;</span><span class="p">)</span>
+                        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">opt</span><span class="p">,</span> <span class="nb">float</span><span class="p">):</span>
+                            <span class="n">option</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s">&#39;type&#39;</span><span class="p">,</span> <span class="s">&#39;float&#39;</span><span class="p">)</span>
+                        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">opt</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+                            <span class="n">option</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s">&#39;type&#39;</span><span class="p">,</span> <span class="s">&#39;str&#39;</span><span class="p">)</span>
+                <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">param</span><span class="p">,</span> <span class="n">FilterParameter</span><span class="p">):</span>
+                    <span class="n">sub</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s">&#39;type&#39;</span><span class="p">,</span> <span class="s">&#39;parameter&#39;</span><span class="p">)</span>
+                <span class="n">sub</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">,</span> <span class="n">param</span><span class="o">.</span><span class="n">text</span><span class="p">)</span>
+                <span class="n">sub</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s">&#39;desc&#39;</span><span class="p">,</span> <span class="n">param</span><span class="o">.</span><span class="n">get_description</span><span class="p">())</span>
+                <span class="n">sub</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s">&#39;cli_name&#39;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">param</span><span class="o">.</span><span class="n">get_cli_name</span><span class="p">()))</span>
+                <span class="n">sub</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s">&#39;required&#39;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">param</span><span class="o">.</span><span class="n">is_required</span><span class="p">()))</span>
+                <span class="n">sub</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s">&#39;active&#39;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">param</span><span class="o">.</span><span class="n">is_active</span><span class="p">()))</span>
+
+                <span class="c"># multi-type attributes (can be None, str, int, float, bool)</span>
+                <span class="n">value</span> <span class="o">=</span> <span class="n">ET</span><span class="o">.</span><span class="n">SubElement</span><span class="p">(</span><span class="n">sub</span><span class="p">,</span> <span class="s">&#39;value&#39;</span><span class="p">)</span>
+                <span class="n">typed_value</span> <span class="o">=</span> <span class="n">param</span><span class="o">.</span><span class="n">get_value</span><span class="p">()</span>
+                <span class="n">type_string</span> <span class="o">=</span> <span class="n">cls</span><span class="o">.</span><span class="n">determine_type</span><span class="p">(</span><span class="n">typed_value</span><span class="p">)</span>
+                <span class="n">value</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s">&#39;type&#39;</span><span class="p">,</span> <span class="n">type_string</span><span class="p">)</span>
+                <span class="n">value</span><span class="o">.</span><span class="n">text</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">typed_value</span><span class="p">)</span>
+
+                <span class="n">default</span> <span class="o">=</span> <span class="n">ET</span><span class="o">.</span><span class="n">SubElement</span><span class="p">(</span><span class="n">sub</span><span class="p">,</span> <span class="s">&#39;default&#39;</span><span class="p">)</span>
+                <span class="n">typed_default</span> <span class="o">=</span> <span class="n">param</span><span class="o">.</span><span class="n">get_default</span><span class="p">()</span>
+                <span class="n">type_string</span> <span class="o">=</span> <span class="n">cls</span><span class="o">.</span><span class="n">determine_type</span><span class="p">(</span><span class="n">typed_default</span><span class="p">)</span>
+                <span class="n">default</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s">&#39;type&#39;</span><span class="p">,</span> <span class="n">type_string</span><span class="p">)</span>
+                <span class="n">default</span><span class="o">.</span><span class="n">text</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">typed_default</span><span class="p">)</span>
+
+        <span class="n">tree</span> <span class="o">=</span> <span class="n">ET</span><span class="o">.</span><span class="n">ElementTree</span><span class="p">(</span><span class="n">root</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">tree</span>
+</div>
+    <span class="nd">@classmethod</span>
+<div class="viewcode-block" id="WorkflowSerializer.workflow_from_xml"><a class="viewcode-back" href="../../../samsifter.util.html#samsifter.util.serialize.WorkflowSerializer.workflow_from_xml">[docs]</a>    <span class="k">def</span> <span class="nf">workflow_from_xml</span><span class="p">(</span><span class="n">cls</span><span class="p">,</span> <span class="n">tree</span><span class="p">,</span> <span class="n">wf</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Generate workflow from XML element tree.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        ElementTree</span>
+<span class="sd">            Tree representation of workflow.</span>
+<span class="sd">        workflow : Workflow</span>
+<span class="sd">            SamSifter workflow container object to be de-serialized into.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        workflow : Workflow</span>
+<span class="sd">            SamSifter workflow container object.</span>
+<span class="sd">        None</span>
+<span class="sd">            If tree is unitialized.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">tree</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">None</span>
+
+        <span class="n">root</span> <span class="o">=</span> <span class="n">tree</span><span class="o">.</span><span class="n">getroot</span><span class="p">()</span>
+        <span class="n">wf</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+
+        <span class="c"># retrieve input and output filepaths</span>
+        <span class="k">for</span> <span class="n">filepath</span> <span class="ow">in</span> <span class="n">root</span><span class="o">.</span><span class="n">iter</span><span class="p">(</span><span class="n">tag</span><span class="o">=</span><span class="s">&#39;filepath&#39;</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">filepath</span><span class="o">.</span><span class="n">attrib</span><span class="p">[</span><span class="s">&#39;type&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s">&#39;input&#39;</span><span class="p">:</span>
+                <span class="n">wf</span><span class="o">.</span><span class="n">set_in_filename</span><span class="p">(</span><span class="n">filepath</span><span class="o">.</span><span class="n">text</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">filepath</span><span class="o">.</span><span class="n">attrib</span><span class="p">[</span><span class="s">&#39;type&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s">&#39;output&#39;</span><span class="p">:</span>
+                <span class="n">wf</span><span class="o">.</span><span class="n">set_out_filename</span><span class="p">(</span><span class="n">filepath</span><span class="o">.</span><span class="n">text</span><span class="p">)</span>
+
+        <span class="c"># retrieve filter pipeline</span>
+        <span class="k">for</span> <span class="n">pipeline</span> <span class="ow">in</span> <span class="n">root</span><span class="o">.</span><span class="n">iter</span><span class="p">(</span><span class="n">tag</span><span class="o">=</span><span class="s">&#39;pipeline&#39;</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">tool</span> <span class="ow">in</span> <span class="n">pipeline</span><span class="o">.</span><span class="n">iter</span><span class="p">(</span><span class="n">tag</span><span class="o">=</span><span class="s">&#39;tool&#39;</span><span class="p">):</span>
+                <span class="n">text</span> <span class="o">=</span> <span class="n">cls</span><span class="o">.</span><span class="n">singletons</span><span class="p">(</span><span class="n">tool</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">))</span>
+                <span class="n">desc</span> <span class="o">=</span> <span class="n">cls</span><span class="o">.</span><span class="n">singletons</span><span class="p">(</span><span class="n">tool</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;desc&#39;</span><span class="p">))</span>
+                <span class="n">command</span> <span class="o">=</span> <span class="n">cls</span><span class="o">.</span><span class="n">singletons</span><span class="p">(</span><span class="n">tool</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;command&#39;</span><span class="p">))</span>
+                <span class="n">icon_path</span> <span class="o">=</span> <span class="n">cls</span><span class="o">.</span><span class="n">singletons</span><span class="p">(</span><span class="n">tool</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;icon_path&#39;</span><span class="p">))</span>
+
+                <span class="c"># retrieve input and output restrictions</span>
+                <span class="n">input_format</span> <span class="o">=</span> <span class="n">cls</span><span class="o">.</span><span class="n">singletons</span><span class="p">(</span><span class="n">tool</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;input_format&#39;</span><span class="p">))</span>
+                <span class="n">input_sorting</span> <span class="o">=</span> <span class="n">cls</span><span class="o">.</span><span class="n">singletons</span><span class="p">(</span><span class="n">tool</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;input_sorting&#39;</span><span class="p">))</span>
+                <span class="n">input_compression</span> <span class="o">=</span> <span class="n">cls</span><span class="o">.</span><span class="n">singletons</span><span class="p">(</span>
+                    <span class="n">tool</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;input_compression&#39;</span><span class="p">))</span>
+                <span class="n">output_format</span> <span class="o">=</span> <span class="n">cls</span><span class="o">.</span><span class="n">singletons</span><span class="p">(</span><span class="n">tool</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;output_format&#39;</span><span class="p">))</span>
+                <span class="n">output_sorting</span> <span class="o">=</span> <span class="n">cls</span><span class="o">.</span><span class="n">singletons</span><span class="p">(</span><span class="n">tool</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;output_sorting&#39;</span><span class="p">))</span>
+                <span class="n">output_compression</span> <span class="o">=</span> <span class="n">cls</span><span class="o">.</span><span class="n">singletons</span><span class="p">(</span>
+                    <span class="n">tool</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;output_compression&#39;</span><span class="p">))</span>
+
+                <span class="n">item</span> <span class="o">=</span> <span class="n">FilterItem</span><span class="p">(</span><span class="n">text</span><span class="p">,</span> <span class="n">desc</span><span class="p">,</span> <span class="n">icon_path</span><span class="p">)</span>
+                <span class="n">item</span><span class="o">.</span><span class="n">set_command</span><span class="p">(</span><span class="n">command</span><span class="p">)</span>
+                <span class="n">item</span><span class="o">.</span><span class="n">set_input_format</span><span class="p">(</span><span class="n">input_format</span><span class="p">)</span>
+                <span class="n">item</span><span class="o">.</span><span class="n">set_input_sorting</span><span class="p">(</span><span class="n">input_sorting</span><span class="p">)</span>
+                <span class="n">item</span><span class="o">.</span><span class="n">set_input_compression</span><span class="p">(</span><span class="n">input_compression</span><span class="p">)</span>
+                <span class="n">item</span><span class="o">.</span><span class="n">set_output_format</span><span class="p">(</span><span class="n">output_format</span><span class="p">)</span>
+                <span class="n">item</span><span class="o">.</span><span class="n">set_output_sorting</span><span class="p">(</span><span class="n">output_sorting</span><span class="p">)</span>
+                <span class="n">item</span><span class="o">.</span><span class="n">set_output_compression</span><span class="p">(</span><span class="n">output_compression</span><span class="p">)</span>
+
+                <span class="k">for</span> <span class="n">param</span> <span class="ow">in</span> <span class="n">tool</span><span class="o">.</span><span class="n">iter</span><span class="p">(</span><span class="n">tag</span><span class="o">=</span><span class="s">&#39;parameter&#39;</span><span class="p">):</span>
+                    <span class="n">param_name</span> <span class="o">=</span> <span class="n">param</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">)</span>
+                    <span class="n">param_desc</span> <span class="o">=</span> <span class="n">param</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;desc&#39;</span><span class="p">)</span>
+                    <span class="n">cli_name</span> <span class="o">=</span> <span class="n">param</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;cli_name&#39;</span><span class="p">)</span>
+                    <span class="n">required</span> <span class="o">=</span> <span class="n">cls</span><span class="o">.</span><span class="n">singletons</span><span class="p">(</span><span class="n">param</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;required&#39;</span><span class="p">))</span>
+                    <span class="n">active</span> <span class="o">=</span> <span class="n">cls</span><span class="o">.</span><span class="n">singletons</span><span class="p">(</span><span class="n">param</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;active&#39;</span><span class="p">))</span>
+
+                    <span class="c"># retrieve value and desc, cast according to type</span>
+                    <span class="k">for</span> <span class="n">val</span> <span class="ow">in</span> <span class="n">param</span><span class="o">.</span><span class="n">iter</span><span class="p">(</span><span class="n">tag</span><span class="o">=</span><span class="s">&#39;value&#39;</span><span class="p">):</span>
+                        <span class="n">val_type</span> <span class="o">=</span> <span class="n">val</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;type&#39;</span><span class="p">)</span>
+                        <span class="k">if</span> <span class="n">val_type</span> <span class="o">==</span> <span class="s">&#39;None&#39;</span><span class="p">:</span>
+                            <span class="n">value</span> <span class="o">=</span> <span class="n">cls</span><span class="o">.</span><span class="n">singletons</span><span class="p">(</span><span class="n">val</span><span class="o">.</span><span class="n">text</span><span class="p">)</span>
+                        <span class="k">elif</span> <span class="n">val_type</span> <span class="o">==</span> <span class="s">&#39;bool&#39;</span><span class="p">:</span>
+                            <span class="n">value</span> <span class="o">=</span> <span class="n">cls</span><span class="o">.</span><span class="n">singletons</span><span class="p">(</span><span class="n">val</span><span class="o">.</span><span class="n">text</span><span class="p">)</span>
+                        <span class="k">elif</span> <span class="n">val_type</span> <span class="o">==</span> <span class="s">&#39;int&#39;</span><span class="p">:</span>
+                            <span class="n">value</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">cls</span><span class="o">.</span><span class="n">singletons</span><span class="p">(</span><span class="n">val</span><span class="o">.</span><span class="n">text</span><span class="p">))</span>
+                        <span class="k">elif</span> <span class="n">val_type</span> <span class="o">==</span> <span class="s">&#39;float&#39;</span><span class="p">:</span>
+                            <span class="n">value</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">cls</span><span class="o">.</span><span class="n">singletons</span><span class="p">(</span><span class="n">val</span><span class="o">.</span><span class="n">text</span><span class="p">))</span>
+                        <span class="k">elif</span> <span class="n">val_type</span> <span class="o">==</span> <span class="s">&#39;str&#39;</span><span class="p">:</span>
+                            <span class="n">value</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">cls</span><span class="o">.</span><span class="n">singletons</span><span class="p">(</span><span class="n">val</span><span class="o">.</span><span class="n">text</span><span class="p">))</span>
+
+                    <span class="k">for</span> <span class="n">dflt</span> <span class="ow">in</span> <span class="n">param</span><span class="o">.</span><span class="n">iter</span><span class="p">(</span><span class="n">tag</span><span class="o">=</span><span class="s">&#39;default&#39;</span><span class="p">):</span>
+                        <span class="n">dflt_type</span> <span class="o">=</span> <span class="n">dflt</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;type&#39;</span><span class="p">)</span>
+                        <span class="k">if</span> <span class="n">dflt_type</span> <span class="o">==</span> <span class="s">&#39;None&#39;</span><span class="p">:</span>
+                            <span class="n">default</span> <span class="o">=</span> <span class="n">cls</span><span class="o">.</span><span class="n">singletons</span><span class="p">(</span><span class="n">dflt</span><span class="o">.</span><span class="n">text</span><span class="p">)</span>
+                        <span class="k">elif</span> <span class="n">dflt_type</span> <span class="o">==</span> <span class="s">&#39;bool&#39;</span><span class="p">:</span>
+                            <span class="n">default</span> <span class="o">=</span> <span class="n">cls</span><span class="o">.</span><span class="n">singletons</span><span class="p">(</span><span class="n">dflt</span><span class="o">.</span><span class="n">text</span><span class="p">)</span>
+                        <span class="k">elif</span> <span class="n">dflt_type</span> <span class="o">==</span> <span class="s">&#39;int&#39;</span><span class="p">:</span>
+                            <span class="n">default</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">cls</span><span class="o">.</span><span class="n">singletons</span><span class="p">(</span><span class="n">dflt</span><span class="o">.</span><span class="n">text</span><span class="p">))</span>
+                        <span class="k">elif</span> <span class="n">dflt_type</span> <span class="o">==</span> <span class="s">&#39;float&#39;</span><span class="p">:</span>
+                            <span class="n">default</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">cls</span><span class="o">.</span><span class="n">singletons</span><span class="p">(</span><span class="n">dflt</span><span class="o">.</span><span class="n">text</span><span class="p">))</span>
+                        <span class="k">elif</span> <span class="n">dflt_type</span> <span class="o">==</span> <span class="s">&#39;str&#39;</span><span class="p">:</span>
+                            <span class="n">default</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">cls</span><span class="o">.</span><span class="n">singletons</span><span class="p">(</span><span class="n">dflt</span><span class="o">.</span><span class="n">text</span><span class="p">))</span>
+
+                    <span class="c"># check for parameter type, initialise subclasses</span>
+                    <span class="n">param_type</span> <span class="o">=</span> <span class="n">param</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;type&#39;</span><span class="p">)</span>
+                    <span class="n">parameter</span> <span class="o">=</span> <span class="bp">None</span>
+                    <span class="k">if</span> <span class="n">param_type</span> <span class="o">==</span> <span class="s">&#39;threshold&#39;</span><span class="p">:</span>
+                        <span class="n">minimum</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">cls</span><span class="o">.</span><span class="n">singletons</span><span class="p">(</span><span class="n">param</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;minimum&#39;</span><span class="p">)))</span>
+                        <span class="n">maximum</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">cls</span><span class="o">.</span><span class="n">singletons</span><span class="p">(</span><span class="n">param</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;maximum&#39;</span><span class="p">)))</span>
+                        <span class="n">precision</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">cls</span><span class="o">.</span><span class="n">singletons</span><span class="p">(</span><span class="n">param</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;precision&#39;</span><span class="p">)))</span>
+                        <span class="n">unit</span> <span class="o">=</span> <span class="n">cls</span><span class="o">.</span><span class="n">singletons</span><span class="p">(</span><span class="n">param</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;unit&#39;</span><span class="p">))</span>
+
+                        <span class="n">parameter</span> <span class="o">=</span> <span class="n">FilterThreshold</span><span class="p">(</span>
+                            <span class="n">param_name</span><span class="p">,</span> <span class="n">param_desc</span><span class="p">,</span> <span class="n">cli_name</span><span class="p">,</span> <span class="n">default</span><span class="p">,</span> <span class="n">minimum</span><span class="p">,</span>
+                            <span class="n">maximum</span><span class="p">,</span> <span class="n">precision</span><span class="p">,</span> <span class="n">unit</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">required</span><span class="p">,</span> <span class="n">active</span>
+                        <span class="p">)</span>
+                    <span class="k">elif</span> <span class="n">param_type</span> <span class="o">==</span> <span class="s">&#39;filepath&#39;</span><span class="p">:</span>
+                        <span class="n">readable</span> <span class="o">=</span> <span class="n">cls</span><span class="o">.</span><span class="n">singletons</span><span class="p">(</span><span class="n">param</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;readable&#39;</span><span class="p">))</span>
+                        <span class="n">writable</span> <span class="o">=</span> <span class="n">cls</span><span class="o">.</span><span class="n">singletons</span><span class="p">(</span><span class="n">param</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;writable&#39;</span><span class="p">))</span>
+                        <span class="n">extensions</span> <span class="o">=</span> <span class="p">[]</span>
+                        <span class="k">for</span> <span class="n">sffx</span> <span class="ow">in</span> <span class="n">param</span><span class="o">.</span><span class="n">iter</span><span class="p">(</span><span class="s">&#39;suffix&#39;</span><span class="p">):</span>
+                            <span class="n">extensions</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cls</span><span class="o">.</span><span class="n">singletons</span><span class="p">(</span>
+                                              <span class="n">sffx</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;extension&#39;</span><span class="p">)))</span>
+                        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">extensions</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+                            <span class="n">extensions</span> <span class="o">=</span> <span class="bp">None</span>
+
+                        <span class="n">parameter</span> <span class="o">=</span> <span class="n">FilterFilepath</span><span class="p">(</span>
+                            <span class="n">param_name</span><span class="p">,</span> <span class="n">param_desc</span><span class="p">,</span> <span class="n">cli_name</span><span class="p">,</span> <span class="n">default</span><span class="p">,</span>
+                            <span class="n">extensions</span><span class="p">,</span> <span class="n">readable</span><span class="p">,</span> <span class="n">writable</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">required</span><span class="p">,</span>
+                            <span class="n">active</span>
+                        <span class="p">)</span>
+                    <span class="k">elif</span> <span class="n">param_type</span> <span class="o">==</span> <span class="s">&#39;switch&#39;</span><span class="p">:</span>
+                        <span class="n">options</span> <span class="o">=</span> <span class="p">[]</span>
+                        <span class="k">for</span> <span class="n">choice</span> <span class="ow">in</span> <span class="n">param</span><span class="o">.</span><span class="n">iter</span><span class="p">(</span><span class="n">tag</span><span class="o">=</span><span class="s">&#39;option&#39;</span><span class="p">):</span>
+                            <span class="n">opt_type</span> <span class="o">=</span> <span class="n">choice</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;type&#39;</span><span class="p">)</span>
+                            <span class="k">if</span> <span class="n">opt_type</span> <span class="o">==</span> <span class="s">&#39;None&#39;</span><span class="p">:</span>
+                                <span class="n">option</span> <span class="o">=</span> <span class="n">cls</span><span class="o">.</span><span class="n">singletons</span><span class="p">(</span><span class="n">choice</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;value&#39;</span><span class="p">))</span>
+                            <span class="k">elif</span> <span class="n">opt_type</span> <span class="o">==</span> <span class="s">&#39;bool&#39;</span><span class="p">:</span>
+                                <span class="n">option</span> <span class="o">=</span> <span class="n">cls</span><span class="o">.</span><span class="n">singletons</span><span class="p">(</span><span class="n">choice</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;value&#39;</span><span class="p">))</span>
+                            <span class="k">elif</span> <span class="n">opt_type</span> <span class="o">==</span> <span class="s">&#39;int&#39;</span><span class="p">:</span>
+                                <span class="n">option</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">cls</span><span class="o">.</span><span class="n">singletons</span><span class="p">(</span>
+                                             <span class="n">choice</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;value&#39;</span><span class="p">)))</span>
+                            <span class="k">elif</span> <span class="n">opt_type</span> <span class="o">==</span> <span class="s">&#39;float&#39;</span><span class="p">:</span>
+                                <span class="n">option</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">cls</span><span class="o">.</span><span class="n">singletons</span><span class="p">(</span>
+                                               <span class="n">choice</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;value&#39;</span><span class="p">)))</span>
+                            <span class="k">elif</span> <span class="n">opt_type</span> <span class="o">==</span> <span class="s">&#39;str&#39;</span><span class="p">:</span>
+                                <span class="n">option</span> <span class="o">=</span> <span class="n">cls</span><span class="o">.</span><span class="n">singletons</span><span class="p">(</span><span class="n">choice</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;value&#39;</span><span class="p">))</span>
+                            <span class="n">options</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">option</span><span class="p">)</span>
+
+                        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">options</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+                            <span class="n">options</span> <span class="o">=</span> <span class="bp">None</span>
+
+                        <span class="n">parameter</span> <span class="o">=</span> <span class="n">FilterSwitch</span><span class="p">(</span>
+                            <span class="n">param_name</span><span class="p">,</span> <span class="n">param_desc</span><span class="p">,</span> <span class="n">cli_name</span><span class="p">,</span> <span class="n">default</span><span class="p">,</span> <span class="n">options</span><span class="p">,</span>
+                            <span class="n">value</span><span class="p">,</span> <span class="n">required</span><span class="p">,</span> <span class="n">active</span>
+                        <span class="p">)</span>
+                    <span class="k">elif</span> <span class="n">param_type</span> <span class="o">==</span> <span class="s">&#39;parameter&#39;</span><span class="p">:</span>
+                        <span class="c"># no special parameters for this base class</span>
+                        <span class="n">parameter</span> <span class="o">=</span> <span class="n">FilterParameter</span><span class="p">(</span>
+                            <span class="n">param_name</span><span class="p">,</span> <span class="n">param_desc</span><span class="p">,</span> <span class="n">cli_name</span><span class="p">,</span> <span class="n">default</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span>
+                            <span class="n">required</span><span class="p">,</span> <span class="n">active</span>
+                        <span class="p">)</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="k">print</span><span class="p">(</span><span class="s">&quot;failed to determine parameter type&quot;</span><span class="p">,</span>
+                              <span class="nb">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+                        <span class="k">continue</span>
+
+                    <span class="n">item</span><span class="o">.</span><span class="n">add_parameter</span><span class="p">(</span><span class="n">parameter</span><span class="p">)</span>
+                <span class="n">wf</span><span class="o">.</span><span class="n">getModel</span><span class="p">()</span><span class="o">.</span><span class="n">insertItem</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">wf</span>
+</div>
+    <span class="nd">@classmethod</span>
+<div class="viewcode-block" id="WorkflowSerializer.singletons"><a class="viewcode-back" href="../../../samsifter.util.html#samsifter.util.serialize.WorkflowSerializer.singletons">[docs]</a>    <span class="k">def</span> <span class="nf">singletons</span><span class="p">(</span><span class="n">cls</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Replaces &#39;None&#39;, &#39;False&#39; and &#39;True&#39; strings with actual singletons.</span>
+
+<span class="sd">        Helper method for deserialization from strings to actual Python</span>
+<span class="sd">        singleton entities.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        value : str</span>
+<span class="sd">            Value string from XML file.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        None</span>
+<span class="sd">            If string represents None.</span>
+<span class="sd">        bool</span>
+<span class="sd">            If string represents True or False.</span>
+<span class="sd">        str</span>
+<span class="sd">            If string does not represent a singleton.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">value</span> <span class="o">==</span> <span class="s">&#39;None&#39;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">None</span>
+        <span class="k">elif</span> <span class="n">value</span> <span class="o">==</span> <span class="s">&#39;False&#39;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">False</span>
+        <span class="k">elif</span> <span class="n">value</span> <span class="o">==</span> <span class="s">&#39;True&#39;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">True</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">value</span>
+</div>
+    <span class="nd">@classmethod</span>
+<div class="viewcode-block" id="WorkflowSerializer.determine_type"><a class="viewcode-back" href="../../../samsifter.util.html#samsifter.util.serialize.WorkflowSerializer.determine_type">[docs]</a>    <span class="k">def</span> <span class="nf">determine_type</span><span class="p">(</span><span class="n">cls</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Determines type of a typed value and return it as string.</span>
+
+<span class="sd">        Helper method for serialization of typed Python values to string</span>
+<span class="sd">        representations in XML.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        value : bool, str, int, float</span>
+<span class="sd">            Typed value.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        str</span>
+<span class="sd">            String representation of value type.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s">&#39;None&#39;</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+            <span class="k">return</span> <span class="s">&#39;str&#39;</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">bool</span><span class="p">):</span>
+            <span class="k">return</span> <span class="s">&#39;bool&#39;</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
+            <span class="k">return</span> <span class="s">&#39;int&#39;</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">float</span><span class="p">):</span>
+            <span class="k">return</span> <span class="s">&#39;float&#39;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s">&#39;str&#39;</span>
+</div>
+    <span class="nd">@classmethod</span>
+<div class="viewcode-block" id="WorkflowSerializer.prettify"><a class="viewcode-back" href="../../../samsifter.util.html#samsifter.util.serialize.WorkflowSerializer.prettify">[docs]</a>    <span class="k">def</span> <span class="nf">prettify</span><span class="p">(</span><span class="n">cls</span><span class="p">,</span> <span class="n">elem</span><span class="p">,</span> <span class="n">indent</span><span class="o">=</span><span class="s">&quot;  &quot;</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Create a pretty-printed XML string for an individual tree element.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        elem : Element</span>
+<span class="sd">            Tree element.</span>
+<span class="sd">        indent : str, optional</span>
+<span class="sd">            Indentation character(s) to distinguish tree levels, defaults to</span>
+<span class="sd">            doublespace.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        str</span>
+<span class="sd">            Pretty XML string representing the element.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">rough_string</span> <span class="o">=</span> <span class="n">ET</span><span class="o">.</span><span class="n">tostring</span><span class="p">(</span><span class="n">elem</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s">&#39;UTF-8&#39;</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s">&#39;xml&#39;</span><span class="p">)</span>
+        <span class="n">reparsed</span> <span class="o">=</span> <span class="n">minidom</span><span class="o">.</span><span class="n">parseString</span><span class="p">(</span><span class="n">rough_string</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">reparsed</span><span class="o">.</span><span class="n">toprettyxml</span><span class="p">(</span><span class="n">indent</span><span class="p">)</span>
+</div>
+    <span class="nd">@classmethod</span>
+<div class="viewcode-block" id="WorkflowSerializer.tree_to_str"><a class="viewcode-back" href="../../../samsifter.util.html#samsifter.util.serialize.WorkflowSerializer.tree_to_str">[docs]</a>    <span class="k">def</span> <span class="nf">tree_to_str</span><span class="p">(</span><span class="n">cls</span><span class="p">,</span> <span class="n">tree</span><span class="p">,</span> <span class="n">pretty</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Converts XML element tree to optionally indented text string.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        tree : ElementTree</span>
+<span class="sd">            Tree to be printed.</span>
+<span class="sd">        pretty : bool, optional</span>
+<span class="sd">            Enable indentation and multiline string representation for better</span>
+<span class="sd">            legibility of the XML, default to False.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        str</span>
+<span class="sd">            XML string representing the tree.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">root</span> <span class="o">=</span> <span class="n">tree</span><span class="o">.</span><span class="n">getroot</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">pretty</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">WorkflowSerializer</span><span class="o">.</span><span class="n">prettify</span><span class="p">(</span><span class="n">root</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">ET</span><span class="o">.</span><span class="n">tostring</span><span class="p">(</span><span class="n">root</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s">&#39;UTF-8&#39;</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s">&#39;xml&#39;</span><span class="p">)</span>
+
+</div></div>
+<div class="viewcode-block" id="main"><a class="viewcode-back" href="../../../samsifter.util.html#samsifter.util.serialize.main">[docs]</a><span class="k">def</span> <span class="nf">main</span><span class="p">(</span><span class="n">argv</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Simple test of workflow serialization and deserialization.&quot;&quot;&quot;</span>
+    <span class="n">outfilename</span> <span class="o">=</span> <span class="s">&quot;/home/aldehoff/sandbox/serial_test.xml&quot;</span>
+<span class="c">#    infilename = &quot;/home/aldehoff/sandbox/serial_test_modified.xml&quot;</span>
+    <span class="n">infilename</span> <span class="o">=</span> <span class="s">&quot;/home/aldehoff/sandbox/serial_test2.xml&quot;</span>
+
+    <span class="kn">from</span> <span class="nn">samsifter.util.testing</span> <span class="kn">import</span> <span class="n">create_workflow</span>
+    <span class="n">workflow</span> <span class="o">=</span> <span class="n">create_workflow</span><span class="p">()</span>
+
+    <span class="c"># serialization</span>
+    <span class="n">WorkflowSerializer</span><span class="o">.</span><span class="n">serialize</span><span class="p">(</span><span class="n">workflow</span><span class="p">,</span> <span class="n">outfilename</span><span class="p">)</span>
+
+    <span class="k">print</span><span class="p">(</span><span class="s">&quot;*&quot;</span> <span class="o">*</span> <span class="mi">40</span><span class="p">)</span>
+
+    <span class="c"># deserialization</span>
+    <span class="n">WorkflowSerializer</span><span class="o">.</span><span class="n">deserialize</span><span class="p">(</span><span class="n">workflow</span><span class="p">,</span> <span class="n">infilename</span><span class="p">)</span>
+    <span class="n">workflow</span><span class="o">.</span><span class="n">set_filename</span><span class="p">(</span><span class="n">infilename</span><span class="p">)</span>
+
+    <span class="c"># inspection of workflow for changes (filename should be in another dir)</span>
+    <span class="k">print</span><span class="p">(</span><span class="nb">repr</span><span class="p">(</span><span class="n">workflow</span><span class="p">))</span>
+
+    <span class="nb">exit</span><span class="p">()</span>
+
+</div>
+<span class="k">if</span> <span class="n">__name__</span> <span class="o">==</span> <span class="s">&#39;__main__&#39;</span><span class="p">:</span>
+    <span class="n">main</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">)</span>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../../index.html">SamSifter 0.5.2 documentation</a> &raquo;</li>
+          <li><a href="../../index.html" >Module code</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2015, Florian Aldehoff.
+      Last updated on Mar 05, 2015.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>
