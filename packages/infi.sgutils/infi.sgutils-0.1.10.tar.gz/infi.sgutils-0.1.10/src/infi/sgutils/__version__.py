@@ -1,0 +1,10 @@
+__version__ = "0.1.10"
+__git_commiter_name__ = "Guy Rozendorn"
+__git_commiter_email__ = "guy@rzn.co.il"
+__git_branch__ = '(detached from v0.1.10)'
+__git_remote_tracking_branch__ = '(No remote tracking)'
+__git_remote_url__ = '(Not remote tracking)'
+__git_head_hash__ = 'b8d4ffc42f037b4a9486f6fcf5d6947bb37de859'
+__git_head_subject__ = 'get_sg_from_sd'
+__git_head_message__ = ''
+__git_dirty_diff__ = ''
