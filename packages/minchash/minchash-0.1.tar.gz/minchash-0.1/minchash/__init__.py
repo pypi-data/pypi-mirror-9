@@ -1,0 +1,1 @@
+from .minchash import new
