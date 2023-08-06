@@ -1,0 +1,134 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Mon Feb  2 01:20:20 2015
+
+.. moduleauthor:: Florian Aldehoff <faldehoff@student.uni-tuebingen.de>
+"""
+import sys
+if not (sys.version_info[0] >= 3):
+    print("Error, I need python 3.x or newer")
+    exit(1)
+
+import argparse
+import logging as log
+import pandas as pd
+
+""" custom libraries """
+from samsifter.util.arg_sanitation import check_csv
+
+
+def main():
+    # parse arguments
+    parser = argparse.ArgumentParser(description="Enriches SamSifter summary "
+                                     "files with additional attributes from "
+                                     "external databases.")
+    parser.add_argument('-i', '--input',
+                        type=check_csv,
+                        help="SamSifter summary file to be enriched",
+                        required=True)
+    parser.add_argument('-b', '--database',
+                        required=False,
+                        default='Smillie2011_SupplementaryData1.txt',
+                        help=("override crossreferenced tab-delimited "
+                              "database file to be used for annotation "
+                              "(default: 'Smillie2011_SupplementaryData1.txt' "
+                              "from the Smillie et al. 2011 supplements)"))
+    parser.add_argument('-x', '--index',
+                        required=False,
+                        default='NCBI_ID',
+                        help=("override name of database column containing "
+                              "NCBI taxon IDs (default: 'NCBI_ID'); this "
+                              "column should contain only unique entries or "
+                              "duplicate rows may appear in your summary "
+                              "file"))
+    parser.add_argument('-s', '--sort',
+                        required=False,
+                        default='Genome_Name',
+                        help=("override name of database column to sort table "
+                              "by (default: 'Genome_Name')"))
+    parser.add_argument('-v', '--verbose',
+                        required=False,
+                        action='store_true',
+                        help='print additional information to STDERR')
+    parser.add_argument('-d', '--debug',
+                        required=False,
+                        action='store_true',
+                        help='print debug messages to STDERR')
+    (args, remainArgs) = parser.parse_known_args()
+
+    # configure logging
+    if args.verbose:
+        log.basicConfig(format="%(levelname)s: %(message)s", level=log.DEBUG)
+    else:
+        log.basicConfig(format="%(levelname)s: %(message)s")
+
+    # read database into dataframe
+    db = pd.read_csv(args.database,
+                     sep='\t',
+                     engine='c',
+                     dtype={args.index : str})
+    if len(db) == 0:
+        log.error("No database records in %s" % args.database)
+        exit()
+    log.info("Read %i database entries from %s" % (len(db), args.database))
+
+    log.info("Available attributes:")
+    for attribute in db.columns.values:
+        log.info("\t- %s" % attribute)
+
+    try:
+        db = db.set_index(args.index, drop=True)
+    except KeyError:
+        log.error("Database contains no index attribute [%s] "
+                  "(override with '--index')" % args.index)
+        exit()
+
+    with open(args.input, 'r') as handle:
+        # read summary into dataframe
+        summary = pd.read_csv(handle,
+                              sep=',',
+                              engine='c',
+                              dtype={'Unnamed: 0': str},
+                              quotechar="'",
+                              quoting=2)
+        # SamSifter summaries don't name index column, rename for merging
+        summary.rename(columns={'Unnamed: 0': args.index}, inplace=True)
+        summary = summary.set_index(args.index, drop=True)
+        if args.debug:
+            log.info(summary)
+
+        # join dataframes
+        enriched = summary.join(db, how='left')
+        if args.debug:
+            log.info(enriched)
+
+        # move appended columns to the front
+        cols = enriched.columns.tolist()
+        cols_new = cols[-len(db.columns.values):] + cols[:-len(db.columns.values)]
+        enriched = enriched[cols_new]
+
+        # sort by taxon name to cluster related taxa
+        try:
+            enriched = enriched.sort_index(by=args.sort)
+            log.info("Sorted taxa by %s" % args.sort)
+            if args.debug:
+                log.info(enriched)
+        except KeyError:
+            log.error("Database contains no sort attribute [%s] "
+                      "(override with '--sort')" % args.sort)
+            exit()
+
+        # save enriched summary to CSV
+        enriched.to_csv(sys.stdout,
+                        sep=',',
+                        header=True,
+                        # na_rep=0.0,
+                        quotechar="'",
+                        quoting=2)
+
+    exit()
+
+
+if __name__ == "__main__":
+    main()
