@@ -1,0 +1,94 @@
+#!/usr/bin/env python
+
+import argparse
+import logging
+from oid_translate import load_mibs
+import os
+import sys
+import tornado.ioloop
+import tornado.httpserver
+import tornado.web
+
+import trapdoor
+from trapdoor.routes import HANDLERS
+from trapdoor.utils import jinja2_filters, jinja2_globals
+from trapdoor.settings import settings, update_from_config
+from trapperkeeper.models import get_db_engine, Session
+from trapperkeeper.utils import get_template_env, get_loglevel, CachingResolver
+
+
+
+sa_log = logging.getLogger("sqlalchemy.engine.base.Engine")
+
+
+class Application(tornado.web.Application):
+    def __init__(self, *args, **kwargs):
+        self.my_settings = kwargs.pop("my_settings", {})
+        super(Application, self).__init__(*args, **kwargs)
+
+
+def main(argv):
+
+    parser = argparse.ArgumentParser(description="SNMP Trap Web Viewer.")
+    parser.add_argument("-c", "--config", default="/etc/trapdoor.yaml",
+                        help="Path to config file.")
+    parser.add_argument("-v", "--verbose", action="count", default=0, help="Increase logging verbosity.")
+    parser.add_argument("-q", "--quiet", action="count", default=0, help="Decrease logging verbosity.")
+    parser.add_argument("-V", "--version", action="version",
+                        version="%%(prog)s %s" % trapdoor.__version__,
+                        help="Display version information.")
+    args = parser.parse_args()
+    update_from_config(args.config)
+
+    if settings["debug"] and settings["num_processes"] > 1:
+        logging.fatal("Debug mode does not support multiple processes.")
+        sys.exit(1)
+
+    tornado_settings = {
+        "static_path": os.path.join(os.path.dirname(trapdoor.__file__), "static"),
+        "debug": settings["debug"],
+        "xsrf_cookies": True,
+    }
+
+    resolver = CachingResolver(timeout=300)
+    template_env = get_template_env(
+        "trapdoor",
+        hostname_or_ip=resolver.hostname_or_ip,
+        **jinja2_filters
+    )
+    template_env.globals.update(jinja2_globals)
+
+    db_engine = get_db_engine(settings["database"])
+    Session.configure(bind=db_engine)
+    my_settings = {
+        "debug": settings["debug"],
+        "db_engine": db_engine,
+        "db_session": Session,
+        "template_env": template_env,
+    }
+
+    log_level = get_loglevel(args)
+    logging.basicConfig(
+        level=log_level,
+        format="%(asctime)-15s\t%(levelname)s\t%(message)s"
+    )
+
+    if log_level < 0:
+        sa_log.setLevel(logging.INFO)
+
+    application = Application(HANDLERS, my_settings=my_settings, **tornado_settings)
+
+    server = tornado.httpserver.HTTPServer(application)
+    server.bind(settings["port"])
+    server.start(settings["num_processes"])
+    try:
+        load_mibs()
+        tornado.ioloop.IOLoop.instance().start()
+    except KeyboardInterrupt:
+        tornado.ioloop.IOLoop.instance().stop()
+    finally:
+        print "Bye"
+
+
+if __name__ == "__main__":
+    main(sys.argv)
