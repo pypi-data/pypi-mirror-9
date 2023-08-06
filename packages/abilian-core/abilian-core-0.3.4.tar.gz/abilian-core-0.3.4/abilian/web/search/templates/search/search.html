@@ -1,0 +1,109 @@
+{% extends "search/_base.html" %}
+
+{% from "macros/box.html" import m_box_menu %}
+
+{% block content %}  
+
+  <div id="search-input" class="row">
+    <form class="col-xs-12 col-sm-8 col-sm-offset-2" role="search" method="GET" action="{{ url_for('search.search_main') }}">
+      <div class="input-group">
+        <input type="search" name="q" class="search-query form-control" value="{{ q }}"
+               placeholder="{{ _('Search') }}" autocomplete="off" id="search-box"
+               autofocus="autofocus" />
+        <span class="input-group-btn">
+          <button class="btn btn-default" type="submit">
+            <span class="glyphicon glyphicon-search"></span>
+          </button>
+        </span>
+      </div>
+    </form>
+  </div>
+
+  <div class="clearfix visible-xs-block"></div>
+
+  {%- if not results %}
+    <p class="lead">{{ _("Your query didn't find any results.") }}</p>
+  {%- else %}
+
+    <div class="row">
+      <p class="col-xs-12 col-sm-8 col-sm-offset-2">
+        {{ _('%(count)d corresponding items', count=results_count) }}
+      </p>
+    </div>
+
+    <div class="row">
+    {%- for hit in results %}
+      {%- set author_type, author_id = hit['creator'].split(':') %}
+      {%- set author_href = url_for('social.' + author_type, **{(author_type + '_id'): author_id}) %}
+
+      <div class="col-xs-12 col-sm-11 col-sm-offset-1">
+        <a href="{{ url_for_hit(hit)|safe }}"><strong>{{ hit.highlights('name')|safe or hit['name']}}</strong></a>
+        {%- if (filtered_by_type|length) != 1 %}
+        &nbsp; <span class="label label-info">{{ friendly_fqcn(hit['object_type']) }}</span>
+        {%- endif %}
+
+        {%- if 'description' in hit %}
+          <p>{{ hit.highlights('description')|safe }}</p>
+        {%- endif %}
+
+        <p class="small">
+          <i>{{ _('by') }}
+            <a href="{{ author_href }}">{{hit['creator_name'] }}</a>
+            &ndash;
+            {{ _('Last modification: %(date)s', 
+                 date=_('%(date)s at %(time)s', date=hit['updated_at']|dateformat('long'),
+                                                time=hit['updated_at']|timeformat('short'))) }}
+          </i><br />
+        </p>
+      </div>
+    {%- endfor %}
+    </div>
+
+    {%- if pagecount > 1 %}
+      <ul class="pagination">
+
+        {%- if next_pages_numbered and next_pages_numbered[0][0] > 1 %}
+          <li><a href="{{ first_page }}">
+            <i class="glyphicon glyphicon-step-backward"></i>
+          </a></li>
+          <li class="disabled"><span>…</span></li>
+        {%- endif %}
+
+        {%- for page_number, page_url in next_pages_numbered %}
+          {%- set is_current = (page_number == results.pagenum) %}
+          <li{% if is_current %} class="active"{%- endif %}>
+          {%- if not is_current %}<a href="{{ page_url }}">{%- endif %}
+          <span>{{ page_number }}</span>
+          {%- if not is_current %}</a>{%- endif %}
+        {%- endfor %}
+
+        {%- if next_pages_numbered and next_pages_numbered[-1][0] < pagecount %}
+        <li class="disabled"><span>…</span></li>
+        <li><a href="{{ last_page }}">
+          <i class="glyphicon glyphicon-step-forward"></i>
+        </a></li>
+        {%- endif %}
+
+      </ul>
+    {%- endif %}
+
+  {%- endif %}
+{% endblock %}
+
+{% block sidebar %}
+  {%- if by_object_type %}
+    {% call m_box_menu(title=_('Filter by types'), omit_body=True) %}
+      <div class="list-group">
+        {%- for name, count, link, is_active in by_object_type %}
+          <a class="list-group-item{% if is_active %} active"{%- endif %}"
+             href="{{ link }}">{{ name }}
+            {%- if count %}
+            <span class="badge">{{ count|roughsize }}</span>
+            {%- endif %}
+          </a>
+        {%- endfor %}
+      </div>
+    {% endcall %}
+  {%- endif %}
+
+{% endblock %}
