@@ -1,0 +1,7 @@
+This is a pure python implementation of IPMI protocol.
+
+pyghmicons and pyghmiutil are example scripts to show how one may incorporate
+this library into python code
+
+
+
