@@ -1,0 +1,212 @@
+#!/usr/bin/env python
+#     Copyright 2015, Kay Hayen, mailto:kay.hayen@gmail.com
+#
+#     Part of "Nuitka", an optimizing Python compiler that is compatible and
+#     integrates with CPython, but also works on its own.
+#
+#     Licensed under the Apache License, Version 2.0 (the "License");
+#     you may not use this file except in compliance with the License.
+#     You may obtain a copy of the License at
+#
+#        http://www.apache.org/licenses/LICENSE-2.0
+#
+#     Unless required by applicable law or agreed to in writing, software
+#     distributed under the License is distributed on an "AS IS" BASIS,
+#     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#     See the License for the specific language governing permissions and
+#     limitations under the License.
+#
+
+# Disabled globally:
+#
+# W0232: Class has no __init__ method
+# Who cares, we are using overrides that don't need to change object init a lot
+# and rarely ever made a mistake with forgetting to call used __init__ of the
+# parent.
+#
+# I0011: Locally disabling W....
+# Strange one anyway, we want to locally disable stuff. And that just makes it
+# a different warning. Amazing. Luckily we can decide to ignore that globally
+# then.
+#
+# I0012: Locally enabling W....
+# Sure, we disabled it for a block, and re-enabled it then.
+#
+# C0326: No space allowed...
+# Our spaces before keyword argument calls are not allowed, and this is
+# not possible to distinguish.
+#
+# C0330: Wrong hanging line indentation
+# No it's not wrong.
+#
+# C1001: Old-style class defined.
+# Yes, so what, why care.
+#
+# E1120 / E1123: ....
+# Constructor call checks frequently fail miserably, so this is full of
+# mysterious false alarms, while it's unlikely to help much.
+#
+# E1103: Instance of 'x' has no 'y' member but some types could not be inferred
+# Rarely is this any help, but it's full of false alarms.
+#
+# W0632: Possible unbalanced tuple unpacking with sequence defined at ...
+# It's not really good at guessing these things.
+#
+# W1504: Using type() instead of isinstance() for a typecheck.
+# Nuitka is all about exact type checks, so this doesn't apply
+
+from __future__ import print_function
+
+import sys, os, subprocess
+
+# Go its own directory, to have it easy with path knowledge.
+os.chdir(os.path.dirname(os.path.abspath( __file__ )))
+os.chdir("..")
+
+pylint_options = """\
+--rcfile=/dev/null
+--disable=I0011,I0012,W0232,C0326,C0330,C1001,E1103,W0632,W1504
+--msg-template="{path}:{line} {msg_id} {obj} {msg}"
+--reports=no
+--persistent=no
+--method-rgx=[a-z_][a-zA-Z0-9_]{2,40}$
+--module-rgx=.*
+--function-rgx=.*
+--variable-rgx=.*
+--argument-rgx=.*
+--dummy-variables-rgx=_.*|constraint_collection
+--const-rgx=.*
+--max-line-length=120
+--no-docstring-rgx=.*
+--max-module-lines=5000
+--min-public-methods=0
+--max-public-methods=100
+--max-args=10
+--max-parents=10
+--enable=useless-suppression""".split("\n")
+
+
+from optparse import OptionParser
+
+parser = OptionParser()
+
+parser.add_option(
+    "--hide-todos", "--no-todos",
+    action  = "store_true",
+    dest    = "no_todos",
+    default = False,
+    help    = """\
+    Default is %default."""
+)
+
+parser.add_option(
+    "--verbose",
+    action  = "store_true",
+    dest    = "verbose",
+    default = False,
+    help    = """\
+    Default is %default."""
+)
+
+options, positional_args = parser.parse_args()
+
+if os.environ.get("TODO", 0) or options.no_todos:
+    pylint_options.append("--notes=")
+
+blacklist = (
+    "oset.py",
+    "odict.py",
+    "SyntaxHighlighting.py",
+    "TreeDisplay.py"
+)
+
+our_exit_code = 0
+
+def executePyLint(filename):
+    if options.verbose:
+        print("Checking", filename, "...")
+
+    global our_exit_code
+
+    extra_options = os.environ.get("PYLINT_EXTRA_OPTIONS", "").split()
+    if "" in extra_options:
+        extra_options.remove("")
+    command = ["pylint"] + pylint_options + extra_options + [filename]
+
+    process = subprocess.Popen(
+        args   = command,
+        stdout = subprocess.PIPE,
+        stderr = subprocess.STDOUT,
+        shell  = False
+    )
+
+    stdout, _stderr = process.communicate()
+    exit_code = process.returncode
+
+    assert not _stderr
+    if stdout:
+        stdout = stdout.replace("\r\n", "\n")
+        our_exit_code = 1
+
+        # Remove hard to disable error line given under Windows.
+        lines = stdout.split(b"\n")
+        try:
+            error_line = lines.index(
+                b"No config file found, using default configuration"
+            )
+            del lines[error_line]
+            del lines[error_line]
+        except ValueError:
+            pass
+
+        for line in lines:
+            output = line.decode()
+
+            print(output)
+
+    sys.stdout.flush()
+
+if "PYTHONPATH" not in os.environ:
+    os.environ["PYTHONPATH"] = "."
+
+# For Windows, add this to the PATH, so pip installed PyLint will be found
+# near the Python executing this script.
+os.environ["PATH"] = os.environ["PATH"] + os.pathsep + \
+                     os.path.join(os.path.dirname(sys.executable),"scripts")
+
+if positional_args:
+    check_filenames = positional_args
+else:
+    check_filenames = ["bin/nuitka"]
+
+    for dirpath, dirnames, filenames in os.walk("nuitka"):
+        dirnames.sort()
+
+        if "inline_copy" in dirnames:
+            dirnames.remove("inline_copy")
+
+        filenames.sort()
+
+        for filename in filenames:
+            if not filename.endswith(".py"):
+                continue
+
+            # Skip temporary files from flymake mode of Emacs.
+            if filename.endswith("_flymake.py"):
+                continue
+
+            # Skip temporary files from unsaved files of Emacs.
+            if filename.startswith(".#"):
+                continue
+
+            if filename in blacklist:
+                continue
+
+            check_filenames.append(
+                os.path.join(dirpath, filename)
+            )
+
+for check_filename in check_filenames:
+    executePyLint(check_filename)
+
+sys.exit(our_exit_code)
