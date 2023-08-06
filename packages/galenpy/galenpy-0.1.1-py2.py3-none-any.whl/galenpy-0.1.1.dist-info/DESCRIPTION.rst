@@ -1,0 +1,7 @@
+Porting of the Galen Framework API to Python.
+
+This project is a porting the Galen Framework Java API to the Python language.
+
+
+
+
