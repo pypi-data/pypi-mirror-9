@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="row"><div class="col-sm-12">
+    
+    <div class="pull-left">
+        {% if host %}
+            <h4>
+                <a class="btn btn-default btn-xs" href="/{{ update_qs(request.arguments, offset=0, host=[]) }}">
+                    <span class="fa fa-times"></span>
+                </a> Hostname <small>{{ host|hostname_or_ip }}</small>
+            </h4>
+        {% endif %}
+        {% if oid %}
+            <h4>
+                <a class="btn btn-default btn-xs" href="/{{ update_qs(request.arguments, offset=0, oid=[]) }}">
+                    <span class="fa fa-times"></span>
+                </a> Trap <small>{{ oid|to_mibname }}</small>
+            </h4>
+        {% endif %}
+        {% if severity %}
+            <h4>
+                <a class="btn btn-default btn-xs" href="/{{ update_qs(request.arguments, offset=0, severity=[]) }}">
+                    <span class="fa fa-times"></span>
+                </a> Severity <small>{{ severity }}</small>
+            </h4>
+        {% endif %}
+    </div>
+
+    <form method="post" action="/resolve_all">
+        {{ xsrf_form_html() }}
+        <button
+            type="submit"
+            title="Resolve"
+            class="btn btn-danger pull-right"
+            {% if not num_active %}disabled{% endif %}
+        >
+            <i class="fa fa-check"> Resolve All</i>
+        </button>
+    </form>
+    <div class="btn-group pull-right" style="padding-right: 10px;">
+        <button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown">
+            Limit: {{limit}} <span class="caret"></span>
+        </button>
+            <ul class="dropdown-menu" role="menu">
+            <li><a href="{{ update_qs(request.arguments, limit=25) }}">25</a></li>
+            <li><a href="{{ update_qs(request.arguments, limit=50) }}">50</a></li>
+            <li><a href="{{ update_qs(request.arguments, limit=100) }}">100</a></li>
+        </ul>
+    </div>
+    <div class="btn-group pull-right" style="padding-right: 10px;">
+        <button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown">
+            Severity: {{severity|capitalize}} <span class="caret"></span>
+        </button>
+            <ul class="dropdown-menu" role="menu">
+            <li><a href="{{ update_qs(request.arguments, severity=[]) }}">None</a></li>
+            <li><a href="{{ update_qs(request.arguments, severity='informational') }}">Informational</a></li>
+            <li><a href="{{ update_qs(request.arguments, severity='warning') }}">Warning</a></li>
+            <li><a href="{{ update_qs(request.arguments, severity='critical') }}">Critical</a></li>
+        </ul>
+    </div>
+    <div class="btn-group pull-right" style="padding-right: 10px;">
+        {% if offset == 0 %}
+            <a class="btn btn-default disabled"><i class="fa fa-angle-double-left"></i></a>
+        {% else %}
+            <a class="btn btn-default" href="/{{ update_qs(request.arguments, offset=0) }}"><i class="fa fa-angle-double-left"></i></a>
+        {% endif %}
+
+        {% if offset != 0 %}
+            <a class="btn btn-default" href="/{{ update_qs(request.arguments, offset=offset-limit) }}"><i class="fa fa-angle-left"></i></a>
+        {% else %}
+            <a class="btn btn-default disabled"><i class="fa fa-angle-left"></i></a>
+        {% endif %}
+
+        <a class="btn btn-default disabled">Page {{ ((offset+limit)/limit)|int}}</a>
+
+        {% if traps|length < limit %}
+            <a class="btn btn-default disabled"><i class="fa fa-angle-right"></i></a>
+        {% else %}
+            <a class="btn btn-default" href="/{{ update_qs(request.arguments, offset=offset+limit) }}"><i class="fa fa-angle-right"></i></a>
+        {% endif %}
+    </div>
+
+</div></div>
+
+
+<div class="row">&nbsp;</div>
+
+<div class="row"><div class="col-sm-12">
+    <table class="table">
+        <tr>
+            <th>&nbsp;</th>
+            <th>Hostname</th>
+            <th>Trap</th>
+            <th>Received</th>
+            <th>Expiration</th>
+        </tr>
+        {% if not traps %}
+            <tr><td colspan="5">
+                <div class="alert">No Active Traps.</div>
+            </td></tr>
+        {% endif %}
+        {% for trap in traps %}
+            {% set expired = trap.expires != None and now >= trap.expires %}
+            {% if trap.severity == "critical"%}
+                {% set severity_label = "danger" %}
+            {% elif trap.severity == "informational"%}
+                {% set severity_label = "success" %}
+            {% else %}
+                {% set severity_label = "warning" %}
+            {% endif %}
+            <tr class="{% if not expired %}{{ severity_label }}{% endif %}">
+                <td class="buttons-column">
+                    <button class="btn btn-default btn-xs pull-left get-details"
+                            style="margin-right: 5px;"
+                            data-toggle="collapse" data-target="#toggle-details-{{trap.id}}"
+                            data-trap-id="{{trap.id}}">
+                        <i title="Expand" class="fa fa-level-down fa-sm"></i>
+                    </button>
+                    {% if not expired %}
+                        <div class="pull-left">
+                        <form method="post" action="/resolve">
+                            <input type="hidden" name="host" value="{{trap.host}}">
+                            <input type="hidden" name="oid" value="{{trap.oid}}">
+                            {{ xsrf_form_html() }}
+                            <button type="submit" title="Resolve" class="btn btn-success btn-xs">
+                                <i class="fa fa-check fa-sm"></i>
+                            </button>
+                        </form>
+                        </div>
+                    {% endif %}
+                </td>
+                <td><a href="/{{ update_qs(request.arguments, offset=0, host=trap.host) }}">{{trap.host|hostname_or_ip}}</a></td>
+                <td><a href="/{{ update_qs(request.arguments, offset=0, oid=trap.oid) }}">{{trap.oid|to_mibname}}</a></td>
+                <td>{{trap.sent_utc|print_date}}</td>
+                <td>{{trap.expires_utc|print_date}}</span></td>
+            </tr>
+            <tr id="trap-details-row-{{trap.id}}" class="trap-details-row">
+                <td class="trap-extend" colspan="5">
+                    <div id="toggle-details-{{trap.id}}" class="collapse toggle-details">
+                        <div style="padding-left: 30px;"id="trap-details-{{trap.id}}">
+                        </div
+                    </div>
+                </td>
+            </tr>
+        {% endfor %}
+    </table>
+</div></div>
+
+<div class="row"><div class="col-sm-12 center">
+    <div class="btn-group">
+        {% if offset == 0 %}
+            <a class="btn btn-default disabled"><i class="fa fa-angle-double-left"></i></a>
+        {% else %}
+            <a class="btn btn-default" href="/{{ update_qs(request.arguments, offset=0) }}"><i class="fa fa-angle-double-left"></i></a>
+        {% endif %}
+
+        {% if offset != 0 %}
+            <a class="btn btn-default" href="/{{ update_qs(request.arguments, offset=offset-limit) }}"><i class="fa fa-angle-left"></i></a>
+        {% else %}
+            <a class="btn btn-default disabled"><i class="fa fa-angle-left"></i></a>
+        {% endif %}
+
+        <a class="btn btn-default disabled">Page {{ ((offset+limit)/limit)|int}}</a>
+
+        {% if traps|length < limit %}
+            <a class="btn btn-default disabled"><i class="fa fa-angle-right"></i></a>
+        {% else %}
+            <a class="btn btn-default" href="/{{ update_qs(request.arguments, offset=offset+limit) }}"><i class="fa fa-angle-right"></i></a>
+        {% endif %}
+    </div>
+</div></div>
+
+
+{% endblock %}
+
+{% block script %}
+    <script src="static/js/hb_templates.min.js"></script>
+    <script type="text/javascript">
+        $(function($) {
+            $(".get-details").mouseover(function(event) {
+                var $this = $(this);
+                if ($this.data("details-grabbed")){
+                    return;
+                }
+                $this.data("details-grabbed", "1")
+
+                var trap_id = $this.data("trap-id");
+                var $details_div = $("#trap-details-" + trap_id);
+
+                $.getJSON("/api/varbinds/" + trap_id, function(data){
+                    $details_div.append(
+                        Handlebars.templates.trap_details({ varbinds: data })
+                    );
+                }).fail(function(jqxhr, textStatus, error){
+                    $details_div.append(
+                        "<blockquote>Failed to get VarBinds. Please refresh.</blockquote>"
+                    );
+                });
+            });
+        });
+    </script>
+
+{% endblock %}
