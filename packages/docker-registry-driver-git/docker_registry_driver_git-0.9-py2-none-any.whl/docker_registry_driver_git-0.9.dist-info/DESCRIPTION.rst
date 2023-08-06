@@ -1,0 +1,47 @@
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+Description: # Docker registry git driver
+        
+        This is a [docker-registry backend driver][registry-core] which stores images 
+        in a git repository.
+        
+        [![PyPI version][pypi-image]][pypi-url]
+        ## Usage
+        
+        
+        
+        ```
+        pip install docker-registry-driver-git
+        ```
+        
+        Then edit your docker-registry configuration so that `storage` reads `gitdriver`.
+        
+        
+        ## Options
+        
+        You may add any of the following to your main docker-registry configuration to further configure it:
+        
+        ```yaml
+        storage: gitdriver
+        storage_path: /gitrepopath
+        
+        ```
+        
+Platform: Independent
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: Programming Language :: Python
+Classifier: Programming Language :: Python :: 2.7
+Classifier: Operating System :: OS Independent
+Classifier: Topic :: Utilities
+Classifier: License :: OSI Approved :: Apache Software License
