@@ -1,0 +1,164 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>flask_dance.contrib.twitter &mdash; Flask Dance 0.4.1 documentation</title>
+    
+    <link rel="stylesheet" href="../../../_static/flasky.css" type="text/css" />
+    <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../../',
+        VERSION:     '0.4.1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../../_static/doctools.js"></script>
+    <link rel="top" title="Flask Dance 0.4.1 documentation" href="../../../index.html" />
+    <link rel="up" title="Module code" href="../../index.html" />
+   
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9">
+
+  </head>
+  <body>
+  
+  
+
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../../index.html">Flask Dance 0.4.1 documentation</a> &raquo;</li>
+          <li><a href="../../index.html" accesskey="U">Module code</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <h1>Source code for flask_dance.contrib.twitter</h1><div class="highlight"><pre>
+<span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">unicode_literals</span>
+
+<span class="kn">from</span> <span class="nn">flask_dance.consumer</span> <span class="kn">import</span> <span class="n">OAuth1ConsumerBlueprint</span>
+<span class="kn">from</span> <span class="nn">functools</span> <span class="kn">import</span> <span class="n">partial</span>
+<span class="kn">from</span> <span class="nn">flask.globals</span> <span class="kn">import</span> <span class="n">LocalProxy</span><span class="p">,</span> <span class="n">_lookup_app_object</span>
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">from</span> <span class="nn">flask</span> <span class="kn">import</span> <span class="n">_app_ctx_stack</span> <span class="k">as</span> <span class="n">stack</span>
+<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+    <span class="kn">from</span> <span class="nn">flask</span> <span class="kn">import</span> <span class="n">_request_ctx_stack</span> <span class="k">as</span> <span class="n">stack</span>
+
+
+<span class="n">__maintainer__</span> <span class="o">=</span> <span class="s">&quot;David Baumgold &lt;david@davidbaumgold.com&gt;&quot;</span>
+
+
+<div class="viewcode-block" id="make_twitter_blueprint"><a class="viewcode-back" href="../../../contrib.html#flask_dance.contrib.twitter.make_twitter_blueprint">[docs]</a><span class="k">def</span> <span class="nf">make_twitter_blueprint</span><span class="p">(</span><span class="n">api_key</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">api_secret</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+                           <span class="n">redirect_url</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">redirect_to</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+                           <span class="n">login_url</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">authorized_url</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+                           <span class="n">session_class</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Make a blueprint for authenticating with Twitter using OAuth 1. This requires</span>
+<span class="sd">    an API key and API secret from Twitter. You should either pass them to</span>
+<span class="sd">    this constructor, or make sure that your Flask application config defines</span>
+<span class="sd">    them, using the variables TWITTER_OAUTH_API_KEY and TWITTER_OAUTH_API_SECRET.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        api_key (str): The API key for your Twitter application</span>
+<span class="sd">        api_secret (str): The API secret for your Twitter application</span>
+<span class="sd">        redirect_url (str): the URL to redirect to after the authentication</span>
+<span class="sd">            dance is complete</span>
+<span class="sd">        redirect_to (str): if ``redirect_url`` is not defined, the name of the</span>
+<span class="sd">            view to redirect to after the authentication dance is complete.</span>
+<span class="sd">            The actual URL will be determined by :func:`flask.url_for`</span>
+<span class="sd">        login_url (str, optional): the URL path for the ``login`` view.</span>
+<span class="sd">            Defaults to ``/twitter``</span>
+<span class="sd">        authorized_url (str, optional): the URL path for the ``authorized`` view.</span>
+<span class="sd">            Defaults to ``/twitter/authorized``.</span>
+<span class="sd">        session_class (class, optional): The class to use for creating a</span>
+<span class="sd">            Requests session. Defaults to</span>
+<span class="sd">            :class:`~flask_dance.consumer.oauth1.OAuth1Session`.</span>
+
+<span class="sd">    :rtype: :class:`~flask_dance.consumer.OAuth1ConsumerBlueprint`</span>
+<span class="sd">    :returns: A :ref:`blueprint &lt;flask:blueprints&gt;` to attach to your Flask app.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">twitter_bp</span> <span class="o">=</span> <span class="n">OAuth1ConsumerBlueprint</span><span class="p">(</span><span class="s">&quot;twitter&quot;</span><span class="p">,</span> <span class="n">__name__</span><span class="p">,</span>
+        <span class="n">client_key</span><span class="o">=</span><span class="n">api_key</span><span class="p">,</span>
+        <span class="n">client_secret</span><span class="o">=</span><span class="n">api_secret</span><span class="p">,</span>
+        <span class="n">base_url</span><span class="o">=</span><span class="s">&quot;https://api.twitter.com/1.1/&quot;</span><span class="p">,</span>
+        <span class="n">request_token_url</span><span class="o">=</span><span class="s">&quot;https://api.twitter.com/oauth/request_token&quot;</span><span class="p">,</span>
+        <span class="n">access_token_url</span><span class="o">=</span><span class="s">&quot;https://api.twitter.com/oauth/access_token&quot;</span><span class="p">,</span>
+        <span class="n">authorization_url</span><span class="o">=</span><span class="s">&quot;https://api.twitter.com/oauth/authorize&quot;</span><span class="p">,</span>
+        <span class="n">redirect_url</span><span class="o">=</span><span class="n">redirect_url</span><span class="p">,</span>
+        <span class="n">redirect_to</span><span class="o">=</span><span class="n">redirect_to</span><span class="p">,</span>
+        <span class="n">login_url</span><span class="o">=</span><span class="n">login_url</span><span class="p">,</span>
+        <span class="n">authorized_url</span><span class="o">=</span><span class="n">authorized_url</span><span class="p">,</span>
+        <span class="n">session_class</span><span class="o">=</span><span class="n">session_class</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">twitter_bp</span><span class="o">.</span><span class="n">from_config</span><span class="p">[</span><span class="s">&quot;client_key&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&quot;TWITTER_OAUTH_API_KEY&quot;</span>
+    <span class="n">twitter_bp</span><span class="o">.</span><span class="n">from_config</span><span class="p">[</span><span class="s">&quot;client_secret&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&quot;TWITTER_OAUTH_API_SECRET&quot;</span>
+
+    <span class="nd">@twitter_bp.before_app_request</span>
+    <span class="k">def</span> <span class="nf">set_applocal_session</span><span class="p">():</span>
+        <span class="n">ctx</span> <span class="o">=</span> <span class="n">stack</span><span class="o">.</span><span class="n">top</span>
+        <span class="n">ctx</span><span class="o">.</span><span class="n">twitter_oauth</span> <span class="o">=</span> <span class="n">twitter_bp</span><span class="o">.</span><span class="n">session</span>
+
+    <span class="k">return</span> <span class="n">twitter_bp</span>
+</div>
+<span class="n">twitter</span> <span class="o">=</span> <span class="n">LocalProxy</span><span class="p">(</span><span class="n">partial</span><span class="p">(</span><span class="n">_lookup_app_object</span><span class="p">,</span> <span class="s">&quot;twitter_oauth&quot;</span><span class="p">))</span>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper"><h3>Related Topics</h3>
+<ul>
+  <li><a href="../../../index.html">Documentation overview</a><ul>
+  <li><a href="../../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+  
+    <a href="http://github.com/singingwolfboy/flask-dance" class="github"><img src="http://s3.amazonaws.com/github/ribbons/forkme_right_darkblue_121621.png" alt="Fork me on GitHub" /></a>
+  
+
+  <div class="footer">
+    &copy; Copyright 2014, David Baumgold.
+    Created using <a href="http://sphinx.pocoo.org/">Sphinx</a>.
+  </div>
+  
+  </body>
+</html>
