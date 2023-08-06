@@ -1,0 +1,10 @@
+__version__ = "0.6.35"
+__git_commiter_name__ = "Guy Rozendorn"
+__git_commiter_email__ = "guy@rzn.co.il"
+__git_branch__ = '(detached from v0.6.35)'
+__git_remote_tracking_branch__ = '(No remote tracking)'
+__git_remote_url__ = '(Not remote tracking)'
+__git_head_hash__ = 'a164822d86db36ee90cc25c4fc5c6a5871255c5e'
+__git_head_subject__ = 'Finished release v0.6.35.'
+__git_head_message__ = '* release/v0.6.35:\n  HOSTDEV-1972 applying the fix again now that packager uses its own bootstrap.py\n  remove dependencies from skeleton buildout\n  HOSTDEV-1977 fixing boostrap.py to have virtualenv with new setuptools where pkg_resources is now a module and not a simple file\n  Revert "HOSTDEV-1972 not passing -f to easy_install"\n  TRIVIAL sort usage by command name\n  HOSTDEV-1975 support for multiple plugins with the same keyword (for "repository sync")\n  HOSTDEV-1975 remove projector repository sync (will be moved to an external plugin)\n  HOSTDEV-1975 get rid of infi.exceptools\n  HOSTDEV-1975 remove unused dependencies\n  HOSTDEV-1972 not passing -f to easy_install'
+__git_dirty_diff__ = ''
