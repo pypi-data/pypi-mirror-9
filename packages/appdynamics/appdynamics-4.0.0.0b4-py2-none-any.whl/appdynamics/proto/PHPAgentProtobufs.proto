@@ -1,0 +1,753 @@
+//
+//   Copyright 2013-2014 AppDynamics.
+//   All rights reserved.
+//
+
+package appdynamics.pb;
+
+import "Common.proto";
+import "TransactionMatchPointConfig.proto";
+import "Instrumentation.proto";
+import "EPType.proto";
+
+
+// Configuration request-response
+
+message ConfigRequest
+{
+    optional int64 lastVersion = 1;
+    optional NodejsProcessMetrics nodejsProcessMetrics = 2;
+}
+
+message ConfigResponse
+{
+    enum AgentState
+    {
+        UNREGISTERED = 0;
+        REGISTERED = 1;
+        INITIALIZED = 2;
+        DISABLED = 3;
+    }
+
+    enum Command
+    {
+        RESET = 0;
+    }
+
+    optional int64 currentVersion = 1;
+
+    optional AgentState agentState = 2;
+    optional Command command = 3;
+
+    optional AgentIdentity agentIdentity = 4;
+    optional TransactionConfig txConfig = 5;
+    optional TransactionInfo txInfo = 6;
+    optional BackendDiscoveryConfig bckConfig = 7;
+    optional BackendInfo bckInfo = 8;
+    optional ErrorConfig errorConfig = 9;
+    optional CallgraphConfig callgraphConfig = 10;
+    optional int64 timestampSkew = 11;
+    optional EUMConfig eumConfig = 12;
+    optional ProcessCallGraphRequest processCallGraphReq = 13;
+    repeated DataGatherer dataGatherers = 14;
+    optional DataGathererBTConfig dataGathererBTConfig = 15;
+    optional InformationPointConfig infoPointConfig = 16;
+}
+
+// Objects related to Errors
+message ErrorConfig
+{
+    optional ErrorDetection errorDetection = 1;
+    repeated IgnoredException ignoredExceptions = 2;
+    repeated IgnoredMessage ignoredMessages = 3;
+    repeated HttpStatusCode httpStatusCodes = 4;
+}
+
+message ErrorDetection
+{
+    optional PHPErrorThreshold phpErrorThreshold = 1;
+    optional bool detectErrors = 2;
+    optional bool markTransactionAsError = 3;
+    optional PythonErrorThreshold pythonErrorThreshold = 4;
+}
+
+enum PHPErrorThreshold
+{
+    NOTICE = 0;
+    WARNING = 1;
+    ERROR = 2;
+}
+
+enum PythonErrorThreshold
+{
+    PY_HTTP_ERROR = 0;
+    PY_INFO = 20;
+    PY_WARNING = 30;
+    PY_ERROR = 40;
+}
+
+message IgnoredException
+{
+    repeated string classNames = 1;
+    optional Common.StringMatchCondition matchCondition = 2;
+}
+
+message IgnoredMessage
+{
+    optional Common.StringMatchCondition matchCondition = 1;
+}
+
+message HttpStatusCode
+{
+    required string description = 1;
+    required int32 lowerBound = 2;
+    required int32 upperBound = 3;
+    required bool enabled = 4;
+}
+
+//
+// Objects related to agent identity
+//
+
+message AgentIdentity
+{
+    optional int64 nodeID = 1;
+    required int64 appID = 2;
+    required int64 tierID = 3;
+    required string accountGUID = 4;
+    required string controllerGUID = 5;
+}
+
+//
+// Transaction configuration objects
+//
+
+message TransactionConfig
+{
+    optional Agent.MatchPointConfig http = 1;
+    optional Agent.MatchPointConfig mvc = 2;
+    optional Agent.MatchPointConfig drupal = 3;
+    optional Agent.MatchPointConfig wordpress = 4;
+    optional Agent.MatchPointConfig cli = 5;
+    optional Agent.MatchPointConfig webservice = 6;
+    optional Agent.MatchPointConfig nodejsWeb = 7;
+    optional Agent.MatchPointConfig native = 8;
+    optional Agent.MatchPointConfig pythonWeb = 9;
+
+}
+
+message TransactionInfo
+{
+    repeated RegisteredBT registeredBTs = 1;
+    repeated BTInfo blackListedAndExcludedBTs = 2;
+}
+
+message RegisteredBT
+{
+    required BTInfo btInfo = 1;
+    required int64 id = 2;
+    repeated int64 dataGathererIDs = 3;
+}
+
+message UnRegisteredBT
+{
+    required BTInfo btInfo = 1;
+    // If customMatchPointDefinitionId is not present, then BT is auto discovered
+    optional int64 customMatchPointDefinitionId = 2;
+}
+
+message UnRegisteredRemoteBT
+{
+    enum MatchCriteriaType
+    {
+        DISCOVERED = 1;
+        CUSTOM = 2;
+    }
+    required MatchCriteriaType matchCriteriaType = 1;
+    required bytes btName = 2;
+    required string entryPointType = 3;
+    optional string namingSchemeType = 4;
+}
+
+message ComponentLink
+{
+    required string fromComponentID = 1;
+    required string toComponentID = 2;
+    required string exitPointType = 3;
+}
+
+message Correlation
+{
+    // Backend id of the backend that led
+    // to this BT.  Read from correlation header.
+    required int64 incomingBackendId = 1;
+
+    // Read from correlation header
+    required bool incomingSnapshotEnabled = 2;
+
+    // Parsed from correlation header.
+    required bool doNotSelfResolve = 3;
+
+    // Parsed from correlation header.
+    repeated ComponentLink componentLinks = 4;
+
+    // Parsed from correlation header
+    required string exitCallSequence = 5;
+}
+
+
+message BTIdentifier
+{
+    enum Type
+    {
+        UNREGISTERED = 1;
+        REGISTERED = 2;
+        REMOTE_UNREGISTERED = 3;
+        REMOTE_REGISTERED = 4;
+    }
+    required Type type = 1;
+    optional int64 btID = 2;
+    optional UnRegisteredBT unregisteredBT = 3;
+    optional UnRegisteredRemoteBT unregisteredRemoteBT = 4;
+}
+
+message BTInfoRequest {
+    required int64 requestID = 1;
+    required int32 messageID = 2;
+    required BTIdentifier btIdentifier = 3;
+    optional Correlation correlation = 4;
+    optional int64 crossAppCorrelationBackendId = 5;
+    optional bool incomingCrossAppSnapshotEnabled = 6;
+    repeated int64 transactionsToCancel = 7;
+}
+
+message BTInfoResponse {
+    required int64 requestID = 1;
+    required int32 messageID = 2;
+    // if isSnapshotRequired is true, field currentMinuteBTSlowThreshold won't be present.
+    // if isSnapshotRequired is false, field currentMinuteBTSlowThreshold might be present.
+    required bool isSnapshotRequired = 3;
+    // if this field is not present, it means that the slow limits of the bt are hit for the minute.
+    // Agent doesn't have to do check for slow if this field is not present.
+    optional int64 currentSlowThreshold = 4;
+    required bool sendSnapshotIfError = 5;
+    optional int64 averageResponseTimeForLastMinute = 6;
+    required bool sendSnapshotIfContinuing = 7;
+    optional ProcessCallGraphRequest processCallGraphReq = 8;
+}
+
+message ProcessCallGraphRequest
+{
+    required int64 snapshotRequestID = 1;
+    required int32 captureTime = 2;
+}
+
+//
+// BT Metrics reporting
+//
+
+message BTMetrics
+{
+    optional int64 timestamp = 1;
+    optional bool isError = 2;
+    optional int32 maxRequestMemorySize = 3;
+    optional int32 timeTaken = 4;
+    repeated BackendMetric backendMetrics = 5;
+}
+
+message NodejsProcessMetrics
+{
+    required int32 cpuUsage = 1;
+    required int32 numOfFullGCs = 2;
+    required int32 numOfIncGCs = 3;
+    required int64 heapSizeChange = 4;
+    required int64 heapSize = 5;
+    required int32 nodeRss = 6;
+    required int32 diskIOKBReadPerSec = 7;
+    required int32 diskIOKBWrittenPerSec = 8;
+    required int32 netwIOKBReadPerSec = 9;
+    required int32 netwIOKBWrittenPerSec = 10;
+    required int32 socketIOConnections = 11;
+    required int32 socketIOConnectionsTotal = 12;
+    required int32 socketIOMessagesSent = 13;
+    required int32 socketIOMessagesReceived = 14;
+    required int32 socketIOSentMessagesSize = 15;
+    required int32 socketIOReceivedMessagesSize = 16;
+    required int32 eventLoopTickCount = 17;
+    required int32 eventLoopMinTickLength = 18;
+    required int32 eventLoopMaxTickLength = 19;
+    required int32 eventLoopAvgTickLength = 20;
+    required int32 eventLoopAvgIOTime = 21;
+}
+
+message BTDetails
+{
+    enum BTInfoState
+    {
+        RESPONSE_RECEIVED = 1;
+        MISSING_RESPONSE = 2;
+        NO_REQUEST_SENT = 3;
+    }
+    required BTInfoRequest btInfoRequest = 1;
+    required BTMetrics btMetrics = 2;
+    required BTInfoState btInfoState = 3;
+    optional SnapshotInfo snapshotInfo = 4;
+    optional BTErrors errors = 5;
+    repeated InformationPointMetrics infoPointMetrics = 6;
+}
+
+message SelfReResolution
+{
+    required int64 backendId = 1;
+}
+
+message SnapshotInfo
+{
+    enum Trigger
+    {
+       REQUIRED = 1;
+       ERROR = 2;
+       SLOW = 3;
+       CONTINUING = 4;
+    }
+
+    required Trigger trigger = 1;
+    required Snapshot snapshot = 2;
+}
+
+message BTErrors
+{
+    optional ErrorInfo errorInfo = 1;
+    optional ExceptionInfo exceptionInfo = 2;
+}
+
+message ErrorInfo
+{
+    repeated Error errors = 1;
+}
+
+message Error
+{
+    optional PHPErrorThreshold phpErrorThreshold = 1;
+    optional bytes errorMessage = 2;
+    optional bytes displayName = 3;
+    optional int32 count = 4;
+    optional PythonErrorThreshold pythonErrorThreshold = 5;
+}
+
+message ExceptionInfo
+{
+    repeated RootException exceptions = 1;
+    repeated StackTrace stackTraces = 2;
+}
+
+message Exception
+{
+    optional bytes klass = 1;
+    optional bytes message = 2;
+    optional int32 stackTraceID = 3;
+}
+
+message RootException
+{
+    optional Exception root = 1;
+    repeated Exception causes = 2;
+    optional int32 count = 3;
+}
+
+message StackTrace
+{
+    repeated StackTraceElement elements = 1;
+}
+
+message StackTraceElement
+{
+    optional bytes klass = 1;
+    optional bytes method = 2;
+    optional bytes fileName = 3;
+    optional int32 lineNumber = 4;
+}
+
+message BTInfo
+{
+    // compound key
+    required bytes internalName = 1;
+    required Agent.EntryPointType entryPointType = 2;
+}
+
+message EUMConfig
+{
+    required bool enabled = 1;
+}
+
+message ASyncMessage
+{
+    enum Type
+    {
+       BTDETAILS = 1;
+       SELFRERESOLUTION = 2;
+       PROCESSSNAPSHOT = 3;
+       APPEXCEPTION = 4;
+    }
+
+    required Type type = 1;
+    optional BTDetails btDetails = 2;
+    optional SelfReResolution selfReResolution = 3;
+    optional ProcessSnapshot processSnapshot = 4;
+    optional ExceptionInfo appException = 5;
+}
+
+message ASyncRequest
+{
+    enum Type
+    {
+       CONFIG = 0;
+       BTINFO = 1;
+    }
+
+    optional Type type = 1;
+    optional ConfigRequest configReq = 2;
+    optional BTInfoRequest btInfoReq = 3;
+}
+
+// Control socket messages
+message StartNodeRequest
+{
+    required string appName = 1;
+    required string tierName = 2;
+    required string nodeName = 3;
+    required string controllerHost = 4;
+    required int32 controllerPort = 5;
+    required bool sslEnabled = 6;
+    optional string logsDir = 7;
+    optional string accountName = 8;
+    optional string accountAccessKey = 9;
+    optional string httpProxyHost = 10;
+    optional int32 httpProxyPort = 11;
+    optional string httpProxyUser = 12;
+    optional string httpProxyPasswordFile = 13;
+}
+
+message StartNodeResponse
+{
+    required string dataSocketDirPath = 1;
+    optional ConfigResponse configResponse = 2;
+}
+
+// Snapshot related
+
+message Snapshot
+{
+    required string snapshotGUID = 1;
+    required int64 timestamp = 2;
+    optional CallGraph callGraph = 3;
+    optional ErrorInfo errorInfo = 4;
+    optional ExceptionInfo exceptionInfo = 5;
+    required int32 processID = 6;
+    optional HTTPRequestData httpRequestData = 7;
+    repeated SnapshotExitCall exitCalls = 8;
+    optional string eumGUID = 9;
+    repeated string processSnapshotGUIDs = 10;
+    optional int32 totalTimeMS = 11; // Used when call graph is partial or not present at all
+    repeated Common.NameValuePair methodInvocationData = 12;
+    optional string upstreamCrossAppSnashotGUID = 13;
+}
+
+message HTTPRequestData
+{
+    required bytes url = 1;
+    optional bytes sessionID = 2;
+    repeated Common.NameValuePair httpParams = 3;
+    repeated Common.NameValuePair sessionEntries = 4;
+    repeated Common.NameValuePair headers = 5;
+    repeated Common.NameValuePair cookies = 6;
+    optional string requestMethod = 7;
+    optional string responseCode = 8;
+}
+
+message ProcessSnapshot
+{
+    required int64 snapshotRequestID = 1;
+    required int64 timestamp = 2;
+    required ProcessCallGraph processCallGraph = 3;
+    required int32 processID = 4;
+    repeated BTCall btCalls = 5;
+    required string guid = 6;
+}
+
+message BTCall
+{
+    required int64 btID = 1;
+    required int32 count = 2;
+    required int32 totalTimeTakenMS = 3;
+}
+
+message CallgraphConfig
+{
+    required int32 minMethodExecTime = 1;
+    required int32 minSQLExecTime = 2;
+    required bool excludeInternalFunctions = 3;
+    required bool captureRawSQL = 4;
+}
+
+message CallGraph
+{
+    repeated CallElement callElements = 1;
+}
+
+message CallElement
+{
+    enum Type
+    {
+        HTTP = 0;
+        INTERNAL = 1;
+        POPO = 2;
+        SYMFONY = 3;
+        DRUPAL = 4;
+        ZEND = 5;
+        CAKEPHP = 6;
+        WORDPRESS = 7;
+        CODEIGNITER = 8;
+        FUELPHP = 9;
+
+        // Node.js
+        JS = 10;
+        PY = 11;
+    }
+    optional int32 numChildren = 1;
+    optional int32 timeTaken = 2;
+    optional bytes klass = 3;
+    optional bytes method = 4;
+    optional bytes fileName = 5;
+    optional int32 lineNumber = 6;
+    optional Type type = 7;
+    repeated SnapshotExitCall exitCalls = 8;
+    repeated ProcCallElemBTData procCallElemBTData = 9;
+}
+
+message ProcCallElemBTData
+{
+    required int64 btID = 1;
+    optional string btSnapGUID = 2;
+    required int32 count = 3;
+    required int64 totalTimeTaken = 4;
+}
+
+message ProcessCallGraph
+{
+    required int32 numOfRootElements = 1;
+    repeated CallElement callElements = 2;
+}
+
+message SnapshotExitCall
+{
+    required BackendIdentifier backendIdentifier = 1;
+    required int32 timeTaken = 2;
+    required string sequenceInfo = 3;
+    optional bytes detailString = 4;
+    required int32 count = 5;
+    repeated Common.NameValuePair properties = 6;
+    optional bytes errorDetails = 7;
+    // Used in case of Prepared Statements
+    optional BoundParameters boundParameters = 8;
+}
+
+
+message BoundParameters
+{
+    enum Type
+    {
+        SUBSTITUTED = 0;
+        POSITIONAL = 1;
+        OCI_NAMED = 2;
+    }
+
+    message OCINamedParameter
+    {
+        required bytes name = 1;
+        required bytes value = 2;
+    }
+
+    required Type type = 1;
+    repeated bytes posParameters = 3;
+    repeated OCINamedParameter ociNamedParameters = 4;
+}
+
+// Backend Configuration
+message NodeResolutionInfo
+{
+    optional ExitPointType exitPointType = 2;
+    repeated Common.NameValuePair properties = 3;
+}
+
+message BackendDiscoveryCondition
+{
+    optional string identityName = 2;
+    optional Common.StringMatchCondition match = 3;
+}
+
+message BackendDiscoveryConfig
+{
+    repeated BackendDiscoveryCondition discoveryConditions = 2;
+    repeated BackendIdentityOption identityOptions = 3;
+    optional bool discoveryEnabled = 4;
+    optional bool correlationEnabled = 5;
+    optional bool supportsCorrelation = 6;
+    optional int32 priority = 7;
+    optional ExitPointType exitPointType = 8;
+}
+
+message BackendIdentityOption
+{
+    optional string name = 2;
+    repeated Common.NameValuePair namingOptions = 3;
+    repeated Common.NameValuePair namingActions = 4;
+    optional bool enabled = 5;
+}
+
+// Backend Registration
+
+enum ExitPointType
+{
+    EXIT_HTTP = 0;
+    EXIT_DB = 1;
+    EXIT_CACHE = 2;
+    EXIT_RABBITMQ = 3;
+    EXIT_WEBSERVICE = 4;
+}
+
+message ExitCallInfo
+{
+    required ExitPointType exitPointType = 1;
+    optional bytes displayName = 2;
+    repeated Common.NameValuePair identifyingProperties = 3;
+    repeated Common.NameValuePair optionalProperties = 4;
+}
+
+message UnRegisteredBackend
+{
+    required ExitCallInfo exitCallInfo = 1;
+}
+
+message BackendInfo
+{
+    repeated RegisteredBackendInfo registeredBackends = 1;
+    repeated ForeignRegisteredBackend foreignRegisteredBackends = 2;
+}
+
+message RegisteredBackendInfo
+{
+    required RegisteredBackend registeredBackend = 1;
+    required ExitCallInfo exitCallInfo = 2;
+}
+
+message ForeignRegisteredBackend
+{
+    required int64 backendID = 1;
+    optional int64 componentID = 2;
+    optional bool componentIsForeignAppID = 3;
+}
+
+message RegisteredBackend
+{
+    required ExitPointType exitPointType = 1;
+    required int64 backendID = 2;
+    optional int64 componentID = 3;
+    optional bool componentIsForeignAppID = 4;
+}
+
+message BackendIdentifier
+{
+    enum Type
+    {
+        UNREGISTERED = 1;
+        REGISTERED = 2;
+    }
+    required Type type = 1;
+    optional RegisteredBackend registeredBackend = 2;
+    optional UnRegisteredBackend unregisteredBackend  = 3;
+}
+
+// Backend Metrics
+
+message BackendMetric
+{
+    optional string category = 1;
+    required int32 timeTaken = 2;
+    required int32 numOfCalls = 3;
+    required int32 numOfErrors = 4;
+    required int32 minCallTime = 5;
+    required int32 maxCallTime = 6;
+    required BackendIdentifier backendIdentifier = 7;
+}
+
+// Data Gatherers
+
+message DataGathererBTConfig
+{
+    message Entry
+    {
+        required int64 btID = 1;
+        repeated int64 gathererIDs = 2;
+    }
+    repeated Entry btConfig = 2;
+}
+
+message DataGatherer
+{
+    enum Type
+    {
+        HTTP = 1;
+        METHOD = 2;
+    }
+    required Type type = 1;
+    required int64 gathererID = 2;
+    optional HTTPDataGathererConfig httpDataGathererConfig = 3;
+    optional Instrumentation.MethodDataGathererConfig methodDataGathererConfig = 4;
+}
+
+message HTTPDataGathererConfig
+{
+    required bool gatherSessionID = 1;
+    repeated string cookieNames = 2;
+    repeated string sessionKeys = 3;
+    repeated string headers = 4;
+    repeated HTTPRequestParameter requestParams = 5;
+}
+
+message HTTPRequestParameter
+{
+    required string name = 1;
+    required string displayName = 2;
+}
+
+// This message can be deleted when the controller migrates to use the new DTO
+// and we will not need to send IDs separately
+message InformationPointConfig
+{
+    repeated Instrumentation.InformationPoint infoPoints = 1;
+    repeated uint32 infoPointIDs = 2;
+}
+
+message InformationPointMetrics
+{
+    message Custom
+    {
+        required string name = 1;
+        required Instrumentation.CustomMetricDefinition.Rollup rollup = 2;
+        required double value = 3;
+        optional int32 numOfCalls = 4;
+        required double minValue = 5;
+        required double maxValue = 6;
+    }
+
+    required uint32 infoPointID = 1;
+    required int32 timeTaken = 2;
+    required int32 numOfCalls = 3;
+    required int32 numOfErrors = 4;
+    optional int32 minCallTime = 5;
+    optional int32 maxCallTime = 6;
+
+    repeated Custom customMetrics = 7;
+}
+
